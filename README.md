@@ -3,7 +3,7 @@
 <img width="5110" height="1966" alt="image" src="https://github.com/user-attachments/assets/fd7994c9-ac79-4e59-b2e5-cd345f868e61" />
 
 ## Main/Router node
-The main node accepts all incoming execution requests, and executes them through a series of processes to allocate a worker with the execution task. The main node is connected to multiple worker nodes which are provisioned based on the load and compute requirements. The series of processes are explained below:
+The main node accepts all incoming execution requests, and executes them through a series of processes to allocate a worker with the execution task. The main node is orchestrates multiple worker nodes and provisions the worker nodes based on the load and compute requirements. It follows a series of processes to assign a particular execution request to a worker which are as follows:
 
 ### Code Analysis
 The user's code is parsed to extract resources (packages, models, datasets) required to execute the code. This is done by parsing the AST of the code. Input variables/arguments are identified and profiled to get their type, size and other metadata.
