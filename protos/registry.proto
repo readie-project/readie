@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+// Message used for worker status
+message WorkerStatus {
+  string worker_id = 1;
+  string status    = 2;
+}
+
+// Message used for executor status
+message ExecutorStatus {
+  string container_id = 1;
+  string worker_id    = 2;
+  string status       = 3;
+}
+
+service RegistryService {
+  rpc PostWorkerStatus(WorkerStatus) returns (WorkerStatus);
+
+  rpc PostExecutorStatus(ExecutorStatus) returns (ExecutorStatus);
+}
