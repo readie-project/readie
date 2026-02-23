@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
+
 // Message used for worker status
 message WorkerStatus {
   string worker_id = 1;

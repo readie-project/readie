@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
+
 // Message used for code execution requests from clients
 message ClientExecutionRequest {
   string request_id = 1;

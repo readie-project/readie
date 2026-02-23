@@ -2,7 +2,8 @@ import asyncio
 import logging
 
 import grpc
-from services import RouterService, RegistryService
+from services.RouterService import RouterService
+from services.RegistryService import RegistryService
 from generated import router_pb2_grpc, registry_pb2_grpc
 
 # Coroutines to be invoked when the event loop is shutting down.

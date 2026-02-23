@@ -24,13 +24,14 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eregistry.proto\"1\n\x0cWorkerStatus\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"I\n\x0e\x45xecutorStatus\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t2{\n\x0fRegistryService\x12\x30\n\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\r.WorkerStatus\x12\x36\n\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x0f.ExecutorStatusb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eregistry.proto\"1\n\x0cWorkerStatus\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"I\n\x0e\x45xecutorStatus\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t2{\n\x0fRegistryService\x12\x30\n\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\r.WorkerStatus\x12\x36\n\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x0f.ExecutorStatusBHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'registry_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  DESCRIPTOR._loaded_options = None
+  _globals['DESCRIPTOR']._loaded_options = None
+  _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
   _globals['_WORKERSTATUS']._serialized_start=18
   _globals['_WORKERSTATUS']._serialized_end=67
   _globals['_EXECUTORSTATUS']._serialized_start=69
