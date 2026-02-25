@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
+
+// Message used for code execution requests to workers
+message WorkerExecutionRequest {
+  string request_id   = 1;
+  bytes  payload      = 2;
+  string worker_id    = 3;
+  string container_id = 4;
+}
+
+// Message used for code execution responses from workers
+message WorkerExecutionResponse {
+  string request_id = 1;
+  string stdout     = 2;
+  string stderr     = 3;
+}
+
+service ExecutionService {
+  rpc RequestExecution(stream WorkerExecutionRequest) returns (stream WorkerExecutionResponse);
+}

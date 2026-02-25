@@ -2,9 +2,9 @@ import asyncio
 import logging
 
 import grpc
-from services.RouterService import RouterService
+from services.ProxyService import ProxyService
 from services.RegistryService import RegistryService
-from generated import router_pb2_grpc, registry_pb2_grpc
+from generated import proxy_pb2_grpc, registry_pb2_grpc, execution_pb2_grpc
 
 # Coroutines to be invoked when the event loop is shutting down.
 _cleanup_coroutines = []
@@ -12,7 +12,7 @@ _cleanup_coroutines = []
 
 async def serve() -> None:
     server = grpc.aio.server()
-    router_pb2_grpc.add_RouterServiceServicer_to_server(RouterService(), server)
+    proxy_pb2_grpc.add_ProxyServiceServicer_to_server(ProxyService(), server)
     registry_pb2_grpc.add_RegistryServiceServicer_to_server(RegistryService(), server)
     listen_addr = "[::]:50051"
     server.add_insecure_port(listen_addr)
