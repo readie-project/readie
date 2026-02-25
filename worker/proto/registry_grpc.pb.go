@@ -19,16 +19,26 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RegistryService_PostWorkerStatus_FullMethodName   = "/RegistryService/PostWorkerStatus"
-	RegistryService_PostExecutorStatus_FullMethodName = "/RegistryService/PostExecutorStatus"
+	RegistryService_PostWorkerStatus_FullMethodName        = "/RegistryService/PostWorkerStatus"
+	RegistryService_PostExecutorStatus_FullMethodName      = "/RegistryService/PostExecutorStatus"
+	RegistryService_PostWorkerUtilization_FullMethodName   = "/RegistryService/PostWorkerUtilization"
+	RegistryService_PostExecutorUtilization_FullMethodName = "/RegistryService/PostExecutorUtilization"
 )
 
 // RegistryServiceClient is the client API for RegistryService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Service on the main node to handle status and utilization updates from workers and executors
 type RegistryServiceClient interface {
-	PostWorkerStatus(ctx context.Context, in *WorkerStatus, opts ...grpc.CallOption) (*WorkerStatus, error)
-	PostExecutorStatus(ctx context.Context, in *ExecutorStatus, opts ...grpc.CallOption) (*ExecutorStatus, error)
+	// Unary RPC for posting worker status
+	PostWorkerStatus(ctx context.Context, in *WorkerStatus, opts ...grpc.CallOption) (*RegistryUpdateResponse, error)
+	// Unary RPC for posting executor status
+	PostExecutorStatus(ctx context.Context, in *ExecutorStatus, opts ...grpc.CallOption) (*RegistryUpdateResponse, error)
+	// Unary RPC for posting worker utilization
+	PostWorkerUtilization(ctx context.Context, in *WorkerUtilization, opts ...grpc.CallOption) (*RegistryUpdateResponse, error)
+	// Unary RPC for posting executor utilization
+	PostExecutorUtilization(ctx context.Context, in *ExecutorUtilization, opts ...grpc.CallOption) (*RegistryUpdateResponse, error)
 }
 
 type registryServiceClient struct {
@@ -39,9 +49,9 @@ func NewRegistryServiceClient(cc grpc.ClientConnInterface) RegistryServiceClient
 	return &registryServiceClient{cc}
 }
 
-func (c *registryServiceClient) PostWorkerStatus(ctx context.Context, in *WorkerStatus, opts ...grpc.CallOption) (*WorkerStatus, error) {
+func (c *registryServiceClient) PostWorkerStatus(ctx context.Context, in *WorkerStatus, opts ...grpc.CallOption) (*RegistryUpdateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(WorkerStatus)
+	out := new(RegistryUpdateResponse)
 	err := c.cc.Invoke(ctx, RegistryService_PostWorkerStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -49,10 +59,30 @@ func (c *registryServiceClient) PostWorkerStatus(ctx context.Context, in *Worker
 	return out, nil
 }
 
-func (c *registryServiceClient) PostExecutorStatus(ctx context.Context, in *ExecutorStatus, opts ...grpc.CallOption) (*ExecutorStatus, error) {
+func (c *registryServiceClient) PostExecutorStatus(ctx context.Context, in *ExecutorStatus, opts ...grpc.CallOption) (*RegistryUpdateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ExecutorStatus)
+	out := new(RegistryUpdateResponse)
 	err := c.cc.Invoke(ctx, RegistryService_PostExecutorStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *registryServiceClient) PostWorkerUtilization(ctx context.Context, in *WorkerUtilization, opts ...grpc.CallOption) (*RegistryUpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegistryUpdateResponse)
+	err := c.cc.Invoke(ctx, RegistryService_PostWorkerUtilization_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *registryServiceClient) PostExecutorUtilization(ctx context.Context, in *ExecutorUtilization, opts ...grpc.CallOption) (*RegistryUpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegistryUpdateResponse)
+	err := c.cc.Invoke(ctx, RegistryService_PostExecutorUtilization_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -62,9 +92,17 @@ func (c *registryServiceClient) PostExecutorStatus(ctx context.Context, in *Exec
 // RegistryServiceServer is the server API for RegistryService service.
 // All implementations must embed UnimplementedRegistryServiceServer
 // for forward compatibility.
+//
+// Service on the main node to handle status and utilization updates from workers and executors
 type RegistryServiceServer interface {
-	PostWorkerStatus(context.Context, *WorkerStatus) (*WorkerStatus, error)
-	PostExecutorStatus(context.Context, *ExecutorStatus) (*ExecutorStatus, error)
+	// Unary RPC for posting worker status
+	PostWorkerStatus(context.Context, *WorkerStatus) (*RegistryUpdateResponse, error)
+	// Unary RPC for posting executor status
+	PostExecutorStatus(context.Context, *ExecutorStatus) (*RegistryUpdateResponse, error)
+	// Unary RPC for posting worker utilization
+	PostWorkerUtilization(context.Context, *WorkerUtilization) (*RegistryUpdateResponse, error)
+	// Unary RPC for posting executor utilization
+	PostExecutorUtilization(context.Context, *ExecutorUtilization) (*RegistryUpdateResponse, error)
 	mustEmbedUnimplementedRegistryServiceServer()
 }
 
@@ -75,11 +113,17 @@ type RegistryServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedRegistryServiceServer struct{}
 
-func (UnimplementedRegistryServiceServer) PostWorkerStatus(context.Context, *WorkerStatus) (*WorkerStatus, error) {
+func (UnimplementedRegistryServiceServer) PostWorkerStatus(context.Context, *WorkerStatus) (*RegistryUpdateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostWorkerStatus not implemented")
 }
-func (UnimplementedRegistryServiceServer) PostExecutorStatus(context.Context, *ExecutorStatus) (*ExecutorStatus, error) {
+func (UnimplementedRegistryServiceServer) PostExecutorStatus(context.Context, *ExecutorStatus) (*RegistryUpdateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostExecutorStatus not implemented")
+}
+func (UnimplementedRegistryServiceServer) PostWorkerUtilization(context.Context, *WorkerUtilization) (*RegistryUpdateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PostWorkerUtilization not implemented")
+}
+func (UnimplementedRegistryServiceServer) PostExecutorUtilization(context.Context, *ExecutorUtilization) (*RegistryUpdateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PostExecutorUtilization not implemented")
 }
 func (UnimplementedRegistryServiceServer) mustEmbedUnimplementedRegistryServiceServer() {}
 func (UnimplementedRegistryServiceServer) testEmbeddedByValue()                         {}
@@ -138,6 +182,42 @@ func _RegistryService_PostExecutorStatus_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RegistryService_PostWorkerUtilization_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WorkerUtilization)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServiceServer).PostWorkerUtilization(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RegistryService_PostWorkerUtilization_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServiceServer).PostWorkerUtilization(ctx, req.(*WorkerUtilization))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RegistryService_PostExecutorUtilization_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutorUtilization)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServiceServer).PostExecutorUtilization(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RegistryService_PostExecutorUtilization_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServiceServer).PostExecutorUtilization(ctx, req.(*ExecutorUtilization))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RegistryService_ServiceDesc is the grpc.ServiceDesc for RegistryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,6 +232,14 @@ var RegistryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PostExecutorStatus",
 			Handler:    _RegistryService_PostExecutorStatus_Handler,
+		},
+		{
+			MethodName: "PostWorkerUtilization",
+			Handler:    _RegistryService_PostWorkerUtilization_Handler,
+		},
+		{
+			MethodName: "PostExecutorUtilization",
+			Handler:    _RegistryService_PostExecutorUtilization_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -2,21 +2,60 @@ syntax = "proto3";
 
 option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
 
-// Message used for worker status
-message WorkerStatus {
-  string worker_id = 1;
-  string status    = 2;
+enum Status {
+  UNKNOWN = 0;
+  IDLE    = 1;
+  BUSY    = 2;
+  ERROR   = 3;
 }
 
-// Message used for executor status
+// Message used for posting worker status
+message WorkerStatus {
+  string worker_id = 2;
+  Status status    = 3;
+}
+
+// Message used for posting executor status
 message ExecutorStatus {
   string container_id = 1;
   string worker_id    = 2;
-  string status       = 3;
+  Status status       = 3;
 }
 
-service RegistryService {
-  rpc PostWorkerStatus(WorkerStatus) returns (WorkerStatus);
+// Message used for posting worker utilization
+message WorkerUtilization {
+  string worker_id = 1;
+  double cpu_util  = 2;
+  double cpu_total = 3;
+  double gpu_util  = 4;
+  double gpu_total = 5;
+}
 
-  rpc PostExecutorStatus(ExecutorStatus) returns (ExecutorStatus);
+// Message used for posting executor utilization
+message ExecutorUtilization {
+  string container_id = 1;
+  string worker_id    = 2;
+  double cpu_util     = 3;
+  double cpu_total    = 4;
+  double gpu_util     = 5;
+  double gpu_total    = 6;
+}
+
+message RegistryUpdateResponse {
+  bool updated = 1;
+}
+
+// Service on the main node to handle status and utilization updates from workers and executors
+service RegistryService {
+  // Unary RPC for posting worker status
+  rpc PostWorkerStatus(WorkerStatus) returns (RegistryUpdateResponse);
+
+  // Unary RPC for posting executor status
+  rpc PostExecutorStatus(ExecutorStatus) returns (RegistryUpdateResponse);
+
+  // Unary RPC for posting worker utilization
+  rpc PostWorkerUtilization(WorkerUtilization) returns (RegistryUpdateResponse);
+
+  // Unary RPC for posting executor utilization
+  rpc PostExecutorUtilization(ExecutorUtilization) returns (RegistryUpdateResponse);
 }

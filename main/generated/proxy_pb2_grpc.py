@@ -26,7 +26,8 @@ if _version_not_supported:
 
 
 class ProxyServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the main node to handle execution requests from external clients
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -42,10 +43,12 @@ class ProxyServiceStub(object):
 
 
 class ProxyServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the main node to handle execution requests from external clients
+    """
 
     def RequestExecution(self, request_iterator, context):
-        """Missing associated documentation comment in .proto file."""
+        """Bi-directional streaming RPC for streaming code execution input and output
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -67,7 +70,8 @@ def add_ProxyServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ProxyService(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the main node to handle execution requests from external clients
+    """
 
     @staticmethod
     def RequestExecution(request_iterator,

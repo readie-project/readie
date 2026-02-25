@@ -40,10 +40,10 @@ def create_socket_connection(container_id: str, socket_dir: str):
 
 if __name__ == "__main__":
     container_id = os.environ.get("CONTAINER_ID", None)
-    socket_dir = os.getenv("AGENT_SOCKET_DIR", None)
+    socket_dir = os.getenv("EXECUTOR_SOCKET_DIR", None)
 
     if not container_id or not socket_dir:
-        print("CONTAINER_ID and AGENT_SOCKET_DIR environment variables must be set.", file=sys.stderr)
+        print("CONTAINER_ID and EXECUTOR_SOCKET_DIR environment variables must be set.", file=sys.stderr)
         sys.exit(1)
     
     create_socket_connection(container_id, socket_dir)

@@ -23,13 +23,18 @@ const (
 
 // Message used for code execution requests to workers
 type WorkerExecutionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
-	WorkerId      string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	ContainerId   string                 `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	RequestId           string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId           string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	WorkerId            string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	Payload             []byte                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
+	ContainerId         *string                `protobuf:"bytes,5,opt,name=container_id,json=containerId,proto3,oneof" json:"container_id,omitempty"`
+	CpuAlloc            *float64               `protobuf:"fixed64,6,opt,name=cpu_alloc,json=cpuAlloc,proto3,oneof" json:"cpu_alloc,omitempty"`
+	GpuAlloc            *float64               `protobuf:"fixed64,7,opt,name=gpu_alloc,json=gpuAlloc,proto3,oneof" json:"gpu_alloc,omitempty"`
+	CheckpointId        *string                `protobuf:"bytes,8,opt,name=checkpoint_id,json=checkpointId,proto3,oneof" json:"checkpoint_id,omitempty"`
+	AdditionalResources []string               `protobuf:"bytes,9,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *WorkerExecutionRequest) Reset() {
@@ -69,11 +74,11 @@ func (x *WorkerExecutionRequest) GetRequestId() string {
 	return ""
 }
 
-func (x *WorkerExecutionRequest) GetPayload() []byte {
+func (x *WorkerExecutionRequest) GetSessionId() string {
 	if x != nil {
-		return x.Payload
+		return x.SessionId
 	}
-	return nil
+	return ""
 }
 
 func (x *WorkerExecutionRequest) GetWorkerId() string {
@@ -83,19 +88,58 @@ func (x *WorkerExecutionRequest) GetWorkerId() string {
 	return ""
 }
 
-func (x *WorkerExecutionRequest) GetContainerId() string {
+func (x *WorkerExecutionRequest) GetPayload() []byte {
 	if x != nil {
-		return x.ContainerId
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *WorkerExecutionRequest) GetContainerId() string {
+	if x != nil && x.ContainerId != nil {
+		return *x.ContainerId
 	}
 	return ""
+}
+
+func (x *WorkerExecutionRequest) GetCpuAlloc() float64 {
+	if x != nil && x.CpuAlloc != nil {
+		return *x.CpuAlloc
+	}
+	return 0
+}
+
+func (x *WorkerExecutionRequest) GetGpuAlloc() float64 {
+	if x != nil && x.GpuAlloc != nil {
+		return *x.GpuAlloc
+	}
+	return 0
+}
+
+func (x *WorkerExecutionRequest) GetCheckpointId() string {
+	if x != nil && x.CheckpointId != nil {
+		return *x.CheckpointId
+	}
+	return ""
+}
+
+func (x *WorkerExecutionRequest) GetAdditionalResources() []string {
+	if x != nil {
+		return x.AdditionalResources
+	}
+	return nil
 }
 
 // Message used for code execution responses from workers
 type WorkerExecutionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Stdout        string                 `protobuf:"bytes,2,opt,name=stdout,proto3" json:"stdout,omitempty"`
-	Stderr        string                 `protobuf:"bytes,3,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	ContainerId   string                 `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Success       bool                   `protobuf:"varint,5,opt,name=success,proto3" json:"success,omitempty"`
+	Stdout        string                 `protobuf:"bytes,6,opt,name=stdout,proto3" json:"stdout,omitempty"`
+	Stderr        string                 `protobuf:"bytes,7,opt,name=stderr,proto3" json:"stderr,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -137,6 +181,34 @@ func (x *WorkerExecutionResponse) GetRequestId() string {
 	return ""
 }
 
+func (x *WorkerExecutionResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *WorkerExecutionResponse) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *WorkerExecutionResponse) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *WorkerExecutionResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 func (x *WorkerExecutionResponse) GetStdout() string {
 	if x != nil {
 		return x.Stdout
@@ -155,18 +227,35 @@ var File_execution_proto protoreflect.FileDescriptor
 
 const file_execution_proto_rawDesc = "" +
 	"\n" +
-	"\x0fexecution.proto\"\x91\x01\n" +
+	"\x0fexecution.proto\"\x95\x03\n" +
 	"\x16WorkerExecutionRequest\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\x12\x1b\n" +
-	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x12!\n" +
-	"\fcontainer_id\x18\x04 \x01(\tR\vcontainerId\"h\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1b\n" +
+	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x12\x18\n" +
+	"\apayload\x18\x04 \x01(\fR\apayload\x12&\n" +
+	"\fcontainer_id\x18\x05 \x01(\tH\x00R\vcontainerId\x88\x01\x01\x12 \n" +
+	"\tcpu_alloc\x18\x06 \x01(\x01H\x01R\bcpuAlloc\x88\x01\x01\x12 \n" +
+	"\tgpu_alloc\x18\a \x01(\x01H\x02R\bgpuAlloc\x88\x01\x01\x12(\n" +
+	"\rcheckpoint_id\x18\b \x01(\tH\x03R\fcheckpointId\x88\x01\x01\x121\n" +
+	"\x14additional_resources\x18\t \x03(\tR\x13additionalResourcesB\x0f\n" +
+	"\r_container_idB\f\n" +
+	"\n" +
+	"_cpu_allocB\f\n" +
+	"\n" +
+	"_gpu_allocB\x10\n" +
+	"\x0e_checkpoint_id\"\xe1\x01\n" +
 	"\x17WorkerExecutionResponse\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
-	"\x06stdout\x18\x02 \x01(\tR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x03 \x01(\tR\x06stderr2]\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1b\n" +
+	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x12!\n" +
+	"\fcontainer_id\x18\x04 \x01(\tR\vcontainerId\x12\x18\n" +
+	"\asuccess\x18\x05 \x01(\bR\asuccess\x12\x16\n" +
+	"\x06stdout\x18\x06 \x01(\tR\x06stdout\x12\x16\n" +
+	"\x06stderr\x18\a \x01(\tR\x06stderr2]\n" +
 	"\x10ExecutionService\x12I\n" +
 	"\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x010\x01BHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
 
@@ -202,6 +291,7 @@ func file_execution_proto_init() {
 	if File_execution_proto != nil {
 		return
 	}
+	file_execution_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

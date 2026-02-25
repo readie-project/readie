@@ -26,7 +26,8 @@ if _version_not_supported:
 
 
 class RegistryServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the main node to handle status and utilization updates from workers and executors
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -37,26 +38,53 @@ class RegistryServiceStub(object):
         self.PostWorkerStatus = channel.unary_unary(
                 '/RegistryService/PostWorkerStatus',
                 request_serializer=registry__pb2.WorkerStatus.SerializeToString,
-                response_deserializer=registry__pb2.WorkerStatus.FromString,
+                response_deserializer=registry__pb2.RegistryUpdateResponse.FromString,
                 _registered_method=True)
         self.PostExecutorStatus = channel.unary_unary(
                 '/RegistryService/PostExecutorStatus',
                 request_serializer=registry__pb2.ExecutorStatus.SerializeToString,
-                response_deserializer=registry__pb2.ExecutorStatus.FromString,
+                response_deserializer=registry__pb2.RegistryUpdateResponse.FromString,
+                _registered_method=True)
+        self.PostWorkerUtilization = channel.unary_unary(
+                '/RegistryService/PostWorkerUtilization',
+                request_serializer=registry__pb2.WorkerUtilization.SerializeToString,
+                response_deserializer=registry__pb2.RegistryUpdateResponse.FromString,
+                _registered_method=True)
+        self.PostExecutorUtilization = channel.unary_unary(
+                '/RegistryService/PostExecutorUtilization',
+                request_serializer=registry__pb2.ExecutorUtilization.SerializeToString,
+                response_deserializer=registry__pb2.RegistryUpdateResponse.FromString,
                 _registered_method=True)
 
 
 class RegistryServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the main node to handle status and utilization updates from workers and executors
+    """
 
     def PostWorkerStatus(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Unary RPC for posting worker status
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def PostExecutorStatus(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Unary RPC for posting executor status
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PostWorkerUtilization(self, request, context):
+        """Unary RPC for posting worker utilization
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PostExecutorUtilization(self, request, context):
+        """Unary RPC for posting executor utilization
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -67,12 +95,22 @@ def add_RegistryServiceServicer_to_server(servicer, server):
             'PostWorkerStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.PostWorkerStatus,
                     request_deserializer=registry__pb2.WorkerStatus.FromString,
-                    response_serializer=registry__pb2.WorkerStatus.SerializeToString,
+                    response_serializer=registry__pb2.RegistryUpdateResponse.SerializeToString,
             ),
             'PostExecutorStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.PostExecutorStatus,
                     request_deserializer=registry__pb2.ExecutorStatus.FromString,
-                    response_serializer=registry__pb2.ExecutorStatus.SerializeToString,
+                    response_serializer=registry__pb2.RegistryUpdateResponse.SerializeToString,
+            ),
+            'PostWorkerUtilization': grpc.unary_unary_rpc_method_handler(
+                    servicer.PostWorkerUtilization,
+                    request_deserializer=registry__pb2.WorkerUtilization.FromString,
+                    response_serializer=registry__pb2.RegistryUpdateResponse.SerializeToString,
+            ),
+            'PostExecutorUtilization': grpc.unary_unary_rpc_method_handler(
+                    servicer.PostExecutorUtilization,
+                    request_deserializer=registry__pb2.ExecutorUtilization.FromString,
+                    response_serializer=registry__pb2.RegistryUpdateResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -83,7 +121,8 @@ def add_RegistryServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class RegistryService(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the main node to handle status and utilization updates from workers and executors
+    """
 
     @staticmethod
     def PostWorkerStatus(request,
@@ -101,7 +140,7 @@ class RegistryService(object):
             target,
             '/RegistryService/PostWorkerStatus',
             registry__pb2.WorkerStatus.SerializeToString,
-            registry__pb2.WorkerStatus.FromString,
+            registry__pb2.RegistryUpdateResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -128,7 +167,61 @@ class RegistryService(object):
             target,
             '/RegistryService/PostExecutorStatus',
             registry__pb2.ExecutorStatus.SerializeToString,
-            registry__pb2.ExecutorStatus.FromString,
+            registry__pb2.RegistryUpdateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PostWorkerUtilization(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/RegistryService/PostWorkerUtilization',
+            registry__pb2.WorkerUtilization.SerializeToString,
+            registry__pb2.RegistryUpdateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PostExecutorUtilization(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/RegistryService/PostExecutorUtilization',
+            registry__pb2.ExecutorUtilization.SerializeToString,
+            registry__pb2.RegistryUpdateResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -21,11 +21,63 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Message used for worker status
+type Status int32
+
+const (
+	Status_UNKNOWN Status = 0
+	Status_IDLE    Status = 1
+	Status_BUSY    Status = 2
+	Status_ERROR   Status = 3
+)
+
+// Enum value maps for Status.
+var (
+	Status_name = map[int32]string{
+		0: "UNKNOWN",
+		1: "IDLE",
+		2: "BUSY",
+		3: "ERROR",
+	}
+	Status_value = map[string]int32{
+		"UNKNOWN": 0,
+		"IDLE":    1,
+		"BUSY":    2,
+		"ERROR":   3,
+	}
+)
+
+func (x Status) Enum() *Status {
+	p := new(Status)
+	*p = x
+	return p
+}
+
+func (x Status) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Status) Descriptor() protoreflect.EnumDescriptor {
+	return file_registry_proto_enumTypes[0].Descriptor()
+}
+
+func (Status) Type() protoreflect.EnumType {
+	return &file_registry_proto_enumTypes[0]
+}
+
+func (x Status) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Status.Descriptor instead.
+func (Status) EnumDescriptor() ([]byte, []int) {
+	return file_registry_proto_rawDescGZIP(), []int{0}
+}
+
+// Message used for posting worker status
 type WorkerStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkerId      string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	Status        Status                 `protobuf:"varint,3,opt,name=status,proto3,enum=Status" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -67,19 +119,19 @@ func (x *WorkerStatus) GetWorkerId() string {
 	return ""
 }
 
-func (x *WorkerStatus) GetStatus() string {
+func (x *WorkerStatus) GetStatus() Status {
 	if x != nil {
 		return x.Status
 	}
-	return ""
+	return Status_UNKNOWN
 }
 
-// Message used for executor status
+// Message used for posting executor status
 type ExecutorStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Status        Status                 `protobuf:"varint,3,opt,name=status,proto3,enum=Status" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -128,28 +180,256 @@ func (x *ExecutorStatus) GetWorkerId() string {
 	return ""
 }
 
-func (x *ExecutorStatus) GetStatus() string {
+func (x *ExecutorStatus) GetStatus() Status {
 	if x != nil {
 		return x.Status
 	}
+	return Status_UNKNOWN
+}
+
+// Message used for posting worker utilization
+type WorkerUtilization struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkerId      string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	CpuUtil       float64                `protobuf:"fixed64,2,opt,name=cpu_util,json=cpuUtil,proto3" json:"cpu_util,omitempty"`
+	CpuTotal      float64                `protobuf:"fixed64,3,opt,name=cpu_total,json=cpuTotal,proto3" json:"cpu_total,omitempty"`
+	GpuUtil       float64                `protobuf:"fixed64,4,opt,name=gpu_util,json=gpuUtil,proto3" json:"gpu_util,omitempty"`
+	GpuTotal      float64                `protobuf:"fixed64,5,opt,name=gpu_total,json=gpuTotal,proto3" json:"gpu_total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerUtilization) Reset() {
+	*x = WorkerUtilization{}
+	mi := &file_registry_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerUtilization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerUtilization) ProtoMessage() {}
+
+func (x *WorkerUtilization) ProtoReflect() protoreflect.Message {
+	mi := &file_registry_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerUtilization.ProtoReflect.Descriptor instead.
+func (*WorkerUtilization) Descriptor() ([]byte, []int) {
+	return file_registry_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *WorkerUtilization) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
 	return ""
+}
+
+func (x *WorkerUtilization) GetCpuUtil() float64 {
+	if x != nil {
+		return x.CpuUtil
+	}
+	return 0
+}
+
+func (x *WorkerUtilization) GetCpuTotal() float64 {
+	if x != nil {
+		return x.CpuTotal
+	}
+	return 0
+}
+
+func (x *WorkerUtilization) GetGpuUtil() float64 {
+	if x != nil {
+		return x.GpuUtil
+	}
+	return 0
+}
+
+func (x *WorkerUtilization) GetGpuTotal() float64 {
+	if x != nil {
+		return x.GpuTotal
+	}
+	return 0
+}
+
+// Message used for posting executor utilization
+type ExecutorUtilization struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	CpuUtil       float64                `protobuf:"fixed64,3,opt,name=cpu_util,json=cpuUtil,proto3" json:"cpu_util,omitempty"`
+	CpuTotal      float64                `protobuf:"fixed64,4,opt,name=cpu_total,json=cpuTotal,proto3" json:"cpu_total,omitempty"`
+	GpuUtil       float64                `protobuf:"fixed64,5,opt,name=gpu_util,json=gpuUtil,proto3" json:"gpu_util,omitempty"`
+	GpuTotal      float64                `protobuf:"fixed64,6,opt,name=gpu_total,json=gpuTotal,proto3" json:"gpu_total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecutorUtilization) Reset() {
+	*x = ExecutorUtilization{}
+	mi := &file_registry_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecutorUtilization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecutorUtilization) ProtoMessage() {}
+
+func (x *ExecutorUtilization) ProtoReflect() protoreflect.Message {
+	mi := &file_registry_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecutorUtilization.ProtoReflect.Descriptor instead.
+func (*ExecutorUtilization) Descriptor() ([]byte, []int) {
+	return file_registry_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ExecutorUtilization) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ExecutorUtilization) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *ExecutorUtilization) GetCpuUtil() float64 {
+	if x != nil {
+		return x.CpuUtil
+	}
+	return 0
+}
+
+func (x *ExecutorUtilization) GetCpuTotal() float64 {
+	if x != nil {
+		return x.CpuTotal
+	}
+	return 0
+}
+
+func (x *ExecutorUtilization) GetGpuUtil() float64 {
+	if x != nil {
+		return x.GpuUtil
+	}
+	return 0
+}
+
+func (x *ExecutorUtilization) GetGpuTotal() float64 {
+	if x != nil {
+		return x.GpuTotal
+	}
+	return 0
+}
+
+type RegistryUpdateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Updated       bool                   `protobuf:"varint,1,opt,name=updated,proto3" json:"updated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryUpdateResponse) Reset() {
+	*x = RegistryUpdateResponse{}
+	mi := &file_registry_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryUpdateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryUpdateResponse) ProtoMessage() {}
+
+func (x *RegistryUpdateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_registry_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryUpdateResponse.ProtoReflect.Descriptor instead.
+func (*RegistryUpdateResponse) Descriptor() ([]byte, []int) {
+	return file_registry_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RegistryUpdateResponse) GetUpdated() bool {
+	if x != nil {
+		return x.Updated
+	}
+	return false
 }
 
 var File_registry_proto protoreflect.FileDescriptor
 
 const file_registry_proto_rawDesc = "" +
 	"\n" +
-	"\x0eregistry.proto\"C\n" +
+	"\x0eregistry.proto\"L\n" +
 	"\fWorkerStatus\x12\x1b\n" +
-	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\"h\n" +
+	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x1f\n" +
+	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\"q\n" +
 	"\x0eExecutorStatus\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
-	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status2{\n" +
-	"\x0fRegistryService\x120\n" +
-	"\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\r.WorkerStatus\x126\n" +
-	"\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x0f.ExecutorStatusBHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
+	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x1f\n" +
+	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\"\xa0\x01\n" +
+	"\x11WorkerUtilization\x12\x1b\n" +
+	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x19\n" +
+	"\bcpu_util\x18\x02 \x01(\x01R\acpuUtil\x12\x1b\n" +
+	"\tcpu_total\x18\x03 \x01(\x01R\bcpuTotal\x12\x19\n" +
+	"\bgpu_util\x18\x04 \x01(\x01R\agpuUtil\x12\x1b\n" +
+	"\tgpu_total\x18\x05 \x01(\x01R\bgpuTotal\"\xc5\x01\n" +
+	"\x13ExecutorUtilization\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
+	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x19\n" +
+	"\bcpu_util\x18\x03 \x01(\x01R\acpuUtil\x12\x1b\n" +
+	"\tcpu_total\x18\x04 \x01(\x01R\bcpuTotal\x12\x19\n" +
+	"\bgpu_util\x18\x05 \x01(\x01R\agpuUtil\x12\x1b\n" +
+	"\tgpu_total\x18\x06 \x01(\x01R\bgpuTotal\"2\n" +
+	"\x16RegistryUpdateResponse\x12\x18\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated*4\n" +
+	"\x06Status\x12\v\n" +
+	"\aUNKNOWN\x10\x00\x12\b\n" +
+	"\x04IDLE\x10\x01\x12\b\n" +
+	"\x04BUSY\x10\x02\x12\t\n" +
+	"\x05ERROR\x10\x032\x9d\x02\n" +
+	"\x0fRegistryService\x12:\n" +
+	"\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\x17.RegistryUpdateResponse\x12>\n" +
+	"\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x17.RegistryUpdateResponse\x12D\n" +
+	"\x15PostWorkerUtilization\x12\x12.WorkerUtilization\x1a\x17.RegistryUpdateResponse\x12H\n" +
+	"\x17PostExecutorUtilization\x12\x14.ExecutorUtilization\x1a\x17.RegistryUpdateResponseBHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
 
 var (
 	file_registry_proto_rawDescOnce sync.Once
@@ -163,21 +443,32 @@ func file_registry_proto_rawDescGZIP() []byte {
 	return file_registry_proto_rawDescData
 }
 
-var file_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_registry_proto_goTypes = []any{
-	(*WorkerStatus)(nil),   // 0: WorkerStatus
-	(*ExecutorStatus)(nil), // 1: ExecutorStatus
+	(Status)(0),                    // 0: Status
+	(*WorkerStatus)(nil),           // 1: WorkerStatus
+	(*ExecutorStatus)(nil),         // 2: ExecutorStatus
+	(*WorkerUtilization)(nil),      // 3: WorkerUtilization
+	(*ExecutorUtilization)(nil),    // 4: ExecutorUtilization
+	(*RegistryUpdateResponse)(nil), // 5: RegistryUpdateResponse
 }
 var file_registry_proto_depIdxs = []int32{
-	0, // 0: RegistryService.PostWorkerStatus:input_type -> WorkerStatus
-	1, // 1: RegistryService.PostExecutorStatus:input_type -> ExecutorStatus
-	0, // 2: RegistryService.PostWorkerStatus:output_type -> WorkerStatus
-	1, // 3: RegistryService.PostExecutorStatus:output_type -> ExecutorStatus
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: WorkerStatus.status:type_name -> Status
+	0, // 1: ExecutorStatus.status:type_name -> Status
+	1, // 2: RegistryService.PostWorkerStatus:input_type -> WorkerStatus
+	2, // 3: RegistryService.PostExecutorStatus:input_type -> ExecutorStatus
+	3, // 4: RegistryService.PostWorkerUtilization:input_type -> WorkerUtilization
+	4, // 5: RegistryService.PostExecutorUtilization:input_type -> ExecutorUtilization
+	5, // 6: RegistryService.PostWorkerStatus:output_type -> RegistryUpdateResponse
+	5, // 7: RegistryService.PostExecutorStatus:output_type -> RegistryUpdateResponse
+	5, // 8: RegistryService.PostWorkerUtilization:output_type -> RegistryUpdateResponse
+	5, // 9: RegistryService.PostExecutorUtilization:output_type -> RegistryUpdateResponse
+	6, // [6:10] is the sub-list for method output_type
+	2, // [2:6] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_registry_proto_init() }
@@ -190,13 +481,14 @@ func file_registry_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_registry_proto_rawDesc), len(file_registry_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   2,
+			NumEnums:      1,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_registry_proto_goTypes,
 		DependencyIndexes: file_registry_proto_depIdxs,
+		EnumInfos:         file_registry_proto_enumTypes,
 		MessageInfos:      file_registry_proto_msgTypes,
 	}.Build()
 	File_registry_proto = out.File

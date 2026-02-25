@@ -26,7 +26,8 @@ if _version_not_supported:
 
 
 class ExecutionServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the worker nodes to handle execution requests
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -42,10 +43,12 @@ class ExecutionServiceStub(object):
 
 
 class ExecutionServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the worker nodes to handle execution requests
+    """
 
     def RequestExecution(self, request_iterator, context):
-        """Missing associated documentation comment in .proto file."""
+        """Bi-directional streaming RPC for streaming code execution input and output
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -67,7 +70,8 @@ def add_ExecutionServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ExecutionService(object):
-    """Missing associated documentation comment in .proto file."""
+    """Service on the worker nodes to handle execution requests
+    """
 
     @staticmethod
     def RequestExecution(request_iterator,

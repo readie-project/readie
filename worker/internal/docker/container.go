@@ -30,14 +30,14 @@ func StartContainer(ctx context.Context, containerConfig *ContainerConfig) (stri
 		Config: &container.Config{
 			Image:           containerConfig.Image,
 			NetworkDisabled: true,
-			Env:             []string{fmt.Sprintf("CONTAINER_ID=%s", containerName), fmt.Sprintf("AGENT_SOCKET_DIR=%s", config.AgentSocketDir)},
+			Env:             []string{fmt.Sprintf("CONTAINER_ID=%s", containerName), fmt.Sprintf("EXECUTOR_SOCKET_DIR=%s", config.ExecutorSocketDir)},
 		},
 		HostConfig: &container.HostConfig{
 			// Runtime: "runsc",
 			Resources: container.Resources{
 				// Memory: containerConfig.CPU,
 			},
-			Binds: []string{fmt.Sprintf("%s:%s", config.WorkerSocketDir, config.AgentSocketDir)},
+			Binds: []string{fmt.Sprintf("%s:%s", config.WorkerSocketDir, config.ExecutorSocketDir)},
 		},
 	})
 	fmt.Printf("Docker container created %v", createResp)
