@@ -19,8 +19,6 @@ class Scheduler:
             async def request_generator():
                 yield execution_pb2.WorkerExecutionRequest(request_id="req1", worker_id="worker1")
                 print("Sent yield request to Go server.")
-                yield execution_pb2.WorkerExecutionRequest(request_id="req1", worker_id="worker1")
-                print("Sent yield request to Go server.")
 
             stream = stub.RequestExecution(request_generator())
             print("Sent execution request to Go server.")

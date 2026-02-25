@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"worker/internal/config"
 	"worker/internal/docker"
 	pb "worker/proto"
 
@@ -34,12 +35,15 @@ func (s *server) RequestExecution(stream pb.ExecutionService_RequestExecutionSer
 		Stdout:    "Job Started...",
 	})
 
+	// containerId, containerName, error := docker.StartContainer(context.Background(), &docker.ContainerConfig{
+	// 	Image:        "test-agent",
+	// 	// CheckpointId: "checkpoint1",
+	// 	CPU:          512 * 1024 * 1024, // 512MB
+	// 	GPU:          0,
+	// })
+
 	return err
 }
-
-const (
-	grpcServerHost = "localhost:50052"
-)
 
 func StartServer() {
 	conn, registryClient := initalizeClient()
@@ -48,7 +52,7 @@ func StartServer() {
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		lis, err := net.Listen("tcp", grpcServerHost)
+		lis, err := net.Listen("tcp", config.WorkerNodeUri)
 		if err != nil {
 			log.Fatalf("failed to listen: %v", err)
 		}

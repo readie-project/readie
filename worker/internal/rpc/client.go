@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"log"
+	"worker/internal/config"
 	pb "worker/proto"
 
 	"google.golang.org/grpc"
@@ -10,11 +11,10 @@ import (
 
 const (
 	workerId = "world"
-	grpcHost = "localhost:50051"
 )
 
 func initalizeClient() (*grpc.ClientConn, pb.RegistryServiceClient) {
-	conn, err := grpc.NewClient(grpcHost, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(config.MainNodeUri, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
