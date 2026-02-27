@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-	"worker/internal/config"
+	"worker/config"
 )
 
 var (

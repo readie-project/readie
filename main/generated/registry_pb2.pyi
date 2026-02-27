@@ -8,12 +8,12 @@ DESCRIPTOR: _descriptor.FileDescriptor
 class Status(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     UNKNOWN: _ClassVar[Status]
-    IDLE: _ClassVar[Status]
+    READY: _ClassVar[Status]
     BUSY: _ClassVar[Status]
     ERROR: _ClassVar[Status]
     REMOVED: _ClassVar[Status]
 UNKNOWN: Status
-IDLE: Status
+READY: Status
 BUSY: Status
 ERROR: Status
 REMOVED: Status
@@ -46,11 +46,11 @@ class WorkerUtilization(_message.Message):
     GPU_UTIL_FIELD_NUMBER: _ClassVar[int]
     GPU_TOTAL_FIELD_NUMBER: _ClassVar[int]
     worker_id: str
-    cpu_util: float
-    cpu_total: float
-    gpu_util: float
-    gpu_total: float
-    def __init__(self, worker_id: _Optional[str] = ..., cpu_util: _Optional[float] = ..., cpu_total: _Optional[float] = ..., gpu_util: _Optional[float] = ..., gpu_total: _Optional[float] = ...) -> None: ...
+    cpu_util: int
+    cpu_total: int
+    gpu_util: int
+    gpu_total: int
+    def __init__(self, worker_id: _Optional[str] = ..., cpu_util: _Optional[int] = ..., cpu_total: _Optional[int] = ..., gpu_util: _Optional[int] = ..., gpu_total: _Optional[int] = ...) -> None: ...
 
 class ExecutorUtilization(_message.Message):
     __slots__ = ("container_id", "worker_id", "cpu_util", "cpu_total", "gpu_util", "gpu_total")
@@ -62,11 +62,11 @@ class ExecutorUtilization(_message.Message):
     GPU_TOTAL_FIELD_NUMBER: _ClassVar[int]
     container_id: str
     worker_id: str
-    cpu_util: float
-    cpu_total: float
-    gpu_util: float
-    gpu_total: float
-    def __init__(self, container_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., cpu_util: _Optional[float] = ..., cpu_total: _Optional[float] = ..., gpu_util: _Optional[float] = ..., gpu_total: _Optional[float] = ...) -> None: ...
+    cpu_util: int
+    cpu_total: int
+    gpu_util: int
+    gpu_total: int
+    def __init__(self, container_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., cpu_util: _Optional[int] = ..., cpu_total: _Optional[int] = ..., gpu_util: _Optional[int] = ..., gpu_total: _Optional[int] = ...) -> None: ...
 
 class RegistryUpdateResponse(_message.Message):
     __slots__ = ("updated",)

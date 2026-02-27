@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import generated.execution_pb2 as execution__pb2
+import execution_pb2 as execution__pb2
 
 GRPC_GENERATED_VERSION = '1.78.1'
 GRPC_VERSION = grpc.__version__
@@ -52,7 +52,7 @@ class ExecutionServiceServicer(object):
     """
 
     def RequestProvision(self, request, context):
-        """Unary RPC for requesting provisioning of a new executor on worker
+        """Unary RPC for requesting provisioning of a new executor or restarting an executor on worker
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

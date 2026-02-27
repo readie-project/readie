@@ -29,7 +29,7 @@ const (
 //
 // Service on the worker nodes to handle execution requests
 type ExecutionServiceClient interface {
-	// Unary RPC for requesting provisioning of a new executor on worker
+	// Unary RPC for requesting provisioning of a new executor or restarting an executor on worker
 	RequestProvision(ctx context.Context, in *ExecutorProvisionRequest, opts ...grpc.CallOption) (*ExecutorProvisionResponse, error)
 	// Bi-directional streaming RPC for streaming code execution input and output
 	RequestExecution(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WorkerExecutionRequest, WorkerExecutionResponse], error)
@@ -72,7 +72,7 @@ type ExecutionService_RequestExecutionClient = grpc.BidiStreamingClient[WorkerEx
 //
 // Service on the worker nodes to handle execution requests
 type ExecutionServiceServer interface {
-	// Unary RPC for requesting provisioning of a new executor on worker
+	// Unary RPC for requesting provisioning of a new executor or restarting an executor on worker
 	RequestProvision(context.Context, *ExecutorProvisionRequest) (*ExecutorProvisionResponse, error)
 	// Bi-directional streaming RPC for streaming code execution input and output
 	RequestExecution(grpc.BidiStreamingServer[WorkerExecutionRequest, WorkerExecutionResponse]) error

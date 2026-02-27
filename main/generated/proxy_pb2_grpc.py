@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import generated.proxy_pb2 as proxy__pb2
+import proxy_pb2 as proxy__pb2
 
 GRPC_GENERATED_VERSION = '1.78.1'
 GRPC_VERSION = grpc.__version__

@@ -1,13 +1,13 @@
-package worker
+package core
 
 import (
 	"context"
 	"fmt"
 	"io"
 	"log"
-	"worker/internal/docker"
-	"worker/internal/socket"
+	"worker/docker"
 	pb "worker/proto"
+	"worker/socket"
 )
 
 func getCheckPointAndImageForExecution(request *pb.WorkerExecutionRequest) (string, string) {

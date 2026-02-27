@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x65xecution.proto\"\xa9\x01\n\x16WorkerExecutionRequest\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x0f\n\x07payload\x18\x02 \x01(\x0c\x12\x16\n\tcpu_alloc\x18\x03 \x01(\x01H\x00\x88\x01\x01\x12\x16\n\tgpu_alloc\x18\x04 \x01(\x01H\x01\x88\x01\x01\x12\x1c\n\x14\x61\x64\x64itional_resources\x18\x05 \x03(\tB\x0c\n\n_cpu_allocB\x0c\n\n_gpu_alloc\"`\n\x17WorkerExecutionResponse\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x0e\n\x06stdout\x18\x03 \x01(\t\x12\x0e\n\x06stderr\x18\x04 \x01(\t\"W\n\x18\x45xecutorProvisionRequest\x12\x15\n\rcheckpoint_id\x18\x01 \x01(\t\x12\x11\n\tcpu_alloc\x18\x02 \x01(\x01\x12\x11\n\tgpu_alloc\x18\x03 \x01(\x01\"W\n\x19\x45xecutorProvisionResponse\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tcpu_alloc\x18\x02 \x01(\x01\x12\x11\n\tgpu_alloc\x18\x03 \x01(\x01\x32\xa8\x01\n\x10\x45xecutionService\x12I\n\x10RequestProvision\x12\x19.ExecutorProvisionRequest\x1a\x1a.ExecutorProvisionResponse\x12I\n\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x65xecution.proto\"\xc5\x01\n\x16WorkerExecutionRequest\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x0f\n\x07payload\x18\x02 \x01(\x0c\x12\x16\n\tcpu_alloc\x18\x03 \x01(\x03H\x00\x88\x01\x01\x12\x16\n\tgpu_alloc\x18\x04 \x01(\x03H\x01\x88\x01\x01\x12\x1a\n\x12required_resources\x18\x05 \x03(\t\x12\x1c\n\x14\x61\x64\x64itional_resources\x18\x06 \x03(\tB\x0c\n\n_cpu_allocB\x0c\n\n_gpu_alloc\"`\n\x17WorkerExecutionResponse\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x0e\n\x06stdout\x18\x03 \x01(\t\x12\x0e\n\x06stderr\x18\x04 \x01(\t\"\x83\x01\n\x18\x45xecutorProvisionRequest\x12\x15\n\rcheckpoint_id\x18\x01 \x01(\t\x12\x19\n\x0c\x63ontainer_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x11\n\tcpu_alloc\x18\x03 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x04 \x01(\x03\x42\x0f\n\r_container_id\"W\n\x19\x45xecutorProvisionResponse\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tcpu_alloc\x18\x02 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x03 \x01(\x03\x32\xa8\x01\n\x10\x45xecutionService\x12I\n\x10RequestProvision\x12\x19.ExecutorProvisionRequest\x1a\x1a.ExecutorProvisionResponse\x12I\n\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,13 +33,13 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
   _globals['_WORKEREXECUTIONREQUEST']._serialized_start=20
-  _globals['_WORKEREXECUTIONREQUEST']._serialized_end=189
-  _globals['_WORKEREXECUTIONRESPONSE']._serialized_start=191
-  _globals['_WORKEREXECUTIONRESPONSE']._serialized_end=287
-  _globals['_EXECUTORPROVISIONREQUEST']._serialized_start=289
-  _globals['_EXECUTORPROVISIONREQUEST']._serialized_end=376
-  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_start=378
-  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_end=465
-  _globals['_EXECUTIONSERVICE']._serialized_start=468
-  _globals['_EXECUTIONSERVICE']._serialized_end=636
+  _globals['_WORKEREXECUTIONREQUEST']._serialized_end=217
+  _globals['_WORKEREXECUTIONRESPONSE']._serialized_start=219
+  _globals['_WORKEREXECUTIONRESPONSE']._serialized_end=315
+  _globals['_EXECUTORPROVISIONREQUEST']._serialized_start=318
+  _globals['_EXECUTORPROVISIONREQUEST']._serialized_end=449
+  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_start=451
+  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_end=538
+  _globals['_EXECUTIONSERVICE']._serialized_start=541
+  _globals['_EXECUTIONSERVICE']._serialized_end=709
 # @@protoc_insertion_point(module_scope)

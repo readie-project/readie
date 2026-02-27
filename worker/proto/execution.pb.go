@@ -26,9 +26,10 @@ type WorkerExecutionRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	ContainerId         string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	Payload             []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
-	CpuAlloc            *float64               `protobuf:"fixed64,3,opt,name=cpu_alloc,json=cpuAlloc,proto3,oneof" json:"cpu_alloc,omitempty"`
-	GpuAlloc            *float64               `protobuf:"fixed64,4,opt,name=gpu_alloc,json=gpuAlloc,proto3,oneof" json:"gpu_alloc,omitempty"`
-	AdditionalResources []string               `protobuf:"bytes,5,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
+	CpuAlloc            *int64                 `protobuf:"varint,3,opt,name=cpu_alloc,json=cpuAlloc,proto3,oneof" json:"cpu_alloc,omitempty"`
+	GpuAlloc            *int64                 `protobuf:"varint,4,opt,name=gpu_alloc,json=gpuAlloc,proto3,oneof" json:"gpu_alloc,omitempty"`
+	RequiredResources   []string               `protobuf:"bytes,5,rep,name=required_resources,json=requiredResources,proto3" json:"required_resources,omitempty"`
+	AdditionalResources []string               `protobuf:"bytes,6,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -77,18 +78,25 @@ func (x *WorkerExecutionRequest) GetPayload() []byte {
 	return nil
 }
 
-func (x *WorkerExecutionRequest) GetCpuAlloc() float64 {
+func (x *WorkerExecutionRequest) GetCpuAlloc() int64 {
 	if x != nil && x.CpuAlloc != nil {
 		return *x.CpuAlloc
 	}
 	return 0
 }
 
-func (x *WorkerExecutionRequest) GetGpuAlloc() float64 {
+func (x *WorkerExecutionRequest) GetGpuAlloc() int64 {
 	if x != nil && x.GpuAlloc != nil {
 		return *x.GpuAlloc
 	}
 	return 0
+}
+
+func (x *WorkerExecutionRequest) GetRequiredResources() []string {
+	if x != nil {
+		return x.RequiredResources
+	}
+	return nil
 }
 
 func (x *WorkerExecutionRequest) GetAdditionalResources() []string {
@@ -171,8 +179,9 @@ func (x *WorkerExecutionResponse) GetStderr() string {
 type ExecutorProvisionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CheckpointId  string                 `protobuf:"bytes,1,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
-	CpuAlloc      float64                `protobuf:"fixed64,2,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc      float64                `protobuf:"fixed64,3,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	ContainerId   *string                `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3,oneof" json:"container_id,omitempty"`
+	CpuAlloc      int64                  `protobuf:"varint,3,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc      int64                  `protobuf:"varint,4,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -214,14 +223,21 @@ func (x *ExecutorProvisionRequest) GetCheckpointId() string {
 	return ""
 }
 
-func (x *ExecutorProvisionRequest) GetCpuAlloc() float64 {
+func (x *ExecutorProvisionRequest) GetContainerId() string {
+	if x != nil && x.ContainerId != nil {
+		return *x.ContainerId
+	}
+	return ""
+}
+
+func (x *ExecutorProvisionRequest) GetCpuAlloc() int64 {
 	if x != nil {
 		return x.CpuAlloc
 	}
 	return 0
 }
 
-func (x *ExecutorProvisionRequest) GetGpuAlloc() float64 {
+func (x *ExecutorProvisionRequest) GetGpuAlloc() int64 {
 	if x != nil {
 		return x.GpuAlloc
 	}
@@ -232,8 +248,8 @@ func (x *ExecutorProvisionRequest) GetGpuAlloc() float64 {
 type ExecutorProvisionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	CpuAlloc      float64                `protobuf:"fixed64,2,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc      float64                `protobuf:"fixed64,3,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	CpuAlloc      int64                  `protobuf:"varint,2,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc      int64                  `protobuf:"varint,3,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -275,14 +291,14 @@ func (x *ExecutorProvisionResponse) GetContainerId() string {
 	return ""
 }
 
-func (x *ExecutorProvisionResponse) GetCpuAlloc() float64 {
+func (x *ExecutorProvisionResponse) GetCpuAlloc() int64 {
 	if x != nil {
 		return x.CpuAlloc
 	}
 	return 0
 }
 
-func (x *ExecutorProvisionResponse) GetGpuAlloc() float64 {
+func (x *ExecutorProvisionResponse) GetGpuAlloc() int64 {
 	if x != nil {
 		return x.GpuAlloc
 	}
@@ -293,13 +309,14 @@ var File_execution_proto protoreflect.FileDescriptor
 
 const file_execution_proto_rawDesc = "" +
 	"\n" +
-	"\x0fexecution.proto\"\xe8\x01\n" +
+	"\x0fexecution.proto\"\x97\x02\n" +
 	"\x16WorkerExecutionRequest\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12 \n" +
-	"\tcpu_alloc\x18\x03 \x01(\x01H\x00R\bcpuAlloc\x88\x01\x01\x12 \n" +
-	"\tgpu_alloc\x18\x04 \x01(\x01H\x01R\bgpuAlloc\x88\x01\x01\x121\n" +
-	"\x14additional_resources\x18\x05 \x03(\tR\x13additionalResourcesB\f\n" +
+	"\tcpu_alloc\x18\x03 \x01(\x03H\x00R\bcpuAlloc\x88\x01\x01\x12 \n" +
+	"\tgpu_alloc\x18\x04 \x01(\x03H\x01R\bgpuAlloc\x88\x01\x01\x12-\n" +
+	"\x12required_resources\x18\x05 \x03(\tR\x11requiredResources\x121\n" +
+	"\x14additional_resources\x18\x06 \x03(\tR\x13additionalResourcesB\f\n" +
 	"\n" +
 	"_cpu_allocB\f\n" +
 	"\n" +
@@ -308,15 +325,17 @@ const file_execution_proto_rawDesc = "" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x16\n" +
 	"\x06stdout\x18\x03 \x01(\tR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x04 \x01(\tR\x06stderr\"y\n" +
+	"\x06stderr\x18\x04 \x01(\tR\x06stderr\"\xb2\x01\n" +
 	"\x18ExecutorProvisionRequest\x12#\n" +
-	"\rcheckpoint_id\x18\x01 \x01(\tR\fcheckpointId\x12\x1b\n" +
-	"\tcpu_alloc\x18\x02 \x01(\x01R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x03 \x01(\x01R\bgpuAlloc\"x\n" +
+	"\rcheckpoint_id\x18\x01 \x01(\tR\fcheckpointId\x12&\n" +
+	"\fcontainer_id\x18\x02 \x01(\tH\x00R\vcontainerId\x88\x01\x01\x12\x1b\n" +
+	"\tcpu_alloc\x18\x03 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
+	"\tgpu_alloc\x18\x04 \x01(\x03R\bgpuAllocB\x0f\n" +
+	"\r_container_id\"x\n" +
 	"\x19ExecutorProvisionResponse\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
-	"\tcpu_alloc\x18\x02 \x01(\x01R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x03 \x01(\x01R\bgpuAlloc2\xa8\x01\n" +
+	"\tcpu_alloc\x18\x02 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
+	"\tgpu_alloc\x18\x03 \x01(\x03R\bgpuAlloc2\xa8\x01\n" +
 	"\x10ExecutionService\x12I\n" +
 	"\x10RequestProvision\x12\x19.ExecutorProvisionRequest\x1a\x1a.ExecutorProvisionResponse\x12I\n" +
 	"\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x010\x01BHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
@@ -358,6 +377,7 @@ func file_execution_proto_init() {
 		return
 	}
 	file_execution_proto_msgTypes[0].OneofWrappers = []any{}
+	file_execution_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

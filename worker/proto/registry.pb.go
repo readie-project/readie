@@ -25,7 +25,7 @@ type Status int32
 
 const (
 	Status_UNKNOWN Status = 0
-	Status_IDLE    Status = 1
+	Status_READY   Status = 1
 	Status_BUSY    Status = 2
 	Status_ERROR   Status = 3
 	Status_REMOVED Status = 4
@@ -35,14 +35,14 @@ const (
 var (
 	Status_name = map[int32]string{
 		0: "UNKNOWN",
-		1: "IDLE",
+		1: "READY",
 		2: "BUSY",
 		3: "ERROR",
 		4: "REMOVED",
 	}
 	Status_value = map[string]int32{
 		"UNKNOWN": 0,
-		"IDLE":    1,
+		"READY":   1,
 		"BUSY":    2,
 		"ERROR":   3,
 		"REMOVED": 4,
@@ -202,10 +202,10 @@ func (x *ExecutorStatus) GetStatus() Status {
 type WorkerUtilization struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkerId      string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	CpuUtil       float64                `protobuf:"fixed64,2,opt,name=cpu_util,json=cpuUtil,proto3" json:"cpu_util,omitempty"`
-	CpuTotal      float64                `protobuf:"fixed64,3,opt,name=cpu_total,json=cpuTotal,proto3" json:"cpu_total,omitempty"`
-	GpuUtil       float64                `protobuf:"fixed64,4,opt,name=gpu_util,json=gpuUtil,proto3" json:"gpu_util,omitempty"`
-	GpuTotal      float64                `protobuf:"fixed64,5,opt,name=gpu_total,json=gpuTotal,proto3" json:"gpu_total,omitempty"`
+	CpuUtil       int64                  `protobuf:"varint,2,opt,name=cpu_util,json=cpuUtil,proto3" json:"cpu_util,omitempty"`
+	CpuTotal      int64                  `protobuf:"varint,3,opt,name=cpu_total,json=cpuTotal,proto3" json:"cpu_total,omitempty"`
+	GpuUtil       int64                  `protobuf:"varint,4,opt,name=gpu_util,json=gpuUtil,proto3" json:"gpu_util,omitempty"`
+	GpuTotal      int64                  `protobuf:"varint,5,opt,name=gpu_total,json=gpuTotal,proto3" json:"gpu_total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -247,28 +247,28 @@ func (x *WorkerUtilization) GetWorkerId() string {
 	return ""
 }
 
-func (x *WorkerUtilization) GetCpuUtil() float64 {
+func (x *WorkerUtilization) GetCpuUtil() int64 {
 	if x != nil {
 		return x.CpuUtil
 	}
 	return 0
 }
 
-func (x *WorkerUtilization) GetCpuTotal() float64 {
+func (x *WorkerUtilization) GetCpuTotal() int64 {
 	if x != nil {
 		return x.CpuTotal
 	}
 	return 0
 }
 
-func (x *WorkerUtilization) GetGpuUtil() float64 {
+func (x *WorkerUtilization) GetGpuUtil() int64 {
 	if x != nil {
 		return x.GpuUtil
 	}
 	return 0
 }
 
-func (x *WorkerUtilization) GetGpuTotal() float64 {
+func (x *WorkerUtilization) GetGpuTotal() int64 {
 	if x != nil {
 		return x.GpuTotal
 	}
@@ -280,10 +280,10 @@ type ExecutorUtilization struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	CpuUtil       float64                `protobuf:"fixed64,3,opt,name=cpu_util,json=cpuUtil,proto3" json:"cpu_util,omitempty"`
-	CpuTotal      float64                `protobuf:"fixed64,4,opt,name=cpu_total,json=cpuTotal,proto3" json:"cpu_total,omitempty"`
-	GpuUtil       float64                `protobuf:"fixed64,5,opt,name=gpu_util,json=gpuUtil,proto3" json:"gpu_util,omitempty"`
-	GpuTotal      float64                `protobuf:"fixed64,6,opt,name=gpu_total,json=gpuTotal,proto3" json:"gpu_total,omitempty"`
+	CpuUtil       int64                  `protobuf:"varint,3,opt,name=cpu_util,json=cpuUtil,proto3" json:"cpu_util,omitempty"`
+	CpuTotal      int64                  `protobuf:"varint,4,opt,name=cpu_total,json=cpuTotal,proto3" json:"cpu_total,omitempty"`
+	GpuUtil       int64                  `protobuf:"varint,5,opt,name=gpu_util,json=gpuUtil,proto3" json:"gpu_util,omitempty"`
+	GpuTotal      int64                  `protobuf:"varint,6,opt,name=gpu_total,json=gpuTotal,proto3" json:"gpu_total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -332,28 +332,28 @@ func (x *ExecutorUtilization) GetWorkerId() string {
 	return ""
 }
 
-func (x *ExecutorUtilization) GetCpuUtil() float64 {
+func (x *ExecutorUtilization) GetCpuUtil() int64 {
 	if x != nil {
 		return x.CpuUtil
 	}
 	return 0
 }
 
-func (x *ExecutorUtilization) GetCpuTotal() float64 {
+func (x *ExecutorUtilization) GetCpuTotal() int64 {
 	if x != nil {
 		return x.CpuTotal
 	}
 	return 0
 }
 
-func (x *ExecutorUtilization) GetGpuUtil() float64 {
+func (x *ExecutorUtilization) GetGpuUtil() int64 {
 	if x != nil {
 		return x.GpuUtil
 	}
 	return 0
 }
 
-func (x *ExecutorUtilization) GetGpuTotal() float64 {
+func (x *ExecutorUtilization) GetGpuTotal() int64 {
 	if x != nil {
 		return x.GpuTotal
 	}
@@ -420,22 +420,22 @@ const file_registry_proto_rawDesc = "" +
 	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\"\xa0\x01\n" +
 	"\x11WorkerUtilization\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x19\n" +
-	"\bcpu_util\x18\x02 \x01(\x01R\acpuUtil\x12\x1b\n" +
-	"\tcpu_total\x18\x03 \x01(\x01R\bcpuTotal\x12\x19\n" +
-	"\bgpu_util\x18\x04 \x01(\x01R\agpuUtil\x12\x1b\n" +
-	"\tgpu_total\x18\x05 \x01(\x01R\bgpuTotal\"\xc5\x01\n" +
+	"\bcpu_util\x18\x02 \x01(\x03R\acpuUtil\x12\x1b\n" +
+	"\tcpu_total\x18\x03 \x01(\x03R\bcpuTotal\x12\x19\n" +
+	"\bgpu_util\x18\x04 \x01(\x03R\agpuUtil\x12\x1b\n" +
+	"\tgpu_total\x18\x05 \x01(\x03R\bgpuTotal\"\xc5\x01\n" +
 	"\x13ExecutorUtilization\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x19\n" +
-	"\bcpu_util\x18\x03 \x01(\x01R\acpuUtil\x12\x1b\n" +
-	"\tcpu_total\x18\x04 \x01(\x01R\bcpuTotal\x12\x19\n" +
-	"\bgpu_util\x18\x05 \x01(\x01R\agpuUtil\x12\x1b\n" +
-	"\tgpu_total\x18\x06 \x01(\x01R\bgpuTotal\"2\n" +
+	"\bcpu_util\x18\x03 \x01(\x03R\acpuUtil\x12\x1b\n" +
+	"\tcpu_total\x18\x04 \x01(\x03R\bcpuTotal\x12\x19\n" +
+	"\bgpu_util\x18\x05 \x01(\x03R\agpuUtil\x12\x1b\n" +
+	"\tgpu_total\x18\x06 \x01(\x03R\bgpuTotal\"2\n" +
 	"\x16RegistryUpdateResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated*A\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated*B\n" +
 	"\x06Status\x12\v\n" +
-	"\aUNKNOWN\x10\x00\x12\b\n" +
-	"\x04IDLE\x10\x01\x12\b\n" +
+	"\aUNKNOWN\x10\x00\x12\t\n" +
+	"\x05READY\x10\x01\x12\b\n" +
 	"\x04BUSY\x10\x02\x12\t\n" +
 	"\x05ERROR\x10\x03\x12\v\n" +
 	"\aREMOVED\x10\x042\x9d\x02\n" +

@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"worker/internal/config"
-	"worker/internal/rpc"
+	"worker/config"
+	"worker/rpc"
 
 	"github.com/joho/godotenv"
 )

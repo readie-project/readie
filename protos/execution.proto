@@ -6,9 +6,10 @@ option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/w
 message WorkerExecutionRequest {
   string          container_id         = 1;
   bytes           payload              = 2;
-  optional double cpu_alloc            = 3;
-  optional double gpu_alloc            = 4;
-  repeated string additional_resources = 5;
+  optional int64  cpu_alloc            = 3;
+  optional int64  gpu_alloc            = 4;
+  repeated string required_resources   = 5;
+  repeated string additional_resources = 6;
 }
 
 // Message used for code execution responses from workers
@@ -21,21 +22,22 @@ message WorkerExecutionResponse {
 
 // Message used for executor provisioning requests to workers
 message ExecutorProvisionRequest {
-  string checkpoint_id = 1;
-  double cpu_alloc     = 2;
-  double gpu_alloc     = 3;
+  string          checkpoint_id = 1;
+  optional string container_id  = 2;
+  int64           cpu_alloc     = 3;
+  int64           gpu_alloc     = 4;
 }
 
 // Message used for executor provisioning responses from workers
 message ExecutorProvisionResponse {
   string container_id = 1;
-  double cpu_alloc    = 2;
-  double gpu_alloc    = 3;
+  int64  cpu_alloc    = 2;
+  int64  gpu_alloc    = 3;
 }
 
 // Service on the worker nodes to handle execution requests
 service ExecutionService {
-  // Unary RPC for requesting provisioning of a new executor on worker
+  // Unary RPC for requesting provisioning of a new executor or restarting an executor on worker
   rpc RequestProvision(ExecutorProvisionRequest) returns (ExecutorProvisionResponse);
 
   // Bi-directional streaming RPC for streaming code execution input and output
