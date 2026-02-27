@@ -7,12 +7,14 @@ enum Status {
   IDLE    = 1;
   BUSY    = 2;
   ERROR   = 3;
+  REMOVED = 4;
 }
 
 // Message used for posting worker status
 message WorkerStatus {
-  string worker_id = 2;
-  Status status    = 3;
+  string worker_id  = 1;
+  string worker_uri = 2;
+  Status status     = 3;
 }
 
 // Message used for posting executor status

@@ -11,18 +11,22 @@ class Status(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     IDLE: _ClassVar[Status]
     BUSY: _ClassVar[Status]
     ERROR: _ClassVar[Status]
+    REMOVED: _ClassVar[Status]
 UNKNOWN: Status
 IDLE: Status
 BUSY: Status
 ERROR: Status
+REMOVED: Status
 
 class WorkerStatus(_message.Message):
-    __slots__ = ("worker_id", "status")
+    __slots__ = ("worker_id", "worker_uri", "status")
     WORKER_ID_FIELD_NUMBER: _ClassVar[int]
+    WORKER_URI_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     worker_id: str
+    worker_uri: str
     status: Status
-    def __init__(self, worker_id: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ...) -> None: ...
+    def __init__(self, worker_id: _Optional[str] = ..., worker_uri: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ...) -> None: ...
 
 class ExecutorStatus(_message.Message):
     __slots__ = ("container_id", "worker_id", "status")

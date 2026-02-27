@@ -28,6 +28,7 @@ const (
 	Status_IDLE    Status = 1
 	Status_BUSY    Status = 2
 	Status_ERROR   Status = 3
+	Status_REMOVED Status = 4
 )
 
 // Enum value maps for Status.
@@ -37,12 +38,14 @@ var (
 		1: "IDLE",
 		2: "BUSY",
 		3: "ERROR",
+		4: "REMOVED",
 	}
 	Status_value = map[string]int32{
 		"UNKNOWN": 0,
 		"IDLE":    1,
 		"BUSY":    2,
 		"ERROR":   3,
+		"REMOVED": 4,
 	}
 )
 
@@ -76,7 +79,8 @@ func (Status) EnumDescriptor() ([]byte, []int) {
 // Message used for posting worker status
 type WorkerStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	WorkerUri     string                 `protobuf:"bytes,2,opt,name=worker_uri,json=workerUri,proto3" json:"worker_uri,omitempty"`
 	Status        Status                 `protobuf:"varint,3,opt,name=status,proto3,enum=Status" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -115,6 +119,13 @@ func (*WorkerStatus) Descriptor() ([]byte, []int) {
 func (x *WorkerStatus) GetWorkerId() string {
 	if x != nil {
 		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *WorkerStatus) GetWorkerUri() string {
+	if x != nil {
+		return x.WorkerUri
 	}
 	return ""
 }
@@ -397,9 +408,11 @@ var File_registry_proto protoreflect.FileDescriptor
 
 const file_registry_proto_rawDesc = "" +
 	"\n" +
-	"\x0eregistry.proto\"L\n" +
+	"\x0eregistry.proto\"k\n" +
 	"\fWorkerStatus\x12\x1b\n" +
-	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x1f\n" +
+	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x1d\n" +
+	"\n" +
+	"worker_uri\x18\x02 \x01(\tR\tworkerUri\x12\x1f\n" +
 	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\"q\n" +
 	"\x0eExecutorStatus\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
@@ -419,12 +432,13 @@ const file_registry_proto_rawDesc = "" +
 	"\bgpu_util\x18\x05 \x01(\x01R\agpuUtil\x12\x1b\n" +
 	"\tgpu_total\x18\x06 \x01(\x01R\bgpuTotal\"2\n" +
 	"\x16RegistryUpdateResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated*4\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated*A\n" +
 	"\x06Status\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\b\n" +
 	"\x04IDLE\x10\x01\x12\b\n" +
 	"\x04BUSY\x10\x02\x12\t\n" +
-	"\x05ERROR\x10\x032\x9d\x02\n" +
+	"\x05ERROR\x10\x03\x12\v\n" +
+	"\aREMOVED\x10\x042\x9d\x02\n" +
 	"\x0fRegistryService\x12:\n" +
 	"\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\x17.RegistryUpdateResponse\x12>\n" +
 	"\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x17.RegistryUpdateResponse\x12D\n" +

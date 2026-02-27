@@ -35,6 +35,11 @@ class ExecutionServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.RequestProvision = channel.unary_unary(
+                '/ExecutionService/RequestProvision',
+                request_serializer=execution__pb2.ExecutorProvisionRequest.SerializeToString,
+                response_deserializer=execution__pb2.ExecutorProvisionResponse.FromString,
+                _registered_method=True)
         self.RequestExecution = channel.stream_stream(
                 '/ExecutionService/RequestExecution',
                 request_serializer=execution__pb2.WorkerExecutionRequest.SerializeToString,
@@ -46,6 +51,13 @@ class ExecutionServiceServicer(object):
     """Service on the worker nodes to handle execution requests
     """
 
+    def RequestProvision(self, request, context):
+        """Unary RPC for requesting provisioning of a new executor on worker
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def RequestExecution(self, request_iterator, context):
         """Bi-directional streaming RPC for streaming code execution input and output
         """
@@ -56,6 +68,11 @@ class ExecutionServiceServicer(object):
 
 def add_ExecutionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'RequestProvision': grpc.unary_unary_rpc_method_handler(
+                    servicer.RequestProvision,
+                    request_deserializer=execution__pb2.ExecutorProvisionRequest.FromString,
+                    response_serializer=execution__pb2.ExecutorProvisionResponse.SerializeToString,
+            ),
             'RequestExecution': grpc.stream_stream_rpc_method_handler(
                     servicer.RequestExecution,
                     request_deserializer=execution__pb2.WorkerExecutionRequest.FromString,
@@ -72,6 +89,33 @@ def add_ExecutionServiceServicer_to_server(servicer, server):
 class ExecutionService(object):
     """Service on the worker nodes to handle execution requests
     """
+
+    @staticmethod
+    def RequestProvision(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ExecutionService/RequestProvision',
+            execution__pb2.ExecutorProvisionRequest.SerializeToString,
+            execution__pb2.ExecutorProvisionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def RequestExecution(request_iterator,
