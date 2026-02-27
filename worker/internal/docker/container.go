@@ -15,10 +15,10 @@ const (
 )
 
 type ContainerConfig struct {
-	Image string
-	// CheckpointId string
-	CPU int64
-	GPU int64
+	Image        string
+	CheckpointId string
+	CPU          int64
+	GPU          int64
 }
 
 func StartContainer(ctx context.Context, containerConfig *ContainerConfig) (string, string, error) {
@@ -30,14 +30,14 @@ func StartContainer(ctx context.Context, containerConfig *ContainerConfig) (stri
 		Config: &container.Config{
 			Image:           containerConfig.Image,
 			NetworkDisabled: true,
-			Env:             []string{fmt.Sprintf("CONTAINER_ID=%s", containerName), fmt.Sprintf("EXECUTOR_SOCKET_DIR=%s", config.ExecutorSocketDir)},
+			Env:             []string{fmt.Sprintf("EXECUTOR_SOCKET_DIR=%s", config.ExecutorSocketDir)},
 		},
 		HostConfig: &container.HostConfig{
 			// Runtime: "runsc",
 			Resources: container.Resources{
 				// Memory: containerConfig.CPU,
 			},
-			Binds: []string{fmt.Sprintf("%s:%s", config.WorkerSocketDir, config.ExecutorSocketDir)},
+			Binds: []string{fmt.Sprintf("%s/%s:%s", config.WorkerSocketDir, containerName, config.ExecutorSocketDir)},
 		},
 	})
 	fmt.Printf("Docker container created %v", createResp)
@@ -79,6 +79,6 @@ func StopContainer(ctx context.Context, containerId string) error {
 	if err != nil {
 		return err
 	}
-	_, err = cli.ContainerRemove(ctx, containerId, client.ContainerRemoveOptions{})
+	// _, err = cli.ContainerRemove(ctx, containerId, client.ContainerRemoveOptions{})
 	return err
 }

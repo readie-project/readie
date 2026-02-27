@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 	"worker/internal/config"
 )
@@ -25,8 +26,9 @@ func dialWithRetry(network, address string, timeout time.Duration) (net.Conn, er
 }
 
 func createSocketConnection(containerName string) error {
-	os.MkdirAll(config.WorkerSocketDir, 0777)
-	socketPath := fmt.Sprintf("%s/%s.sock", config.WorkerSocketDir, containerName)
+	dir := filepath.Join(config.WorkerSocketDir, containerName)
+	os.MkdirAll(dir, 0777)
+	socketPath := fmt.Sprintf("%s/executor.sock", dir)
 
 	socket, err := dialWithRetry("unix", socketPath, 15*time.Second)
 	if err != nil {

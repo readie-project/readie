@@ -1,9 +1,11 @@
 import socket
 import os
 import sys
+import cloudpickle
 
-def create_socket_connection(container_id: str, socket_dir: str):
-    socket_path = os.path.join(socket_dir, f"{container_id}.sock")
+
+def create_socket_connection(socket_dir: str):
+    socket_path = os.path.join(socket_dir, "executor.sock")
 
     try:
         os.remove(socket_path)
@@ -25,9 +27,13 @@ def create_socket_connection(container_id: str, socket_dir: str):
                 print("Connection established with Go client.", flush=True)
                 data = conn.recv(1024)
                 if data:
-                    print(f"Python received: {data.decode()}", flush=True)
-
-                    conn.sendall(b"Hello from the Python Server!")
+                    file_path = os.path.join(socket_dir, data.decode())
+                    if os.path.exists(file_path):
+                        print(f"Python received: {data.decode()}", flush=True)
+                        with open(file_path, 'rb') as f:
+                            loaded_data = cloudpickle.load(f)
+                            conn.sendall(str(loaded_data['func'](
+                                *loaded_data['args'], **loaded_data['kwargs'])).encode())
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
     finally:
@@ -39,11 +45,10 @@ def create_socket_connection(container_id: str, socket_dir: str):
 
 
 if __name__ == "__main__":
-    container_id = os.environ.get("CONTAINER_ID", None)
     socket_dir = os.getenv("EXECUTOR_SOCKET_DIR", None)
 
-    if not container_id or not socket_dir:
-        print("CONTAINER_ID and EXECUTOR_SOCKET_DIR environment variables must be set.", file=sys.stderr)
+    if not socket_dir:
+        print("EXECUTOR_SOCKET_DIR environment variables must be set.", file=sys.stderr)
         sys.exit(1)
-    
-    create_socket_connection(container_id, socket_dir)
+
+    create_socket_connection(socket_dir)
