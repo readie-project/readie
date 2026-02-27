@@ -2,8 +2,8 @@ package socket
 
 import (
 	"fmt"
+	"log"
 	"net"
-	"os"
 	"path/filepath"
 	"time"
 	"worker/config"
@@ -22,36 +22,37 @@ func dialWithRetry(network, address string, timeout time.Duration) (net.Conn, er
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("could not connect to %s after %v", address, timeout)
+	return nil, fmt.Errorf("Could not connect to socket %s after %v", address, timeout)
 }
 
-func createSocketConnection(containerName string) error {
-	dir := filepath.Join(config.WorkerSocketDir, containerName)
-	os.MkdirAll(dir, 0777)
-	socketPath := fmt.Sprintf("%s/executor.sock", dir)
-
+func createSocketConnection(containerId string) error {
+	socketPath := filepath.Join(config.WorkerDir, containerId, "executor.sock")
 	socket, err := dialWithRetry("unix", socketPath, 15*time.Second)
 	if err != nil {
-		fmt.Printf("Error connecting to socket: %v\n", err)
+		log.Printf("Error connecting to socket %s: %v", socketPath, err)
 		return err
 	}
+	log.Printf("Connected to socket %s successfully", socketPath)
 
-	socketMap[containerName] = socket
+	socketMap[containerId] = socket
 	return nil
 }
 
-func GetSocketConnection(containerName string) net.Conn {
-	if conn, exists := socketMap[containerName]; exists {
-		return conn
+func GetSocketConnection(containerId string) (net.Conn, error) {
+	if conn, exists := socketMap[containerId]; exists {
+		return conn, nil
 	} else {
-		createSocketConnection(containerName)
-		return socketMap[containerName]
+		err := createSocketConnection(containerId)
+		if err != nil {
+			return nil, err
+		}
+		return socketMap[containerId], nil
 	}
 }
 
-func CloseSocketConnection(containerName string) {
-	if conn, exists := socketMap[containerName]; exists {
+func CloseSocketConnection(containerId string) {
+	if conn, exists := socketMap[containerId]; exists {
 		conn.Close()
-		delete(socketMap, containerName)
+		delete(socketMap, containerId)
 	}
 }

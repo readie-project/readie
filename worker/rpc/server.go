@@ -1,13 +1,12 @@
+/* IMP: Only gRPC functions and operations should be panicking */
 package rpc
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"worker/config"
 	"worker/core"
 	"worker/docker"
 	pb "worker/proto"
@@ -21,8 +20,10 @@ func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.Execu
 	ctx := context.Background()
 	containerId, err := docker.CreateAndStartContainer(ctx, &docker.ContainerConfig{
 		CheckpointId: request.CheckpointId,
-		CpuAlloc:     request.CpuAlloc,
-		GpuAlloc:     request.GpuAlloc,
+		ResourceAllocation: docker.ResourceAllocation{
+			CpuAlloc: request.CpuAlloc,
+			GpuAlloc: request.GpuAlloc,
+		},
 	})
 
 	if err != nil {
@@ -35,49 +36,57 @@ func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.Execu
 	}
 }
 
-func (s *server) RequestExecution(stream pb.ExecutionService_RequestExecutionServer) error {
-	var fileSize int64
-	var prevChunk *pb.WorkerExecutionRequest
-	var file *os.File
-	var fileName string
-	var containerId string
-	var containerName string
+func (s *server) RequestExecution(stream pb.ExecutionService_RequestExecutionServer) {
+	ichunk, err := stream.Recv()
 
-	ctx := context.Background()
+	if err == io.EOF {
+		log.Panicf("No data in request stream")
+	} else if err != nil {
+		log.Panicf("Error receiving chunk: %v", err)
+	}
+
+	dir := docker.GetContainerDir(ichunk.ContainerId)
+
+	err = os.MkdirAll(dir, 0777)
+	if err != nil {
+		log.Panicf("Could not create directory %s for request: %v", dir, err)
+	}
+
+	filePath := filepath.Join(dir, "request.pkl")
+	file, err := os.Create(filePath)
+	if err != nil {
+		log.Panicf("Could not create request file at %s for request: %v", filePath, err)
+	}
+	log.Printf("Created request file at %s", filePath)
+
+	var fileSize int
+	n, err := file.Write(ichunk.Payload)
+	if err != nil {
+		log.Panicf("Error writing chunk to request file %s: %v", filePath, err)
+	}
+	fileSize += n
 
 	for {
 		chunk, err := stream.Recv()
-		log.Printf("Received execution request: %v\n", chunk)
 
 		if err == io.EOF {
-			log.Printf("Finished receiving file. Total size: %d bytes", fileSize)
+			log.Printf("Finished receiving request. Total size: %d bytes", fileSize)
 			file.Close()
 			if fileSize > 0 {
-				core.ExecuteCode(ctx, prevChunk, containerName, fileName, stream)
+				executeErr := core.ExecuteCode(ichunk, stream)
+				if executeErr != nil {
+					log.Panicf("Error during execution: %v", executeErr)
+				}
 			}
-			return nil
+			break
 		} else if err != nil {
-			log.Printf("Error receiving chunk: %v\n", err)
-			return err
+			log.Panicf("Error receiving chunk: %v", err)
 		}
-
-		if fileName == "" {
-			containerId, containerName = "21930809238420", "c-112949" // worker.PrepareExecutor(ctx, chunk)
-			log.Printf("CID: %s\n", containerId)
-			dir := filepath.Join(config.WorkerSocketDir, containerName)
-			os.MkdirAll(dir, 0777)
-			fileName = fmt.Sprintf("%s.pkl", chunk.RequestId)
-			filePath := filepath.Join(dir, fileName)
-			file, _ = os.Create(filePath)
-		}
-
-		prevChunk = chunk
 
 		n, err := file.Write(chunk.Payload)
 		if err != nil {
-			log.Printf("Error writing chunk: %v\n", err)
-			return err
+			log.Panicf("Error writing chunk to request file %s: %v", filePath, err)
 		}
-		fileSize += int64(n)
+		fileSize += n
 	}
 }

@@ -7,16 +7,16 @@ DESCRIPTOR: _descriptor.FileDescriptor
 
 class Status(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
-    UNKNOWN: _ClassVar[Status]
-    READY: _ClassVar[Status]
-    BUSY: _ClassVar[Status]
-    ERROR: _ClassVar[Status]
-    REMOVED: _ClassVar[Status]
-UNKNOWN: Status
-READY: Status
-BUSY: Status
-ERROR: Status
-REMOVED: Status
+    STATUS_UNKNOWN: _ClassVar[Status]
+    STATUS_READY: _ClassVar[Status]
+    STATUS_BUSY: _ClassVar[Status]
+    STATUS_ERROR: _ClassVar[Status]
+    STATUS_REMOVED: _ClassVar[Status]
+STATUS_UNKNOWN: Status
+STATUS_READY: Status
+STATUS_BUSY: Status
+STATUS_ERROR: Status
+STATUS_REMOVED: Status
 
 class WorkerStatus(_message.Message):
     __slots__ = ("worker_id", "worker_uri", "status")

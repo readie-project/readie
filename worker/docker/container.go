@@ -12,10 +12,14 @@ import (
 	"github.com/moby/moby/client"
 )
 
+type ResourceAllocation struct {
+	CpuAlloc int64
+	GpuAlloc int64
+}
+
 type ContainerConfig struct {
-	CheckpointId string
-	CpuAlloc     int64
-	GpuAlloc     int64
+	CheckpointId       string
+	ResourceAllocation ResourceAllocation
 }
 
 func generateRandomContainerName() string {
@@ -24,10 +28,6 @@ func generateRandomContainerName() string {
 
 func GetContainerDir(containerId string) string {
 	return filepath.Join(config.WorkerDir, containerId)
-}
-
-func getCheckpointsDir(containerId string) string {
-	return filepath.Join(config.WorkerDir, "checkpoints")
 }
 
 func startContainer(ctx context.Context, containerId string, checkpointId string) error {
@@ -45,7 +45,7 @@ func startContainer(ctx context.Context, containerId string, checkpointId string
 		// Start a container with checkpoint
 		_, startErr := cli.ContainerStart(ctx, containerId, client.ContainerStartOptions{
 			CheckpointID:  checkpointId,
-			CheckpointDir: getCheckpointsDir(containerId),
+			CheckpointDir: filepath.Join(config.WorkerDir, "checkpoints"),
 		})
 
 		if startErr != nil {
@@ -66,6 +66,21 @@ func stopContainer(ctx context.Context, containerId string) error {
 	_, err := cli.ContainerStop(ctx, containerId, client.ContainerStopOptions{})
 	if err != nil {
 		log.Printf("Failed to stop container %s: %v", containerId, err)
+		return err
+	}
+	return nil
+}
+
+func updateContainerResources(ctx context.Context, containerId string, resourceAllocation *ResourceAllocation) error {
+	cli := getDockerClient()
+	_, err := cli.ContainerUpdate(ctx, containerId, client.ContainerUpdateOptions{
+		Resources: &container.Resources{
+			Memory: resourceAllocation.CpuAlloc,
+		},
+	})
+
+	if err != nil {
+		log.Printf("Failed to update resources for container %s: %v", containerId, err)
 		return err
 	}
 	return nil
@@ -92,7 +107,7 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 		HostConfig: &container.HostConfig{
 			// Runtime: "runsc",
 			Resources: container.Resources{
-				Memory: containerConfig.CpuAlloc,
+				Memory: containerConfig.ResourceAllocation.CpuAlloc,
 			},
 			Binds: []string{fmt.Sprintf("%s:%s", containerDir, config.ExecutorDir)},
 		},
@@ -111,14 +126,22 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 	return containerId, nil
 }
 
-func RestartContainer(ctx context.Context, containerId string, checkpointId string) error {
+func RestartContainer(ctx context.Context, containerId string, containerConfig *ContainerConfig) error {
 	stopContainer(ctx, containerId)
-	err := startContainer(ctx, containerId, checkpointId)
-
+	err := startContainer(ctx, containerId, containerConfig.CheckpointId)
 	if err != nil {
 		log.Printf("Failed to restart container %s: %v", containerId, err)
 		return err
 	}
+
+	err = updateContainerResources(ctx, containerId, &ResourceAllocation{
+		CpuAlloc: containerConfig.ResourceAllocation.CpuAlloc,
+		GpuAlloc: containerConfig.ResourceAllocation.GpuAlloc,
+	})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -133,14 +156,22 @@ func PauseContainer(ctx context.Context, containerId string) error {
 	return nil
 }
 
-func ResumeContainer(ctx context.Context, containerId string) error {
+func ResumeContainer(ctx context.Context, containerId string, resourceAllocation *ResourceAllocation) error {
 	cli := getDockerClient()
 	_, err := cli.ContainerUnpause(ctx, containerId, client.ContainerUnpauseOptions{})
-
 	if err != nil {
 		log.Printf("Failed to resume container %s: %v", containerId, err)
 		return err
 	}
+
+	err = updateContainerResources(ctx, containerId, &ResourceAllocation{
+		CpuAlloc: resourceAllocation.CpuAlloc,
+		GpuAlloc: resourceAllocation.GpuAlloc,
+	})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

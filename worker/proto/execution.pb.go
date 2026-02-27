@@ -21,15 +21,69 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Action int32
+
+const (
+	Action_ACTION_UNKNOWN Action = 0
+	Action_ACTION_START   Action = 1
+	Action_ACTION_RESUME  Action = 2
+	Action_ACTION_RESTART Action = 3
+)
+
+// Enum value maps for Action.
+var (
+	Action_name = map[int32]string{
+		0: "ACTION_UNKNOWN",
+		1: "ACTION_START",
+		2: "ACTION_RESUME",
+		3: "ACTION_RESTART",
+	}
+	Action_value = map[string]int32{
+		"ACTION_UNKNOWN": 0,
+		"ACTION_START":   1,
+		"ACTION_RESUME":  2,
+		"ACTION_RESTART": 3,
+	}
+)
+
+func (x Action) Enum() *Action {
+	p := new(Action)
+	*p = x
+	return p
+}
+
+func (x Action) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Action) Descriptor() protoreflect.EnumDescriptor {
+	return file_execution_proto_enumTypes[0].Descriptor()
+}
+
+func (Action) Type() protoreflect.EnumType {
+	return &file_execution_proto_enumTypes[0]
+}
+
+func (x Action) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Action.Descriptor instead.
+func (Action) EnumDescriptor() ([]byte, []int) {
+	return file_execution_proto_rawDescGZIP(), []int{0}
+}
+
 // Message used for code execution requests to workers
 type WorkerExecutionRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	ContainerId         string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	Payload             []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
-	CpuAlloc            *int64                 `protobuf:"varint,3,opt,name=cpu_alloc,json=cpuAlloc,proto3,oneof" json:"cpu_alloc,omitempty"`
-	GpuAlloc            *int64                 `protobuf:"varint,4,opt,name=gpu_alloc,json=gpuAlloc,proto3,oneof" json:"gpu_alloc,omitempty"`
-	RequiredResources   []string               `protobuf:"bytes,5,rep,name=required_resources,json=requiredResources,proto3" json:"required_resources,omitempty"`
-	AdditionalResources []string               `protobuf:"bytes,6,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
+	CheckpointId        string                 `protobuf:"bytes,2,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	Payload             []byte                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
+	CpuAlloc            int64                  `protobuf:"varint,4,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc            int64                  `protobuf:"varint,5,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	RequiredResources   []string               `protobuf:"bytes,6,rep,name=required_resources,json=requiredResources,proto3" json:"required_resources,omitempty"`
+	AdditionalResources []string               `protobuf:"bytes,7,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
+	Action              Action                 `protobuf:"varint,8,opt,name=action,proto3,enum=Action" json:"action,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -71,6 +125,13 @@ func (x *WorkerExecutionRequest) GetContainerId() string {
 	return ""
 }
 
+func (x *WorkerExecutionRequest) GetCheckpointId() string {
+	if x != nil {
+		return x.CheckpointId
+	}
+	return ""
+}
+
 func (x *WorkerExecutionRequest) GetPayload() []byte {
 	if x != nil {
 		return x.Payload
@@ -79,15 +140,15 @@ func (x *WorkerExecutionRequest) GetPayload() []byte {
 }
 
 func (x *WorkerExecutionRequest) GetCpuAlloc() int64 {
-	if x != nil && x.CpuAlloc != nil {
-		return *x.CpuAlloc
+	if x != nil {
+		return x.CpuAlloc
 	}
 	return 0
 }
 
 func (x *WorkerExecutionRequest) GetGpuAlloc() int64 {
-	if x != nil && x.GpuAlloc != nil {
-		return *x.GpuAlloc
+	if x != nil {
+		return x.GpuAlloc
 	}
 	return 0
 }
@@ -104,6 +165,13 @@ func (x *WorkerExecutionRequest) GetAdditionalResources() []string {
 		return x.AdditionalResources
 	}
 	return nil
+}
+
+func (x *WorkerExecutionRequest) GetAction() Action {
+	if x != nil {
+		return x.Action
+	}
+	return Action_ACTION_UNKNOWN
 }
 
 // Message used for code execution responses from workers
@@ -179,7 +247,6 @@ func (x *WorkerExecutionResponse) GetStderr() string {
 type ExecutorProvisionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CheckpointId  string                 `protobuf:"bytes,1,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
-	ContainerId   *string                `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3,oneof" json:"container_id,omitempty"`
 	CpuAlloc      int64                  `protobuf:"varint,3,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
 	GpuAlloc      int64                  `protobuf:"varint,4,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -219,13 +286,6 @@ func (*ExecutorProvisionRequest) Descriptor() ([]byte, []int) {
 func (x *ExecutorProvisionRequest) GetCheckpointId() string {
 	if x != nil {
 		return x.CheckpointId
-	}
-	return ""
-}
-
-func (x *ExecutorProvisionRequest) GetContainerId() string {
-	if x != nil && x.ContainerId != nil {
-		return *x.ContainerId
 	}
 	return ""
 }
@@ -309,33 +369,34 @@ var File_execution_proto protoreflect.FileDescriptor
 
 const file_execution_proto_rawDesc = "" +
 	"\n" +
-	"\x0fexecution.proto\"\x97\x02\n" +
+	"\x0fexecution.proto\"\xb7\x02\n" +
 	"\x16WorkerExecutionRequest\x12!\n" +
-	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\x12 \n" +
-	"\tcpu_alloc\x18\x03 \x01(\x03H\x00R\bcpuAlloc\x88\x01\x01\x12 \n" +
-	"\tgpu_alloc\x18\x04 \x01(\x03H\x01R\bgpuAlloc\x88\x01\x01\x12-\n" +
-	"\x12required_resources\x18\x05 \x03(\tR\x11requiredResources\x121\n" +
-	"\x14additional_resources\x18\x06 \x03(\tR\x13additionalResourcesB\f\n" +
-	"\n" +
-	"_cpu_allocB\f\n" +
-	"\n" +
-	"_gpu_alloc\"\x86\x01\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12#\n" +
+	"\rcheckpoint_id\x18\x02 \x01(\tR\fcheckpointId\x12\x18\n" +
+	"\apayload\x18\x03 \x01(\fR\apayload\x12\x1b\n" +
+	"\tcpu_alloc\x18\x04 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
+	"\tgpu_alloc\x18\x05 \x01(\x03R\bgpuAlloc\x12-\n" +
+	"\x12required_resources\x18\x06 \x03(\tR\x11requiredResources\x121\n" +
+	"\x14additional_resources\x18\a \x03(\tR\x13additionalResources\x12\x1f\n" +
+	"\x06action\x18\b \x01(\x0e2\a.ActionR\x06action\"\x86\x01\n" +
 	"\x17WorkerExecutionResponse\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x16\n" +
 	"\x06stdout\x18\x03 \x01(\tR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x04 \x01(\tR\x06stderr\"\xb2\x01\n" +
+	"\x06stderr\x18\x04 \x01(\tR\x06stderr\"y\n" +
 	"\x18ExecutorProvisionRequest\x12#\n" +
-	"\rcheckpoint_id\x18\x01 \x01(\tR\fcheckpointId\x12&\n" +
-	"\fcontainer_id\x18\x02 \x01(\tH\x00R\vcontainerId\x88\x01\x01\x12\x1b\n" +
+	"\rcheckpoint_id\x18\x01 \x01(\tR\fcheckpointId\x12\x1b\n" +
 	"\tcpu_alloc\x18\x03 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x04 \x01(\x03R\bgpuAllocB\x0f\n" +
-	"\r_container_id\"x\n" +
+	"\tgpu_alloc\x18\x04 \x01(\x03R\bgpuAlloc\"x\n" +
 	"\x19ExecutorProvisionResponse\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
 	"\tcpu_alloc\x18\x02 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x03 \x01(\x03R\bgpuAlloc2\xa8\x01\n" +
+	"\tgpu_alloc\x18\x03 \x01(\x03R\bgpuAlloc*U\n" +
+	"\x06Action\x12\x12\n" +
+	"\x0eACTION_UNKNOWN\x10\x00\x12\x10\n" +
+	"\fACTION_START\x10\x01\x12\x11\n" +
+	"\rACTION_RESUME\x10\x02\x12\x12\n" +
+	"\x0eACTION_RESTART\x10\x032\xa8\x01\n" +
 	"\x10ExecutionService\x12I\n" +
 	"\x10RequestProvision\x12\x19.ExecutorProvisionRequest\x1a\x1a.ExecutorProvisionResponse\x12I\n" +
 	"\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x010\x01BHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
@@ -352,23 +413,26 @@ func file_execution_proto_rawDescGZIP() []byte {
 	return file_execution_proto_rawDescData
 }
 
+var file_execution_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_execution_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_execution_proto_goTypes = []any{
-	(*WorkerExecutionRequest)(nil),    // 0: WorkerExecutionRequest
-	(*WorkerExecutionResponse)(nil),   // 1: WorkerExecutionResponse
-	(*ExecutorProvisionRequest)(nil),  // 2: ExecutorProvisionRequest
-	(*ExecutorProvisionResponse)(nil), // 3: ExecutorProvisionResponse
+	(Action)(0),                       // 0: Action
+	(*WorkerExecutionRequest)(nil),    // 1: WorkerExecutionRequest
+	(*WorkerExecutionResponse)(nil),   // 2: WorkerExecutionResponse
+	(*ExecutorProvisionRequest)(nil),  // 3: ExecutorProvisionRequest
+	(*ExecutorProvisionResponse)(nil), // 4: ExecutorProvisionResponse
 }
 var file_execution_proto_depIdxs = []int32{
-	2, // 0: ExecutionService.RequestProvision:input_type -> ExecutorProvisionRequest
-	0, // 1: ExecutionService.RequestExecution:input_type -> WorkerExecutionRequest
-	3, // 2: ExecutionService.RequestProvision:output_type -> ExecutorProvisionResponse
-	1, // 3: ExecutionService.RequestExecution:output_type -> WorkerExecutionResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: WorkerExecutionRequest.action:type_name -> Action
+	3, // 1: ExecutionService.RequestProvision:input_type -> ExecutorProvisionRequest
+	1, // 2: ExecutionService.RequestExecution:input_type -> WorkerExecutionRequest
+	4, // 3: ExecutionService.RequestProvision:output_type -> ExecutorProvisionResponse
+	2, // 4: ExecutionService.RequestExecution:output_type -> WorkerExecutionResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_execution_proto_init() }
@@ -376,20 +440,19 @@ func file_execution_proto_init() {
 	if File_execution_proto != nil {
 		return
 	}
-	file_execution_proto_msgTypes[0].OneofWrappers = []any{}
-	file_execution_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_execution_proto_rawDesc), len(file_execution_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_execution_proto_goTypes,
 		DependencyIndexes: file_execution_proto_depIdxs,
+		EnumInfos:         file_execution_proto_enumTypes,
 		MessageInfos:      file_execution_proto_msgTypes,
 	}.Build()
 	File_execution_proto = out.File

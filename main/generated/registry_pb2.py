@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eregistry.proto\"N\n\x0cWorkerStatus\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x12\n\nworker_uri\x18\x02 \x01(\t\x12\x17\n\x06status\x18\x03 \x01(\x0e\x32\x07.Status\"R\n\x0e\x45xecutorStatus\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x17\n\x06status\x18\x03 \x01(\x0e\x32\x07.Status\"p\n\x11WorkerUtilization\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x10\n\x08\x63pu_util\x18\x02 \x01(\x03\x12\x11\n\tcpu_total\x18\x03 \x01(\x03\x12\x10\n\x08gpu_util\x18\x04 \x01(\x03\x12\x11\n\tgpu_total\x18\x05 \x01(\x03\"\x88\x01\n\x13\x45xecutorUtilization\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x10\n\x08\x63pu_util\x18\x03 \x01(\x03\x12\x11\n\tcpu_total\x18\x04 \x01(\x03\x12\x10\n\x08gpu_util\x18\x05 \x01(\x03\x12\x11\n\tgpu_total\x18\x06 \x01(\x03\")\n\x16RegistryUpdateResponse\x12\x0f\n\x07updated\x18\x01 \x01(\x08*B\n\x06Status\x12\x0b\n\x07UNKNOWN\x10\x00\x12\t\n\x05READY\x10\x01\x12\x08\n\x04\x42USY\x10\x02\x12\t\n\x05\x45RROR\x10\x03\x12\x0b\n\x07REMOVED\x10\x04\x32\x9d\x02\n\x0fRegistryService\x12:\n\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\x17.RegistryUpdateResponse\x12>\n\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x17.RegistryUpdateResponse\x12\x44\n\x15PostWorkerUtilization\x12\x12.WorkerUtilization\x1a\x17.RegistryUpdateResponse\x12H\n\x17PostExecutorUtilization\x12\x14.ExecutorUtilization\x1a\x17.RegistryUpdateResponseBHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eregistry.proto\"N\n\x0cWorkerStatus\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x12\n\nworker_uri\x18\x02 \x01(\t\x12\x17\n\x06status\x18\x03 \x01(\x0e\x32\x07.Status\"R\n\x0e\x45xecutorStatus\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x17\n\x06status\x18\x03 \x01(\x0e\x32\x07.Status\"p\n\x11WorkerUtilization\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x10\n\x08\x63pu_util\x18\x02 \x01(\x03\x12\x11\n\tcpu_total\x18\x03 \x01(\x03\x12\x10\n\x08gpu_util\x18\x04 \x01(\x03\x12\x11\n\tgpu_total\x18\x05 \x01(\x03\"\x88\x01\n\x13\x45xecutorUtilization\x12\x14\n\x0c\x63ontainer_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x10\n\x08\x63pu_util\x18\x03 \x01(\x03\x12\x11\n\tcpu_total\x18\x04 \x01(\x03\x12\x10\n\x08gpu_util\x18\x05 \x01(\x03\x12\x11\n\tgpu_total\x18\x06 \x01(\x03\")\n\x16RegistryUpdateResponse\x12\x0f\n\x07updated\x18\x01 \x01(\x08*e\n\x06Status\x12\x12\n\x0eSTATUS_UNKNOWN\x10\x00\x12\x10\n\x0cSTATUS_READY\x10\x01\x12\x0f\n\x0bSTATUS_BUSY\x10\x02\x12\x10\n\x0cSTATUS_ERROR\x10\x03\x12\x12\n\x0eSTATUS_REMOVED\x10\x04\x32\x9d\x02\n\x0fRegistryService\x12:\n\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\x17.RegistryUpdateResponse\x12>\n\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x17.RegistryUpdateResponse\x12\x44\n\x15PostWorkerUtilization\x12\x12.WorkerUtilization\x1a\x17.RegistryUpdateResponse\x12H\n\x17PostExecutorUtilization\x12\x14.ExecutorUtilization\x1a\x17.RegistryUpdateResponseBHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,7 +33,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
   _globals['_STATUS']._serialized_start=478
-  _globals['_STATUS']._serialized_end=544
+  _globals['_STATUS']._serialized_end=579
   _globals['_WORKERSTATUS']._serialized_start=18
   _globals['_WORKERSTATUS']._serialized_end=96
   _globals['_EXECUTORSTATUS']._serialized_start=98
@@ -44,6 +44,6 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_EXECUTORUTILIZATION']._serialized_end=433
   _globals['_REGISTRYUPDATERESPONSE']._serialized_start=435
   _globals['_REGISTRYUPDATERESPONSE']._serialized_end=476
-  _globals['_REGISTRYSERVICE']._serialized_start=547
-  _globals['_REGISTRYSERVICE']._serialized_end=832
+  _globals['_REGISTRYSERVICE']._serialized_start=582
+  _globals['_REGISTRYSERVICE']._serialized_end=867
 # @@protoc_insertion_point(module_scope)

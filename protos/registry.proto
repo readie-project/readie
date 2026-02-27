@@ -3,11 +3,11 @@ syntax = "proto3";
 option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
 
 enum Status {
-  UNKNOWN = 0;
-  READY   = 1;
-  BUSY    = 2;
-  ERROR   = 3;
-  REMOVED = 4;
+  STATUS_UNKNOWN = 0;
+  STATUS_READY   = 1;
+  STATUS_BUSY    = 2;
+  STATUS_ERROR   = 3;
+  STATUS_REMOVED = 4;
 }
 
 // Message used for posting worker status

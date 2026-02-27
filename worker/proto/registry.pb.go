@@ -24,28 +24,28 @@ const (
 type Status int32
 
 const (
-	Status_UNKNOWN Status = 0
-	Status_READY   Status = 1
-	Status_BUSY    Status = 2
-	Status_ERROR   Status = 3
-	Status_REMOVED Status = 4
+	Status_STATUS_UNKNOWN Status = 0
+	Status_STATUS_READY   Status = 1
+	Status_STATUS_BUSY    Status = 2
+	Status_STATUS_ERROR   Status = 3
+	Status_STATUS_REMOVED Status = 4
 )
 
 // Enum value maps for Status.
 var (
 	Status_name = map[int32]string{
-		0: "UNKNOWN",
-		1: "READY",
-		2: "BUSY",
-		3: "ERROR",
-		4: "REMOVED",
+		0: "STATUS_UNKNOWN",
+		1: "STATUS_READY",
+		2: "STATUS_BUSY",
+		3: "STATUS_ERROR",
+		4: "STATUS_REMOVED",
 	}
 	Status_value = map[string]int32{
-		"UNKNOWN": 0,
-		"READY":   1,
-		"BUSY":    2,
-		"ERROR":   3,
-		"REMOVED": 4,
+		"STATUS_UNKNOWN": 0,
+		"STATUS_READY":   1,
+		"STATUS_BUSY":    2,
+		"STATUS_ERROR":   3,
+		"STATUS_REMOVED": 4,
 	}
 )
 
@@ -134,7 +134,7 @@ func (x *WorkerStatus) GetStatus() Status {
 	if x != nil {
 		return x.Status
 	}
-	return Status_UNKNOWN
+	return Status_STATUS_UNKNOWN
 }
 
 // Message used for posting executor status
@@ -195,7 +195,7 @@ func (x *ExecutorStatus) GetStatus() Status {
 	if x != nil {
 		return x.Status
 	}
-	return Status_UNKNOWN
+	return Status_STATUS_UNKNOWN
 }
 
 // Message used for posting worker utilization
@@ -432,13 +432,13 @@ const file_registry_proto_rawDesc = "" +
 	"\bgpu_util\x18\x05 \x01(\x03R\agpuUtil\x12\x1b\n" +
 	"\tgpu_total\x18\x06 \x01(\x03R\bgpuTotal\"2\n" +
 	"\x16RegistryUpdateResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated*B\n" +
-	"\x06Status\x12\v\n" +
-	"\aUNKNOWN\x10\x00\x12\t\n" +
-	"\x05READY\x10\x01\x12\b\n" +
-	"\x04BUSY\x10\x02\x12\t\n" +
-	"\x05ERROR\x10\x03\x12\v\n" +
-	"\aREMOVED\x10\x042\x9d\x02\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated*e\n" +
+	"\x06Status\x12\x12\n" +
+	"\x0eSTATUS_UNKNOWN\x10\x00\x12\x10\n" +
+	"\fSTATUS_READY\x10\x01\x12\x0f\n" +
+	"\vSTATUS_BUSY\x10\x02\x12\x10\n" +
+	"\fSTATUS_ERROR\x10\x03\x12\x12\n" +
+	"\x0eSTATUS_REMOVED\x10\x042\x9d\x02\n" +
 	"\x0fRegistryService\x12:\n" +
 	"\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\x17.RegistryUpdateResponse\x12>\n" +
 	"\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x17.RegistryUpdateResponse\x12D\n" +

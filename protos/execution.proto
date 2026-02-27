@@ -2,14 +2,23 @@ syntax = "proto3";
 
 option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
 
+enum Action {
+  ACTION_UNKNOWN = 0;
+  ACTION_START   = 1;
+  ACTION_RESUME  = 2;
+  ACTION_RESTART = 3;
+}
+
 // Message used for code execution requests to workers
 message WorkerExecutionRequest {
   string          container_id         = 1;
-  bytes           payload              = 2;
-  optional int64  cpu_alloc            = 3;
-  optional int64  gpu_alloc            = 4;
-  repeated string required_resources   = 5;
-  repeated string additional_resources = 6;
+  string          checkpoint_id        = 2;
+  bytes           payload              = 3;
+  int64           cpu_alloc            = 4;
+  int64           gpu_alloc            = 5;
+  repeated string required_resources   = 6;
+  repeated string additional_resources = 7;
+  Action          action               = 8;
 }
 
 // Message used for code execution responses from workers
@@ -22,10 +31,9 @@ message WorkerExecutionResponse {
 
 // Message used for executor provisioning requests to workers
 message ExecutorProvisionRequest {
-  string          checkpoint_id = 1;
-  optional string container_id  = 2;
-  int64           cpu_alloc     = 3;
-  int64           gpu_alloc     = 4;
+  string checkpoint_id = 1;
+  int64  cpu_alloc     = 3;
+  int64  gpu_alloc     = 4;
 }
 
 // Message used for executor provisioning responses from workers

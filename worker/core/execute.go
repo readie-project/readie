@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log"
 	"worker/docker"
@@ -10,58 +9,59 @@ import (
 	"worker/socket"
 )
 
-func getCheckPointAndImageForExecution(request *pb.WorkerExecutionRequest) (string, string) {
-	return "", "test-agent"
-}
+func ExecuteCode(request *pb.WorkerExecutionRequest, stream pb.ExecutionService_RequestExecutionServer) error {
+	ctx := context.Background()
+	defer docker.PauseContainer(ctx, request.ContainerId)
 
-func PrepareExecutor(ctx context.Context, request *pb.WorkerExecutionRequest) (string, string) {
-	checkpointId, image := getCheckPointAndImageForExecution(request)
-	if request.ContainerId == nil {
-		containerId, containerName, _ := docker.StartContainer(ctx, &docker.ContainerConfig{
-			Image:        image,
-			CheckpointId: checkpointId,
-			CPU:          512 * 1024 * 1024, // 512MB
+	var err error = nil
+	switch request.Action {
+	case pb.Action_ACTION_RESTART:
+		err = docker.RestartContainer(ctx, request.ContainerId, &docker.ContainerConfig{
+			CheckpointId: request.CheckpointId,
+			ResourceAllocation: docker.ResourceAllocation{
+				CpuAlloc: request.CpuAlloc,
+				GpuAlloc: request.GpuAlloc,
+			},
 		})
-		request.ContainerId = &containerId
-		return *request.ContainerId, containerName
-	} else {
-		docker.ResumeContainer(ctx, *request.ContainerId)
-		return *request.ContainerId, *request.ContainerId
+	case pb.Action_ACTION_RESUME:
+		err = docker.ResumeContainer(ctx, request.ContainerId, &docker.ResourceAllocation{
+			CpuAlloc: request.CpuAlloc,
+			GpuAlloc: request.GpuAlloc,
+		})
+	default:
 	}
-}
 
-func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, containerName string, fileName string, stream pb.ExecutionService_RequestExecutionServer) error {
-	fmt.Printf("Started container with ID: %s\n", containerName)
-	// defer docker.StopContainer(ctx, *request.ContainerId)
-
-	conn := socket.GetSocketConnection(containerName)
-	defer socket.CloseSocketConnection(containerName)
-
-	fmt.Printf("Connected! Sending message..., %s\n", fileName)
-	n, err := conn.Write([]byte(fileName))
 	if err != nil {
-		fmt.Printf("Error writing to socket: %v\n", err)
+		log.Printf("Unable to execute code due to provision error: %v", err)
+		return err
+	}
+
+	conn, err := socket.GetSocketConnection(request.ContainerId)
+	defer socket.CloseSocketConnection(request.ContainerId)
+	if err != nil {
+		log.Printf("Error writing to socket: %v", err)
+		return err
+	}
+
+	n, err := conn.Write([]byte("request.pkl"))
+	if err != nil {
+		log.Printf("Error writing to socket: %v", err)
+		return err
 	}
 
 	for {
 		buf := make([]byte, 1024)
 		n, err = conn.Read(buf)
-		fmt.Printf("Python responded: %s\n", string(buf[:n]))
 
 		if err == io.EOF {
-			log.Println("Unix socket closed by Python. Moving on...")
-			// Don't return the error to gRPC unless this was mandatory
 			break
 		} else if err != nil {
-			log.Printf("Actual Socket Error: %v", err)
+			log.Printf("Error receiving from socket: %v", err)
 			return err
 		}
 
 		stream.Send(&pb.WorkerExecutionResponse{
-			RequestId:   request.RequestId,
-			SessionId:   request.SessionId,
-			WorkerId:    request.WorkerId,
-			ContainerId: "x",
+			ContainerId: request.ContainerId,
 			Success:     true,
 			Stdout:      string(buf[:n]),
 			Stderr:      "",
