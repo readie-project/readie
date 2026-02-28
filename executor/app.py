@@ -28,12 +28,22 @@ def create_socket_connection(socket_dir: str):
                 data = conn.recv(1024)
                 if data:
                     file_path = os.path.join(socket_dir, data.decode())
+                    response_file = "response.pkl"
+                    response_file_path = os.path.join(
+                        socket_dir, response_file)
                     if os.path.exists(file_path):
                         print(f"Python received: {data.decode()}", flush=True)
                         with open(file_path, 'rb') as f:
                             loaded_data = cloudpickle.load(f)
-                            conn.sendall(str(loaded_data['func'](
-                                *loaded_data['args'], **loaded_data['kwargs'])).encode())
+                            func_return = loaded_data['func'](
+                                *loaded_data['args'], **loaded_data['kwargs'])
+
+                            with open(response_file_path, "wb") as f:
+                                cloudpickle.dump(func_return, f)
+                            conn.sendall(response_file.encode())
+                    else:
+                        print("Could not execute code, missing request")
+                        conn.sendall("".encode())
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
     finally:
