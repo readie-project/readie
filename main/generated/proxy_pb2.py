@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bproxy.proto\"Q\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\x0c\"r\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x06stdout\x18\x04 \x01(\t\x12\x0e\n\x06stderr\x18\x05 \x01(\t2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bproxy.proto\"Q\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\x0c\"\x94\x01\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x06stdout\x18\x04 \x01(\t\x12\x0e\n\x06stderr\x18\x05 \x01(\t\x12\x14\n\x07payload\x18\x06 \x01(\x0cH\x00\x88\x01\x01\x42\n\n\x08_payload2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,8 +34,8 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
   _globals['_CLIENTEXECUTIONREQUEST']._serialized_start=15
   _globals['_CLIENTEXECUTIONREQUEST']._serialized_end=96
-  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_start=98
-  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_end=212
-  _globals['_PROXYSERVICE']._serialized_start=214
-  _globals['_PROXYSERVICE']._serialized_end=303
+  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_start=99
+  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_end=247
+  _globals['_PROXYSERVICE']._serialized_start=249
+  _globals['_PROXYSERVICE']._serialized_end=338
 # @@protoc_insertion_point(module_scope)

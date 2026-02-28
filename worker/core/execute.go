@@ -4,27 +4,38 @@ import (
 	"context"
 	"io"
 	"log"
-	"worker/docker"
+	"sync"
 	pb "worker/proto"
 	"worker/socket"
 )
 
-func ExecuteCode(request *pb.WorkerExecutionRequest, stream pb.ExecutionService_RequestExecutionServer) error {
-	ctx := context.Background()
-	defer docker.PauseContainer(ctx, request.ContainerId)
+const (
+	ContextIdentifierKey = "executionId"
+)
+
+type ExecutionIdentifier struct {
+	RequestId   string
+	SessionId   string
+	ContainerId string
+}
+
+func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream pb.ExecutionService_RequestExecutionServer) error {
+	defer PauseContainer(ctx)
+
+	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	var err error = nil
 	switch request.Action {
 	case pb.Action_ACTION_RESTART:
-		err = docker.RestartContainer(ctx, request.ContainerId, &docker.ContainerConfig{
+		err = RestartContainer(ctx, &ContainerConfig{
 			CheckpointId: request.CheckpointId,
-			ResourceAllocation: docker.ResourceAllocation{
+			ResourceAllocation: ResourceAllocation{
 				CpuAlloc: request.CpuAlloc,
 				GpuAlloc: request.GpuAlloc,
 			},
 		})
 	case pb.Action_ACTION_RESUME:
-		err = docker.ResumeContainer(ctx, request.ContainerId, &docker.ResourceAllocation{
+		err = ResumeContainer(ctx, &ResourceAllocation{
 			CpuAlloc: request.CpuAlloc,
 			GpuAlloc: request.GpuAlloc,
 		})
@@ -36,8 +47,8 @@ func ExecuteCode(request *pb.WorkerExecutionRequest, stream pb.ExecutionService_
 		return err
 	}
 
-	conn, err := socket.GetSocketConnection(request.ContainerId)
-	defer socket.CloseSocketConnection(request.ContainerId)
+	conn, err := socket.GetSocketConnection(executionIdentifier.ContainerId)
+	defer socket.CloseSocketConnection(executionIdentifier.ContainerId)
 	if err != nil {
 		log.Printf("Error writing to socket: %v", err)
 		return err
@@ -48,6 +59,37 @@ func ExecuteCode(request *pb.WorkerExecutionRequest, stream pb.ExecutionService_
 		log.Printf("Error writing to socket: %v", err)
 		return err
 	}
+
+	logs, err := GetContainerLogs(ctx)
+	if err != nil {
+		log.Printf("Error fetching container %s logs: %v", executionIdentifier.ContainerId, err)
+		return err
+	}
+	defer (*logs).Close()
+
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		for {
+			buf := make([]byte, 1024)
+			n, err = (*logs).Read(buf)
+
+			if err == io.EOF {
+				wg.Done()
+				break
+			} else if err != nil {
+				log.Printf("Error receiving from socket: %v", err)
+				wg.Done()
+			}
+
+			stream.Send(&pb.WorkerExecutionResponse{
+				ContainerId: request.ContainerId,
+				Success:     true,
+				Logs:        string(buf[:n]),
+				Payload:     nil,
+			})
+		}
+	})
 
 	for {
 		buf := make([]byte, 1024)
@@ -60,13 +102,17 @@ func ExecuteCode(request *pb.WorkerExecutionRequest, stream pb.ExecutionService_
 			return err
 		}
 
+		wg.Done()
+
 		stream.Send(&pb.WorkerExecutionResponse{
 			ContainerId: request.ContainerId,
 			Success:     true,
-			Stdout:      string(buf[:n]),
-			Stderr:      "",
+			Logs:        "",
+			Payload:     buf[:n],
 		})
 	}
+
+	wg.Wait()
 
 	return nil
 }

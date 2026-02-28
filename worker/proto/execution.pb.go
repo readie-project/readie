@@ -76,14 +76,16 @@ func (Action) EnumDescriptor() ([]byte, []int) {
 // Message used for code execution requests to workers
 type WorkerExecutionRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
-	ContainerId         string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	CheckpointId        string                 `protobuf:"bytes,2,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
-	Payload             []byte                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
-	CpuAlloc            int64                  `protobuf:"varint,4,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc            int64                  `protobuf:"varint,5,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
-	RequiredResources   []string               `protobuf:"bytes,6,rep,name=required_resources,json=requiredResources,proto3" json:"required_resources,omitempty"`
-	AdditionalResources []string               `protobuf:"bytes,7,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
-	Action              Action                 `protobuf:"varint,8,opt,name=action,proto3,enum=Action" json:"action,omitempty"`
+	RequestId           string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId           string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ContainerId         string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	CheckpointId        string                 `protobuf:"bytes,4,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	Payload             []byte                 `protobuf:"bytes,5,opt,name=payload,proto3" json:"payload,omitempty"`
+	CpuAlloc            int64                  `protobuf:"varint,6,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc            int64                  `protobuf:"varint,7,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	RequiredResources   []string               `protobuf:"bytes,8,rep,name=required_resources,json=requiredResources,proto3" json:"required_resources,omitempty"`
+	AdditionalResources []string               `protobuf:"bytes,9,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
+	Action              Action                 `protobuf:"varint,10,opt,name=action,proto3,enum=Action" json:"action,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -116,6 +118,20 @@ func (x *WorkerExecutionRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use WorkerExecutionRequest.ProtoReflect.Descriptor instead.
 func (*WorkerExecutionRequest) Descriptor() ([]byte, []int) {
 	return file_execution_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *WorkerExecutionRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *WorkerExecutionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 func (x *WorkerExecutionRequest) GetContainerId() string {
@@ -177,10 +193,12 @@ func (x *WorkerExecutionRequest) GetAction() Action {
 // Message used for code execution responses from workers
 type WorkerExecutionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
-	Stdout        string                 `protobuf:"bytes,3,opt,name=stdout,proto3" json:"stdout,omitempty"`
-	Stderr        string                 `protobuf:"bytes,4,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Success       bool                   `protobuf:"varint,4,opt,name=success,proto3" json:"success,omitempty"`
+	Logs          string                 `protobuf:"bytes,5,opt,name=logs,proto3" json:"logs,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,6,opt,name=payload,proto3,oneof" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -215,6 +233,20 @@ func (*WorkerExecutionResponse) Descriptor() ([]byte, []int) {
 	return file_execution_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *WorkerExecutionResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *WorkerExecutionResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
 func (x *WorkerExecutionResponse) GetContainerId() string {
 	if x != nil {
 		return x.ContainerId
@@ -229,26 +261,28 @@ func (x *WorkerExecutionResponse) GetSuccess() bool {
 	return false
 }
 
-func (x *WorkerExecutionResponse) GetStdout() string {
+func (x *WorkerExecutionResponse) GetLogs() string {
 	if x != nil {
-		return x.Stdout
+		return x.Logs
 	}
 	return ""
 }
 
-func (x *WorkerExecutionResponse) GetStderr() string {
+func (x *WorkerExecutionResponse) GetPayload() []byte {
 	if x != nil {
-		return x.Stderr
+		return x.Payload
 	}
-	return ""
+	return nil
 }
 
 // Message used for executor provisioning requests to workers
 type ExecutorProvisionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CheckpointId  string                 `protobuf:"bytes,1,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
-	CpuAlloc      int64                  `protobuf:"varint,3,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc      int64                  `protobuf:"varint,4,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	CheckpointId  string                 `protobuf:"bytes,3,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	CpuAlloc      int64                  `protobuf:"varint,4,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc      int64                  `protobuf:"varint,5,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -283,6 +317,20 @@ func (*ExecutorProvisionRequest) Descriptor() ([]byte, []int) {
 	return file_execution_proto_rawDescGZIP(), []int{2}
 }
 
+func (x *ExecutorProvisionRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ExecutorProvisionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
 func (x *ExecutorProvisionRequest) GetCheckpointId() string {
 	if x != nil {
 		return x.CheckpointId
@@ -307,9 +355,11 @@ func (x *ExecutorProvisionRequest) GetGpuAlloc() int64 {
 // Message used for executor provisioning responses from workers
 type ExecutorProvisionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	CpuAlloc      int64                  `protobuf:"varint,2,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc      int64                  `protobuf:"varint,3,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	CpuAlloc      int64                  `protobuf:"varint,4,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc      int64                  `protobuf:"varint,5,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -344,6 +394,20 @@ func (*ExecutorProvisionResponse) Descriptor() ([]byte, []int) {
 	return file_execution_proto_rawDescGZIP(), []int{3}
 }
 
+func (x *ExecutorProvisionResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ExecutorProvisionResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
 func (x *ExecutorProvisionResponse) GetContainerId() string {
 	if x != nil {
 		return x.ContainerId
@@ -369,29 +433,48 @@ var File_execution_proto protoreflect.FileDescriptor
 
 const file_execution_proto_rawDesc = "" +
 	"\n" +
-	"\x0fexecution.proto\"\xb7\x02\n" +
-	"\x16WorkerExecutionRequest\x12!\n" +
-	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12#\n" +
-	"\rcheckpoint_id\x18\x02 \x01(\tR\fcheckpointId\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\fR\apayload\x12\x1b\n" +
+	"\x0fexecution.proto\"\xf5\x02\n" +
+	"\x16WorkerExecutionRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12!\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12#\n" +
+	"\rcheckpoint_id\x18\x04 \x01(\tR\fcheckpointId\x12\x18\n" +
+	"\apayload\x18\x05 \x01(\fR\apayload\x12\x1b\n" +
+	"\tcpu_alloc\x18\x06 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
+	"\tgpu_alloc\x18\a \x01(\x03R\bgpuAlloc\x12-\n" +
+	"\x12required_resources\x18\b \x03(\tR\x11requiredResources\x121\n" +
+	"\x14additional_resources\x18\t \x03(\tR\x13additionalResources\x12\x1f\n" +
+	"\x06action\x18\n" +
+	" \x01(\x0e2\a.ActionR\x06action\"\xd3\x01\n" +
+	"\x17WorkerExecutionResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12!\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12\x18\n" +
+	"\asuccess\x18\x04 \x01(\bR\asuccess\x12\x12\n" +
+	"\x04logs\x18\x05 \x01(\tR\x04logs\x12\x1d\n" +
+	"\apayload\x18\x06 \x01(\fH\x00R\apayload\x88\x01\x01B\n" +
+	"\n" +
+	"\b_payload\"\xb7\x01\n" +
+	"\x18ExecutorProvisionRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12#\n" +
+	"\rcheckpoint_id\x18\x03 \x01(\tR\fcheckpointId\x12\x1b\n" +
 	"\tcpu_alloc\x18\x04 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x05 \x01(\x03R\bgpuAlloc\x12-\n" +
-	"\x12required_resources\x18\x06 \x03(\tR\x11requiredResources\x121\n" +
-	"\x14additional_resources\x18\a \x03(\tR\x13additionalResources\x12\x1f\n" +
-	"\x06action\x18\b \x01(\x0e2\a.ActionR\x06action\"\x86\x01\n" +
-	"\x17WorkerExecutionResponse\x12!\n" +
-	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
-	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x16\n" +
-	"\x06stdout\x18\x03 \x01(\tR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x04 \x01(\tR\x06stderr\"y\n" +
-	"\x18ExecutorProvisionRequest\x12#\n" +
-	"\rcheckpoint_id\x18\x01 \x01(\tR\fcheckpointId\x12\x1b\n" +
-	"\tcpu_alloc\x18\x03 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x04 \x01(\x03R\bgpuAlloc\"x\n" +
-	"\x19ExecutorProvisionResponse\x12!\n" +
-	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
-	"\tcpu_alloc\x18\x02 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x03 \x01(\x03R\bgpuAlloc*U\n" +
+	"\tgpu_alloc\x18\x05 \x01(\x03R\bgpuAlloc\"\xb6\x01\n" +
+	"\x19ExecutorProvisionResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12!\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12\x1b\n" +
+	"\tcpu_alloc\x18\x04 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
+	"\tgpu_alloc\x18\x05 \x01(\x03R\bgpuAlloc*U\n" +
 	"\x06Action\x12\x12\n" +
 	"\x0eACTION_UNKNOWN\x10\x00\x12\x10\n" +
 	"\fACTION_START\x10\x01\x12\x11\n" +
@@ -440,6 +523,7 @@ func file_execution_proto_init() {
 	if File_execution_proto != nil {
 		return
 	}
+	file_execution_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

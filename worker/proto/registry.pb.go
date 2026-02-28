@@ -25,27 +25,30 @@ type Status int32
 
 const (
 	Status_STATUS_UNKNOWN Status = 0
-	Status_STATUS_READY   Status = 1
-	Status_STATUS_BUSY    Status = 2
-	Status_STATUS_ERROR   Status = 3
-	Status_STATUS_REMOVED Status = 4
+	Status_STATUS_WAITING Status = 1
+	Status_STATUS_READY   Status = 2
+	Status_STATUS_BUSY    Status = 3
+	Status_STATUS_ERROR   Status = 4
+	Status_STATUS_REMOVED Status = 5
 )
 
 // Enum value maps for Status.
 var (
 	Status_name = map[int32]string{
 		0: "STATUS_UNKNOWN",
-		1: "STATUS_READY",
-		2: "STATUS_BUSY",
-		3: "STATUS_ERROR",
-		4: "STATUS_REMOVED",
+		1: "STATUS_WAITING",
+		2: "STATUS_READY",
+		3: "STATUS_BUSY",
+		4: "STATUS_ERROR",
+		5: "STATUS_REMOVED",
 	}
 	Status_value = map[string]int32{
 		"STATUS_UNKNOWN": 0,
-		"STATUS_READY":   1,
-		"STATUS_BUSY":    2,
-		"STATUS_ERROR":   3,
-		"STATUS_REMOVED": 4,
+		"STATUS_WAITING": 1,
+		"STATUS_READY":   2,
+		"STATUS_BUSY":    3,
+		"STATUS_ERROR":   4,
+		"STATUS_REMOVED": 5,
 	}
 )
 
@@ -142,7 +145,9 @@ type ExecutorStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	Status        Status                 `protobuf:"varint,3,opt,name=status,proto3,enum=Status" json:"status,omitempty"`
+	RequestId     string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Status        Status                 `protobuf:"varint,5,opt,name=status,proto3,enum=Status" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -187,6 +192,20 @@ func (x *ExecutorStatus) GetContainerId() string {
 func (x *ExecutorStatus) GetWorkerId() string {
 	if x != nil {
 		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *ExecutorStatus) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ExecutorStatus) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
 	}
 	return ""
 }
@@ -413,11 +432,15 @@ const file_registry_proto_rawDesc = "" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x1d\n" +
 	"\n" +
 	"worker_uri\x18\x02 \x01(\tR\tworkerUri\x12\x1f\n" +
-	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\"q\n" +
+	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\"\xaf\x01\n" +
 	"\x0eExecutorStatus\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
-	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x1f\n" +
-	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\"\xa0\x01\n" +
+	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x1f\n" +
+	"\x06status\x18\x05 \x01(\x0e2\a.StatusR\x06status\"\xa0\x01\n" +
 	"\x11WorkerUtilization\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x19\n" +
 	"\bcpu_util\x18\x02 \x01(\x03R\acpuUtil\x12\x1b\n" +
@@ -432,13 +455,14 @@ const file_registry_proto_rawDesc = "" +
 	"\bgpu_util\x18\x05 \x01(\x03R\agpuUtil\x12\x1b\n" +
 	"\tgpu_total\x18\x06 \x01(\x03R\bgpuTotal\"2\n" +
 	"\x16RegistryUpdateResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated*e\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated*y\n" +
 	"\x06Status\x12\x12\n" +
-	"\x0eSTATUS_UNKNOWN\x10\x00\x12\x10\n" +
-	"\fSTATUS_READY\x10\x01\x12\x0f\n" +
-	"\vSTATUS_BUSY\x10\x02\x12\x10\n" +
-	"\fSTATUS_ERROR\x10\x03\x12\x12\n" +
-	"\x0eSTATUS_REMOVED\x10\x042\x9d\x02\n" +
+	"\x0eSTATUS_UNKNOWN\x10\x00\x12\x12\n" +
+	"\x0eSTATUS_WAITING\x10\x01\x12\x10\n" +
+	"\fSTATUS_READY\x10\x02\x12\x0f\n" +
+	"\vSTATUS_BUSY\x10\x03\x12\x10\n" +
+	"\fSTATUS_ERROR\x10\x04\x12\x12\n" +
+	"\x0eSTATUS_REMOVED\x10\x052\x9d\x02\n" +
 	"\x0fRegistryService\x12:\n" +
 	"\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\x17.RegistryUpdateResponse\x12>\n" +
 	"\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x17.RegistryUpdateResponse\x12D\n" +

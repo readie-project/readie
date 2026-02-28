@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"worker/core"
-	"worker/docker"
 	pb "worker/proto"
+
+	"google.golang.org/grpc"
 )
 
 type server struct {
@@ -18,9 +19,15 @@ type server struct {
 
 func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.ExecutorProvisionResponse {
 	ctx := context.Background()
-	containerId, err := docker.CreateAndStartContainer(ctx, &docker.ContainerConfig{
+	ctx = context.WithValue(ctx, core.ContextIdentifierKey, &core.ExecutionIdentifier{
+		RequestId:   request.RequestId,
+		SessionId:   request.SessionId,
+		ContainerId: "",
+	})
+
+	containerId, err := core.CreateAndStartContainer(ctx, &core.ContainerConfig{
 		CheckpointId: request.CheckpointId,
-		ResourceAllocation: docker.ResourceAllocation{
+		ResourceAllocation: core.ResourceAllocation{
 			CpuAlloc: request.CpuAlloc,
 			GpuAlloc: request.GpuAlloc,
 		},
@@ -36,8 +43,15 @@ func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.Execu
 	}
 }
 
-func (s *server) RequestExecution(stream pb.ExecutionService_RequestExecutionServer) {
+func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecutionRequest, pb.WorkerExecutionResponse]) {
 	ichunk, err := stream.Recv()
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, core.ContextIdentifierKey, &core.ExecutionIdentifier{
+		RequestId:   ichunk.RequestId,
+		SessionId:   ichunk.SessionId,
+		ContainerId: ichunk.ContainerId,
+	})
 
 	if err == io.EOF {
 		log.Panicf("No data in request stream")
@@ -45,7 +59,7 @@ func (s *server) RequestExecution(stream pb.ExecutionService_RequestExecutionSer
 		log.Panicf("Error receiving chunk: %v", err)
 	}
 
-	dir := docker.GetContainerDir(ichunk.ContainerId)
+	dir := core.GetContainerDir(ichunk.ContainerId)
 
 	err = os.MkdirAll(dir, 0777)
 	if err != nil {
@@ -73,7 +87,7 @@ func (s *server) RequestExecution(stream pb.ExecutionService_RequestExecutionSer
 			log.Printf("Finished receiving request. Total size: %d bytes", fileSize)
 			file.Close()
 			if fileSize > 0 {
-				executeErr := core.ExecuteCode(ichunk, stream)
+				executeErr := core.ExecuteCode(ctx, ichunk, stream)
 				if executeErr != nil {
 					log.Panicf("Error during execution: %v", executeErr)
 				}

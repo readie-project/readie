@@ -11,11 +11,12 @@ message ClientExecutionRequest {
 
 // Message used for code execution responses to clients
 message ClientExecutionResponse {
-  string request_id = 1;
-  string session_id = 2;
-  bool   success    = 3;
-  string stdout     = 4;
-  string stderr     = 5;
+  string         request_id = 1;
+  string         session_id = 2;
+  bool           success    = 3;
+  string         stdout     = 4;
+  string         stderr     = 5;
+  optional bytes payload    = 6;
 }
 
 // Service on the main node to handle execution requests from external clients

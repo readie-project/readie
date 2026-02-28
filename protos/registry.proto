@@ -4,10 +4,11 @@ option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/w
 
 enum Status {
   STATUS_UNKNOWN = 0;
-  STATUS_READY   = 1;
-  STATUS_BUSY    = 2;
-  STATUS_ERROR   = 3;
-  STATUS_REMOVED = 4;
+  STATUS_WAITING = 1;
+  STATUS_READY   = 2;
+  STATUS_BUSY    = 3;
+  STATUS_ERROR   = 4;
+  STATUS_REMOVED = 5;
 }
 
 // Message used for posting worker status
@@ -21,7 +22,9 @@ message WorkerStatus {
 message ExecutorStatus {
   string container_id = 1;
   string worker_id    = 2;
-  Status status       = 3;
+  string request_id   = 3;
+  string session_id   = 4;
+  Status status       = 5;
 }
 
 // Message used for posting worker utilization

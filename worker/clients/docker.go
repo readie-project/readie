@@ -1,4 +1,4 @@
-package docker
+package clients
 
 import (
 	"log"
@@ -19,6 +19,11 @@ func InitializeDockerClient() {
 	dockerClient = apiClient
 }
 
-func getDockerClient() *client.Client {
+func CloseDockerClient() {
+	dockerClient.Close()
+	dockerClient = nil
+}
+
+func GetDockerClient() *client.Client {
 	return dockerClient
 }

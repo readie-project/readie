@@ -1,15 +1,15 @@
-package registry
+package core
 
 import (
 	"context"
 	"log"
+	"worker/clients"
 	"worker/config"
 	pb "worker/proto"
-	"worker/rpc"
 )
 
 func PostWorkerStatus(ctx context.Context, status pb.Status) bool {
-	registry := *rpc.GetRegistryClient()
+	registry := *clients.GetRegistryClient()
 
 	res, err := registry.PostWorkerStatus(ctx, &pb.WorkerStatus{
 		WorkerId:  config.WorkerId,
@@ -22,16 +22,19 @@ func PostWorkerStatus(ctx context.Context, status pb.Status) bool {
 	return (err != nil) && res.Updated
 }
 
-func PostContainerStatus(ctx context.Context, containerId string, status pb.Status) bool {
-	registry := *rpc.GetRegistryClient()
+func PostContainerStatus(ctx context.Context, status pb.Status) bool {
+	registry := *clients.GetRegistryClient()
+	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	res, err := registry.PostExecutorStatus(ctx, &pb.ExecutorStatus{
 		WorkerId:    config.WorkerId,
-		ContainerId: containerId,
+		RequestId:   executionIdentifier.RequestId,
+		SessionId:   executionIdentifier.SessionId,
+		ContainerId: executionIdentifier.ContainerId,
 		Status:      status,
 	})
 	if err != nil {
-		log.Printf("Could not update container %s~%s status to main node: %v", config.WorkerId, containerId, err)
+		log.Printf("Could not update container %s~%s status to main node: %v", config.WorkerId, executionIdentifier.ContainerId, err)
 	}
 	return (err != nil) && res.Updated
 }
@@ -44,7 +47,7 @@ type Utilization struct {
 }
 
 func PostWorkerUtilization(ctx context.Context, utilization Utilization) bool {
-	registry := *rpc.GetRegistryClient()
+	registry := *clients.GetRegistryClient()
 
 	res, err := registry.PostWorkerUtilization(ctx, &pb.WorkerUtilization{
 		WorkerId: config.WorkerId,
@@ -60,7 +63,7 @@ func PostWorkerUtilization(ctx context.Context, utilization Utilization) bool {
 }
 
 func PostContainerUtilization(ctx context.Context, containerId string, utilization Utilization) bool {
-	registry := *rpc.GetRegistryClient()
+	registry := *clients.GetRegistryClient()
 
 	res, err := registry.PostExecutorUtilization(ctx, &pb.ExecutorUtilization{
 		WorkerId:    config.WorkerId,

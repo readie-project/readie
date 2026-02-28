@@ -1,4 +1,4 @@
-package rpc
+package clients
 
 import (
 	"log"
@@ -13,7 +13,7 @@ var (
 	registryClient pb.RegistryServiceClient
 )
 
-func initalizeClient() *grpc.ClientConn {
+func InitalizeRPCClient() *grpc.ClientConn {
 	conn, err := grpc.NewClient(config.MainNodeUri, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to initialize gRPC client: %v", err)

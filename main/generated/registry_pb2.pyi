@@ -8,11 +8,13 @@ DESCRIPTOR: _descriptor.FileDescriptor
 class Status(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     STATUS_UNKNOWN: _ClassVar[Status]
+    STATUS_WAITING: _ClassVar[Status]
     STATUS_READY: _ClassVar[Status]
     STATUS_BUSY: _ClassVar[Status]
     STATUS_ERROR: _ClassVar[Status]
     STATUS_REMOVED: _ClassVar[Status]
 STATUS_UNKNOWN: Status
+STATUS_WAITING: Status
 STATUS_READY: Status
 STATUS_BUSY: Status
 STATUS_ERROR: Status
@@ -29,14 +31,18 @@ class WorkerStatus(_message.Message):
     def __init__(self, worker_id: _Optional[str] = ..., worker_uri: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ...) -> None: ...
 
 class ExecutorStatus(_message.Message):
-    __slots__ = ("container_id", "worker_id", "status")
+    __slots__ = ("container_id", "worker_id", "request_id", "session_id", "status")
     CONTAINER_ID_FIELD_NUMBER: _ClassVar[int]
     WORKER_ID_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     container_id: str
     worker_id: str
+    request_id: str
+    session_id: str
     status: Status
-    def __init__(self, container_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ...) -> None: ...
+    def __init__(self, container_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ...) -> None: ...
 
 class WorkerUtilization(_message.Message):
     __slots__ = ("worker_id", "cpu_util", "cpu_total", "gpu_util", "gpu_total")
