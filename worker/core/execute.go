@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	pb "worker/proto"
 	"worker/socket"
@@ -96,19 +98,40 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 		}
 	})
 
-	// TODO: Send saved file
+	var fileName string
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err == io.EOF {
+		fileName = ""
+		wg.Done()
+	} else if err != nil {
+		log.Printf("Error receiving from socket: %v", err)
+		return err
+	}
+	fileName = string(buf[:n])
+
+	wg.Wait()
+
+	if fileName == "" {
+		return nil
+	}
+
+	file, err := os.Open(filepath.Join(GetContainerDir(executionIdentifier.ContainerId), fileName))
+	if err != nil {
+		log.Printf("Error opening response file: %v", err)
+	}
+	defer file.Close()
+
+	chunkSize := 1024 * 1024 // 1MB chunks
 	for {
-		buf := make([]byte, 1024)
-		n, err := conn.Read(buf)
+		buf := make([]byte, chunkSize)
+		_, err := file.Read(buf)
 
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			log.Printf("Error receiving from socket: %v", err)
-			return err
+			log.Printf("Error reading response file: %v", err)
 		}
-
-		wg.Done()
 
 		stream.Send(&pb.WorkerExecutionResponse{
 			ContainerId: request.ContainerId,
@@ -117,8 +140,6 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 			Payload:     buf[:n],
 		})
 	}
-
-	wg.Wait()
 
 	return nil
 }
