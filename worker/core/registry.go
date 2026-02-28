@@ -62,19 +62,20 @@ func PostWorkerUtilization(ctx context.Context, utilization Utilization) bool {
 	return (err != nil) && res.Updated
 }
 
-func PostContainerUtilization(ctx context.Context, containerId string, utilization Utilization) bool {
+func PostContainerUtilization(ctx context.Context, utilization Utilization) bool {
 	registry := *clients.GetRegistryClient()
+	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	res, err := registry.PostExecutorUtilization(ctx, &pb.ExecutorUtilization{
 		WorkerId:    config.WorkerId,
-		ContainerId: containerId,
+		ContainerId: executionIdentifier.ContainerId,
 		CpuUtil:     utilization.CpuUtil,
 		CpuTotal:    utilization.CpuTotal,
 		GpuUtil:     utilization.GpuUtil,
 		GpuTotal:    utilization.GpuTotal,
 	})
 	if err != nil {
-		log.Printf("Could not update container %s~%s utilization to main node: %v", config.WorkerId, containerId, err)
+		log.Printf("Could not update container %s~%s utilization to main node: %v", config.WorkerId, executionIdentifier.ContainerId, err)
 	}
 	return (err != nil) && res.Updated
 }

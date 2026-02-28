@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -240,4 +242,40 @@ func GetContainerLogs(ctx context.Context) (*client.ContainerLogsResult, error) 
 	}
 
 	return &res, nil
+}
+
+func GetContainerResources(ctx context.Context) (*client.ContainerStatsResult, error) {
+	cli := clients.GetDockerClient()
+
+	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
+	stats, err := cli.ContainerStats(ctx, executionIdentifier.ContainerId, client.ContainerStatsOptions{
+		Stream: true,
+	})
+
+	if err != nil {
+		log.Printf("Failed to get container %s stats: %v", executionIdentifier.ContainerId, err)
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(stats.Body)
+
+	for {
+		var containerStats container.StatsResponse
+		if err := decoder.Decode(&containerStats); err != nil {
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				log.Printf("Error receiving container %s stats: %v", executionIdentifier.ContainerId, err)
+			}
+		}
+
+		PostContainerUtilization(ctx, Utilization{
+			CpuUtil:  int64(containerStats.MemoryStats.Usage),
+			CpuTotal: int64(containerStats.MemoryStats.Usage),
+			GpuUtil:  0,
+			GpuTotal: 0,
+		})
+	}
+
+	return &stats, nil
 }

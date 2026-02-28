@@ -22,6 +22,11 @@ type ExecutionIdentifier struct {
 func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream pb.ExecutionService_RequestExecutionServer) error {
 	defer PauseContainer(ctx)
 
+	stats, statsErr := GetContainerResources(ctx)
+	if statsErr == nil {
+		defer (*stats).Body.Close()
+	}
+
 	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	var err error = nil
@@ -54,7 +59,7 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 		return err
 	}
 
-	n, err := conn.Write([]byte("request.pkl"))
+	_, err = conn.Write([]byte("request.pkl"))
 	if err != nil {
 		log.Printf("Error writing to socket: %v", err)
 		return err
@@ -72,7 +77,7 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 	wg.Go(func() {
 		for {
 			buf := make([]byte, 1024)
-			n, err = (*logs).Read(buf)
+			n, err := (*logs).Read(buf)
 
 			if err == io.EOF {
 				wg.Done()
@@ -91,9 +96,10 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 		}
 	})
 
+	// TODO: Send saved file
 	for {
 		buf := make([]byte, 1024)
-		n, err = conn.Read(buf)
+		n, err := conn.Read(buf)
 
 		if err == io.EOF {
 			break
