@@ -192,13 +192,17 @@ func (x *WorkerExecutionRequest) GetAction() Action {
 
 // Message used for code execution responses from workers
 type WorkerExecutionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	Success       bool                   `protobuf:"varint,4,opt,name=success,proto3" json:"success,omitempty"`
-	Logs          string                 `protobuf:"bytes,5,opt,name=logs,proto3" json:"logs,omitempty"`
-	Payload       []byte                 `protobuf:"bytes,6,opt,name=payload,proto3,oneof" json:"payload,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	RequestId    string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId    string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ContainerId  string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	CheckpointId string                 `protobuf:"bytes,4,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	Success      bool                   `protobuf:"varint,5,opt,name=success,proto3" json:"success,omitempty"`
+	// Types that are valid to be assigned to Data:
+	//
+	//	*WorkerExecutionResponse_Logs
+	//	*WorkerExecutionResponse_Payload
+	Data          isWorkerExecutionResponse_Data `protobuf_oneof:"data"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -254,6 +258,13 @@ func (x *WorkerExecutionResponse) GetContainerId() string {
 	return ""
 }
 
+func (x *WorkerExecutionResponse) GetCheckpointId() string {
+	if x != nil {
+		return x.CheckpointId
+	}
+	return ""
+}
+
 func (x *WorkerExecutionResponse) GetSuccess() bool {
 	if x != nil {
 		return x.Success
@@ -261,19 +272,46 @@ func (x *WorkerExecutionResponse) GetSuccess() bool {
 	return false
 }
 
+func (x *WorkerExecutionResponse) GetData() isWorkerExecutionResponse_Data {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 func (x *WorkerExecutionResponse) GetLogs() string {
 	if x != nil {
-		return x.Logs
+		if x, ok := x.Data.(*WorkerExecutionResponse_Logs); ok {
+			return x.Logs
+		}
 	}
 	return ""
 }
 
 func (x *WorkerExecutionResponse) GetPayload() []byte {
 	if x != nil {
-		return x.Payload
+		if x, ok := x.Data.(*WorkerExecutionResponse_Payload); ok {
+			return x.Payload
+		}
 	}
 	return nil
 }
+
+type isWorkerExecutionResponse_Data interface {
+	isWorkerExecutionResponse_Data()
+}
+
+type WorkerExecutionResponse_Logs struct {
+	Logs string `protobuf:"bytes,6,opt,name=logs,proto3,oneof"`
+}
+
+type WorkerExecutionResponse_Payload struct {
+	Payload []byte `protobuf:"bytes,7,opt,name=payload,proto3,oneof"`
+}
+
+func (*WorkerExecutionResponse_Logs) isWorkerExecutionResponse_Data() {}
+
+func (*WorkerExecutionResponse_Payload) isWorkerExecutionResponse_Data() {}
 
 // Message used for executor provisioning requests to workers
 type ExecutorProvisionRequest struct {
@@ -358,8 +396,9 @@ type ExecutorProvisionResponse struct {
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	CpuAlloc      int64                  `protobuf:"varint,4,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc      int64                  `protobuf:"varint,5,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	CheckpointId  string                 `protobuf:"bytes,4,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	CpuAlloc      int64                  `protobuf:"varint,5,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc      int64                  `protobuf:"varint,6,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -415,6 +454,13 @@ func (x *ExecutorProvisionResponse) GetContainerId() string {
 	return ""
 }
 
+func (x *ExecutorProvisionResponse) GetCheckpointId() string {
+	if x != nil {
+		return x.CheckpointId
+	}
+	return ""
+}
+
 func (x *ExecutorProvisionResponse) GetCpuAlloc() int64 {
 	if x != nil {
 		return x.CpuAlloc
@@ -447,18 +493,18 @@ const file_execution_proto_rawDesc = "" +
 	"\x12required_resources\x18\b \x03(\tR\x11requiredResources\x121\n" +
 	"\x14additional_resources\x18\t \x03(\tR\x13additionalResources\x12\x1f\n" +
 	"\x06action\x18\n" +
-	" \x01(\x0e2\a.ActionR\x06action\"\xd3\x01\n" +
+	" \x01(\x0e2\a.ActionR\x06action\"\xf3\x01\n" +
 	"\x17WorkerExecutionResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12!\n" +
-	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12\x18\n" +
-	"\asuccess\x18\x04 \x01(\bR\asuccess\x12\x12\n" +
-	"\x04logs\x18\x05 \x01(\tR\x04logs\x12\x1d\n" +
-	"\apayload\x18\x06 \x01(\fH\x00R\apayload\x88\x01\x01B\n" +
-	"\n" +
-	"\b_payload\"\xb7\x01\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12#\n" +
+	"\rcheckpoint_id\x18\x04 \x01(\tR\fcheckpointId\x12\x18\n" +
+	"\asuccess\x18\x05 \x01(\bR\asuccess\x12\x14\n" +
+	"\x04logs\x18\x06 \x01(\tH\x00R\x04logs\x12\x1a\n" +
+	"\apayload\x18\a \x01(\fH\x00R\apayloadB\x06\n" +
+	"\x04data\"\xb7\x01\n" +
 	"\x18ExecutorProvisionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -466,15 +512,16 @@ const file_execution_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12#\n" +
 	"\rcheckpoint_id\x18\x03 \x01(\tR\fcheckpointId\x12\x1b\n" +
 	"\tcpu_alloc\x18\x04 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x05 \x01(\x03R\bgpuAlloc\"\xb6\x01\n" +
+	"\tgpu_alloc\x18\x05 \x01(\x03R\bgpuAlloc\"\xdb\x01\n" +
 	"\x19ExecutorProvisionResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12!\n" +
-	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12\x1b\n" +
-	"\tcpu_alloc\x18\x04 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\x05 \x01(\x03R\bgpuAlloc*U\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12#\n" +
+	"\rcheckpoint_id\x18\x04 \x01(\tR\fcheckpointId\x12\x1b\n" +
+	"\tcpu_alloc\x18\x05 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
+	"\tgpu_alloc\x18\x06 \x01(\x03R\bgpuAlloc*U\n" +
 	"\x06Action\x12\x12\n" +
 	"\x0eACTION_UNKNOWN\x10\x00\x12\x10\n" +
 	"\fACTION_START\x10\x01\x12\x11\n" +
@@ -523,7 +570,10 @@ func file_execution_proto_init() {
 	if File_execution_proto != nil {
 		return
 	}
-	file_execution_proto_msgTypes[1].OneofWrappers = []any{}
+	file_execution_proto_msgTypes[1].OneofWrappers = []any{
+		(*WorkerExecutionResponse_Logs)(nil),
+		(*WorkerExecutionResponse_Payload)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

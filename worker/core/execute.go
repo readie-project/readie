@@ -32,9 +32,10 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	var err error = nil
+	var checkpointId = request.CheckpointId
 	switch request.Action {
 	case pb.Action_ACTION_RESTART:
-		err = RestartContainer(ctx, &ContainerConfig{
+		checkpointId, err = RestartContainer(ctx, &ContainerConfig{
 			CheckpointId: request.CheckpointId,
 			ResourceAllocation: ResourceAllocation{
 				CpuAlloc: request.CpuAlloc,
@@ -53,6 +54,8 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 		log.Printf("Unable to execute code due to provision error: %v", err)
 		return err
 	}
+
+	PostWorkerStatus(ctx, pb.Status_STATUS_BUSY)
 
 	conn, err := socket.GetSocketConnection(executionIdentifier.ContainerId)
 	defer socket.CloseSocketConnection(executionIdentifier.ContainerId)
@@ -90,10 +93,12 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 			}
 
 			stream.Send(&pb.WorkerExecutionResponse{
-				ContainerId: request.ContainerId,
-				Success:     true,
-				Logs:        string(buf[:n]),
-				Payload:     nil,
+				ContainerId:  request.ContainerId,
+				CheckpointId: checkpointId,
+				Success:      true,
+				Data: &pb.WorkerExecutionResponse_Logs{
+					Logs: string(buf[:n]),
+				},
 			})
 		}
 	})
@@ -134,10 +139,12 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 		}
 
 		stream.Send(&pb.WorkerExecutionResponse{
-			ContainerId: request.ContainerId,
-			Success:     true,
-			Logs:        "",
-			Payload:     buf[:n],
+			ContainerId:  request.ContainerId,
+			CheckpointId: checkpointId,
+			Success:      true,
+			Data: &pb.WorkerExecutionResponse_Payload{
+				Payload: buf[:n],
+			},
 		})
 	}
 

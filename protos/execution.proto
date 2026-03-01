@@ -28,9 +28,12 @@ message WorkerExecutionResponse {
   string         request_id   = 1;
   string         session_id   = 2;
   string         container_id = 3;
-  bool           success      = 4;
-  string         logs         = 5;
-  optional bytes payload      = 6;
+  string checkpoint_id        = 4;
+  bool           success      = 5;
+  oneof data {
+    string  logs         = 6;
+    bytes   payload      = 7; 
+  }
 }
 
 // Message used for executor provisioning requests to workers
@@ -47,8 +50,9 @@ message ExecutorProvisionResponse {
   string request_id   = 1;
   string session_id   = 2;
   string container_id = 3;
-  int64  cpu_alloc    = 4;
-  int64  gpu_alloc    = 5;
+  string checkpoint_id = 4;
+  int64  cpu_alloc    = 5;
+  int64  gpu_alloc    = 6;
 }
 
 // Service on the worker nodes to handle execution requests

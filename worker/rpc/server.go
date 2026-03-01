@@ -25,7 +25,7 @@ func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.Execu
 		ContainerId: "",
 	})
 
-	containerId, err := core.CreateAndStartContainer(ctx, &core.ContainerConfig{
+	containerId, checkpointId, err := core.CreateAndStartContainer(ctx, &core.ContainerConfig{
 		CheckpointId: request.CheckpointId,
 		ResourceAllocation: core.ResourceAllocation{
 			CpuAlloc: request.CpuAlloc,
@@ -38,6 +38,7 @@ func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.Execu
 	}
 	return pb.ExecutorProvisionResponse{
 		ContainerId: containerId,
+		CheckpointId: checkpointId,
 		CpuAlloc:    request.CpuAlloc,
 		GpuAlloc:    request.GpuAlloc,
 	}

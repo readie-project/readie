@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x65xecution.proto\"\xf7\x01\n\x16WorkerExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x03 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x04 \x01(\t\x12\x0f\n\x07payload\x18\x05 \x01(\x0c\x12\x11\n\tcpu_alloc\x18\x06 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x07 \x01(\x03\x12\x1a\n\x12required_resources\x18\x08 \x03(\t\x12\x1c\n\x14\x61\x64\x64itional_resources\x18\t \x03(\t\x12\x17\n\x06\x61\x63tion\x18\n \x01(\x0e\x32\x07.Action\"\x98\x01\n\x17WorkerExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x03 \x01(\t\x12\x0f\n\x07success\x18\x04 \x01(\x08\x12\x0c\n\x04logs\x18\x05 \x01(\t\x12\x14\n\x07payload\x18\x06 \x01(\x0cH\x00\x88\x01\x01\x42\n\n\x08_payload\"\x7f\n\x18\x45xecutorProvisionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x03 \x01(\t\x12\x11\n\tcpu_alloc\x18\x04 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x05 \x01(\x03\"\x7f\n\x19\x45xecutorProvisionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x03 \x01(\t\x12\x11\n\tcpu_alloc\x18\x04 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x05 \x01(\x03*U\n\x06\x41\x63tion\x12\x12\n\x0e\x41\x43TION_UNKNOWN\x10\x00\x12\x10\n\x0c\x41\x43TION_START\x10\x01\x12\x11\n\rACTION_RESUME\x10\x02\x12\x12\n\x0e\x41\x43TION_RESTART\x10\x03\x32\xa8\x01\n\x10\x45xecutionService\x12I\n\x10RequestProvision\x12\x19.ExecutorProvisionRequest\x1a\x1a.ExecutorProvisionResponse\x12I\n\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x65xecution.proto\"\xf7\x01\n\x16WorkerExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x03 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x04 \x01(\t\x12\x0f\n\x07payload\x18\x05 \x01(\x0c\x12\x11\n\tcpu_alloc\x18\x06 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x07 \x01(\x03\x12\x1a\n\x12required_resources\x18\x08 \x03(\t\x12\x1c\n\x14\x61\x64\x64itional_resources\x18\t \x03(\t\x12\x17\n\x06\x61\x63tion\x18\n \x01(\x0e\x32\x07.Action\"\xaa\x01\n\x17WorkerExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x03 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x04 \x01(\t\x12\x0f\n\x07success\x18\x05 \x01(\x08\x12\x0e\n\x04logs\x18\x06 \x01(\tH\x00\x12\x11\n\x07payload\x18\x07 \x01(\x0cH\x00\x42\x06\n\x04\x64\x61ta\"\x7f\n\x18\x45xecutorProvisionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x03 \x01(\t\x12\x11\n\tcpu_alloc\x18\x04 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x05 \x01(\x03\"\x96\x01\n\x19\x45xecutorProvisionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x03 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x04 \x01(\t\x12\x11\n\tcpu_alloc\x18\x05 \x01(\x03\x12\x11\n\tgpu_alloc\x18\x06 \x01(\x03*U\n\x06\x41\x63tion\x12\x12\n\x0e\x41\x43TION_UNKNOWN\x10\x00\x12\x10\n\x0c\x41\x43TION_START\x10\x01\x12\x11\n\rACTION_RESUME\x10\x02\x12\x12\n\x0e\x41\x43TION_RESTART\x10\x03\x32\xa8\x01\n\x10\x45xecutionService\x12I\n\x10RequestProvision\x12\x19.ExecutorProvisionRequest\x1a\x1a.ExecutorProvisionResponse\x12I\n\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,16 +32,16 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'execution_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
-  _globals['_ACTION']._serialized_start=682
-  _globals['_ACTION']._serialized_end=767
+  _globals['_ACTION']._serialized_start=724
+  _globals['_ACTION']._serialized_end=809
   _globals['_WORKEREXECUTIONREQUEST']._serialized_start=20
   _globals['_WORKEREXECUTIONREQUEST']._serialized_end=267
   _globals['_WORKEREXECUTIONRESPONSE']._serialized_start=270
-  _globals['_WORKEREXECUTIONRESPONSE']._serialized_end=422
-  _globals['_EXECUTORPROVISIONREQUEST']._serialized_start=424
-  _globals['_EXECUTORPROVISIONREQUEST']._serialized_end=551
-  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_start=553
-  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_end=680
-  _globals['_EXECUTIONSERVICE']._serialized_start=770
-  _globals['_EXECUTIONSERVICE']._serialized_end=938
+  _globals['_WORKEREXECUTIONRESPONSE']._serialized_end=440
+  _globals['_EXECUTORPROVISIONREQUEST']._serialized_start=442
+  _globals['_EXECUTORPROVISIONREQUEST']._serialized_end=569
+  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_start=572
+  _globals['_EXECUTORPROVISIONRESPONSE']._serialized_end=722
+  _globals['_EXECUTIONSERVICE']._serialized_start=812
+  _globals['_EXECUTIONSERVICE']._serialized_end=980
 # @@protoc_insertion_point(module_scope)

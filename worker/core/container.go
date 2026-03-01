@@ -34,7 +34,7 @@ func GetContainerDir(containerId string) string {
 	return filepath.Join(config.WorkerDir, containerId)
 }
 
-func startContainer(ctx context.Context, checkpointId string) error {
+func startContainer(ctx context.Context, checkpointId string) (string, error) {
 	cli := clients.GetDockerClient()
 	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 	containerId := executionIdentifier.ContainerId
@@ -45,9 +45,9 @@ func startContainer(ctx context.Context, checkpointId string) error {
 
 		if startErr != nil {
 			log.Printf("Failed to start standard docker container %s: %v", containerId, startErr)
-			return startErr
+			return "", startErr
 		}
-		return nil
+		return "", nil
 	} else {
 		// Start a container with checkpoint
 		_, startErr := cli.ContainerStart(ctx, containerId, client.ContainerStartOptions{
@@ -61,10 +61,11 @@ func startContainer(ctx context.Context, checkpointId string) error {
 			_, startErr = cli.ContainerStart(ctx, containerId, client.ContainerStartOptions{})
 			if startErr != nil {
 				log.Printf("Failed to start standard docker container %s: %v", containerId, startErr)
-				return startErr
+				return "", startErr
 			}
+			return "", nil
 		}
-		return nil
+		return checkpointId, nil
 	}
 }
 
@@ -97,7 +98,7 @@ func updateContainerResources(ctx context.Context, resourceAllocation *ResourceA
 	return nil
 }
 
-func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConfig) (string, error) {
+func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConfig) (string, string, error) {
 	cli := clients.GetDockerClient()
 	containerId := generateRandomContainerName()
 	containerDir := GetContainerDir(containerId)
@@ -105,7 +106,7 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 	err := os.RemoveAll(containerDir)
 	err = os.MkdirAll(containerDir, 0777)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	_, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -125,7 +126,7 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 	})
 	if createErr != nil {
 		log.Printf("Failed to create docker container: %v", err)
-		return "", createErr
+		return "", "", createErr
 	}
 	log.Printf("Docker container %s created", containerId)
 
@@ -136,23 +137,23 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 		ContainerId: containerId,
 	})
 
-	startErr := startContainer(ctx, containerConfig.CheckpointId)
+	checkpointId, startErr := startContainer(ctx, containerConfig.CheckpointId)
 	if startErr != nil {
-		return "", startErr
+		return "", "", startErr
 	}
 
 	PostWorkerStatus(ctx, pb.Status_STATUS_WAITING)
-	return containerId, nil
+	return containerId, checkpointId, nil
 }
 
-func RestartContainer(ctx context.Context, containerConfig *ContainerConfig) error {
+func RestartContainer(ctx context.Context, containerConfig *ContainerConfig) (string, error) {
 	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	stopContainer(ctx)
-	err := startContainer(ctx, containerConfig.CheckpointId)
+	checkpointId, err := startContainer(ctx, containerConfig.CheckpointId)
 	if err != nil {
 		log.Printf("Failed to restart container %s: %v", executionIdentifier.ContainerId, err)
-		return err
+		return "", err
 	}
 
 	err = updateContainerResources(ctx, &ResourceAllocation{
@@ -160,11 +161,11 @@ func RestartContainer(ctx context.Context, containerConfig *ContainerConfig) err
 		GpuAlloc: containerConfig.ResourceAllocation.GpuAlloc,
 	})
 	if err != nil {
-		return err
+		return checkpointId, err
 	}
 
 	PostWorkerStatus(ctx, pb.Status_STATUS_WAITING)
-	return nil
+	return checkpointId, nil
 }
 
 func PauseContainer(ctx context.Context) error {
@@ -178,7 +179,7 @@ func PauseContainer(ctx context.Context) error {
 		return err
 	}
 
-	PostWorkerStatus(ctx, pb.Status_STATUS_WAITING)
+	PostWorkerStatus(ctx, pb.Status_STATUS_READY)
 	return nil
 }
 
@@ -199,7 +200,7 @@ func ResumeContainer(ctx context.Context, resourceAllocation *ResourceAllocation
 		return err
 	}
 
-	PostWorkerStatus(ctx, pb.Status_STATUS_READY)
+	PostWorkerStatus(ctx, pb.Status_STATUS_WAITING)
 	return nil
 }
 

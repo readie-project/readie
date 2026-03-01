@@ -4,9 +4,10 @@ option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/w
 
 // Message used for code execution requests from clients
 message ClientExecutionRequest {
-  string request_id = 1;
-  string session_id = 2;
-  bytes  payload    = 3;
+  string          request_id           = 1;
+  string          session_id           = 2;
+  bytes           payload              = 3;
+  repeated string required_resources   = 4;
 }
 
 // Message used for code execution responses to clients
@@ -14,9 +15,10 @@ message ClientExecutionResponse {
   string         request_id = 1;
   string         session_id = 2;
   bool           success    = 3;
-  string         stdout     = 4;
-  string         stderr     = 5;
-  optional bytes payload    = 6;
+  oneof data {
+      string  logs         = 4;
+      bytes   payload      = 5; 
+    }
 }
 
 // Service on the main node to handle execution requests from external clients
