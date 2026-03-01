@@ -5,11 +5,11 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
+	"sync"
 	"worker/config"
 	"worker/core"
 	pb "worker/proto"
+	"worker/socket"
 
 	"google.golang.org/grpc"
 )
@@ -37,6 +37,7 @@ func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.Execu
 	if err != nil {
 		log.Panicf("Failed to provision container: %v", err)
 	}
+
 	return pb.ExecutorProvisionResponse{
 		WorkerId:     config.WorkerId,
 		ContainerId:  containerId,
@@ -62,48 +63,118 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		log.Panicf("Error receiving chunk: %v", err)
 	}
 
-	dir := core.GetContainerDir(ichunk.ContainerId)
+	defer core.PauseContainer(ctx)
 
-	err = os.MkdirAll(dir, 0777)
-	if err != nil {
-		log.Panicf("Could not create directory %s for request: %v", dir, err)
+	core.PostWorkerStatus(ctx, pb.Status_STATUS_BUSY)
+
+	stats, statsErr := core.GetContainerResources(ctx)
+	if statsErr == nil {
+		defer (*stats).Body.Close()
 	}
 
-	filePath := filepath.Join(dir, "request.pkl")
-	file, err := os.Create(filePath)
-	if err != nil {
-		log.Panicf("Could not create request file at %s for request: %v", filePath, err)
+	var checkpointId = ichunk.CheckpointId
+	switch ichunk.Action {
+	case pb.Action_ACTION_RESTART:
+		checkpointId, err = core.RestartContainer(ctx, &core.ContainerConfig{
+			CheckpointId: ichunk.CheckpointId,
+			ResourceAllocation: core.ResourceAllocation{
+				CpuAlloc: ichunk.CpuAlloc,
+				GpuAlloc: ichunk.GpuAlloc,
+			},
+		})
+	case pb.Action_ACTION_RESUME:
+		err = core.ResumeContainer(ctx, &core.ResourceAllocation{
+			CpuAlloc: ichunk.CpuAlloc,
+			GpuAlloc: ichunk.GpuAlloc,
+		})
+	default:
 	}
-	log.Printf("Created request file at %s", filePath)
 
-	var fileSize int
-	n, err := file.Write(ichunk.Payload)
 	if err != nil {
-		log.Panicf("Error writing chunk to request file %s: %v", filePath, err)
+		log.Panicf("Unable to execute code due to provision error: %v", err)
 	}
-	fileSize += n
+
+	conn, err := socket.GetSocketConnection(ichunk.ContainerId)
+	defer socket.CloseSocketConnection(ichunk.ContainerId)
+	if err != nil {
+		log.Panicf("Error connecting to socket: %v", err)
+	}
 
 	for {
 		chunk, err := stream.Recv()
 
 		if err == io.EOF {
-			log.Printf("Finished receiving request. Total size: %d bytes", fileSize)
-			file.Close()
-			if fileSize > 0 {
-				executeErr := core.ExecuteCode(ctx, ichunk, stream)
-				if executeErr != nil {
-					log.Panicf("Error during execution: %v", executeErr)
-				}
-			}
+			log.Printf("Finished receiving request")
 			break
 		} else if err != nil {
 			log.Panicf("Error receiving chunk: %v", err)
 		}
 
-		n, err := file.Write(chunk.Payload)
+		_, err = conn.Write(chunk.Payload)
 		if err != nil {
-			log.Panicf("Error writing chunk to request file %s: %v", filePath, err)
+			log.Panicf("Error writing to socket: %v", err)
 		}
-		fileSize += n
 	}
+
+	logs, err := core.GetContainerLogs(ctx)
+	if err != nil {
+		log.Printf("Error fetching container %s logs: %v", ichunk.ContainerId, err)
+	}
+	defer (*logs).Close()
+
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		for {
+			buf := make([]byte, config.ChunkSize)
+			n, err := (*logs).Read(buf)
+
+			if err == io.EOF {
+				wg.Done()
+				break
+			} else if err != nil {
+				log.Printf("Error receiving from socket: %v", err)
+				wg.Done()
+			}
+
+			stream.Send(&pb.WorkerExecutionResponse{
+				WorkerId:     config.WorkerId,
+				ContainerId:  ichunk.ContainerId,
+				CheckpointId: checkpointId,
+				CpuAlloc:     ichunk.CpuAlloc,
+				GpuAlloc:     ichunk.GpuAlloc,
+				Success:      true,
+				Data: &pb.WorkerExecutionResponse_Logs{
+					Logs: string(buf[:n]),
+				},
+			})
+		}
+	})
+
+	for {
+		buf := make([]byte, config.ChunkSize)
+		n, err := conn.Read(buf)
+
+		if err == io.EOF {
+			wg.Done()
+			break
+		} else if err != nil {
+			log.Panicf("Error reading response data: %v", err)
+		}
+
+		stream.Send(&pb.WorkerExecutionResponse{
+			WorkerId:     config.WorkerId,
+			ContainerId:  ichunk.ContainerId,
+			CheckpointId: checkpointId,
+			CpuAlloc:     ichunk.CpuAlloc,
+			GpuAlloc:     ichunk.GpuAlloc,
+			Success:      true,
+			Data: &pb.WorkerExecutionResponse_Payload{
+				Payload: buf[:n],
+			},
+		})
+	}
+
+	wg.Wait()
+
 }

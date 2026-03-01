@@ -1,33 +1,35 @@
 import socket
 import os
+import io
 import sys
 import cloudpickle
 
+CHUNK_SIZE = 1024 * 1024
 
 def process_execution_request(server: socket):
     try:
         conn, addr = server.accept()
         with conn:
             print("Connection established with Go client.", flush=True)
-            data = conn.recv(1024)
-            if data:
-                file_path = os.path.join(socket_dir, data.decode())
-                response_file = "response.pkl"
-                response_file_path = os.path.join(
-                    socket_dir, response_file)
-                if os.path.exists(file_path):
-                    print(f"Python received: {data.decode()}", flush=True)
-                    with open(file_path, 'rb') as f:
-                        loaded_data = cloudpickle.load(f)
-                        func_return = loaded_data['func'](
-                            *loaded_data['args'], **loaded_data['kwargs'])
-
-                        with open(response_file_path, "wb") as f:
-                            cloudpickle.dump(func_return, f)
-                        conn.sendall(response_file.encode())
+            pickled_bytes: bytearray = []
+            while True:
+                data = conn.recv(CHUNK_SIZE)
+                if data:
+                    pickled_bytes.append(data)
                 else:
-                    print("Could not execute code, missing request")
-                    conn.sendall("".encode())
+                    break
+            
+            loaded_data = cloudpickle.loads(pickled_bytes)
+            func_return = loaded_data['func'](
+                *loaded_data['args'], **loaded_data['kwargs'])
+            
+            buffer = io.BytesIO(cloudpickle.dumps(func_return))
+            while True:
+                piece = buffer.read(CHUNK_SIZE)
+                if not piece:
+                    buffer.close()
+                    break
+                conn.sendall(piece)
     except Exception as e:
         print(f"Error in executing request: {e}", file=sys.stderr)
 

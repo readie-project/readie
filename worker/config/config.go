@@ -2,6 +2,10 @@ package config
 
 import "os"
 
+const (
+	ChunkSize = 1024 * 1024
+)
+
 var (
 	WorkerId      string
 	WorkerDir     string

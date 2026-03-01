@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+CHUNK_SIZE = 1024 * 1024
 
 class Executor:
     session_id: str
@@ -21,7 +22,6 @@ class Executor:
         self.session_id = "session-id"
 
     def get_request_iterator(self, request_id: str, pickled_bytes: bytes):
-        CHUNK_SIZE = 1024 * 1024
         buffer = io.BytesIO(pickled_bytes)
         while True:
             piece = buffer.read(CHUNK_SIZE)

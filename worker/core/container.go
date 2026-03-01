@@ -16,6 +16,16 @@ import (
 	"github.com/moby/moby/client"
 )
 
+const (
+	ContextIdentifierKey = "executionId"
+)
+
+type ExecutionIdentifier struct {
+	RequestId   string
+	SessionId   string
+	ContainerId string
+}
+
 type ResourceAllocation struct {
 	CpuAlloc int64
 	GpuAlloc int64
