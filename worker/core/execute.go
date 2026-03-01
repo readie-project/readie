@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"worker/config"
 	pb "worker/proto"
 	"worker/socket"
 )
@@ -93,8 +94,11 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 			}
 
 			stream.Send(&pb.WorkerExecutionResponse{
+				WorkerId:     config.WorkerId,
 				ContainerId:  request.ContainerId,
 				CheckpointId: checkpointId,
+				CpuAlloc:     request.CpuAlloc,
+				GpuAlloc:     request.GpuAlloc,
 				Success:      true,
 				Data: &pb.WorkerExecutionResponse_Logs{
 					Logs: string(buf[:n]),
@@ -139,8 +143,11 @@ func ExecuteCode(ctx context.Context, request *pb.WorkerExecutionRequest, stream
 		}
 
 		stream.Send(&pb.WorkerExecutionResponse{
+			WorkerId:     config.WorkerId,
 			ContainerId:  request.ContainerId,
 			CheckpointId: checkpointId,
+			CpuAlloc:     request.CpuAlloc,
+			GpuAlloc:     request.GpuAlloc,
 			Success:      true,
 			Data: &pb.WorkerExecutionResponse_Payload{
 				Payload: buf[:n],

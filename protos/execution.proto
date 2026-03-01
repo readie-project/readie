@@ -13,26 +13,30 @@ enum Action {
 message WorkerExecutionRequest {
   string          request_id           = 1;
   string          session_id           = 2;
-  string          container_id         = 3;
-  string          checkpoint_id        = 4;
-  bytes           payload              = 5;
-  int64           cpu_alloc            = 6;
-  int64           gpu_alloc            = 7;
-  repeated string required_resources   = 8;
-  repeated string additional_resources = 9;
-  Action          action               = 10;
+  string          worker_id            = 3;
+  string          container_id         = 4;
+  string          checkpoint_id        = 5;
+  bytes           payload              = 6;
+  int64           cpu_alloc            = 7;
+  int64           gpu_alloc            = 8;
+  repeated string required_resources   = 9;
+  repeated string additional_resources = 10;
+  Action          action               = 11;
 }
 
 // Message used for code execution responses from workers
 message WorkerExecutionResponse {
-  string         request_id   = 1;
-  string         session_id   = 2;
-  string         container_id = 3;
-  string checkpoint_id        = 4;
-  bool           success      = 5;
+  string         request_id     = 1;
+  string         session_id     = 2;
+  string         worker_id      = 3;
+  string         container_id   = 4;
+  string         checkpoint_id  = 5;
+  int64          cpu_alloc      = 6;
+  int64          gpu_alloc      = 7;
+  bool           success        = 8;
   oneof data {
-    string  logs         = 6;
-    bytes   payload      = 7; 
+    string  logs         = 9;
+    bytes   payload      = 10; 
   }
 }
 
@@ -40,19 +44,21 @@ message WorkerExecutionResponse {
 message ExecutorProvisionRequest {
   string request_id    = 1;
   string session_id    = 2;
-  string checkpoint_id = 3;
-  int64  cpu_alloc     = 4;
-  int64  gpu_alloc     = 5;
+  string worker_id     = 3;
+  string checkpoint_id = 4;
+  int64  cpu_alloc     = 5;
+  int64  gpu_alloc     = 6;
 }
 
 // Message used for executor provisioning responses from workers
 message ExecutorProvisionResponse {
   string request_id   = 1;
   string session_id   = 2;
-  string container_id = 3;
-  string checkpoint_id = 4;
-  int64  cpu_alloc    = 5;
-  int64  gpu_alloc    = 6;
+  string worker_id    = 3;
+  string container_id = 4;
+  string checkpoint_id = 5;
+  int64  cpu_alloc    = 6;
+  int64  gpu_alloc    = 7;
 }
 
 // Service on the worker nodes to handle execution requests

@@ -27,8 +27,13 @@ class ProxyService(proxy_pb2_grpc.ProxyService):
                 transformed_request_iterator)
             print("Sent execution request to worker")
 
+            updated_registry = False
             async for response in stream:
                 print(f"Received response from worker")
+                if updated_registry == False:
+                    get_scheduler().update_executor_provision(response)
+                    updated_registry = True
+
                 if response.WhichOneof("data") == "logs":
                     yield proxy_pb2.ClientExecutionResponse(logs=response.logs, request_id=response.request_id, session_id=response.session_id)
                 elif response.WhichOneof("data") == "payload":

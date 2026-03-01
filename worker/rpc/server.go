@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"worker/config"
 	"worker/core"
 	pb "worker/proto"
 
@@ -37,10 +38,11 @@ func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.Execu
 		log.Panicf("Failed to provision container: %v", err)
 	}
 	return pb.ExecutorProvisionResponse{
-		ContainerId: containerId,
+		WorkerId:     config.WorkerId,
+		ContainerId:  containerId,
 		CheckpointId: checkpointId,
-		CpuAlloc:    request.CpuAlloc,
-		GpuAlloc:    request.GpuAlloc,
+		CpuAlloc:     request.CpuAlloc,
+		GpuAlloc:     request.GpuAlloc,
 	}
 }
 
