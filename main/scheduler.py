@@ -35,7 +35,7 @@ class Scheduler:
         self.workers = {}
 
     def _create_worker_if_not_exists(self, worker_id: str):
-        if not worker_id in self.workers:
+        if worker_id not in self.workers:
             self.workers[worker_id] = {
                 'worker_uri': "",
                 'status': registry_pb2.STATUS_UNKNOWN,
@@ -50,8 +50,8 @@ class Scheduler:
 
     def _create_executor_if_not_exists(self, worker_id: str, container_id: str):
         self._create_worker_if_not_exists(worker_id)
-        if container_id not in self.workers["executors"][container_id]:
-            self.workers["executors"][container_id] = {
+        if container_id not in self.workers[worker_id]["executors"]:
+            self.workers[worker_id]["executors"][container_id] = {
                 'status': registry_pb2.STATUS_UNKNOWN,
                 'checkpoint_id'
                 'cpu_util': 0,
@@ -63,7 +63,7 @@ class Scheduler:
         return False
 
     def _create_session_if_not_exists(self, session_id: str):
-        if not session_id in self.sessions:
+        if session_id not in self.sessions:
             self.sessions[session_id] = {
                 'container_id': "",
                 'requests': []
@@ -85,7 +85,7 @@ class Scheduler:
             request.worker_id, request.container_id)
         self.workers[request.worker_id]['executors'][request.container_id].update(
             status=request.status)
-        self._create_session_if_not_exists()
+        self._create_session_if_not_exists(request.session_id)
         self.sessions[request.session_id].update(
             container_id=request.container_id)
 
@@ -105,16 +105,16 @@ class Scheduler:
             response.worker_id, response.container_id)
         self.workers[response.worker_id]['executors'][response.container_id].update(
             checkpoint_id=response.checkpoint_id, cpu_total=response.cpu_alloc, gpu_total=response.gpu_alloc)
-        self._create_session_if_not_exists()
+        self._create_session_if_not_exists(response.session_id)
         self.sessions[response.session_id].update(
             container_id=response.container_id)
 
     def provision(self, request: proxy_pb2.ClientExecutionRequest):
-        worker_id = ""
-        worker_uri = ""
+        worker_id = "worker-1"
+        worker_uri = self.workers[worker_id]['worker_uri']
         container_id = ""
         checkpoint_id = ""
-        cpu_alloc = 0
+        cpu_alloc = 512 * 1024 * 1024
         gpu_alloc = 0
 
         return {

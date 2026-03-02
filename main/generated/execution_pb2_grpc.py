@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import execution_pb2 as execution__pb2
+import generated.execution_pb2 as execution__pb2
 
 GRPC_GENERATED_VERSION = '1.78.1'
 GRPC_VERSION = grpc.__version__

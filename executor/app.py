@@ -6,23 +6,29 @@ import cloudpickle
 
 CHUNK_SIZE = 1024 * 1024
 
+
 def process_execution_request(server: socket):
     try:
         conn, addr = server.accept()
         with conn:
             print("Connection established with Go client.", flush=True)
-            pickled_bytes: bytearray = []
+            pickled_bytes = bytearray()
             while True:
                 data = conn.recv(CHUNK_SIZE)
-                if data:
-                    pickled_bytes.append(data)
-                else:
+                print(data)
+                if not data:
                     break
-            
+                elif data.endswith(b"EOF"):
+                    pickled_bytes.extend(data.rstrip(b"EOF"))
+                    break
+                else:
+                    pickled_bytes.extend(data)
+
             loaded_data = cloudpickle.loads(pickled_bytes)
             func_return = loaded_data['func'](
                 *loaded_data['args'], **loaded_data['kwargs'])
-            
+            print("Request processed successfully")
+
             buffer = io.BytesIO(cloudpickle.dumps(func_return))
             while True:
                 piece = buffer.read(CHUNK_SIZE)
@@ -65,10 +71,10 @@ def create_socket_connection(socket_dir: str):
 
 
 if __name__ == "__main__":
-    socket_dir = os.getenv("EXECUTOR_SOCKET_DIR", None)
+    socket_dir = os.getenv("EXECUTOR_DIR", None)
 
     if not socket_dir:
-        print("EXECUTOR_SOCKET_DIR environment variables must be set.", file=sys.stderr)
+        print("EXECUTOR_DIR environment variables must be set.", file=sys.stderr)
         sys.exit(1)
 
     create_socket_connection(socket_dir)

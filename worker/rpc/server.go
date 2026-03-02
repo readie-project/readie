@@ -1,4 +1,4 @@
-/* IMP: Only gRPC functions and operations should be panicking */
+/* IMP: Only gRPC functions and operations should be panicking if required */
 package rpc
 
 import (
@@ -18,13 +18,16 @@ type server struct {
 	pb.UnimplementedExecutionServiceServer
 }
 
-func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecutionRequest, pb.WorkerExecutionResponse]) {
+func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecutionRequest, pb.WorkerExecutionResponse]) error {
+	log.Printf("Received execution request")
 	ichunk, err := stream.Recv()
 
 	if err == io.EOF {
-		log.Panicf("No data in request stream")
+		log.Printf("No data in request stream")
+		return nil
 	} else if err != nil {
-		log.Panicf("Error receiving chunk: %v", err)
+		log.Printf("Error receiving chunk: %v", err)
+		return err
 	}
 
 	ctx := context.Background()
@@ -45,7 +48,8 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		})
 
 		if err != nil {
-			log.Panicf("Failed to provision container: %v", err)
+			log.Printf("Failed to provision container: %v", err)
+			return err
 		}
 	} else {
 		err = core.ResumeContainer(ctx, containerId, &core.ResourceAllocation{
@@ -54,32 +58,46 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		})
 
 		if err != nil {
-			log.Panicf("Failed to resume container: %v", err)
+			log.Printf("Failed to resume container: %v", err)
+			return err
 		}
 	}
 
-	defer core.PauseContainer(ctx, containerId)
+	defer func() {
+		if r := recover(); r != nil {
+			core.StopAndRemoveContainer(ctx, containerId)
+		} else {
+			core.PauseContainer(ctx, containerId)
+		}
+	}()
 
 	containerConfig, err := core.InspectContainer(ctx, containerId, checkpointId)
 	if err != nil {
-		log.Panicf("Error inspecting container %s: %v", containerId, err)
+		log.Printf("Error inspecting container %s: %v", containerId, err)
+		return err
 	}
+	log.Printf("Inspected container successfully")
 
 	core.PostContainerStatus(ctx, containerId, pb.Status_STATUS_BUSY)
 
-	stats, statsErr := core.GetContainerResources(ctx, containerId)
-	if statsErr == nil {
-		defer (*stats).Body.Close()
-	}
+	var wg sync.WaitGroup
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	defer cancelStream()
 
-	if err != nil {
-		log.Panicf("Unable to execute code due to provision error: %v", err)
-	}
+	wg.Add(1)
+	go streamStats(streamCtx, &wg, containerId)
 
 	conn, err := socket.GetSocketConnection(containerId)
 	defer socket.CloseSocketConnection(containerId)
 	if err != nil {
-		log.Panicf("Error connecting to socket: %v", err)
+		log.Printf("Error connecting to socket: %v", err)
+		return err
+	}
+
+	_, err = conn.Write(ichunk.Payload)
+	if err != nil {
+		log.Printf("Error writing to socket: %v", err)
+		return err
 	}
 
 	for {
@@ -87,61 +105,32 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 
 		if err == io.EOF {
 			log.Printf("Finished receiving request")
+			conn.Write([]byte("EOF"))
 			break
 		} else if err != nil {
-			log.Panicf("Error receiving chunk: %v", err)
+			log.Printf("Error receiving chunk: %v", err)
+			return err
 		}
 
 		_, err = conn.Write(chunk.Payload)
 		if err != nil {
-			log.Panicf("Error writing to socket: %v", err)
+			log.Printf("Error writing to socket: %v", err)
+			return err
 		}
 	}
 
-	logs, err := core.GetContainerLogs(ctx, containerId)
-	if err != nil {
-		log.Printf("Error fetching container %s logs: %v", ichunk.ContainerId, err)
-	}
-	defer (*logs).Close()
-
-	var wg sync.WaitGroup
-
-	wg.Go(func() {
-		for {
-			buf := make([]byte, config.ChunkSize)
-			n, err := (*logs).Read(buf)
-
-			if err == io.EOF {
-				wg.Done()
-				break
-			} else if err != nil {
-				log.Printf("Error receiving from socket: %v", err)
-				wg.Done()
-			}
-
-			stream.Send(&pb.WorkerExecutionResponse{
-				WorkerId:     config.WorkerId,
-				ContainerId:  containerId,
-				CheckpointId: checkpointId,
-				CpuAlloc:     containerConfig.ResourceAllocation.CpuAlloc,
-				GpuAlloc:     containerConfig.ResourceAllocation.GpuAlloc,
-				Success:      true,
-				Data: &pb.WorkerExecutionResponse_Logs{
-					Logs: string(buf[:n]),
-				},
-			})
-		}
-	})
+	wg.Add(1)
+	go streamLogs(streamCtx, &wg, containerId, checkpointId, containerConfig, &stream)
 
 	for {
 		buf := make([]byte, config.ChunkSize)
 		n, err := conn.Read(buf)
 
 		if err == io.EOF {
-			wg.Done()
 			break
 		} else if err != nil {
-			log.Panicf("Error reading response data: %v", err)
+			log.Printf("Error reading response data: %v", err)
+			return err
 		}
 
 		stream.Send(&pb.WorkerExecutionResponse{
@@ -157,6 +146,5 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		})
 	}
 
-	wg.Wait()
-
+	return nil
 }

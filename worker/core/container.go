@@ -131,7 +131,7 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 		},
 	})
 	if createErr != nil {
-		log.Printf("Failed to create docker container: %v", err)
+		log.Printf("Failed to create docker container: %v", createErr)
 		return "", "", createErr
 	}
 	log.Printf("Docker container %s created", containerId)
@@ -154,6 +154,7 @@ func PauseContainer(ctx context.Context, containerId string) error {
 		PostContainerStatus(ctx, containerId, pb.Status_STATUS_ERROR)
 		return err
 	}
+	log.Printf("Docker container %s paused", containerId)
 
 	PostContainerStatus(ctx, containerId, pb.Status_STATUS_READY)
 	return nil
@@ -168,6 +169,7 @@ func ResumeContainer(ctx context.Context, containerId string, resourceAllocation
 		PostContainerStatus(ctx, containerId, pb.Status_STATUS_ERROR)
 		return err
 	}
+	log.Printf("Docker container %s resumed", containerId)
 
 	err = updateContainerResources(ctx, containerId, &ResourceAllocation{
 		CpuAlloc: resourceAllocation.CpuAlloc,
@@ -191,12 +193,14 @@ func StopAndRemoveContainer(ctx context.Context, containerId string) error {
 		PostContainerStatus(ctx, containerId, pb.Status_STATUS_ERROR)
 		return err
 	}
+	log.Printf("Docker container %s stopped", containerId)
 
 	_, err = cli.ContainerRemove(ctx, containerId, client.ContainerRemoveOptions{})
 	if err != nil {
 		log.Printf("Failed to remove container %s: %v", containerId, err)
 		return err
 	}
+	log.Printf("Docker container %s removed", containerId)
 
 	PostContainerStatus(ctx, containerId, pb.Status_STATUS_REMOVED)
 	return nil
@@ -218,7 +222,7 @@ func GetContainerLogs(ctx context.Context, containerId string) (*client.Containe
 	return &res, nil
 }
 
-func GetContainerResources(ctx context.Context, containerId string) (*client.ContainerStatsResult, error) {
+func GetContainerResources(ctx context.Context, containerId string) error {
 	cli := clients.GetDockerClient()
 
 	stats, err := cli.ContainerStats(ctx, containerId, client.ContainerStatsOptions{
@@ -227,18 +231,27 @@ func GetContainerResources(ctx context.Context, containerId string) (*client.Con
 
 	if err != nil {
 		log.Printf("Failed to get container %s stats: %v", containerId, err)
-		return nil, err
+		return err
 	}
 
 	decoder := json.NewDecoder(stats.Body)
+	log.Printf("Streaming container %s stats", containerId)
 
 	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Cancellation signal received for stats, exiting")
+			return ctx.Err()
+		default:
+		}
+
 		var containerStats container.StatsResponse
 		if err := decoder.Decode(&containerStats); err != nil {
 			if err == io.EOF {
 				break
 			} else if err != nil {
 				log.Printf("Error receiving container %s stats: %v", containerId, err)
+				break
 			}
 		}
 
@@ -250,7 +263,9 @@ func GetContainerResources(ctx context.Context, containerId string) (*client.Con
 		})
 	}
 
-	return &stats, nil
+	defer stats.Body.Close()
+
+	return nil
 }
 
 func InspectContainer(ctx context.Context, containerId string, checkpointId string) (*ContainerConfig, error) {

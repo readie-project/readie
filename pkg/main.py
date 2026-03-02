@@ -5,6 +5,7 @@ import functools
 import cloudpickle
 from generated import proxy_pb2, proxy_pb2_grpc
 from typing import AsyncGenerator
+import asyncio
 
 from dotenv import load_dotenv
 
@@ -15,11 +16,8 @@ CHUNK_SIZE = 1024 * 1024
 
 class Executor:
     session_id: str
-    proxyStub: proxy_pb2_grpc.ProxyServiceStub
 
-    async def __init__(self):
-        async with grpc.aio.insecure_channel(os.environ.get("MAIN_NODE_URI")) as channel:
-            self.proxyStub = proxy_pb2_grpc.ProxyServiceStub(channel)
+    def __init__(self):
         self.session_id = "session-id"
 
     def _get_request_iterator(self, request_id: str, pickled_bytes: bytes, resources: proxy_pb2.ResourceEstimation):
@@ -44,14 +42,17 @@ class Executor:
     async def execute(self, pickled_bytes: bytes, resources: proxy_pb2.ResourceEstimation):
         request_id = "request_id"
 
-        stream: AsyncGenerator[proxy_pb2.ClientExecutionResponse] = self.proxyStub.RequestExecution(
-            self._get_request_iterator(request_id, pickled_bytes, resources))
+        # TODO: Single gRPC connection instance
+        async with grpc.aio.insecure_channel(os.environ.get("MAIN_NODE_URI")) as channel:
+            proxyStub = proxy_pb2_grpc.ProxyServiceStub(channel)
+            stream: AsyncGenerator[proxy_pb2.ClientExecutionResponse] = proxyStub.RequestExecution(
+                self._get_request_iterator(request_id, pickled_bytes, resources))
 
-        async for response in stream:
-            if response.WhichOneof("data") == "payload":
-                yield {"logs": False, "data": response.payload}
-            elif response.WhichOneof("data") == "logs":
-                yield {"logs": True, "data": response.logs}
+            async for response in stream:
+                if response.WhichOneof("data") == "payload":
+                    yield {"logs": False, "data": response.payload}
+                elif response.WhichOneof("data") == "logs":
+                    yield {"logs": True, "data": response.logs}
 
 
 executor = Executor()
@@ -61,8 +62,8 @@ executor = Executor()
 
 def remote(func):
     @functools.wraps(func)
-    def remote_execution(*args, **kwargs):
-        pickled_bytes = cloudpickle.dump({
+    async def remote_execution(*args, **kwargs):
+        pickled_bytes = cloudpickle.dumps({
             'func': func,
             'args': args,
             'kwargs': kwargs
@@ -70,13 +71,26 @@ def remote(func):
 
         resources = executor.parse_tree(func, args, kwargs)
 
-        response_pickle_bytes: bytearray = []
-        for response in executor.execute(pickled_bytes, resources):
+        response_pickle_bytes = bytearray()
+        async for response in executor.execute(pickled_bytes, resources):
             if response['logs'] == False:
-                response_pickle_bytes.append(response['data'])
+                response_pickle_bytes.extend(response['data'])
             else:
                 print(response['data'])
 
         return cloudpickle.loads(response_pickle_bytes)
 
     return remote_execution
+
+
+async def main():
+    @remote
+    def func(a, b):
+        print("Adding A and B")
+        return a + b
+
+    result = await func(1, 2)
+    print(f"Result: {result}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
