@@ -1,3 +1,0 @@
-[submodule "pkg/resource_estimation"]
-	path = pkg/resource_estimation
-	url = https://github.com/illinoisdata/python-execution-memory-prediction
