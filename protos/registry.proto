@@ -4,7 +4,6 @@ option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/w
 
 enum Status {
   STATUS_UNKNOWN = 0;
-  STATUS_WAITING = 1;
   STATUS_READY   = 2;
   STATUS_BUSY    = 3;
   STATUS_ERROR   = 4;

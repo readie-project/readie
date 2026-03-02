@@ -8,13 +8,11 @@ DESCRIPTOR: _descriptor.FileDescriptor
 class Status(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     STATUS_UNKNOWN: _ClassVar[Status]
-    STATUS_WAITING: _ClassVar[Status]
     STATUS_READY: _ClassVar[Status]
     STATUS_BUSY: _ClassVar[Status]
     STATUS_ERROR: _ClassVar[Status]
     STATUS_REMOVED: _ClassVar[Status]
 STATUS_UNKNOWN: Status
-STATUS_WAITING: Status
 STATUS_READY: Status
 STATUS_BUSY: Status
 STATUS_ERROR: Status

@@ -2,26 +2,18 @@ syntax = "proto3";
 
 option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
 
-enum Action {
-  ACTION_UNKNOWN = 0;
-  ACTION_START   = 1;
-  ACTION_RESUME  = 2;
-  ACTION_RESTART = 3;
-}
-
 // Message used for code execution requests to workers
 message WorkerExecutionRequest {
   string          request_id           = 1;
   string          session_id           = 2;
   string          worker_id            = 3;
-  string          container_id         = 4;
+  optional string container_id         = 4;
   string          checkpoint_id        = 5;
   bytes           payload              = 6;
   int64           cpu_alloc            = 7;
   int64           gpu_alloc            = 8;
   repeated string required_resources   = 9;
   repeated string additional_resources = 10;
-  Action          action               = 11;
 }
 
 // Message used for code execution responses from workers
@@ -40,32 +32,8 @@ message WorkerExecutionResponse {
   }
 }
 
-// Message used for executor provisioning requests to workers
-message ExecutorProvisionRequest {
-  string request_id    = 1;
-  string session_id    = 2;
-  string worker_id     = 3;
-  string checkpoint_id = 4;
-  int64  cpu_alloc     = 5;
-  int64  gpu_alloc     = 6;
-}
-
-// Message used for executor provisioning responses from workers
-message ExecutorProvisionResponse {
-  string request_id   = 1;
-  string session_id   = 2;
-  string worker_id    = 3;
-  string container_id = 4;
-  string checkpoint_id = 5;
-  int64  cpu_alloc    = 6;
-  int64  gpu_alloc    = 7;
-}
-
 // Service on the worker nodes to handle execution requests
 service ExecutionService {
-  // Unary RPC for requesting provisioning of a new executor or restarting an executor on worker
-  rpc RequestProvision(ExecutorProvisionRequest) returns (ExecutorProvisionResponse);
-
   // Bi-directional streaming RPC for streaming code execution input and output
   rpc RequestExecution(stream WorkerExecutionRequest) returns (stream WorkerExecutionResponse);
 }

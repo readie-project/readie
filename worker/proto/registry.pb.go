@@ -25,7 +25,6 @@ type Status int32
 
 const (
 	Status_STATUS_UNKNOWN Status = 0
-	Status_STATUS_WAITING Status = 1
 	Status_STATUS_READY   Status = 2
 	Status_STATUS_BUSY    Status = 3
 	Status_STATUS_ERROR   Status = 4
@@ -36,7 +35,6 @@ const (
 var (
 	Status_name = map[int32]string{
 		0: "STATUS_UNKNOWN",
-		1: "STATUS_WAITING",
 		2: "STATUS_READY",
 		3: "STATUS_BUSY",
 		4: "STATUS_ERROR",
@@ -44,7 +42,6 @@ var (
 	}
 	Status_value = map[string]int32{
 		"STATUS_UNKNOWN": 0,
-		"STATUS_WAITING": 1,
 		"STATUS_READY":   2,
 		"STATUS_BUSY":    3,
 		"STATUS_ERROR":   4,
@@ -455,10 +452,9 @@ const file_registry_proto_rawDesc = "" +
 	"\bgpu_util\x18\x05 \x01(\x03R\agpuUtil\x12\x1b\n" +
 	"\tgpu_total\x18\x06 \x01(\x03R\bgpuTotal\"2\n" +
 	"\x16RegistryUpdateResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated*y\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated*e\n" +
 	"\x06Status\x12\x12\n" +
-	"\x0eSTATUS_UNKNOWN\x10\x00\x12\x12\n" +
-	"\x0eSTATUS_WAITING\x10\x01\x12\x10\n" +
+	"\x0eSTATUS_UNKNOWN\x10\x00\x12\x10\n" +
 	"\fSTATUS_READY\x10\x02\x12\x0f\n" +
 	"\vSTATUS_BUSY\x10\x03\x12\x10\n" +
 	"\fSTATUS_ERROR\x10\x04\x12\x12\n" +

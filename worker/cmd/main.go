@@ -16,5 +16,7 @@ func main() {
 
 	config.LoadConfig()
 
+	// Create/copy all folders on startup, checkpoints, resources
+
 	rpc.StartServer()
 }

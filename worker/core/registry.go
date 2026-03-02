@@ -22,7 +22,7 @@ func PostWorkerStatus(ctx context.Context, status pb.Status) bool {
 	return (err != nil) && res.Updated
 }
 
-func PostContainerStatus(ctx context.Context, status pb.Status) bool {
+func PostContainerStatus(ctx context.Context, containerId string, status pb.Status) bool {
 	registry := *clients.GetRegistryClient()
 	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
@@ -30,11 +30,11 @@ func PostContainerStatus(ctx context.Context, status pb.Status) bool {
 		WorkerId:    config.WorkerId,
 		RequestId:   executionIdentifier.RequestId,
 		SessionId:   executionIdentifier.SessionId,
-		ContainerId: executionIdentifier.ContainerId,
+		ContainerId: containerId,
 		Status:      status,
 	})
 	if err != nil {
-		log.Printf("Could not update container %s~%s status to main node: %v", config.WorkerId, executionIdentifier.ContainerId, err)
+		log.Printf("Could not update container %s~%s status to main node: %v", config.WorkerId, containerId, err)
 	}
 	return (err != nil) && res.Updated
 }
@@ -62,20 +62,19 @@ func PostWorkerUtilization(ctx context.Context, utilization Utilization) bool {
 	return (err != nil) && res.Updated
 }
 
-func PostContainerUtilization(ctx context.Context, utilization Utilization) bool {
+func PostContainerUtilization(ctx context.Context, containerId string, utilization Utilization) bool {
 	registry := *clients.GetRegistryClient()
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	res, err := registry.PostExecutorUtilization(ctx, &pb.ExecutorUtilization{
 		WorkerId:    config.WorkerId,
-		ContainerId: executionIdentifier.ContainerId,
+		ContainerId: containerId,
 		CpuUtil:     utilization.CpuUtil,
 		CpuTotal:    utilization.CpuTotal,
 		GpuUtil:     utilization.GpuUtil,
 		GpuTotal:    utilization.GpuTotal,
 	})
 	if err != nil {
-		log.Printf("Could not update container %s~%s utilization to main node: %v", config.WorkerId, executionIdentifier.ContainerId, err)
+		log.Printf("Could not update container %s~%s utilization to main node: %v", config.WorkerId, containerId, err)
 	}
 	return (err != nil) && res.Updated
 }

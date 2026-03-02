@@ -21,9 +21,8 @@ const (
 )
 
 type ExecutionIdentifier struct {
-	RequestId   string
-	SessionId   string
-	ContainerId string
+	RequestId string
+	SessionId string
 }
 
 type ResourceAllocation struct {
@@ -44,10 +43,9 @@ func GetContainerDir(containerId string) string {
 	return filepath.Join(config.WorkerDir, containerId)
 }
 
-func startContainer(ctx context.Context, checkpointId string) (string, error) {
+func startContainer(ctx context.Context, containerId string, checkpointId string) (string, error) {
 	cli := clients.GetDockerClient()
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-	containerId := executionIdentifier.ContainerId
+	// executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
 	if checkpointId == "" {
 		// Start a standard container
@@ -79,30 +77,28 @@ func startContainer(ctx context.Context, checkpointId string) (string, error) {
 	}
 }
 
-func stopContainer(ctx context.Context) error {
+func stopContainer(ctx context.Context, containerId string) error {
 	cli := clients.GetDockerClient()
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
-	_, err := cli.ContainerStop(ctx, executionIdentifier.ContainerId, client.ContainerStopOptions{})
+	_, err := cli.ContainerStop(ctx, containerId, client.ContainerStopOptions{})
 	if err != nil {
-		log.Printf("Failed to stop container %s: %v", executionIdentifier.ContainerId, err)
+		log.Printf("Failed to stop container %s: %v", containerId, err)
 		return err
 	}
 	return nil
 }
 
-func updateContainerResources(ctx context.Context, resourceAllocation *ResourceAllocation) error {
+func updateContainerResources(ctx context.Context, containerId string, resourceAllocation *ResourceAllocation) error {
 	cli := clients.GetDockerClient()
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
 
-	_, err := cli.ContainerUpdate(ctx, executionIdentifier.ContainerId, client.ContainerUpdateOptions{
+	_, err := cli.ContainerUpdate(ctx, containerId, client.ContainerUpdateOptions{
 		Resources: &container.Resources{
 			Memory: resourceAllocation.CpuAlloc,
 		},
 	})
 
 	if err != nil {
-		log.Printf("Failed to update resources for container %s: %v", executionIdentifier.ContainerId, err)
+		log.Printf("Failed to update resources for container %s: %v", containerId, err)
 		return err
 	}
 	return nil
@@ -140,69 +136,40 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 	}
 	log.Printf("Docker container %s created", containerId)
 
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-	ctx = context.WithValue(ctx, ContextIdentifierKey, &ExecutionIdentifier{
-		RequestId:   executionIdentifier.RequestId,
-		SessionId:   executionIdentifier.SessionId,
-		ContainerId: containerId,
-	})
-
-	checkpointId, startErr := startContainer(ctx, containerConfig.CheckpointId)
+	checkpointId, startErr := startContainer(ctx, containerId, containerConfig.CheckpointId)
 	if startErr != nil {
 		return "", "", startErr
 	}
 
-	PostWorkerStatus(ctx, pb.Status_STATUS_WAITING)
 	return containerId, checkpointId, nil
 }
 
-func RestartContainer(ctx context.Context, containerConfig *ContainerConfig) (string, error) {
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-
-	stopContainer(ctx)
-	checkpointId, err := startContainer(ctx, containerConfig.CheckpointId)
-	if err != nil {
-		log.Printf("Failed to restart container %s: %v", executionIdentifier.ContainerId, err)
-		return "", err
-	}
-
-	err = updateContainerResources(ctx, &ResourceAllocation{
-		CpuAlloc: containerConfig.ResourceAllocation.CpuAlloc,
-		GpuAlloc: containerConfig.ResourceAllocation.GpuAlloc,
-	})
-	if err != nil {
-		return checkpointId, err
-	}
-
-	PostWorkerStatus(ctx, pb.Status_STATUS_WAITING)
-	return checkpointId, nil
-}
-
-func PauseContainer(ctx context.Context) error {
+func PauseContainer(ctx context.Context, containerId string) error {
 	cli := clients.GetDockerClient()
 
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-	_, err := cli.ContainerPause(ctx, executionIdentifier.ContainerId, client.ContainerPauseOptions{})
+	_, err := cli.ContainerPause(ctx, containerId, client.ContainerPauseOptions{})
 
 	if err != nil {
-		log.Printf("Failed to pause container %s: %v", executionIdentifier.ContainerId, err)
+		log.Printf("Failed to pause container %s: %v", containerId, err)
+		PostContainerStatus(ctx, containerId, pb.Status_STATUS_ERROR)
 		return err
 	}
 
-	PostWorkerStatus(ctx, pb.Status_STATUS_READY)
+	PostContainerStatus(ctx, containerId, pb.Status_STATUS_READY)
 	return nil
 }
 
-func ResumeContainer(ctx context.Context, resourceAllocation *ResourceAllocation) error {
+func ResumeContainer(ctx context.Context, containerId string, resourceAllocation *ResourceAllocation) error {
 	cli := clients.GetDockerClient()
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-	_, err := cli.ContainerUnpause(ctx, executionIdentifier.ContainerId, client.ContainerUnpauseOptions{})
+
+	_, err := cli.ContainerUnpause(ctx, containerId, client.ContainerUnpauseOptions{})
 	if err != nil {
-		log.Printf("Failed to resume container %s: %v", executionIdentifier.ContainerId, err)
+		log.Printf("Failed to resume container %s: %v", containerId, err)
+		PostContainerStatus(ctx, containerId, pb.Status_STATUS_ERROR)
 		return err
 	}
 
-	err = updateContainerResources(ctx, &ResourceAllocation{
+	err = updateContainerResources(ctx, containerId, &ResourceAllocation{
 		CpuAlloc: resourceAllocation.CpuAlloc,
 		GpuAlloc: resourceAllocation.GpuAlloc,
 	})
@@ -210,21 +177,18 @@ func ResumeContainer(ctx context.Context, resourceAllocation *ResourceAllocation
 		return err
 	}
 
-	PostWorkerStatus(ctx, pb.Status_STATUS_WAITING)
 	return nil
 }
 
-func StopAndRemoveContainer(ctx context.Context) error {
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-	containerId := executionIdentifier.ContainerId
-
+func StopAndRemoveContainer(ctx context.Context, containerId string) error {
 	defer func() {
 		os.RemoveAll(GetContainerDir(containerId))
 	}()
 
 	cli := clients.GetDockerClient()
-	err := stopContainer(ctx)
+	err := stopContainer(ctx, containerId)
 	if err != nil {
+		PostContainerStatus(ctx, containerId, pb.Status_STATUS_ERROR)
 		return err
 	}
 
@@ -234,37 +198,35 @@ func StopAndRemoveContainer(ctx context.Context) error {
 		return err
 	}
 
-	PostWorkerStatus(ctx, pb.Status_STATUS_REMOVED)
+	PostContainerStatus(ctx, containerId, pb.Status_STATUS_REMOVED)
 	return nil
 }
 
-func GetContainerLogs(ctx context.Context) (*client.ContainerLogsResult, error) {
+func GetContainerLogs(ctx context.Context, containerId string) (*client.ContainerLogsResult, error) {
 	cli := clients.GetDockerClient()
 
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-	res, err := cli.ContainerLogs(ctx, executionIdentifier.ContainerId, client.ContainerLogsOptions{
+	res, err := cli.ContainerLogs(ctx, containerId, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
 
 	if err != nil {
-		log.Printf("Failed to get container %s logs: %v", executionIdentifier.ContainerId, err)
+		log.Printf("Failed to get container %s logs: %v", containerId, err)
 		return nil, err
 	}
 
 	return &res, nil
 }
 
-func GetContainerResources(ctx context.Context) (*client.ContainerStatsResult, error) {
+func GetContainerResources(ctx context.Context, containerId string) (*client.ContainerStatsResult, error) {
 	cli := clients.GetDockerClient()
 
-	executionIdentifier := ctx.Value(ContextIdentifierKey).(*ExecutionIdentifier)
-	stats, err := cli.ContainerStats(ctx, executionIdentifier.ContainerId, client.ContainerStatsOptions{
+	stats, err := cli.ContainerStats(ctx, containerId, client.ContainerStatsOptions{
 		Stream: true,
 	})
 
 	if err != nil {
-		log.Printf("Failed to get container %s stats: %v", executionIdentifier.ContainerId, err)
+		log.Printf("Failed to get container %s stats: %v", containerId, err)
 		return nil, err
 	}
 
@@ -276,11 +238,11 @@ func GetContainerResources(ctx context.Context) (*client.ContainerStatsResult, e
 			if err == io.EOF {
 				break
 			} else if err != nil {
-				log.Printf("Error receiving container %s stats: %v", executionIdentifier.ContainerId, err)
+				log.Printf("Error receiving container %s stats: %v", containerId, err)
 			}
 		}
 
-		PostContainerUtilization(ctx, Utilization{
+		PostContainerUtilization(ctx, containerId, Utilization{
 			CpuUtil:  int64(containerStats.MemoryStats.Usage),
 			CpuTotal: int64(containerStats.MemoryStats.Usage),
 			GpuUtil:  0,
@@ -289,4 +251,24 @@ func GetContainerResources(ctx context.Context) (*client.ContainerStatsResult, e
 	}
 
 	return &stats, nil
+}
+
+func InspectContainer(ctx context.Context, containerId string, checkpointId string) (*ContainerConfig, error) {
+	cli := clients.GetDockerClient()
+
+	res, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{
+		Size: false,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ContainerConfig{
+		CheckpointId: checkpointId,
+		ResourceAllocation: ResourceAllocation{
+			CpuAlloc: res.Container.HostConfig.Resources.Memory,
+			GpuAlloc: 0,
+		},
+	}, nil
 }

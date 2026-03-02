@@ -79,14 +79,17 @@ class Scheduler:
 
     def update_worker_status(self, request: registry_pb2.WorkerStatus):
         self._create_worker_if_not_exists(request.worker_id)
-        self.workers[request.worker_id].update(worker_uri=request.worker_uri, status=request.status)
+        self.workers[request.worker_id].update(
+            worker_uri=request.worker_uri, status=request.status)
 
     def update_executor_status(self, request: registry_pb2.ExecutorStatus):
         self._create_executor_if_not_exists(
             request.worker_id, request.container_id)
-        self.workers[request.worker_id]['executors'][request.container_id].update(status=request.status)
+        self.workers[request.worker_id]['executors'][request.container_id].update(
+            status=request.status)
         self._create_session_if_not_exists()
-        self.sessions[request.session_id].update(container_id=request.container_id)
+        self.sessions[request.session_id].update(
+            container_id=request.container_id)
 
     def update_worker_utilization(self, request: registry_pb2.WorkerUtilization):
         self._create_worker_if_not_exists(request.worker_id)
@@ -99,34 +102,30 @@ class Scheduler:
         self.workers[request.worker_id]['executors'][request.container_id].update(
             cpu_util=request.cpu_util, cpu_total=request.cpu_total, gpu_util=request.gpu_util, gpu_total=request.gpu_total)
 
-    def update_executor_provision(self, response: execution_pb2.ExecutorProvisionResponse | execution_pb2.WorkerExecutionResponse):
-        self._create_executor_if_not_exists(response.worker_id, response.container_id)
-        self.workers[response.worker_id]['executors'][response.container_id].update(checkpoint_id=response.checkpoint_id, cpu_total=response.cpu_alloc, gpu_total=response.gpu_alloc)
+    def update_executor_provision(self, response: execution_pb2.WorkerExecutionResponse):
+        self._create_executor_if_not_exists(
+            response.worker_id, response.container_id)
+        self.workers[response.worker_id]['executors'][response.container_id].update(
+            checkpoint_id=response.checkpoint_id, cpu_total=response.cpu_alloc, gpu_total=response.gpu_alloc)
         self._create_session_if_not_exists()
-        self.sessions[response.session_id].update(container_id=response.container_id)
+        self.sessions[response.session_id].update(
+            container_id=response.container_id)
 
-    async def provision(self, response: proxy_pb2.ClientExecutionRequest):
+    async def provision(self, request: proxy_pb2.ClientExecutionRequest):
         worker_id = ""
         container_id = ""
         checkpoint_id = ""
         cpu_alloc = 0
         gpu_alloc = 0
 
-        if container_id == "":
-            print("Requesting provision of new executor")
-            async with grpc.aio.insecure_channel(os.environ.get("WORKER_NODE_URI")) as channel:
-                stub = execution_pb2_grpc.ExecutionServiceStub(channel)
-                response: execution_pb2.ExecutorProvisionResponse = stub.RequestProvision(execution_pb2.ExecutorProvisionRequest(
-                    request_id=response.request_id, session_id=response.session_id, worker_id=worker_id, checkpoint_id=checkpoint_id, cpu_alloc=cpu_alloc, gpu_alloc=gpu_alloc))
-                self.update_executor_provision(response)
-
         return {
-            "cpu_alloc": response.cpu_alloc,
-            "gpu_alloc": response.gpu_alloc,
-            "worker_id": response.worker_id,
-            "container_id": response.container_id,
-            "checkpoint_id": response.checkpoint_id,
-            "additional_resources": []
+            "cpu_alloc": cpu_alloc,
+            "gpu_alloc": gpu_alloc,
+            "worker_id": worker_id,
+            "container_id": container_id,
+            "checkpoint_id": checkpoint_id,
+            "additional_resources": [],
+            "required_resources": []
         }
 
 

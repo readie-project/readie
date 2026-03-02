@@ -19,7 +19,6 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ExecutionService_RequestProvision_FullMethodName = "/ExecutionService/RequestProvision"
 	ExecutionService_RequestExecution_FullMethodName = "/ExecutionService/RequestExecution"
 )
 
@@ -29,8 +28,6 @@ const (
 //
 // Service on the worker nodes to handle execution requests
 type ExecutionServiceClient interface {
-	// Unary RPC for requesting provisioning of a new executor or restarting an executor on worker
-	RequestProvision(ctx context.Context, in *ExecutorProvisionRequest, opts ...grpc.CallOption) (*ExecutorProvisionResponse, error)
 	// Bi-directional streaming RPC for streaming code execution input and output
 	RequestExecution(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WorkerExecutionRequest, WorkerExecutionResponse], error)
 }
@@ -41,16 +38,6 @@ type executionServiceClient struct {
 
 func NewExecutionServiceClient(cc grpc.ClientConnInterface) ExecutionServiceClient {
 	return &executionServiceClient{cc}
-}
-
-func (c *executionServiceClient) RequestProvision(ctx context.Context, in *ExecutorProvisionRequest, opts ...grpc.CallOption) (*ExecutorProvisionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ExecutorProvisionResponse)
-	err := c.cc.Invoke(ctx, ExecutionService_RequestProvision_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *executionServiceClient) RequestExecution(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WorkerExecutionRequest, WorkerExecutionResponse], error) {
@@ -72,8 +59,6 @@ type ExecutionService_RequestExecutionClient = grpc.BidiStreamingClient[WorkerEx
 //
 // Service on the worker nodes to handle execution requests
 type ExecutionServiceServer interface {
-	// Unary RPC for requesting provisioning of a new executor or restarting an executor on worker
-	RequestProvision(context.Context, *ExecutorProvisionRequest) (*ExecutorProvisionResponse, error)
 	// Bi-directional streaming RPC for streaming code execution input and output
 	RequestExecution(grpc.BidiStreamingServer[WorkerExecutionRequest, WorkerExecutionResponse]) error
 	mustEmbedUnimplementedExecutionServiceServer()
@@ -86,9 +71,6 @@ type ExecutionServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedExecutionServiceServer struct{}
 
-func (UnimplementedExecutionServiceServer) RequestProvision(context.Context, *ExecutorProvisionRequest) (*ExecutorProvisionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RequestProvision not implemented")
-}
 func (UnimplementedExecutionServiceServer) RequestExecution(grpc.BidiStreamingServer[WorkerExecutionRequest, WorkerExecutionResponse]) error {
 	return status.Error(codes.Unimplemented, "method RequestExecution not implemented")
 }
@@ -113,24 +95,6 @@ func RegisterExecutionServiceServer(s grpc.ServiceRegistrar, srv ExecutionServic
 	s.RegisterService(&ExecutionService_ServiceDesc, srv)
 }
 
-func _ExecutionService_RequestProvision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecutorProvisionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExecutionServiceServer).RequestProvision(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ExecutionService_RequestProvision_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServiceServer).RequestProvision(ctx, req.(*ExecutorProvisionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ExecutionService_RequestExecution_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(ExecutionServiceServer).RequestExecution(&grpc.GenericServerStream[WorkerExecutionRequest, WorkerExecutionResponse]{ServerStream: stream})
 }
@@ -144,12 +108,7 @@ type ExecutionService_RequestExecutionServer = grpc.BidiStreamingServer[WorkerEx
 var ExecutionService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "ExecutionService",
 	HandlerType: (*ExecutionServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "RequestProvision",
-			Handler:    _ExecutionService_RequestProvision_Handler,
-		},
-	},
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "RequestExecution",

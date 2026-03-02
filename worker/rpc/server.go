@@ -18,44 +18,8 @@ type server struct {
 	pb.UnimplementedExecutionServiceServer
 }
 
-func (s *server) RequestProvision(request *pb.ExecutorProvisionRequest) pb.ExecutorProvisionResponse {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, core.ContextIdentifierKey, &core.ExecutionIdentifier{
-		RequestId:   request.RequestId,
-		SessionId:   request.SessionId,
-		ContainerId: "",
-	})
-
-	containerId, checkpointId, err := core.CreateAndStartContainer(ctx, &core.ContainerConfig{
-		CheckpointId: request.CheckpointId,
-		ResourceAllocation: core.ResourceAllocation{
-			CpuAlloc: request.CpuAlloc,
-			GpuAlloc: request.GpuAlloc,
-		},
-	})
-
-	if err != nil {
-		log.Panicf("Failed to provision container: %v", err)
-	}
-
-	return pb.ExecutorProvisionResponse{
-		WorkerId:     config.WorkerId,
-		ContainerId:  containerId,
-		CheckpointId: checkpointId,
-		CpuAlloc:     request.CpuAlloc,
-		GpuAlloc:     request.GpuAlloc,
-	}
-}
-
 func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecutionRequest, pb.WorkerExecutionResponse]) {
 	ichunk, err := stream.Recv()
-
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, core.ContextIdentifierKey, &core.ExecutionIdentifier{
-		RequestId:   ichunk.RequestId,
-		SessionId:   ichunk.SessionId,
-		ContainerId: ichunk.ContainerId,
-	})
 
 	if err == io.EOF {
 		log.Panicf("No data in request stream")
@@ -63,39 +27,57 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		log.Panicf("Error receiving chunk: %v", err)
 	}
 
-	defer core.PauseContainer(ctx)
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, core.ContextIdentifierKey, &core.ExecutionIdentifier{
+		RequestId: ichunk.RequestId,
+		SessionId: ichunk.SessionId,
+	})
+	containerId := *ichunk.ContainerId
+	checkpointId := *ichunk.CheckpointId
 
-	core.PostWorkerStatus(ctx, pb.Status_STATUS_BUSY)
-
-	stats, statsErr := core.GetContainerResources(ctx)
-	if statsErr == nil {
-		defer (*stats).Body.Close()
-	}
-
-	var checkpointId = ichunk.CheckpointId
-	switch ichunk.Action {
-	case pb.Action_ACTION_RESTART:
-		checkpointId, err = core.RestartContainer(ctx, &core.ContainerConfig{
-			CheckpointId: ichunk.CheckpointId,
+	if containerId == "" {
+		containerId, checkpointId, err = core.CreateAndStartContainer(ctx, &core.ContainerConfig{
+			CheckpointId: checkpointId,
 			ResourceAllocation: core.ResourceAllocation{
 				CpuAlloc: ichunk.CpuAlloc,
 				GpuAlloc: ichunk.GpuAlloc,
 			},
 		})
-	case pb.Action_ACTION_RESUME:
-		err = core.ResumeContainer(ctx, &core.ResourceAllocation{
+
+		if err != nil {
+			log.Panicf("Failed to provision container: %v", err)
+		}
+	} else {
+		err = core.ResumeContainer(ctx, containerId, &core.ResourceAllocation{
 			CpuAlloc: ichunk.CpuAlloc,
 			GpuAlloc: ichunk.GpuAlloc,
 		})
-	default:
+
+		if err != nil {
+			log.Panicf("Failed to resume container: %v", err)
+		}
+	}
+
+	defer core.PauseContainer(ctx, containerId)
+
+	containerConfig, err := core.InspectContainer(ctx, containerId, checkpointId)
+	if err != nil {
+		log.Panicf("Error inspecting container %s: %v", containerId, err)
+	}
+
+	core.PostContainerStatus(ctx, containerId, pb.Status_STATUS_BUSY)
+
+	stats, statsErr := core.GetContainerResources(ctx, containerId)
+	if statsErr == nil {
+		defer (*stats).Body.Close()
 	}
 
 	if err != nil {
 		log.Panicf("Unable to execute code due to provision error: %v", err)
 	}
 
-	conn, err := socket.GetSocketConnection(ichunk.ContainerId)
-	defer socket.CloseSocketConnection(ichunk.ContainerId)
+	conn, err := socket.GetSocketConnection(containerId)
+	defer socket.CloseSocketConnection(containerId)
 	if err != nil {
 		log.Panicf("Error connecting to socket: %v", err)
 	}
@@ -116,7 +98,7 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		}
 	}
 
-	logs, err := core.GetContainerLogs(ctx)
+	logs, err := core.GetContainerLogs(ctx, containerId)
 	if err != nil {
 		log.Printf("Error fetching container %s logs: %v", ichunk.ContainerId, err)
 	}
@@ -139,10 +121,10 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 
 			stream.Send(&pb.WorkerExecutionResponse{
 				WorkerId:     config.WorkerId,
-				ContainerId:  ichunk.ContainerId,
+				ContainerId:  containerId,
 				CheckpointId: checkpointId,
-				CpuAlloc:     ichunk.CpuAlloc,
-				GpuAlloc:     ichunk.GpuAlloc,
+				CpuAlloc:     containerConfig.ResourceAllocation.CpuAlloc,
+				GpuAlloc:     containerConfig.ResourceAllocation.GpuAlloc,
 				Success:      true,
 				Data: &pb.WorkerExecutionResponse_Logs{
 					Logs: string(buf[:n]),
@@ -164,10 +146,10 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 
 		stream.Send(&pb.WorkerExecutionResponse{
 			WorkerId:     config.WorkerId,
-			ContainerId:  ichunk.ContainerId,
+			ContainerId:  containerId,
 			CheckpointId: checkpointId,
-			CpuAlloc:     ichunk.CpuAlloc,
-			GpuAlloc:     ichunk.GpuAlloc,
+			CpuAlloc:     containerConfig.ResourceAllocation.CpuAlloc,
+			GpuAlloc:     containerConfig.ResourceAllocation.GpuAlloc,
 			Success:      true,
 			Data: &pb.WorkerExecutionResponse_Payload{
 				Payload: buf[:n],
