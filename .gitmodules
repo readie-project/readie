@@ -1,3 +1,0 @@
-[submodule "resource-estimation"]
-	path = resource-estimation
-	url = https://github.com/illinoisdata/python-execution-memory-prediction
