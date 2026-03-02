@@ -12,6 +12,7 @@ load_dotenv()
 
 CHUNK_SIZE = 1024 * 1024
 
+
 class Executor:
     session_id: str
     proxyStub: proxy_pb2_grpc.ProxyServiceStub
@@ -21,7 +22,13 @@ class Executor:
             self.proxyStub = proxy_pb2_grpc.ProxyServiceStub(channel)
         self.session_id = "session-id"
 
-    def get_request_iterator(self, request_id: str, pickled_bytes: bytes):
+    def _get_request_iterator(self, request_id: str, pickled_bytes: bytes, resources: proxy_pb2.ResourceEstimation):
+        sent_resources = False
+
+        if sent_resources == False:
+            sent_resources = True
+            yield proxy_pb2.ClientExecutionRequest(resources=resources, request_id=request_id, session_id=self.session_id)
+
         buffer = io.BytesIO(pickled_bytes)
         while True:
             piece = buffer.read(CHUNK_SIZE)
@@ -30,22 +37,28 @@ class Executor:
                 break
             yield proxy_pb2.ClientExecutionRequest(payload=piece, request_id=request_id, session_id=self.session_id)
 
-    async def execute(self, pickled_bytes: bytes):
+    def parse_tree(self, func, args, kwargs) -> proxy_pb2.ResourceEstimation:
+        # TODO: Call tree parser here
+        return proxy_pb2.ResourceEstimation(code="", variables=[proxy_pb2.Variables(id="", value="", type="", shape="")], imports=[proxy_pb2.Imports(id="", name="")])
+
+    async def execute(self, pickled_bytes: bytes, resources: proxy_pb2.ResourceEstimation):
         request_id = "request_id"
 
         stream: AsyncGenerator[proxy_pb2.ClientExecutionResponse] = self.proxyStub.RequestExecution(
-            self.get_request_iterator(request_id, pickled_bytes))
-        
+            self._get_request_iterator(request_id, pickled_bytes, resources))
+
         async for response in stream:
             if response.WhichOneof("data") == "payload":
-                yield { "logs": False, "data": response.payload }
+                yield {"logs": False, "data": response.payload}
             elif response.WhichOneof("data") == "logs":
-                yield { "logs": True, "data": response.logs }
+                yield {"logs": True, "data": response.logs}
 
 
 executor = Executor()
 
 # Function decorator for remote execution
+
+
 def remote(func):
     @functools.wraps(func)
     def remote_execution(*args, **kwargs):
@@ -55,8 +68,10 @@ def remote(func):
             'kwargs': kwargs
         })
 
+        resources = executor.parse_tree(func, args, kwargs)
+
         response_pickle_bytes: bytearray = []
-        for response in executor.execute(pickled_bytes):
+        for response in executor.execute(pickled_bytes, resources):
             if response['logs'] == False:
                 response_pickle_bytes.append(response['data'])
             else:

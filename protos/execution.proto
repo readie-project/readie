@@ -12,8 +12,7 @@ message WorkerExecutionRequest {
   bytes           payload              = 6;
   int64           cpu_alloc            = 7;
   int64           gpu_alloc            = 8;
-  repeated string required_resources   = 9;
-  repeated string additional_resources = 10;
+  repeated string resources            = 9;
 }
 
 // Message used for code execution responses from workers

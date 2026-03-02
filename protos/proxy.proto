@@ -2,12 +2,36 @@ syntax = "proto3";
 
 option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
 
+// Variable metadata
+message Variables {
+  string id = 1;
+  string value = 2;
+  optional string ctx = 3;
+  string type = 4;
+  string shape = 5;
+}
+
+// Import references
+message Imports {
+  string id = 1;
+  string name = 2;
+}
+
+// Message for resource estimation
+message ResourceEstimation {
+  string code = 1;
+  repeated Variables variables = 2;
+  repeated Imports imports =  3;
+}
+
 // Message used for code execution requests from clients
 message ClientExecutionRequest {
   string          request_id           = 1;
   string          session_id           = 2;
-  bytes           payload              = 3;
-  repeated string required_resources   = 4;
+  oneof data {
+      ResourceEstimation resources     = 3;
+      bytes              payload       = 4; 
+    }
 }
 
 // Message used for code execution responses to clients

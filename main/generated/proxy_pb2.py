@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bproxy.proto\"m\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\x0c\x12\x1a\n\x12required_resources\x18\x04 \x03(\t\"}\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x04logs\x18\x04 \x01(\tH\x00\x12\x11\n\x07payload\x18\x05 \x01(\x0cH\x00\x42\x06\n\x04\x64\x61ta2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bproxy.proto\"]\n\tVariables\x12\n\n\x02id\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x10\n\x03\x63tx\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\r\n\x05shape\x18\x05 \x01(\tB\x06\n\x04_ctx\"#\n\x07Imports\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\\\n\x12ResourceEstimation\x12\x0c\n\x04\x63ode\x18\x01 \x01(\t\x12\x1d\n\tvariables\x18\x02 \x03(\x0b\x32\n.Variables\x12\x19\n\x07imports\x18\x03 \x03(\x0b\x32\x08.Imports\"\x85\x01\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12(\n\tresources\x18\x03 \x01(\x0b\x32\x13.ResourceEstimationH\x00\x12\x11\n\x07payload\x18\x04 \x01(\x0cH\x00\x42\x06\n\x04\x64\x61ta\"}\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x04logs\x18\x04 \x01(\tH\x00\x12\x11\n\x07payload\x18\x05 \x01(\x0cH\x00\x42\x06\n\x04\x64\x61ta2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,10 +32,16 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'proxy_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
-  _globals['_CLIENTEXECUTIONREQUEST']._serialized_start=15
-  _globals['_CLIENTEXECUTIONREQUEST']._serialized_end=124
-  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_start=126
-  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_end=251
-  _globals['_PROXYSERVICE']._serialized_start=253
-  _globals['_PROXYSERVICE']._serialized_end=342
+  _globals['_VARIABLES']._serialized_start=15
+  _globals['_VARIABLES']._serialized_end=108
+  _globals['_IMPORTS']._serialized_start=110
+  _globals['_IMPORTS']._serialized_end=145
+  _globals['_RESOURCEESTIMATION']._serialized_start=147
+  _globals['_RESOURCEESTIMATION']._serialized_end=239
+  _globals['_CLIENTEXECUTIONREQUEST']._serialized_start=242
+  _globals['_CLIENTEXECUTIONREQUEST']._serialized_end=375
+  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_start=377
+  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_end=502
+  _globals['_PROXYSERVICE']._serialized_start=504
+  _globals['_PROXYSERVICE']._serialized_end=593
 # @@protoc_insertion_point(module_scope)

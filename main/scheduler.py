@@ -1,6 +1,4 @@
-import grpc
 from generated import proxy_pb2, registry_pb2, execution_pb2, execution_pb2_grpc
-import os
 from typing import TypedDict
 
 
@@ -111,8 +109,9 @@ class Scheduler:
         self.sessions[response.session_id].update(
             container_id=response.container_id)
 
-    async def provision(self, request: proxy_pb2.ClientExecutionRequest):
+    def provision(self, request: proxy_pb2.ClientExecutionRequest):
         worker_id = ""
+        worker_uri = ""
         container_id = ""
         checkpoint_id = ""
         cpu_alloc = 0
@@ -122,10 +121,9 @@ class Scheduler:
             "cpu_alloc": cpu_alloc,
             "gpu_alloc": gpu_alloc,
             "worker_id": worker_id,
+            "worker_uri": worker_uri,
             "container_id": container_id,
             "checkpoint_id": checkpoint_id,
-            "additional_resources": [],
-            "required_resources": []
         }
 
 

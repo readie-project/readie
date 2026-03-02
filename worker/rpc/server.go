@@ -33,7 +33,7 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		SessionId: ichunk.SessionId,
 	})
 	containerId := *ichunk.ContainerId
-	checkpointId := *ichunk.CheckpointId
+	checkpointId := ichunk.CheckpointId
 
 	if containerId == "" {
 		containerId, checkpointId, err = core.CreateAndStartContainer(ctx, &core.ContainerConfig{

@@ -12,19 +12,23 @@ class ProxyService(proxy_pb2_grpc.ProxyService):
         if len(request_iterator) == 0:
             return
 
-        config = get_scheduler().provision(request_iterator[0])
+        config = None
 
-        transformed_request_iterator = (
-            execution_pb2.WorkerExecutionRequest(
-                payload=request.payload, request_id=request.request_id, session_id=request.session_id, worker_id=config["worker_id"], container_id=config["container_id"], checkpoint_id=config["checkpoint_id"], cpu_alloc=config["cpu_alloc"], gpu_alloc=config["gpu_alloc"], required_resources=request.required_resources, additional_resources=config["additional_resources"])
-            for request in request_iterator
-        )
+        def transform_requests(request_iterator: Iterable[proxy_pb2.ClientExecutionRequest]):
+            for request in request_iterator:
+                if request.WhichOneof("data") == "resources":
+                    config = get_scheduler().provision(request.resources)
+                else:
+                    if config == None:
+                        continue
+                    yield execution_pb2.WorkerExecutionRequest(
+                        payload=request.payload, request_id=request.request_id, session_id=request.session_id, worker_id=config["worker_id"], container_id=config["container_id"], checkpoint_id=config["checkpoint_id"], cpu_alloc=config["cpu_alloc"], gpu_alloc=config["gpu_alloc"])
 
-        async with grpc.aio.insecure_channel(os.environ.get("WORKER_NODE_URI")) as channel:
+        async with grpc.aio.insecure_channel(config["worker_uri"]) as channel:
             stub = execution_pb2_grpc.ExecutionServiceStub(channel)
 
             stream: AsyncGenerator[execution_pb2.WorkerExecutionResponse] = stub.RequestExecution(
-                transformed_request_iterator)
+                transform_requests(request_iterator))
             print("Sent execution request to worker")
 
             updated_registry = False

@@ -23,19 +23,18 @@ const (
 
 // Message used for code execution requests to workers
 type WorkerExecutionRequest struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	RequestId           string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	SessionId           string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	WorkerId            string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	ContainerId         *string                `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3,oneof" json:"container_id,omitempty"`
-	CheckpointId        *string                `protobuf:"bytes,5,opt,name=checkpoint_id,json=checkpointId,proto3,oneof" json:"checkpoint_id,omitempty"`
-	Payload             []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
-	CpuAlloc            int64                  `protobuf:"varint,7,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc            int64                  `protobuf:"varint,8,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
-	RequiredResources   []string               `protobuf:"bytes,9,rep,name=required_resources,json=requiredResources,proto3" json:"required_resources,omitempty"`
-	AdditionalResources []string               `protobuf:"bytes,10,rep,name=additional_resources,json=additionalResources,proto3" json:"additional_resources,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	ContainerId   *string                `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3,oneof" json:"container_id,omitempty"`
+	CheckpointId  string                 `protobuf:"bytes,5,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	CpuAlloc      int64                  `protobuf:"varint,7,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
+	GpuAlloc      int64                  `protobuf:"varint,8,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
+	Resources     []string               `protobuf:"bytes,9,rep,name=resources,proto3" json:"resources,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorkerExecutionRequest) Reset() {
@@ -97,8 +96,8 @@ func (x *WorkerExecutionRequest) GetContainerId() string {
 }
 
 func (x *WorkerExecutionRequest) GetCheckpointId() string {
-	if x != nil && x.CheckpointId != nil {
-		return *x.CheckpointId
+	if x != nil {
+		return x.CheckpointId
 	}
 	return ""
 }
@@ -124,16 +123,9 @@ func (x *WorkerExecutionRequest) GetGpuAlloc() int64 {
 	return 0
 }
 
-func (x *WorkerExecutionRequest) GetRequiredResources() []string {
+func (x *WorkerExecutionRequest) GetResources() []string {
 	if x != nil {
-		return x.RequiredResources
-	}
-	return nil
-}
-
-func (x *WorkerExecutionRequest) GetAdditionalResources() []string {
-	if x != nil {
-		return x.AdditionalResources
+		return x.Resources
 	}
 	return nil
 }
@@ -289,23 +281,20 @@ var File_execution_proto protoreflect.FileDescriptor
 
 const file_execution_proto_rawDesc = "" +
 	"\n" +
-	"\x0fexecution.proto\"\x9e\x03\n" +
+	"\x0fexecution.proto\"\xc3\x02\n" +
 	"\x16WorkerExecutionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x12&\n" +
-	"\fcontainer_id\x18\x04 \x01(\tH\x00R\vcontainerId\x88\x01\x01\x12(\n" +
-	"\rcheckpoint_id\x18\x05 \x01(\tH\x01R\fcheckpointId\x88\x01\x01\x12\x18\n" +
+	"\fcontainer_id\x18\x04 \x01(\tH\x00R\vcontainerId\x88\x01\x01\x12#\n" +
+	"\rcheckpoint_id\x18\x05 \x01(\tR\fcheckpointId\x12\x18\n" +
 	"\apayload\x18\x06 \x01(\fR\apayload\x12\x1b\n" +
 	"\tcpu_alloc\x18\a \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\b \x01(\x03R\bgpuAlloc\x12-\n" +
-	"\x12required_resources\x18\t \x03(\tR\x11requiredResources\x121\n" +
-	"\x14additional_resources\x18\n" +
-	" \x03(\tR\x13additionalResourcesB\x0f\n" +
-	"\r_container_idB\x10\n" +
-	"\x0e_checkpoint_id\"\xca\x02\n" +
+	"\tgpu_alloc\x18\b \x01(\x03R\bgpuAlloc\x12\x1c\n" +
+	"\tresources\x18\t \x03(\tR\tresourcesB\x0f\n" +
+	"\r_container_id\"\xca\x02\n" +
 	"\x17WorkerExecutionResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +

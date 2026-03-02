@@ -7,7 +7,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class WorkerExecutionRequest(_message.Message):
-    __slots__ = ("request_id", "session_id", "worker_id", "container_id", "checkpoint_id", "payload", "cpu_alloc", "gpu_alloc", "required_resources", "additional_resources")
+    __slots__ = ("request_id", "session_id", "worker_id", "container_id", "checkpoint_id", "payload", "cpu_alloc", "gpu_alloc", "resources")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     WORKER_ID_FIELD_NUMBER: _ClassVar[int]
@@ -16,8 +16,7 @@ class WorkerExecutionRequest(_message.Message):
     PAYLOAD_FIELD_NUMBER: _ClassVar[int]
     CPU_ALLOC_FIELD_NUMBER: _ClassVar[int]
     GPU_ALLOC_FIELD_NUMBER: _ClassVar[int]
-    REQUIRED_RESOURCES_FIELD_NUMBER: _ClassVar[int]
-    ADDITIONAL_RESOURCES_FIELD_NUMBER: _ClassVar[int]
+    RESOURCES_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     session_id: str
     worker_id: str
@@ -26,9 +25,8 @@ class WorkerExecutionRequest(_message.Message):
     payload: bytes
     cpu_alloc: int
     gpu_alloc: int
-    required_resources: _containers.RepeatedScalarFieldContainer[str]
-    additional_resources: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., container_id: _Optional[str] = ..., checkpoint_id: _Optional[str] = ..., payload: _Optional[bytes] = ..., cpu_alloc: _Optional[int] = ..., gpu_alloc: _Optional[int] = ..., required_resources: _Optional[_Iterable[str]] = ..., additional_resources: _Optional[_Iterable[str]] = ...) -> None: ...
+    resources: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., container_id: _Optional[str] = ..., checkpoint_id: _Optional[str] = ..., payload: _Optional[bytes] = ..., cpu_alloc: _Optional[int] = ..., gpu_alloc: _Optional[int] = ..., resources: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class WorkerExecutionResponse(_message.Message):
     __slots__ = ("request_id", "session_id", "worker_id", "container_id", "checkpoint_id", "cpu_alloc", "gpu_alloc", "success", "logs", "payload")
