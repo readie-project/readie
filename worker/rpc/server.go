@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"time"
 	"worker/config"
 	"worker/core"
 	pb "worker/proto"
@@ -71,6 +72,9 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 		}
 	}()
 
+	ctx, cancel := context.WithTimeout(ctx, time.Hour)
+	defer cancel()
+
 	containerConfig, err := core.InspectContainer(ctx, containerId, checkpointId)
 	if err != nil {
 		log.Printf("Error inspecting container %s: %v", containerId, err)
@@ -123,6 +127,13 @@ func (s *server) RequestExecution(stream grpc.BidiStreamingServer[pb.WorkerExecu
 	go streamLogs(streamCtx, &wg, containerId, checkpointId, containerConfig, &stream)
 
 	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("Request execution timed out, cancelling execution: %v", ctx.Err())
+			panic(ctx.Err())
+		default:
+		}
+
 		buf := make([]byte, config.ChunkSize)
 		n, err := conn.Read(buf)
 

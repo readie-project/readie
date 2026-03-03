@@ -29,7 +29,7 @@ func streamLogs(ctx context.Context, wg *sync.WaitGroup, containerId string, che
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Cancellation signal received for logs, exiting")
+			log.Printf("Cancellation signal received for logs, exiting")
 			return
 		default:
 		}

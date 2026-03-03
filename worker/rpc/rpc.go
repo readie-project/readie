@@ -11,6 +11,7 @@ import (
 	"time"
 	"worker/clients"
 	"worker/config"
+	"worker/core"
 	pb "worker/proto"
 
 	"google.golang.org/grpc"
@@ -21,6 +22,7 @@ func StartServer() {
 	defer conn.Close()
 
 	clients.InitializeDockerClient()
+	defer core.ContainerCleanup(context.Background())
 	defer clients.CloseDockerClient()
 
 	var wg sync.WaitGroup
@@ -71,6 +73,8 @@ func StartServer() {
 		log.Fatalf("Could not update status to main node: %v", err)
 	}
 	log.Printf("Removed worker from main node with worker ID: %s", workerId)
+
+	core.ContainerCleanup(ctx)
 
 	wg.Done()
 }

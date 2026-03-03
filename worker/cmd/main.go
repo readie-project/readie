@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"worker/config"
 	"worker/rpc"
 
@@ -11,7 +11,7 @@ import (
 func main() {
 	err := godotenv.Load()
 	if err != nil {
-		fmt.Println("Error loading .env file:", err)
+		log.Fatalf("Error loading .env file: %v", err)
 	}
 
 	config.LoadConfig()

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 	"worker/clients"
 	"worker/config"
 	pb "worker/proto"
@@ -115,6 +116,8 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 		return "", "", err
 	}
 
+	pidsLimit := int64(100)
+
 	_, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: containerId,
 		Config: &container.Config{
@@ -125,7 +128,9 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 		HostConfig: &container.HostConfig{
 			// Runtime: "runsc",
 			Resources: container.Resources{
-				Memory: containerConfig.ResourceAllocation.CpuAlloc,
+				Memory:    containerConfig.ResourceAllocation.CpuAlloc,
+				CPUQuota:  50000,
+				PidsLimit: &pidsLimit,
 			},
 			Binds: []string{fmt.Sprintf("%s:%s", containerDir, config.ExecutorDir)},
 		},
@@ -240,7 +245,7 @@ func GetContainerResources(ctx context.Context, containerId string) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Cancellation signal received for stats, exiting")
+			log.Printf("Cancellation signal received for stats, exiting")
 			return ctx.Err()
 		default:
 		}
@@ -286,4 +291,23 @@ func InspectContainer(ctx context.Context, containerId string, checkpointId stri
 			GpuAlloc: 0,
 		},
 	}, nil
+}
+
+func ContainerCleanup(ctx context.Context) {
+	cli := clients.GetDockerClient()
+
+	containers, err := cli.ContainerList(ctx, client.ContainerListOptions{
+		All: true,
+	})
+	if err != nil {
+		log.Printf("Error listing containers")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	for _, container := range containers.Items {
+		StopAndRemoveContainer(ctx, container.ID)
+	}
 }
