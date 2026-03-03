@@ -227,6 +227,7 @@ func GetContainerLogs(ctx context.Context, containerId string) (*client.Containe
 	return &res, nil
 }
 
+// TODO: Change stream to fetch on demand
 func GetContainerResources(ctx context.Context, containerId string) error {
 	cli := clients.GetDockerClient()
 
@@ -262,7 +263,7 @@ func GetContainerResources(ctx context.Context, containerId string) error {
 
 		PostContainerUtilization(ctx, containerId, Utilization{
 			CpuUtil:  int64(containerStats.MemoryStats.Usage),
-			CpuTotal: int64(containerStats.MemoryStats.Usage),
+			CpuTotal: int64(containerStats.MemoryStats.Limit),
 			GpuUtil:  0,
 			GpuTotal: 0,
 		})

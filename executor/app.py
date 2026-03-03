@@ -24,20 +24,23 @@ def process_execution_request(server: socket):
                 else:
                     pickled_bytes.extend(data)
 
-            loaded_data = cloudpickle.loads(pickled_bytes)
-            func_return = loaded_data['func'](
-                *loaded_data['args'], **loaded_data['kwargs'])
-            print("Request processed successfully")
+            try:
+                loaded_data = cloudpickle.loads(pickled_bytes)
+                func_return = loaded_data['func'](
+                    *loaded_data['args'], **loaded_data['kwargs'])
+                print("Request processed successfully")
 
-            buffer = io.BytesIO(cloudpickle.dumps(func_return))
-            while True:
-                piece = buffer.read(CHUNK_SIZE)
-                if not piece:
-                    buffer.close()
-                    break
-                conn.sendall(piece)
+                buffer = io.BytesIO(cloudpickle.dumps(func_return))
+                while True:
+                    piece = buffer.read(CHUNK_SIZE)
+                    if not piece:
+                        buffer.close()
+                        break
+                    conn.sendall(piece)
+            except Exception as e:
+                print(f"Error in executing request: {e}", file=sys.stderr)
     except Exception as e:
-        print(f"Error in executing request: {e}", file=sys.stderr)
+        print(f"Error in fetching request: {e}", file=sys.stderr)
 
 
 def create_socket_connection(socket_dir: str):
