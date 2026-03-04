@@ -55,7 +55,6 @@ def create_socket_connection(socket_dir: str):
 
     try:
         server.bind(socket_path)
-        os.chmod(socket_path, 0o777)
         server.listen(1)
 
         print(f"Python Server listening on {socket_path}", flush=True)

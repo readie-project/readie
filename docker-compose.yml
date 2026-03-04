@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+    main_node:
+      build:
+          context: ./main
+      ports:
+          - "50051:50051"
+      container_name: main_node
+    worker_node:
+      build:
+          context: ./worker
+      ports:
+          - "50052:50052"
+      container_name: worker_node
+      volumes:
+        # This allows the container to control the host's Docker daemon
+        - /var/run/docker.sock:/var/run/docker.sock

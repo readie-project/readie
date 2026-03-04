@@ -118,21 +118,28 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 
 	pidsLimit := int64(100)
 
+	// Paths on executor
+	executorDir := "/tmp"
+	pythonPath := "/tmp/site_packages"
+
+	executionDir := fmt.Sprintf("%s:%s:rw", containerDir, executorDir)
+	packagesDir := fmt.Sprintf("%s:%s:ro", config.SitePackagesPath, pythonPath)
+
 	_, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: containerId,
 		Config: &container.Config{
-			Image:           config.ExecutorImage,
-			NetworkDisabled: true,
-			Env:             []string{fmt.Sprintf("EXECUTOR_DIR=%s", config.ExecutorDir)},
+			Image: config.ExecutorImage,
+			Env:   []string{fmt.Sprintf("EXECUTOR_DIR=%s", executorDir), fmt.Sprintf("PYTHONPATH=%s", pythonPath)},
 		},
 		HostConfig: &container.HostConfig{
 			// Runtime: "runsc",
+			NetworkMode: "none",
 			Resources: container.Resources{
 				Memory:    containerConfig.ResourceAllocation.CpuAlloc,
 				CPUQuota:  50000,
 				PidsLimit: &pidsLimit,
 			},
-			Binds: []string{fmt.Sprintf("%s:%s", containerDir, config.ExecutorDir)},
+			Binds: []string{executionDir, packagesDir},
 		},
 	})
 	if createErr != nil {

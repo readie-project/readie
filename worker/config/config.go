@@ -1,18 +1,21 @@
 package config
 
-import "os"
+import (
+	"log"
+	"os"
+)
 
 const (
 	ChunkSize = 1024 * 1024
 )
 
 var (
-	WorkerId      string
-	WorkerDir     string
-	ExecutorDir   string
-	MainNodeUri   string
-	WorkerNodeUri string
-	ExecutorImage string
+	Port             string
+	WorkerId         string
+	WorkerDir        string
+	MainNodeUri      string
+	ExecutorImage    string
+	SitePackagesPath string
 )
 
 func generateWorkerId() string {
@@ -21,9 +24,17 @@ func generateWorkerId() string {
 
 func LoadConfig() {
 	WorkerId = generateWorkerId()
+	Port = os.Getenv("PORT")
 	WorkerDir = os.Getenv("WORKER_DIR")
-	ExecutorDir = os.Getenv("EXECUTOR_DIR")
 	MainNodeUri = os.Getenv("MAIN_NODE_URI")
-	WorkerNodeUri = os.Getenv("WORKER_NODE_URI")
 	ExecutorImage = "test-agent"
+
+	contentBytes, err := os.ReadFile(os.Getenv("SITEPACKAGES_TXT_PATH"))
+	if err != nil {
+		log.Fatalf("Error in reading site-packages path file: %v", err)
+	}
+	SitePackagesPath = string(contentBytes)
+	if SitePackagesPath == "" {
+		log.Fatalf("Site packages path is empty")
+	}
 }

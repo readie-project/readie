@@ -13,13 +13,15 @@ load_dotenv()
 # Coroutines to be invoked when the event loop is shutting down.
 _cleanup_coroutines = []
 
+
 async def serve() -> None:
     server = grpc.aio.server()
     proxy_pb2_grpc.add_ProxyServiceServicer_to_server(ProxyService(), server)
     registry_pb2_grpc.add_RegistryServiceServicer_to_server(
         RegistryService(), server)
 
-    listen_addr = os.environ.get("MAIN_NODE_URI", None)
+    port = os.environ.get("PORT")
+    listen_addr = f":{port}"
     server.add_insecure_port(listen_addr)
     logging.info("Starting server on %s", listen_addr)
     await server.start()

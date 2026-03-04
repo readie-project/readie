@@ -8,12 +8,12 @@ import (
 	pb "worker/proto"
 )
 
-func PostWorkerStatus(ctx context.Context, status pb.Status) bool {
+func PostWorkerStatus(ctx context.Context, workerUri string, status pb.Status) bool {
 	registry := *clients.GetRegistryClient()
 
 	res, err := registry.PostWorkerStatus(ctx, &pb.WorkerStatus{
 		WorkerId:  config.WorkerId,
-		WorkerUri: config.WorkerNodeUri,
+		WorkerUri: workerUri,
 		Status:    status,
 	})
 	if err != nil {
