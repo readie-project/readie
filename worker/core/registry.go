@@ -8,18 +8,18 @@ import (
 	pb "worker/proto"
 )
 
-func PostWorkerStatus(ctx context.Context, workerUri string, status pb.Status) bool {
+func PostWorkerStatus(ctx context.Context, status pb.Status) bool {
 	registry := *clients.GetRegistryClient()
 
 	res, err := registry.PostWorkerStatus(ctx, &pb.WorkerStatus{
 		WorkerId:  config.WorkerId,
-		WorkerUri: workerUri,
+		WorkerUri: config.WorkerUri,
 		Status:    status,
 	})
 	if err != nil {
 		log.Printf("Could not update worker %s status to main node: %v", config.WorkerId, err)
 	}
-	return (err != nil) && res.Updated
+	return (err == nil) && res.Updated
 }
 
 func PostContainerStatus(ctx context.Context, containerId string, status pb.Status) bool {
@@ -36,7 +36,7 @@ func PostContainerStatus(ctx context.Context, containerId string, status pb.Stat
 	if err != nil {
 		log.Printf("Could not update container %s~%s status to main node: %v", config.WorkerId, containerId, err)
 	}
-	return (err != nil) && res.Updated
+	return (err == nil) && res.Updated
 }
 
 type Utilization struct {
@@ -59,7 +59,7 @@ func PostWorkerUtilization(ctx context.Context, utilization Utilization) bool {
 	if err != nil {
 		log.Printf("Could not update worker %s utilization to main node: %v", config.WorkerId, err)
 	}
-	return (err != nil) && res.Updated
+	return (err == nil) && res.Updated
 }
 
 func PostContainerUtilization(ctx context.Context, containerId string, utilization Utilization) bool {
@@ -76,5 +76,5 @@ func PostContainerUtilization(ctx context.Context, containerId string, utilizati
 	if err != nil {
 		log.Printf("Could not update container %s~%s utilization to main node: %v", config.WorkerId, containerId, err)
 	}
-	return (err != nil) && res.Updated
+	return (err == nil) && res.Updated
 }

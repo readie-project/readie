@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -16,12 +15,15 @@ import (
 	pb "worker/proto"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 )
 
 func StartServer() {
 	var wg sync.WaitGroup
-	addr := fmt.Sprintf(":%s", config.Port)
 	workerId := config.WorkerId
+	addr := config.WorkerUri
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -31,48 +33,53 @@ func StartServer() {
 	if err != nil {
 		log.Fatalf("Failed to listen gRPC server: %v", err)
 	}
+	log.Printf("gRPC server listening at %v", lis.Addr())
 
 	s := grpc.NewServer()
 	pb.RegisterExecutionServiceServer(s, &server{})
-	log.Printf("gRPC server listening at %v", lis.Addr())
-	workerUri := lis.Addr().String()
+	reflection.Register(s)
 
-	wg.Go(func() {
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(s, healthServer)
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	log.Printf("Health check set to serving")
+
+	wg.Add(1)
+	go (func() {
 		if err := s.Serve(lis); err != nil {
 			log.Fatalf("Failed to start gRPC server: %v", err)
 		}
-	})
+	})()
 
 	conn := clients.InitalizeRPCClient()
 	defer conn.Close()
 
 	clients.InitializeDockerClient()
-	defer core.ContainerCleanup(context.Background())
 	defer clients.CloseDockerClient()
+	defer core.ContainerCleanup(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	updated := core.PostWorkerStatus(ctx, workerUri, pb.Status_STATUS_READY)
+	updated := core.PostWorkerStatus(ctx, pb.Status_STATUS_READY)
 	if !updated {
 		log.Fatalf("Could not connect to main node and register worker")
 	}
 	log.Printf("Connected to main node with worker ID: %s", workerId)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
 
-	// w.Wait()
+		updated = core.PostWorkerStatus(ctx, pb.Status_STATUS_REMOVED)
+		if !updated {
+			log.Fatalf("Could not connect to main node and remove worker")
+		}
+		log.Printf("Removed worker from main node with worker ID: %s", workerId)
+	}()
+
+	defer wg.Done()
+
+	// wg.Wait()
 	sig := <-sigCh
 	log.Printf("Received signal: %v. Shutting down gracefully...", sig)
-
-	ctx, cancel = context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	updated = core.PostWorkerStatus(ctx, workerUri, pb.Status_STATUS_REMOVED)
-	if !updated {
-		log.Fatalf("Could not connect to main node and remove worker")
-	}
-	log.Printf("Removed worker from main node with worker ID: %s", workerId)
-
-	core.ContainerCleanup(ctx)
-
-	wg.Done()
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"worker/config"
 	"worker/rpc"
 
@@ -9,9 +10,11 @@ import (
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
+	if os.Getenv("APP_ENV") != "production" {
+		err := godotenv.Load()
+		if err != nil {
+			log.Fatalf("Error loading .env file: %v", err)
+		}
 	}
 
 	config.LoadConfig()

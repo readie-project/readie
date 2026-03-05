@@ -1,18 +1,45 @@
-version: "3.8"
-
 services:
     main_node:
-      build:
-          context: ./main
-      ports:
-          - "50051:50051"
-      container_name: main_node
+        build:
+            context: ./main
+        ports:
+            - "50051:50051"
+        container_name: main_node
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "grpcurl",
+                    "-plaintext",
+                    "main_node:50051",
+                    "grpc.health.v1.Health/Check"
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 5s
     worker_node:
-      build:
-          context: ./worker
-      ports:
-          - "50052:50052"
-      container_name: worker_node
-      volumes:
-        # This allows the container to control the host's Docker daemon
-        - /var/run/docker.sock:/var/run/docker.sock
+        build:
+            context: ./worker
+        ports:
+            - "50052:50052"
+        container_name: worker_node
+        depends_on:
+            main_node:
+                condition: service_healthy
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "grpcurl",
+                    "-plaintext",
+                    "worker_node:50052",
+                    "grpc.health.v1.Health/Check"
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 5s
+        volumes:
+            # This allows the container to control the host's Docker daemon
+            - /var/run/docker.sock:/var/run/docker.sock

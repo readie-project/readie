@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 )
@@ -12,6 +13,7 @@ const (
 var (
 	Port             string
 	WorkerId         string
+	WorkerUri        string
 	WorkerDir        string
 	MainNodeUri      string
 	ExecutorImage    string
@@ -24,7 +26,7 @@ func generateWorkerId() string {
 
 func LoadConfig() {
 	WorkerId = generateWorkerId()
-	Port = os.Getenv("PORT")
+	WorkerUri = fmt.Sprintf("%s:%s", os.Getenv("SERVICE_NAME"), os.Getenv("PORT"))
 	WorkerDir = os.Getenv("WORKER_DIR")
 	MainNodeUri = os.Getenv("MAIN_NODE_URI")
 	ExecutorImage = "test-agent"

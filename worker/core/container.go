@@ -36,8 +36,12 @@ type ContainerConfig struct {
 	ResourceAllocation ResourceAllocation
 }
 
+const (
+	containerNamePrefix = "exec_container-"
+)
+
 func generateRandomContainerName() string {
-	return "random-container-name"
+	return fmt.Sprintf("%srandom-container-name", containerNamePrefix)
 }
 
 func GetContainerDir(containerId string) string {
@@ -118,6 +122,7 @@ func CreateAndStartContainer(ctx context.Context, containerConfig *ContainerConf
 
 	pidsLimit := int64(100)
 
+	// TODO: Need to sort out paths for sibling containers
 	// Paths on executor
 	executorDir := "/tmp"
 	pythonPath := "/tmp/site_packages"
@@ -304,16 +309,26 @@ func InspectContainer(ctx context.Context, containerId string, checkpointId stri
 func ContainerCleanup(ctx context.Context) {
 	cli := clients.GetDockerClient()
 
+	filters := client.Filters{}
+	filters = filters.Add("name", fmt.Sprintf("^/%s", containerNamePrefix))
+
 	containers, err := cli.ContainerList(ctx, client.ContainerListOptions{
-		All: true,
+		All:     true,
+		Filters: filters,
 	})
 	if err != nil {
 		log.Printf("Error listing containers")
 		return
+	} else {
+		log.Printf("Found %d running containers", len(containers.Items))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
+	ctx = context.WithValue(ctx, ContextIdentifierKey, &ExecutionIdentifier{
+		RequestId: "",
+		SessionId: "",
+	})
 
 	for _, container := range containers.Items {
 		StopAndRemoveContainer(ctx, container.ID)
