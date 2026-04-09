@@ -1,0 +1,633 @@
+{
+    "seaborn": {
+        "base_import": "seaborn",
+        "distribution": "seaborn",
+        "dependencies": {
+            "numpy": "!=1.24.0,>=1.20",
+            "pandas": ">=1.2",
+            "matplotlib": "!=3.6.1,>=3.4"
+        },
+        "disk_size_mb": 2.2158,
+        "import_time": 0.9774890299886465
+    },
+    "pip": {
+        "base_import": "pip",
+        "distribution": "pip",
+        "dependencies": {},
+        "disk_size_mb": 12.0312,
+        "import_time": 0.005713343620300293
+    },
+    "mpl_toolkits": {
+        "base_import": "mpl_toolkits",
+        "distribution": "matplotlib",
+        "dependencies": {
+            "contourpy": ">=1.0.1",
+            "cycler": ">=0.10",
+            "fonttools": ">=4.22.0",
+            "kiwisolver": ">=1.3.1",
+            "numpy": ">=1.23",
+            "packaging": ">=20.0",
+            "pillow": ">=8",
+            "pyparsing": ">=3",
+            "python-dateutil": ">=2.7"
+        },
+        "disk_size_mb": 31.3061,
+        "import_time": 0.00011948496103286743
+    },
+    "numpy": {
+        "base_import": "numpy",
+        "distribution": "numpy",
+        "dependencies": {},
+        "disk_size_mb": 68.1018,
+        "import_time": 0.07078974321484566
+    },
+    "six": {
+        "base_import": "six",
+        "distribution": "six",
+        "dependencies": {},
+        "disk_size_mb": 0.0807,
+        "import_time": 0.003366192802786827
+    },
+    "dateutil": {
+        "base_import": "dateutil",
+        "distribution": "python-dateutil",
+        "dependencies": {
+            "six": ">=1.5"
+        },
+        "disk_size_mb": 0.7305,
+        "import_time": 0.00034079886972904205
+    },
+    "yaml": {
+        "base_import": "yaml",
+        "distribution": "PyYAML",
+        "dependencies": {},
+        "disk_size_mb": 3.0057,
+        "import_time": 0.01347358338534832
+    },
+    "jinja2": {
+        "base_import": "jinja2",
+        "distribution": "Jinja2",
+        "dependencies": {
+            "MarkupSafe": ">=2.0"
+        },
+        "disk_size_mb": 1.1583,
+        "import_time": 0.032467663288116455
+    },
+    "markupsafe": {
+        "base_import": "markupsafe",
+        "distribution": "MarkupSafe",
+        "dependencies": {},
+        "disk_size_mb": 0.0893,
+        "import_time": 0.004496332257986069
+    },
+    "scipy": {
+        "base_import": "scipy",
+        "distribution": "scipy",
+        "dependencies": {
+            "numpy": "<2.7,>=1.26.4"
+        },
+        "disk_size_mb": 136.3154,
+        "import_time": 0.011881116777658463
+    },
+    "anyio": {
+        "base_import": "anyio",
+        "distribution": "anyio",
+        "dependencies": {
+            "idna": ">=2.8",
+            "typing_extensions": ">=4.5"
+        },
+        "disk_size_mb": 1.1107,
+        "import_time": 0.04770233668386936
+    },
+    "httpx": {
+        "base_import": "httpx",
+        "distribution": "httpx",
+        "dependencies": {
+            "anyio": "(any)",
+            "certifi": "(any)",
+            "httpcore": "==1.*",
+            "idna": "(any)"
+        },
+        "disk_size_mb": 0.6358,
+        "import_time": 0.06987656652927399
+    },
+    "tqdm": {
+        "base_import": "tqdm",
+        "distribution": "tqdm",
+        "dependencies": {},
+        "disk_size_mb": 0.4348,
+        "import_time": 0.04178562946617603
+    },
+    "PIL": {
+        "base_import": "PIL",
+        "distribution": "pillow",
+        "dependencies": {},
+        "disk_size_mb": 20.0149,
+        "import_time": 0.0005558077245950699
+    },
+    "idna": {
+        "base_import": "idna",
+        "distribution": "idna",
+        "dependencies": {},
+        "disk_size_mb": 0.6237,
+        "import_time": 0.00542839802801609
+    },
+    "rich": {
+        "base_import": "rich",
+        "distribution": "rich",
+        "dependencies": {
+            "markdown-it-py": ">=2.2.0",
+            "pygments": "<3.0.0,>=2.13.0"
+        },
+        "disk_size_mb": 2.5635,
+        "import_time": 0.004661843180656433
+    },
+    "contourpy": {
+        "base_import": "contourpy",
+        "distribution": "contourpy",
+        "dependencies": {
+            "numpy": ">=1.25"
+        },
+        "disk_size_mb": 1.1697,
+        "import_time": 0.002947833389043808
+    },
+    "isympy": {
+        "base_import": "isympy",
+        "distribution": "sympy",
+        "dependencies": {
+            "mpmath": "<1.4,>=1.1.0"
+        },
+        "disk_size_mb": 71.9916,
+        "import_time": 0.00018032081425189972
+    },
+    "kiwisolver": {
+        "base_import": "kiwisolver",
+        "distribution": "kiwisolver",
+        "dependencies": {},
+        "disk_size_mb": 5.3327,
+        "import_time": 0.001658884808421135
+    },
+    "cycler": {
+        "base_import": "cycler",
+        "distribution": "cycler",
+        "dependencies": {},
+        "disk_size_mb": 0.0461,
+        "import_time": 0.004525765776634216
+    },
+    "typing_extensions": {
+        "base_import": "typing_extensions",
+        "distribution": "typing_extensions",
+        "dependencies": {},
+        "disk_size_mb": 0.3412,
+        "import_time": 0.01128298044204712
+    },
+    "fsspec": {
+        "base_import": "fsspec",
+        "distribution": "fsspec",
+        "dependencies": {},
+        "disk_size_mb": 1.7134,
+        "import_time": 0.06444426067173481
+    },
+    "_distutils_hack": {
+        "base_import": "_distutils_hack",
+        "distribution": "setuptools",
+        "dependencies": {},
+        "disk_size_mb": 3.387,
+        "import_time": 9.909272193908691e-07
+    },
+    "sklearn": {
+        "base_import": "sklearn",
+        "distribution": "scikit-learn",
+        "dependencies": {
+            "numpy": ">=1.24.1",
+            "scipy": ">=1.10.0",
+            "joblib": ">=1.3.0",
+            "threadpoolctl": ">=3.2.0"
+        },
+        "disk_size_mb": 44.7927,
+        "import_time": 0.7467499226331711
+    },
+    "safetensors": {
+        "base_import": "safetensors",
+        "distribution": "safetensors",
+        "dependencies": {},
+        "disk_size_mb": 1.2837,
+        "import_time": 0.0006530191749334335
+    },
+    "torch": {
+        "base_import": "torch",
+        "distribution": "torch",
+        "dependencies": {
+            "filelock": "(any)",
+            "typing-extensions": ">=4.10.0",
+            "setuptools": "<82",
+            "sympy": ">=1.13.3",
+            "networkx": ">=2.5.1",
+            "jinja2": "(any)",
+            "fsspec": ">=0.8.5",
+            "cuda-toolkit": "==13.0.2",
+            "cuda-bindings": "<14,>=13.0.3",
+            "nvidia-cudnn-cu13": "==9.19.0.56",
+            "nvidia-cusparselt-cu13": "==0.8.0",
+            "nvidia-nccl-cu13": "==2.28.9",
+            "nvidia-nvshmem-cu13": "==3.4.5",
+            "triton": "==3.6.0"
+        },
+        "disk_size_mb": 1132.8056,
+        "import_time": 1.1807303801178932
+    },
+    "certifi": {
+        "base_import": "certifi",
+        "distribution": "certifi",
+        "dependencies": {},
+        "disk_size_mb": 0.271,
+        "import_time": 0.012992579489946365
+    },
+    "triton": {
+        "base_import": "triton",
+        "distribution": "triton",
+        "dependencies": {},
+        "disk_size_mb": 639.7161,
+        "import_time": 0.10387648642063141
+    },
+    "pandas": {
+        "base_import": "pandas",
+        "distribution": "pandas",
+        "dependencies": {
+            "numpy": ">=1.26.0",
+            "python-dateutil": ">=2.8.2"
+        },
+        "disk_size_mb": 68.3679,
+        "import_time": 0.17500386573374271
+    },
+    "mpmath": {
+        "base_import": "mpmath",
+        "distribution": "mpmath",
+        "dependencies": {},
+        "disk_size_mb": 4.6414,
+        "import_time": 0.01967034861445427
+    },
+    "tokenizers": {
+        "base_import": "tokenizers",
+        "distribution": "tokenizers",
+        "dependencies": {
+            "huggingface-hub": "<2.0,>=0.16.4"
+        },
+        "disk_size_mb": 9.9214,
+        "import_time": 0.005628462880849838
+    },
+    "pylab": {
+        "base_import": "pylab",
+        "distribution": "matplotlib",
+        "dependencies": {
+            "contourpy": ">=1.0.1",
+            "cycler": ">=0.10",
+            "fonttools": ">=4.22.0",
+            "kiwisolver": ">=1.3.1",
+            "numpy": ">=1.23",
+            "packaging": ">=20.0",
+            "pillow": ">=8",
+            "pyparsing": ">=3",
+            "python-dateutil": ">=2.7"
+        },
+        "disk_size_mb": 31.3061,
+        "import_time": 0.31280080415308475
+    },
+    "annotated_doc": {
+        "base_import": "annotated_doc",
+        "distribution": "annotated-doc",
+        "dependencies": {},
+        "disk_size_mb": 0.0115,
+        "import_time": 0.00033969059586524963
+    },
+    "packaging": {
+        "base_import": "packaging",
+        "distribution": "packaging",
+        "dependencies": {},
+        "disk_size_mb": 0.5587,
+        "import_time": 0.00017329677939414978
+    },
+    "typer": {
+        "base_import": "typer",
+        "distribution": "typer",
+        "dependencies": {
+            "click": ">=8.2.1",
+            "shellingham": ">=1.3.0",
+            "rich": ">=12.3.0",
+            "annotated-doc": ">=0.0.2"
+        },
+        "disk_size_mb": 0.5166,
+        "import_time": 0.01837819628417492
+    },
+    "mdurl": {
+        "base_import": "mdurl",
+        "distribution": "mdurl",
+        "dependencies": {},
+        "disk_size_mb": 0.0405,
+        "import_time": 0.008719068020582199
+    },
+    "nvidia": {
+        "base_import": "nvidia",
+        "distribution": "nvidia-cublas",
+        "dependencies": {},
+        "disk_size_mb": 569.47,
+        "import_time": 0.00010708346962928772
+    },
+    "sympy": {
+        "base_import": "sympy",
+        "distribution": "sympy",
+        "dependencies": {
+            "mpmath": "<1.4,>=1.1.0"
+        },
+        "disk_size_mb": 71.9916,
+        "import_time": 0.206796919927001
+    },
+    "shellingham": {
+        "base_import": "shellingham",
+        "distribution": "shellingham",
+        "dependencies": {},
+        "disk_size_mb": 0.0381,
+        "import_time": 0.0008356049656867981
+    },
+    "click": {
+        "base_import": "click",
+        "distribution": "click",
+        "dependencies": {},
+        "disk_size_mb": 0.8317,
+        "import_time": 0.016905341297388077
+    },
+    "huggingface_hub": {
+        "base_import": "huggingface_hub",
+        "distribution": "huggingface_hub",
+        "dependencies": {
+            "filelock": ">=3.10.0",
+            "fsspec": ">=2023.5.0",
+            "hf-xet": "<2.0.0,>=1.4.3",
+            "httpx": "<1,>=0.23.0",
+            "packaging": ">=20.9",
+            "pyyaml": ">=5.1",
+            "tqdm": ">=4.42.1",
+            "typer": "(any)",
+            "typing-extensions": ">=4.1.0"
+        },
+        "disk_size_mb": 5.203,
+        "import_time": 0.0003721322864294052
+    },
+    "hf_xet": {
+        "base_import": "hf_xet",
+        "distribution": "hf-xet",
+        "dependencies": {},
+        "disk_size_mb": 10.6047,
+        "import_time": 0.034228650853037834
+    },
+    "fontTools": {
+        "base_import": "fontTools",
+        "distribution": "fonttools",
+        "dependencies": {},
+        "disk_size_mb": 25.8488,
+        "import_time": 0.0076206885278224945
+    },
+    "setuptools": {
+        "base_import": "setuptools",
+        "distribution": "setuptools",
+        "dependencies": {},
+        "disk_size_mb": 3.387,
+        "import_time": 0.20283390022814274
+    },
+    "threadpoolctl": {
+        "base_import": "threadpoolctl",
+        "distribution": "threadpoolctl",
+        "dependencies": {},
+        "disk_size_mb": 0.1253,
+        "import_time": 0.014201639220118523
+    },
+    "pyparsing": {
+        "base_import": "pyparsing",
+        "distribution": "pyparsing",
+        "dependencies": {},
+        "disk_size_mb": 0.9947,
+        "import_time": 0.04928779415786266
+    },
+    "matplotlib": {
+        "base_import": "matplotlib",
+        "distribution": "matplotlib",
+        "dependencies": {
+            "contourpy": ">=1.0.1",
+            "cycler": ">=0.10",
+            "fonttools": ">=4.22.0",
+            "kiwisolver": ">=1.3.1",
+            "numpy": ">=1.23",
+            "packaging": ">=20.0",
+            "pillow": ">=8",
+            "pyparsing": ">=3",
+            "python-dateutil": ">=2.7"
+        },
+        "disk_size_mb": 31.3061,
+        "import_time": 0.058488328009843826
+    },
+    "transformers": {
+        "base_import": "transformers",
+        "distribution": "transformers",
+        "dependencies": {
+            "huggingface-hub": "<2.0,>=1.5.0",
+            "numpy": ">=1.17",
+            "packaging": ">=20.0",
+            "pyyaml": ">=5.1",
+            "regex": ">=2025.10.22",
+            "tokenizers": "<=0.23.0,>=0.22.0",
+            "typer": "(any)",
+            "safetensors": ">=0.4.3",
+            "tqdm": ">=4.27"
+        },
+        "disk_size_mb": 86.6932,
+        "import_time": 0.6302148289978504
+    },
+    "torch.nn": {
+        "base_import": "torch",
+        "distribution": "torch",
+        "dependencies": {
+            "filelock": "(any)",
+            "typing-extensions": ">=4.10.0",
+            "setuptools": "<82",
+            "sympy": ">=1.13.3",
+            "networkx": ">=2.5.1",
+            "jinja2": "(any)",
+            "fsspec": ">=0.8.5",
+            "cuda-toolkit": "==13.0.2",
+            "cuda-bindings": "<14,>=13.0.3",
+            "nvidia-cudnn-cu13": "==9.19.0.56",
+            "nvidia-cusparselt-cu13": "==0.8.0",
+            "nvidia-nccl-cu13": "==2.28.9",
+            "nvidia-nvshmem-cu13": "==3.4.5",
+            "triton": "==3.6.0"
+        },
+        "disk_size_mb": 3.6501,
+        "import_time": 1.1636699568480253
+    },
+    "sklearn.svm": {
+        "base_import": "sklearn",
+        "distribution": "scikit-learn",
+        "dependencies": {
+            "numpy": ">=1.24.1",
+            "scipy": ">=1.10.0",
+            "joblib": ">=1.3.0",
+            "threadpoolctl": ">=3.2.0"
+        },
+        "disk_size_mb": 1.5553,
+        "import_time": 0.7951032463461161
+    },
+    "markdown_it": {
+        "base_import": "markdown_it",
+        "distribution": "markdown-it-py",
+        "dependencies": {
+            "mdurl": "~=0.1"
+        },
+        "disk_size_mb": 0.4679,
+        "import_time": 0.028654539957642555
+    },
+    "nvidia/cusparselt": {
+        "base_import": "nvidia/cusparselt",
+        "distribution": "nvidia-cusparselt-cu13",
+        "dependencies": {},
+        "disk_size_mb": 222.8382,
+        "import_time": 0
+    },
+    "filelock": {
+        "base_import": "filelock",
+        "distribution": "filelock",
+        "dependencies": {},
+        "disk_size_mb": 0.1759,
+        "import_time": 0.04365559108555317
+    },
+    "cuda": {
+        "base_import": "cuda",
+        "distribution": "cuda-bindings",
+        "dependencies": {
+            "cuda-pathfinder": "~=1.1"
+        },
+        "disk_size_mb": 22.8377,
+        "import_time": 8.828938007354736e-07
+    },
+    "joblib": {
+        "base_import": "joblib",
+        "distribution": "joblib",
+        "dependencies": {},
+        "disk_size_mb": 2.0085,
+        "import_time": 0.11197273805737495
+    },
+    "networkx": {
+        "base_import": "networkx",
+        "distribution": "networkx",
+        "dependencies": {},
+        "disk_size_mb": 15.8057,
+        "import_time": 0.11825143918395042
+    },
+    "functorch": {
+        "base_import": "functorch",
+        "distribution": "torch",
+        "dependencies": {
+            "filelock": "(any)",
+            "typing-extensions": ">=4.10.0",
+            "setuptools": "<82",
+            "sympy": ">=1.13.3",
+            "networkx": ">=2.5.1",
+            "jinja2": "(any)",
+            "fsspec": ">=0.8.5",
+            "cuda-toolkit": "==13.0.2",
+            "cuda-bindings": "<14,>=13.0.3",
+            "nvidia-cudnn-cu13": "==9.19.0.56",
+            "nvidia-cusparselt-cu13": "==0.8.0",
+            "nvidia-nccl-cu13": "==2.28.9",
+            "nvidia-nvshmem-cu13": "==3.4.5",
+            "triton": "==3.6.0"
+        },
+        "disk_size_mb": 1132.8056,
+        "import_time": 1.1702153086662292
+    },
+    "regex": {
+        "base_import": "regex",
+        "distribution": "regex",
+        "dependencies": {},
+        "disk_size_mb": 3.4876,
+        "import_time": 0.009205203503370285
+    },
+    "sklearn.metrics": {
+        "base_import": "sklearn",
+        "distribution": "scikit-learn",
+        "dependencies": {
+            "numpy": ">=1.24.1",
+            "scipy": ">=1.10.0",
+            "joblib": ">=1.3.0",
+            "threadpoolctl": ">=3.2.0"
+        },
+        "disk_size_mb": 5.3953,
+        "import_time": 0.7746780216693878
+    },
+    "_yaml": {
+        "base_import": "_yaml",
+        "distribution": "PyYAML",
+        "dependencies": {},
+        "disk_size_mb": 3.0057,
+        "import_time": 0.014112748205661774
+    },
+    "pygments": {
+        "base_import": "pygments",
+        "distribution": "Pygments",
+        "dependencies": {},
+        "disk_size_mb": 8.0797,
+        "import_time": 0.00016324780881404877
+    },
+    "pkg_resources": {
+        "base_import": "pkg_resources",
+        "distribution": "setuptools",
+        "dependencies": {},
+        "disk_size_mb": 4.3155,
+        "import_time": 0.1065596267580986
+    },
+    "wheel": {
+        "base_import": "wheel",
+        "distribution": "wheel",
+        "dependencies": {},
+        "disk_size_mb": 0.2141,
+        "import_time": 0.0018283147364854813
+    },
+    "httpcore": {
+        "base_import": "httpcore",
+        "distribution": "httpcore",
+        "dependencies": {
+            "certifi": "(any)",
+            "h11": ">=0.16"
+        },
+        "disk_size_mb": 0.6235,
+        "import_time": 0.049078090116381645
+    },
+    "torchgen": {
+        "base_import": "torchgen",
+        "distribution": "torch",
+        "dependencies": {
+            "filelock": "(any)",
+            "typing-extensions": ">=4.10.0",
+            "setuptools": "<82",
+            "sympy": ">=1.13.3",
+            "networkx": ">=2.5.1",
+            "jinja2": "(any)",
+            "fsspec": ">=0.8.5",
+            "cuda-toolkit": "==13.0.2",
+            "cuda-bindings": "<14,>=13.0.3",
+            "nvidia-cudnn-cu13": "==9.19.0.56",
+            "nvidia-cusparselt-cu13": "==0.8.0",
+            "nvidia-nccl-cu13": "==2.28.9",
+            "nvidia-nvshmem-cu13": "==3.4.5",
+            "triton": "==3.6.0"
+        },
+        "disk_size_mb": 1132.8056,
+        "import_time": 0.00014976225793361664
+    },
+    "h11": {
+        "base_import": "h11",
+        "distribution": "h11",
+        "dependencies": {},
+        "disk_size_mb": 0.1865,
+        "import_time": 0.01774364337325096
+    }
+}
