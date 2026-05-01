@@ -12,7 +12,7 @@ services:
                     "grpcurl",
                     "-plaintext",
                     "main_node:50051",
-                    "grpc.health.v1.Health/Check"
+                    "grpc.health.v1.Health/Check",
                 ]
             interval: 10s
             timeout: 5s
@@ -34,12 +34,9 @@ services:
                     "grpcurl",
                     "-plaintext",
                     "worker_node:50052",
-                    "grpc.health.v1.Health/Check"
+                    "grpc.health.v1.Health/Check",
                 ]
             interval: 10s
             timeout: 5s
             retries: 3
             start_period: 5s
-        volumes:
-            # This allows the container to control the host's Docker daemon
-            - /var/run/docker.sock:/var/run/docker.sock
