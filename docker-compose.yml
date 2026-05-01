@@ -1,31 +1,31 @@
 services:
-    main_node:
+    router:
         build:
-            context: ./main
+            context: ./router
         ports:
             - "50051:50051"
-        container_name: main_node
+        container_name: router
         healthcheck:
             test:
                 [
                     "CMD",
                     "grpcurl",
                     "-plaintext",
-                    "main_node:50051",
+                    "router:50051",
                     "grpc.health.v1.Health/Check",
                 ]
             interval: 10s
             timeout: 5s
             retries: 3
             start_period: 5s
-    worker_node:
+    worker:
         build:
             context: ./worker
         ports:
             - "50052:50052"
-        container_name: worker_node
+        container_name: worker
         depends_on:
-            main_node:
+            router:
                 condition: service_healthy
         healthcheck:
             test:
@@ -33,7 +33,7 @@ services:
                     "CMD",
                     "grpcurl",
                     "-plaintext",
-                    "worker_node:50052",
+                    "worker:50052",
                     "grpc.health.v1.Health/Check",
                 ]
             interval: 10s

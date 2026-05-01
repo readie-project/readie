@@ -14,7 +14,7 @@ var (
 )
 
 func InitalizeRPCClient() *grpc.ClientConn {
-	conn, err := grpc.NewClient(config.MainNodeUri, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(config.RouterUri, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to initialize gRPC client: %v", err)
 	}

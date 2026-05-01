@@ -45,7 +45,7 @@ message ClientExecutionResponse {
     }
 }
 
-// Service on the main node to handle execution requests from external clients
+// Service on the router to handle execution requests from external clients
 service ProxyService {
   // Bi-directional streaming RPC for streaming code execution input and output
   rpc RequestExecution(stream ClientExecutionRequest) returns (stream ClientExecutionResponse);

@@ -29,7 +29,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Service on the main node to handle status and utilization updates from workers and executors
+// Service on the router to handle status and utilization updates from workers and executors
 type RegistryServiceClient interface {
 	// Unary RPC for posting worker status
 	PostWorkerStatus(ctx context.Context, in *WorkerStatus, opts ...grpc.CallOption) (*RegistryUpdateResponse, error)
@@ -93,7 +93,7 @@ func (c *registryServiceClient) PostExecutorUtilization(ctx context.Context, in 
 // All implementations must embed UnimplementedRegistryServiceServer
 // for forward compatibility.
 //
-// Service on the main node to handle status and utilization updates from workers and executors
+// Service on the router to handle status and utilization updates from workers and executors
 type RegistryServiceServer interface {
 	// Unary RPC for posting worker status
 	PostWorkerStatus(context.Context, *WorkerStatus) (*RegistryUpdateResponse, error)

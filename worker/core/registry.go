@@ -17,7 +17,7 @@ func PostWorkerStatus(ctx context.Context, status pb.Status) bool {
 		Status:    status,
 	})
 	if err != nil {
-		log.Printf("Could not update worker %s status to main node: %v", config.WorkerId, err)
+		log.Printf("Could not update worker %s status to router: %v", config.WorkerId, err)
 	}
 	return (err == nil) && res.Updated
 }
@@ -34,7 +34,7 @@ func PostContainerStatus(ctx context.Context, containerId string, status pb.Stat
 		Status:      status,
 	})
 	if err != nil {
-		log.Printf("Could not update container %s~%s status to main node: %v", config.WorkerId, containerId, err)
+		log.Printf("Could not update container %s~%s status to router: %v", config.WorkerId, containerId, err)
 	}
 	return (err == nil) && res.Updated
 }
@@ -57,7 +57,7 @@ func PostWorkerUtilization(ctx context.Context, utilization Utilization) bool {
 		GpuTotal: utilization.GpuTotal,
 	})
 	if err != nil {
-		log.Printf("Could not update worker %s utilization to main node: %v", config.WorkerId, err)
+		log.Printf("Could not update worker %s utilization to router: %v", config.WorkerId, err)
 	}
 	return (err == nil) && res.Updated
 }
@@ -74,7 +74,7 @@ func PostContainerUtilization(ctx context.Context, containerId string, utilizati
 		GpuTotal:    utilization.GpuTotal,
 	})
 	if err != nil {
-		log.Printf("Could not update container %s~%s utilization to main node: %v", config.WorkerId, containerId, err)
+		log.Printf("Could not update container %s~%s utilization to router: %v", config.WorkerId, containerId, err)
 	}
 	return (err == nil) && res.Updated
 }

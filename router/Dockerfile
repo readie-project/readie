@@ -8,7 +8,7 @@ RUN wget -qO- https://github.com/fullstorydev/grpcurl/releases/download/v1.9.3/g
 
 COPY . .
 
-ENV SERVICE_NAME=main_node
+ENV SERVICE_NAME=router
 ENV PORT=50051
 ENV APP_ENV=production
 

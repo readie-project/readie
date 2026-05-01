@@ -31,7 +31,7 @@ message WorkerExecutionResponse {
   }
 }
 
-// Service on the worker nodes to handle execution requests
+// Service on the workers to handle execution requests
 service ExecutionService {
   // Bi-directional streaming RPC for streaming code execution input and output
   rpc RequestExecution(stream WorkerExecutionRequest) returns (stream WorkerExecutionResponse);

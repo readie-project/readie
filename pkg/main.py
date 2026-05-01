@@ -43,7 +43,7 @@ class Executor:
         request_id = "request_id"
 
         # TODO: Single gRPC connection instance
-        async with grpc.aio.insecure_channel(os.environ.get("MAIN_NODE_URI")) as channel:
+        async with grpc.aio.insecure_channel(os.environ.get("ROUTER_URI")) as channel:
             proxyStub = proxy_pb2_grpc.ProxyServiceStub(channel)
             stream: AsyncGenerator[proxy_pb2.ClientExecutionResponse] = proxyStub.RequestExecution(
                 self._get_request_iterator(request_id, pickled_bytes, resources))

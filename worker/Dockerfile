@@ -26,10 +26,10 @@ RUN python -c "import site; print(site.getsitepackages()[0])" > /app/sitepackage
 
 RUN mkdir /shared
 
-ENV SERVICE_NAME=worker_node
+ENV SERVICE_NAME=worker
 ENV PORT=50052
 ENV WORKER_DIR=/shared
-ENV MAIN_NODE_URI=main_node:50051
+ENV ROUTER_URI=router:50051
 ENV SITEPACKAGES_TXT_PATH=/app/sitepackages_path.txt
 ENV APP_ENV=production
 

@@ -49,7 +49,7 @@ message RegistryUpdateResponse {
   bool updated = 1;
 }
 
-// Service on the main node to handle status and utilization updates from workers and executors
+// Service on the router to handle status and utilization updates from workers and executors
 service RegistryService {
   // Unary RPC for posting worker status
   rpc PostWorkerStatus(WorkerStatus) returns (RegistryUpdateResponse);

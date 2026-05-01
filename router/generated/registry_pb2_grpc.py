@@ -26,7 +26,7 @@ if _version_not_supported:
 
 
 class RegistryServiceStub(object):
-    """Service on the main node to handle status and utilization updates from workers and executors
+    """Service on the router to handle status and utilization updates from workers and executors
     """
 
     def __init__(self, channel):
@@ -58,7 +58,7 @@ class RegistryServiceStub(object):
 
 
 class RegistryServiceServicer(object):
-    """Service on the main node to handle status and utilization updates from workers and executors
+    """Service on the router to handle status and utilization updates from workers and executors
     """
 
     def PostWorkerStatus(self, request, context):
@@ -121,7 +121,7 @@ def add_RegistryServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class RegistryService(object):
-    """Service on the main node to handle status and utilization updates from workers and executors
+    """Service on the router to handle status and utilization updates from workers and executors
     """
 
     @staticmethod

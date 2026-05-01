@@ -63,18 +63,18 @@ func StartServer() {
 
 	updated := core.PostWorkerStatus(ctx, pb.Status_STATUS_READY)
 	if !updated {
-		log.Fatalf("Could not connect to main node and register worker")
+		log.Fatalf("Could not connect to router and register worker")
 	}
-	log.Printf("Connected to main node with worker ID: %s", workerId)
+	log.Printf("Connected to router with worker ID: %s", workerId)
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancel()
 
 		updated = core.PostWorkerStatus(ctx, pb.Status_STATUS_REMOVED)
 		if !updated {
-			log.Fatalf("Could not connect to main node and remove worker")
+			log.Fatalf("Could not connect to router and remove worker")
 		}
-		log.Printf("Removed worker from main node with worker ID: %s", workerId)
+		log.Printf("Removed worker from router with worker ID: %s", workerId)
 	}()
 
 	defer wg.Done()

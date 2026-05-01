@@ -15,7 +15,7 @@ var (
 	WorkerId         string
 	WorkerUri        string
 	WorkerDir        string
-	MainNodeUri      string
+	RouterUri      string
 	ExecutorImage    string
 	SitePackagesPath string
 )
@@ -28,7 +28,7 @@ func LoadConfig() {
 	WorkerId = generateWorkerId()
 	WorkerUri = fmt.Sprintf("%s:%s", os.Getenv("SERVICE_NAME"), os.Getenv("PORT"))
 	WorkerDir = os.Getenv("WORKER_DIR")
-	MainNodeUri = os.Getenv("MAIN_NODE_URI")
+	RouterUri = os.Getenv("ROUTER_URI")
 	ExecutorImage = "test-agent"
 
 	contentBytes, err := os.ReadFile(os.Getenv("SITEPACKAGES_TXT_PATH"))

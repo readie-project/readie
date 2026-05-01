@@ -26,7 +26,7 @@ if _version_not_supported:
 
 
 class ProxyServiceStub(object):
-    """Service on the main node to handle execution requests from external clients
+    """Service on the router to handle execution requests from external clients
     """
 
     def __init__(self, channel):
@@ -43,7 +43,7 @@ class ProxyServiceStub(object):
 
 
 class ProxyServiceServicer(object):
-    """Service on the main node to handle execution requests from external clients
+    """Service on the router to handle execution requests from external clients
     """
 
     def RequestExecution(self, request_iterator, context):
@@ -70,7 +70,7 @@ def add_ProxyServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ProxyService(object):
-    """Service on the main node to handle execution requests from external clients
+    """Service on the router to handle execution requests from external clients
     """
 
     @staticmethod

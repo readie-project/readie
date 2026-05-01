@@ -26,7 +26,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Service on the worker nodes to handle execution requests
+// Service on the workers to handle execution requests
 type ExecutionServiceClient interface {
 	// Bi-directional streaming RPC for streaming code execution input and output
 	RequestExecution(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WorkerExecutionRequest, WorkerExecutionResponse], error)
@@ -57,7 +57,7 @@ type ExecutionService_RequestExecutionClient = grpc.BidiStreamingClient[WorkerEx
 // All implementations must embed UnimplementedExecutionServiceServer
 // for forward compatibility.
 //
-// Service on the worker nodes to handle execution requests
+// Service on the workers to handle execution requests
 type ExecutionServiceServer interface {
 	// Bi-directional streaming RPC for streaming code execution input and output
 	RequestExecution(grpc.BidiStreamingServer[WorkerExecutionRequest, WorkerExecutionResponse]) error

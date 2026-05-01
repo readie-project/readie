@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import generated.execution_pb2 as execution__pb2
+import generated.proxy_pb2 as proxy__pb2
 
 GRPC_GENERATED_VERSION = '1.78.1'
 GRPC_VERSION = grpc.__version__
@@ -18,15 +18,15 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in execution_pb2_grpc.py depends on'
+        + ' but the generated code in proxy_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class ExecutionServiceStub(object):
-    """Service on the worker nodes to handle execution requests
+class ProxyServiceStub(object):
+    """Service on the router to handle execution requests from external clients
     """
 
     def __init__(self, channel):
@@ -36,14 +36,14 @@ class ExecutionServiceStub(object):
             channel: A grpc.Channel.
         """
         self.RequestExecution = channel.stream_stream(
-                '/ExecutionService/RequestExecution',
-                request_serializer=execution__pb2.WorkerExecutionRequest.SerializeToString,
-                response_deserializer=execution__pb2.WorkerExecutionResponse.FromString,
+                '/ProxyService/RequestExecution',
+                request_serializer=proxy__pb2.ClientExecutionRequest.SerializeToString,
+                response_deserializer=proxy__pb2.ClientExecutionResponse.FromString,
                 _registered_method=True)
 
 
-class ExecutionServiceServicer(object):
-    """Service on the worker nodes to handle execution requests
+class ProxyServiceServicer(object):
+    """Service on the router to handle execution requests from external clients
     """
 
     def RequestExecution(self, request_iterator, context):
@@ -54,23 +54,23 @@ class ExecutionServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_ExecutionServiceServicer_to_server(servicer, server):
+def add_ProxyServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'RequestExecution': grpc.stream_stream_rpc_method_handler(
                     servicer.RequestExecution,
-                    request_deserializer=execution__pb2.WorkerExecutionRequest.FromString,
-                    response_serializer=execution__pb2.WorkerExecutionResponse.SerializeToString,
+                    request_deserializer=proxy__pb2.ClientExecutionRequest.FromString,
+                    response_serializer=proxy__pb2.ClientExecutionResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ExecutionService', rpc_method_handlers)
+            'ProxyService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ExecutionService', rpc_method_handlers)
+    server.add_registered_method_handlers('ProxyService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class ExecutionService(object):
-    """Service on the worker nodes to handle execution requests
+class ProxyService(object):
+    """Service on the router to handle execution requests from external clients
     """
 
     @staticmethod
@@ -87,9 +87,9 @@ class ExecutionService(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/ExecutionService/RequestExecution',
-            execution__pb2.WorkerExecutionRequest.SerializeToString,
-            execution__pb2.WorkerExecutionResponse.FromString,
+            '/ProxyService/RequestExecution',
+            proxy__pb2.ClientExecutionRequest.SerializeToString,
+            proxy__pb2.ClientExecutionResponse.FromString,
             options,
             channel_credentials,
             insecure,
