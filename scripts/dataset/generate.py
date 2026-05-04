@@ -4,6 +4,8 @@ import json
 from json import JSONDecodeError
 import os
 
+from .types import DatasetEntry
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -38,32 +40,33 @@ Return ONLY a valid JSON object. No markdown formatting, no backticks, no preamb
 }
 """
 
-def get_previously_generated_topics():
-    PREVIOUSLY_GENERATED_TOPICS = set() # Set of previously generated topics to avoid repetition
+dataset_path = os.path.join(os.path.dirname(__file__), "dataset.json")
 
-    with open("./dataset.json", 'r') as f:
+
+def get_previously_generated_topics() -> tuple[list[DatasetEntry], str]:
+    # Set of previously generated topics to avoid repetition
+    previously_generated_topics = set()
+
+    with open(dataset_path, 'r') as f:
         data = json.load(f)
 
     for i in data:
-        PREVIOUSLY_GENERATED_TOPICS.add(i['task_name'])
+        previously_generated_topics.add(i['task_name'])
 
-    return ", ".join(PREVIOUSLY_GENERATED_TOPICS)
+    return data, ", ".join(previously_generated_topics)
 
-def generate(category, num_requests):
+
+def generate(client, category: str, num_requests: int):
+    data, previously_generated_topics = get_previously_generated_topics()
+
     user_prompt = f"""
     Generate {num_requests} Python code snippets for the category: {category}
-    Do not generate code that is identical or nearly identical to these previously generated topics: {get_previously_generated_topics()}
+    Do not generate code that is identical or nearly identical to these previously generated topics: {previously_generated_topics}
     """
 
-    client = AzureOpenAI(
-    api_version="2025-03-01-preview",
-    azure_endpoint=os.environ.get("AZURE_ENDPOINT"),
-    api_key=os.environ.get("AZURE_API_KEY")
-    )
-
     messages = [
-        {"role": "system", "content": system_prompt },
-        {"role": "user", "content": user_prompt },
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]
 
     response = client.chat.completions.create(
@@ -78,32 +81,13 @@ def generate(category, num_requests):
             try:
                 parser = TreeParser()
                 data.append({**item, **parser.start(item['code'])})
-                with open("./dataset.json", 'w') as f:
-                  json.dump(data, f, indent=2)
             except Exception as e:
                 print(f"Error processing code for task {item['code']}: {e}")
+        with open(dataset_path, 'w') as f:
+            json.dump(data, f, indent=2)
     except JSONDecodeError as e:
         print(f"Error decoding response {response_data}: {e}")
 
-CATEGORY_OPTIONS = [
-    "Exploratory Data Analysis",
-    "Feature Engineering",
-    "Data Preprocessing",
-    "Data Science",
-    "Machine Learning",
-    "Natural Language Processing",
-    "Model Inference",
-    "Model Training",
-    "Computer Vision",
-    "Image Processing",
-    "Time Series Analysis",
-    "Recommender Systems",
-    "Anomaly Detection",
-    "ETL Pipelines",
-    "Data Visualization",
-    "Graph Processing"
-    # Add more categories as needed
-]
 
 CATEGORY_OPTIONS = [
     "Exploratory Data Analysis",
@@ -124,13 +108,18 @@ CATEGORY_OPTIONS = [
     "Graph Processing"
     # Add more categories as needed
 ]
-NUM_REQUESTS = 10 # Number of code snippets to generate in each batch
-BATCHES_PER_CATEGORY = 10 # Number of batches to generate for each category
+NUM_REQUESTS = 10  # Number of code snippets to generate in each batch
+BATCHES_PER_CATEGORY = 10  # Number of batches to generate for each category
 
 if __name__ == "__main__":
+    client = AzureOpenAI(
+        api_version="2025-03-01-preview",
+        azure_endpoint=os.environ.get("AZURE_ENDPOINT"),
+        api_key=os.environ.get("AZURE_API_KEY")
+    )
+
     for category in CATEGORY_OPTIONS:
         print(f"Generating code snippets for category: {category}")
         for i in range(1, BATCHES_PER_CATEGORY + 1):
             print(f"Batch {i}/{BATCHES_PER_CATEGORY} for category: {category}")
-            generate(category, NUM_REQUESTS)
-    
+            generate(client, category, NUM_REQUESTS)

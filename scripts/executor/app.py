@@ -2,6 +2,7 @@ import socket
 import os
 import io
 import sys
+import time
 import cloudpickle
 
 CHUNK_SIZE = 1024 * 1024
@@ -72,11 +73,13 @@ def create_socket_connection(socket_dir: str):
             pass
 
 
-if __name__ == "__main__":
-    socket_dir = os.getenv("EXECUTOR_DIR", None)
+print("READY_FOR_CHECKPOINT", flush=True)
+time.sleep(30)  # Wait to be checkpointed
 
-    if not socket_dir:
-        print("EXECUTOR_DIR environment variables must be set.", file=sys.stderr)
-        sys.exit(1)
+socket_dir = os.getenv("EXECUTOR_DIR", None)
 
-    create_socket_connection(socket_dir)
+if not socket_dir:
+    print("EXECUTOR_DIR environment variables must be set.", file=sys.stderr)
+    sys.exit(1)
+
+create_socket_connection(socket_dir)

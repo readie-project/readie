@@ -61,6 +61,7 @@ executor = Executor()
 
 
 def remote(func):
+    # Do all function parsing and tree analysis here
     @functools.wraps(func)
     async def remote_execution(*args, **kwargs):
         pickled_bytes = cloudpickle.dumps({
