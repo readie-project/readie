@@ -1,5 +1,5 @@
 from openai import AzureOpenAI
-from TreeParser import TreeParser
+from .TreeParser import TreeParser
 import json
 from json import JSONDecodeError
 import os

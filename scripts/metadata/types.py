@@ -1,4 +1,5 @@
-from typing import TypedDict, StrEnum
+from typing import TypedDict
+from enum import StrEnum
 
 
 class ResourceType(StrEnum):
