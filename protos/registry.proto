@@ -4,45 +4,58 @@ option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/w
 
 enum Status {
   STATUS_UNKNOWN = 0;
-  STATUS_READY   = 2;
-  STATUS_BUSY    = 3;
-  STATUS_ERROR   = 4;
+  STATUS_READY = 2;
+  STATUS_BUSY = 3;
+  STATUS_ERROR = 4;
   STATUS_REMOVED = 5;
 }
 
 // Message used for posting worker status
 message WorkerStatus {
-  string worker_id  = 1;
+  string worker_id = 1;
   string worker_uri = 2;
-  Status status     = 3;
+  Status status = 3;
+
+  // Capacity, stamped on every status so a router that restarts relearns it
+  // from the next report rather than scheduling blind until the worker
+  // happens to re-register.
+  int64 mem_total = 4; // bytes this worker will hand out to executors
+  int32 max_executors = 5; // concurrent containers, 0 meaning unbounded
 }
 
 // Message used for posting executor status
 message ExecutorStatus {
   string container_id = 1;
-  string worker_id    = 2;
-  string request_id   = 3;
-  string session_id   = 4;
-  Status status       = 5;
+  string worker_id = 2;
+  string request_id = 3;
+  string session_id = 4;
+  Status status = 5;
 }
 
 // Message used for posting worker utilization
 message WorkerUtilization {
   string worker_id = 1;
-  int64  cpu_util  = 2;
-  int64  cpu_total = 3;
-  int64  gpu_util  = 4;
-  int64  gpu_total = 5;
+  int64 cpu_util = 2;
+  int64 cpu_total = 3;
+  int64 gpu_util = 4;
+  int64 gpu_total = 5;
+
+  // Memory is what actually bounds how many executors fit on a worker, so the
+  // scheduler scores on it. Until these existed the worker sent only executor
+  // utilization and worker-level load did not exist at all.
+  int64 mem_used = 6; // bytes reserved by live executors
+  int64 mem_total = 7; // bytes available to executors
+  int32 executor_count = 8; // live containers right now
 }
 
 // Message used for posting executor utilization
 message ExecutorUtilization {
   string container_id = 1;
-  string worker_id    = 2;
-  int64  cpu_util     = 3;
-  int64  cpu_total    = 4;
-  int64  gpu_util     = 5;
-  int64  gpu_total    = 6;
+  string worker_id = 2;
+  int64 cpu_util = 3;
+  int64 cpu_total = 4;
+  int64 gpu_util = 5;
+  int64 gpu_total = 6;
 }
 
 message RegistryUpdateResponse {

@@ -1,0 +1,190 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch makes the in-flight run redundant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: ${{ matrix.package }} (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # router and pipeline control their own images and can pin. pkg and
+          # executor are installed into someone else's process -- a user's
+          # script and the sandbox rootfs -- so they must work on whatever is
+          # already there.
+          - { package: router, python: "3.13" }
+          - { package: pipeline, python: "3.12" }
+          - { package: pipeline, python: "3.13" }
+          - { package: pkg, python: "3.11" }
+          - { package: pkg, python: "3.12" }
+          - { package: pkg, python: "3.13" }
+          - { package: executor, python: "3.11" }
+          - { package: executor, python: "3.12" }
+          - { package: executor, python: "3.13" }
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: ${{ matrix.package }}/uv.lock
+
+      - name: Install
+        run: uv sync --all-groups --python ${{ matrix.python }}
+
+      - name: Lint
+        run: make lint
+
+      - name: Type-check
+        run: make type
+
+      - name: Test
+        run: make test
+
+  go:
+    name: worker
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: worker/go.mod
+          cache-dependency-path: worker/go.sum
+
+      - name: Build
+        run: go build ./...
+
+      # -race is the point of running the worker's suite in CI: the container
+      # manager, the execution pumps and the stream adapters are all concurrent.
+      - name: Test
+        run: go test -race ./...
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: worker
+
+  buf:
+    name: protos lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # buf breaking compares against main, which needs the history.
+          fetch-depth: 0
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Lint
+        run: buf lint
+
+      - name: Format
+        run: buf format --diff --exit-code
+
+      # The contracts are additive by policy: new field numbers, never reused or
+      # renumbered ones. A renumbered field silently reinterprets every message
+      # already in flight, which no test would catch.
+      - name: Breaking changes
+        if: github.event_name == 'pull_request'
+        run: buf breaking --against '.git#branch=main'
+
+  protos:
+    name: generated stubs are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: worker/go.mod
+
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Regenerate
+        run: make protos
+
+      # Generated code is committed so a checkout builds without protoc. That
+      # only holds if it is actually regenerated when the protos change.
+      - name: Check for drift
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::generated stubs are stale; run 'make protos' and commit the result"
+            git diff --stat
+            exit 1
+          fi
+
+  # The executor protocol is implemented twice, in Python and in Go, against a
+  # fixture the Python side generates. A change to the generator that nobody
+  # regenerated leaves both suites validating a format neither speaks.
+  golden:
+    name: framing fixture is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: executor/uv.lock
+
+      - name: Regenerate
+        run: cd executor && uv run python tests/generate_golden.py
+
+      - name: Check for drift
+        run: |
+          if ! git diff --quiet -- executor/tests/data; then
+            echo "::error::the framing fixture is stale; rerun executor/tests/generate_golden.py"
+            git diff -- executor/tests/data
+            exit 1
+          fi
+
+  images:
+    name: images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # The rootfs is a build input to the pipeline image, so it must exist
+      # first. Neither is in docker-compose.yml -- they are build-time
+      # artifacts, not services -- which is exactly why they would rot
+      # unnoticed without this.
+      - name: Build the executor rootfs
+        run: docker build -t crfs-executor-rootfs:latest -f rootfs/Dockerfile .
+
+      # Building is as far as CI can go: gVisor is amd64-only and works by
+      # intercepting syscalls, so capturing a checkpoint or executing a function
+      # needs a real amd64 host with the artifact tree mounted.
+      - name: Build the service images
+        run: docker compose build
+
+      - name: Build the pipeline image
+        run: docker build -t crfs-pipeline -f pipeline/Dockerfile .

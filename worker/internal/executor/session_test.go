@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"path/filepath"
 	"testing"
@@ -51,9 +52,39 @@ func newSession(t *testing.T, conn executor.Conn, opts executor.SessionOptions) 
 	return s
 }
 
-// The executor detects the end of a request with data.endswith(b"EOF"), so the
-// terminator has to arrive as its own write rather than appended to the payload.
-func TestSession_FramesTheRequestWithATrailingEOFMarker(t *testing.T) {
+// frame renders one length-prefixed chunk.
+func frame(p []byte) []byte {
+	return append(executor.EncodeLength(len(p)), p...)
+}
+
+// readFramedMessage reads length-prefixed chunks until the terminator.
+func readFramedMessage(r io.Reader) ([]byte, error) {
+	var (
+		body   []byte
+		header = make([]byte, executor.LengthBytes)
+	)
+	for {
+		if _, err := io.ReadFull(r, header); err != nil {
+			return body, err
+		}
+		n, err := executor.DecodeLength(header)
+		if err != nil {
+			return body, err
+		}
+		if n == 0 {
+			return body, nil
+		}
+		chunk := make([]byte, n)
+		if _, err := io.ReadFull(r, chunk); err != nil {
+			return body, err
+		}
+		body = append(body, chunk...)
+	}
+}
+
+// Each chunk carries its own length prefix and the message ends with a
+// zero-length one, so the executor never has to guess where a body stops.
+func TestSession_FramesEachChunkAndTerminatesTheMessage(t *testing.T) {
 	conn, server := dialFakeExecutor(t, fakeexecutor.Options{Reply: []byte("ok")})
 	session := newSession(t, conn, executor.SessionOptions{})
 
@@ -151,12 +182,79 @@ func TestReadResponse_ReportsNoResponseWhenNothingArrives(t *testing.T) {
 	assert.ErrorIs(t, err, executor.ErrNoResponse)
 }
 
-func TestReadResponse_ClosedConnectionEndsTheResponse(t *testing.T) {
+// Under version 1 an immediate close *was* the response: an empty one, which
+// is what a raising function produced. There is no longer any such thing —
+// every outcome, including a failure, is a message — so a peer that closes
+// without sending one has died.
+func TestReadResponse_AClosedConnectionWithNoMessageIsAnError(t *testing.T) {
 	conn, _ := dialFakeExecutor(t, fakeexecutor.Options{Mode: fakeexecutor.ModeCloseImmediately})
 	session := newSession(t, conn, executor.SessionOptions{FirstByteTimeout: 2 * time.Second})
 
 	require.NoError(t, session.CloseRequest())
-	assert.NoError(t, session.ReadResponse(context.Background(), func([]byte) error { return nil }))
+
+	err := session.ReadResponse(context.Background(), func([]byte) error { return nil })
+	require.Error(t, err)
+	assert.ErrorIs(t, err, executor.ErrNoResponse)
+}
+
+// The defect the framing exists to fix. The executor writes a chunk header
+// promising more than it sends and then dies; version 1 saw a short body and
+// reported success, handing the client a payload it could not unpickle.
+func TestReadResponse_ATruncatedResponseIsAnErrorNotAShortSuccess(t *testing.T) {
+	conn, _ := dialFakeExecutor(t, fakeexecutor.Options{
+		Mode:  fakeexecutor.ModeTruncatedResponse,
+		Reply: []byte("partial"),
+	})
+	session := newSession(t, conn, executor.SessionOptions{
+		FirstByteTimeout: 2 * time.Second,
+		IdleTimeout:      200 * time.Millisecond,
+	})
+
+	require.NoError(t, session.CloseRequest())
+
+	err := session.ReadResponse(context.Background(), func([]byte) error { return nil })
+	require.Error(t, err)
+	assert.ErrorIs(t, err, executor.ErrTruncatedResponse)
+}
+
+// A body may now contain any bytes at all, including the ones that used to be
+// the terminator.
+func TestReadResponse_ABodyMayContainTheOldTerminatorBytes(t *testing.T) {
+	for _, reply := range [][]byte{[]byte("EOF"), []byte("payload-EOF"), []byte("EOFEOF")} {
+		t.Run(string(reply), func(t *testing.T) {
+			conn, _ := dialFakeExecutor(t, fakeexecutor.Options{Reply: reply})
+			session := newSession(t, conn, executor.SessionOptions{})
+
+			require.NoError(t, session.CloseRequest())
+
+			var got bytes.Buffer
+			require.NoError(t, session.ReadResponse(context.Background(), func(p []byte) error {
+				got.Write(p)
+				return nil
+			}))
+			assert.Equal(t, reply, got.Bytes())
+		})
+	}
+}
+
+// A chunk header this side will not honour must be refused before it is used
+// as an allocation size: one corrupt prefix would otherwise try to allocate
+// exabytes and take the worker down.
+func TestReadResponse_AnImplausibleChunkLengthIsRefused(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { _ = client.Close(); _ = server.Close() })
+
+	go func() {
+		_, _ = readFramedMessage(server)
+		_, _ = server.Write(executor.EncodeLength(1 << 62))
+	}()
+
+	session := newSession(t, client, executor.SessionOptions{FirstByteTimeout: 2 * time.Second})
+	require.NoError(t, session.CloseRequest())
+
+	err := session.ReadResponse(context.Background(), func([]byte) error { return nil })
+	require.Error(t, err)
+	assert.ErrorIs(t, err, executor.ErrMalformedFrame)
 }
 
 // Cancellation must interrupt a read that is already blocked. The previous
@@ -226,18 +324,12 @@ func TestSession_WorksOverNetPipe(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close(); _ = server.Close() })
 
 	go func() {
-		buf := make([]byte, 64)
-		for {
-			n, err := server.Read(buf)
-			if err != nil {
-				return
-			}
-			if bytes.HasSuffix(buf[:n], executor.EOFMarker) {
-				_, _ = server.Write([]byte("piped"))
-				_ = server.Close()
-				return
-			}
+		if _, err := readFramedMessage(server); err != nil {
+			return
 		}
+		_, _ = server.Write(frame([]byte("piped")))
+		_, _ = server.Write(executor.Terminator())
+		_ = server.Close()
 	}()
 
 	session := newSession(t, client, executor.SessionOptions{})

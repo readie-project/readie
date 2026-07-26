@@ -1,4 +1,0 @@
-grpcio
-grpcio-tools
-python-dotenv
-cloudpickle

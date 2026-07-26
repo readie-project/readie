@@ -4,30 +4,32 @@ option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/w
 
 // Message used for code execution requests to workers
 message WorkerExecutionRequest {
-  string          request_id           = 1;
-  string          session_id           = 2;
-  string          worker_id            = 3;
-  optional string container_id         = 4;
-  string          checkpoint_id        = 5;
-  bytes           payload              = 6;
-  int64           cpu_alloc            = 7;
-  int64           gpu_alloc            = 8;
-  repeated string resources            = 9;
+  string request_id = 1;
+  string session_id = 2;
+  string worker_id = 3;
+  optional string container_id = 4;
+  string checkpoint_id = 5;
+  bytes payload = 6;
+  int64 cpu_alloc = 7;
+  int64 gpu_alloc = 8;
+  // Import and artefact hints from the client's static analysis, forwarded
+  // by the router so a worker can pick a checkpoint that already has them.
+  repeated string resources = 9;
 }
 
 // Message used for code execution responses from workers
 message WorkerExecutionResponse {
-  string         request_id     = 1;
-  string         session_id     = 2;
-  string         worker_id      = 3;
-  string         container_id   = 4;
-  string         checkpoint_id  = 5;
-  int64          cpu_alloc      = 6;
-  int64          gpu_alloc      = 7;
-  bool           success        = 8;
+  string request_id = 1;
+  string session_id = 2;
+  string worker_id = 3;
+  string container_id = 4;
+  string checkpoint_id = 5;
+  int64 cpu_alloc = 6;
+  int64 gpu_alloc = 7;
+  bool success = 8;
   oneof data {
-    string  logs         = 9;
-    bytes   payload      = 10; 
+    string logs = 9;
+    bytes payload = 10;
   }
 }
 

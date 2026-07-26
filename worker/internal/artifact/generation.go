@@ -1,7 +1,7 @@
 // Package artifact models the immutable bundles the offline checkpoint
 // pipeline produces and the worker consumes.
 //
-// One run of scripts/ emits one generation: a root filesystem plus every
+// One run of pipeline/ emits one generation: a root filesystem plus every
 // checkpoint captured against it. Pairing them is not a convenience — a gVisor
 // checkpoint can only be restored into the filesystem it was taken from, so a
 // checkpoint that travels without its rootfs is unusable, and a worker holding
@@ -31,6 +31,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 )
 
 // Well-known names within the artifact tree.
@@ -57,6 +59,13 @@ var (
 	ErrUnknownGeneration = errors.New("unknown generation")
 	// ErrInvalidGeneration indicates a generation on disk is malformed.
 	ErrInvalidGeneration = errors.New("invalid generation")
+	// ErrUnsupportedProtocol indicates a generation whose executor speaks a
+	// wire format this worker does not implement.
+	//
+	// Refused at load rather than at restore. The failure otherwise happens
+	// inside a request, as a dial that succeeds followed by a read that hangs
+	// until the execution deadline -- which looks like a slow function.
+	ErrUnsupportedProtocol = errors.New("unsupported executor protocol")
 )
 
 // Generation describes one artifact produced by a single pipeline run.
@@ -75,8 +84,22 @@ type Generation struct {
 	// SpecFingerprint is the semantic hash of the OCI spec the checkpoints
 	// were captured under. See the runsc adapter's Fingerprint.
 	SpecFingerprint string `json:"spec_fingerprint"`
+	// ExecutorProtocol is the wire format version the executor in this
+	// generation's rootfs speaks. Absent means 1, the unframed format that
+	// predates this field.
+	ExecutorProtocol int `json:"executor_protocol,omitempty"`
+	// ExecutorArgv is the command the sandbox runs, verbatim. The pipeline
+	// records it rather than the worker assembling one, because both of them
+	// must produce the same process or a restore lands in a sandbox running
+	// something else.
+	ExecutorArgv []string `json:"executor_argv,omitempty"`
 	// ExecutorEntrypoint is the in-sandbox path of the executor program.
-	ExecutorEntrypoint string `json:"executor_entrypoint"`
+	//
+	// Superseded by ExecutorArgv. It survives because the executor used to be a
+	// loose file rather than an installed module, and a generation captured then
+	// records only this; Argv derives a command from it. New generations set
+	// ExecutorArgv.
+	ExecutorEntrypoint string `json:"executor_entrypoint,omitempty"`
 	// PythonPath is the in-sandbox PYTHONPATH the rootfs expects.
 	PythonPath string `json:"python_path,omitempty"`
 	// Overlay and Network are the runtime modes in force at capture time.
@@ -91,6 +114,31 @@ type Generation struct {
 	Dir string `json:"-"`
 	// Checkpoints is keyed by checkpoint ID. Populated on load.
 	Checkpoints map[string]Checkpoint `json:"-"`
+}
+
+// Protocol is the executor wire format version, defaulting to 1.
+//
+// A generation captured before the field existed necessarily speaks version 1,
+// so an absent value is that rather than an error.
+func (g Generation) Protocol() int {
+	if g.ExecutorProtocol == 0 {
+		return 1
+	}
+	return g.ExecutorProtocol
+}
+
+// Argv is the command the sandbox should run.
+//
+// ExecutorArgv when the pipeline recorded one, otherwise a command derived from
+// the legacy ExecutorEntrypoint path.
+func (g Generation) Argv() []string {
+	if len(g.ExecutorArgv) > 0 {
+		return append([]string(nil), g.ExecutorArgv...)
+	}
+	if g.ExecutorEntrypoint != "" {
+		return []string{"python", "-u", g.ExecutorEntrypoint}
+	}
+	return nil
 }
 
 // RootfsPath is the generation's root filesystem directory.
@@ -134,12 +182,26 @@ func (g Generation) Validate() error {
 		{"rootfs_id", g.RootfsID},
 		{"runsc_version", g.RunscVersion},
 		{"spec_fingerprint", g.SpecFingerprint},
-		{"executor_entrypoint", g.ExecutorEntrypoint},
 	} {
 		if f.value == "" {
 			errs = append(errs, fmt.Errorf("%w: %s is empty", ErrInvalidGeneration, f.name))
 		}
 	}
+
+	// Either field satisfies this. A generation with neither describes no
+	// process to run, which is only discoverable at restore time otherwise.
+	if len(g.Argv()) == 0 {
+		errs = append(errs, fmt.Errorf(
+			"%w: neither executor_argv nor executor_entrypoint is set", ErrInvalidGeneration))
+	}
+
+	if p := g.Protocol(); p != executor.ProtocolVersion {
+		errs = append(errs, fmt.Errorf(
+			"%w: generation speaks executor protocol %d, this worker implements %d; "+
+				"rebuild the generation with the current pipeline",
+			ErrUnsupportedProtocol, p, executor.ProtocolVersion))
+	}
+
 	return errors.Join(errs...)
 }
 

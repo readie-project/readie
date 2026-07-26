@@ -35,8 +35,10 @@ func TestLoad_Defaults(t *testing.T) {
 	cfg, err := load(t, validEnv())
 	require.NoError(t, err)
 
-	// Router contract: scheduler.py looks the worker up by this ID and dials
-	// this URI verbatim. Both are asserted here so a regression is loud.
+	// Router contract: the router indexes the worker by whatever ID it
+	// registers with and dials this URI verbatim. Both are asserted here so a
+	// regression is loud. WORKER_ID is only a default — a fleet must give each
+	// worker its own.
 	assert.Equal(t, "worker-1", cfg.WorkerID)
 	assert.Equal(t, "worker:50052", cfg.WorkerURI)
 
@@ -85,7 +87,7 @@ func TestLoad_DialBudgetExceedsExecutorCheckpointSleep(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Greater(t, cfg.DialTotalTimeout, 30*time.Second,
-		"the dial budget must exceed the executor's pre-bind sleep (scripts/executor/app.py)")
+		"the dial budget must exceed the executor's pre-bind sleep (CRFS_CHECKPOINT_SLEEP)")
 }
 
 func TestLoad_MissingRequiredEnv(t *testing.T) {
@@ -198,5 +200,68 @@ func TestValidate_ReportsAllProblemsAtOnce(t *testing.T) {
 
 	for _, want := range []string{"WorkerID", "RouterURI", "ArtifactRoot", "ChunkSize", "LogFormat"} {
 		assert.Contains(t, err.Error(), want)
+	}
+}
+
+// Capacity is what the router schedules on, so a misread value skews placement
+// across the whole fleet rather than failing loudly here.
+
+func TestLoad_CapacityDefaultsAreConservative(t *testing.T) {
+	cfg, err := load(t, validEnv())
+	require.NoError(t, err)
+
+	// Over-reporting capacity makes the router overcommit, and the failure that
+	// produces is an OOM-killed sandbox mid-execution.
+	assert.Equal(t, int64(4<<30), cfg.MemTotal)
+	assert.Equal(t, int32(0), cfg.MaxExecutors, "0 means unbounded")
+	assert.Positive(t, cfg.UtilizationInterval)
+}
+
+func TestLoad_CapacityOverridesAreApplied(t *testing.T) {
+	env := validEnv()
+	env["WORKER_MEM_TOTAL"] = "12Gi"
+	env["WORKER_MAX_EXECUTORS"] = "6"
+	env["WORKER_UTILIZATION_INTERVAL"] = "2s"
+
+	cfg, err := load(t, env)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(12<<30), cfg.MemTotal)
+	assert.Equal(t, int32(6), cfg.MaxExecutors)
+	assert.Equal(t, 2*time.Second, cfg.UtilizationInterval)
+}
+
+func TestLoad_MemTotalAcceptsSizeSuffixesAndPlainBytes(t *testing.T) {
+	for raw, want := range map[string]int64{
+		"1024":   1024,
+		"512Mi":  512 << 20,
+		"8Gi":    8 << 30,
+		"8GiB":   8 << 30,
+		"2GB":    2_000_000_000,
+		" 4Gi  ": 4 << 30,
+	} {
+		env := validEnv()
+		env["WORKER_MEM_TOTAL"] = raw
+
+		cfg, err := load(t, env)
+		require.NoError(t, err, raw)
+		assert.Equal(t, want, cfg.MemTotal, raw)
+	}
+}
+
+func TestLoad_RejectsAnUnparsableCapacity(t *testing.T) {
+	for _, override := range []map[string]string{
+		{"WORKER_MEM_TOTAL": "lots"},
+		{"WORKER_MEM_TOTAL": "8Pb"},
+		{"WORKER_MAX_EXECUTORS": "many"},
+		{"WORKER_UTILIZATION_INTERVAL": "0s"},
+	} {
+		env := validEnv()
+		for k, v := range override {
+			env[k] = v
+		}
+
+		_, err := load(t, env)
+		require.Error(t, err, override)
 	}
 }

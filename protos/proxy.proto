@@ -21,28 +21,33 @@ message Imports {
 message ResourceEstimation {
   string code = 1;
   repeated Variables variables = 2;
-  repeated Imports imports =  3;
+  repeated Imports imports = 3;
 }
 
 // Message used for code execution requests from clients
 message ClientExecutionRequest {
-  string          request_id           = 1;
-  string          session_id           = 2;
+  string request_id = 1;
+  string session_id = 2;
   oneof data {
-      ResourceEstimation resources     = 3;
-      bytes              payload       = 4; 
-    }
+    ResourceEstimation resources = 3;
+    bytes payload = 4;
+  }
 }
 
 // Message used for code execution responses to clients
 message ClientExecutionResponse {
-  string         request_id = 1;
-  string         session_id = 2;
-  bool           success    = 3;
+  string request_id = 1;
+  string session_id = 2;
+  bool success = 3;
   oneof data {
-      string  logs         = 4;
-      bytes   payload      = 5; 
-    }
+    string logs = 4;
+    bytes payload = 5;
+  }
+
+  // Where the execution actually ran. Attribution only: a client cannot ask
+  // for a particular worker or container, but it can report which one was slow.
+  string worker_id = 6;
+  string container_id = 7;
 }
 
 // Service on the router to handle execution requests from external clients

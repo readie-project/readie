@@ -31,7 +31,7 @@ func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 		network    = "none"
 	)
 
-	// What scripts/spec.py sends.
+	// What the pipeline's capture/spec.py sends.
 	pipelineSpec, err := runsc.BuildSpec(toCreateSpec(params{
 		ID:           "checkpoint-builder",
 		RootfsPath:   rootfs,
@@ -84,7 +84,7 @@ func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 // worker never looks.
 func TestSandboxMountPathAgreesWithTheWorker(t *testing.T) {
 	assert.Equal(t, "/tmp", container.SandboxExecutorDir(),
-		"scripts/spec.py hardcodes this same path as SANDBOX_EXECUTOR_DIR")
+		"the pipeline hardcodes this same path as SANDBOX_EXECUTOR_DIR")
 }
 
 func TestRun_WritesAConfigTheRuntimeWouldAccept(t *testing.T) {

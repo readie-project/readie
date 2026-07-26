@@ -310,6 +310,21 @@ func TestFingerprint_IgnoresWhatVariesPerRequest(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, Fingerprint(other, "root:memory", "none"))
 	})
+
+	// Load-bearing, not incidental. The offline pipeline distinguishes one
+	// checkpoint from another purely by CRFS_PREIMPORT in the environment, so
+	// every checkpoint in a generation has to share a fingerprint or the worker
+	// would refuse all but the one it happened to compute against. Adding env
+	// to the fingerprint would break every existing generation at once and no
+	// other test would notice.
+	t.Run("environment", func(t *testing.T) {
+		spec := testCreateSpec(f)
+		spec.Env = append(append([]string(nil), spec.Env...), "CRFS_PREIMPORT=pandas,numpy")
+		other, err := BuildSpec(spec)
+		require.NoError(t, err)
+		assert.Equal(t, want, Fingerprint(other, "root:memory", "none"),
+			"pre-imports travel in the environment and must not change the fingerprint")
+	})
 }
 
 func TestFingerprint_ChangesForWhatBreaksARestore(t *testing.T) {

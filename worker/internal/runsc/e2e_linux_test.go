@@ -87,7 +87,7 @@ func e2eSpec(t *testing.T, adapter *Adapter, workerDir, rootfs, id string, args 
 //
 // If this fails, --host-uds is wrong or insufficient, and the fallback is to
 // invert the socket direction: the worker listens and the executor connects,
-// which changes scripts/executor/app.py.
+// which changes executor/.
 func TestE2E_SandboxBoundSocketIsReachableFromTheHost(t *testing.T) {
 	rootfs := e2eRootfs(t)
 	workerDir := t.TempDir()

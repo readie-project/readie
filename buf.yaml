@@ -1,0 +1,46 @@
+version: v2
+
+modules:
+  - path: protos
+
+lint:
+  use:
+    - STANDARD
+
+  except:
+    # The protos declare no package on purpose, so service names are bare:
+    # /ProxyService/RequestExecution and /RegistryService/PostWorkerStatus.
+    # The compose healthcheck reaches grpc.health.v1.Health/Check through
+    # reflection, the worker dials the bare names, and a router integration test
+    # asserts reflection still advertises them. Adding a package would rename
+    # every method on the wire at once.
+    - PACKAGE_DEFINED
+    - PACKAGE_DIRECTORY_MATCH
+    - PACKAGE_SAME_DIRECTORY
+
+    # buf wants one request and one response message per RPC, named after it:
+    # PostWorkerStatusRequest, PostWorkerStatusResponse, and so on. Ours are
+    # named for what they carry (WorkerStatus, WorkerUtilization) and four RPCs
+    # share RegistryUpdateResponse, which is genuinely the same message.
+    # Renaming them would rewrite generated identifiers in Go and Python
+    # simultaneously for no behavioural gain.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
+
+  # STATUS_UNKNOWN rather than buf's default STATUS_UNSPECIFIED. Renaming an
+  # enum value is wire-compatible -- the number is what travels -- but it
+  # changes the generated constant in both languages, and Status.Name() output
+  # appears in the router's structured logs. Not worth it; this tells buf what
+  # the convention actually is instead.
+  enum_zero_value_suffix: _UNKNOWN
+
+breaking:
+  use:
+    - FILE
+  except:
+    # Field and message *names* are not on the wire; field numbers are, and
+    # FIELD_SAME_NUMBER covers those. Excluding this leaves room to correct a
+    # misleading name -- cpu_alloc actually carries a byte count -- without
+    # buf calling it a break.
+    - FIELD_SAME_NAME

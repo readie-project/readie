@@ -1,0 +1,55 @@
+version: 2
+
+# Grouped and weekly rather than per-dependency and daily: five Python packages
+# plus Go plus Docker produces enough churn to drown the queue otherwise, and a
+# grouped bump is one CI run instead of a dozen.
+updates:
+  - package-ecosystem: gomod
+    directory: /worker
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directories:
+      - /router
+      - /pkg
+      - /executor
+      - /pipeline
+    schedule:
+      interval: weekly
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+    ignore:
+      # grpcio and grpcio-tools must stay in lockstep across every package: the
+      # generated stubs are committed, and a version skew between the generator
+      # and the runtime shows up as an obscure descriptor-pool error rather than
+      # a version complaint. Bump these deliberately, together, with `make protos`.
+      - dependency-name: grpcio
+      - dependency-name: grpcio-tools
+      - dependency-name: grpcio-health-checking
+      - dependency-name: grpcio-reflection
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Base images only. The runsc pins inside these Dockerfiles are ARG-based and
+  # deliberately not automated: gVisor's checkpoint format is not stable across
+  # releases, so bumping it invalidates every existing checkpoint and has to be
+  # done together with regenerating them.
+  - package-ecosystem: docker
+    directories:
+      - /router
+      - /worker
+      - /pipeline
+      - /rootfs
+    schedule:
+      interval: weekly

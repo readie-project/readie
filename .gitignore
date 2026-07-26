@@ -3,6 +3,24 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Packaging and build output
+dist/
+build/
+*.egg-info/
+*.whl
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
@@ -19,6 +37,23 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Pipeline output: an exported generation is checkpoint images plus a rootfs,
+# which is gigabytes, and is an artifact rather than a source.
+pipeline/out/
+/generations/
+
+# Proto staging, created and removed by `make protos`.
+.build/
+
+# Go
+worker/bin/
+*.test
+*.out
+
+# Editors
+.idea/
+*.swp
 
 # MacOS
 .DS_Store

@@ -1,0 +1,93 @@
+# The cheap half of CI, run before you push.
+#
+# Everything here is a check CI also runs, so a green hook run means the
+# formatting and linting jobs will pass. Tests and type-checking are not here:
+# they need each component's venv synced and take long enough that they belong
+# in CI rather than in the path of every commit.
+#
+#   uv tool install pre-commit && pre-commit install
+
+exclude: |
+  (?x)^(
+    .*/\.venv/.*|
+    worker/proto/.*|
+    router/src/crfs_router/proto/.*|
+    pkg/src/crfs/_proto/.*|
+    pipeline/data/.*\.json|
+    LICENSE
+  )$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-added-large-files
+        # The corpus is legitimately large and excluded above; this catches a
+        # checkpoint image or an exported rootfs added by accident.
+        args: [--maxkb=2048]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # gofmt via the local toolchain rather than a mirror: the worker pins its
+      # Go version in go.mod, and a mirrored gofmt at a different version
+      # reformats differently.
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -l -w
+        language: system
+        types: [go]
+        pass_filenames: true
+
+      - id: go-vet
+        name: go vet
+        entry: bash -c 'cd worker && go vet ./...'
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      # Both read protos/ via buf.yaml's module list. Without a config buf
+      # walks the whole tree and lints the copy of descriptor.proto inside
+      # every .venv.
+      - id: buf-format
+        name: buf format
+        entry: buf format -w
+        language: system
+        files: ^protos/
+        types: [proto]
+        pass_filenames: false
+
+      - id: buf-lint
+        name: buf lint
+        entry: buf lint
+        language: system
+        files: ^protos/
+        types: [proto]
+        pass_filenames: false
+
+      # Generated stubs are committed so a checkout builds without protoc. That
+      # only holds if they are actually regenerated when a proto changes.
+      - id: proto-stubs-current
+        name: generated stubs are current
+        entry: bash -c 'make protos && git diff --quiet -- "*_pb2*.py" "*.pyi" "*.pb.go" || { echo "generated stubs are stale; commit the result of make protos"; exit 1; }'
+        language: system
+        files: ^protos/
+        types: [proto]
+        pass_filenames: false

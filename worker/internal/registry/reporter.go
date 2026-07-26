@@ -36,11 +36,27 @@ type ExecutionRef struct {
 // The field names mirror the router's registry.proto. Note that the router
 // treats cpu_util/cpu_total as a generic pair; see the container package for
 // what the worker actually puts in them.
+//
+// The memory and count fields are meaningful for worker-level reports only;
+// ExecutorUtilization leaves them zero, and the proto has no place to put them.
 type Utilization struct {
 	CPUUtil  int64
 	CPUTotal int64
 	GPUUtil  int64
 	GPUTotal int64
+
+	MemUsed       int64
+	MemTotal      int64
+	ExecutorCount int32
+}
+
+// Capacity is what this worker will hand out, as opposed to what it is
+// currently using. It is stamped onto every WorkerStatus rather than sent once
+// at registration, so a router that restarts relearns it from the next report
+// instead of scheduling blind.
+type Capacity struct {
+	MemTotal     int64
+	MaxExecutors int32
 }
 
 // Reporter posts worker and executor state to the router.

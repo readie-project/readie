@@ -203,7 +203,9 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	app.push("router connection", func(context.Context) error { return registryConn.Close() })
 
 	// 4. Object graph. Pure construction, no I/O.
-	reporter := registry.NewGRPCReporter(registryClient, cfg.WorkerID, cfg.WorkerURI, cfg.StatusTimeout, log)
+	capacity := registry.Capacity{MemTotal: cfg.MemTotal, MaxExecutors: cfg.MaxExecutors}
+	reporter := registry.NewGRPCReporter(
+		registryClient, cfg.WorkerID, cfg.WorkerURI, capacity, cfg.StatusTimeout, log)
 	app.reporter = reporter
 
 	manager, err := container.NewManager(container.ManagerDeps{
@@ -289,6 +291,15 @@ func (a *App) Run(ctx context.Context) error {
 	a.server.SetServing(true)
 	a.log.Info("worker ready", "addr", a.cfg.WorkerURI, "router", a.cfg.RouterURI)
 
+	// Started after registration, so the router has a record to attach the load
+	// to. It stops with ctx and is never waited on: a report in flight during
+	// shutdown is worth abandoning, not draining.
+	utilizationDone := make(chan struct{})
+	go func() {
+		defer close(utilizationDone)
+		a.utilizationLoop(ctx)
+	}()
+
 	var runErr error
 	select {
 	case <-ctx.Done():
@@ -300,7 +311,46 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}
 
-	return errors.Join(runErr, a.Shutdown(context.WithoutCancel(ctx)))
+	shutdownErr := a.Shutdown(context.WithoutCancel(ctx))
+	<-utilizationDone
+	return errors.Join(runErr, shutdownErr)
+}
+
+// utilizationLoop reports this worker's load until ctx is cancelled.
+//
+// Best-effort throughout: the router losing a load report degrades scheduling
+// quality for one interval and must never disturb an execution. Before this
+// existed, PostWorkerUtilization had no caller at all — the worker sent only
+// per-executor utilization — so the router's notion of worker-level load was
+// permanently zero and it could only schedule on in-flight count.
+func (a *App) utilizationLoop(ctx context.Context) {
+	interval := a.cfg.UtilizationInterval
+	if interval <= 0 {
+		// Validate rejects this, but a Config built directly — as tests and
+		// embedders do — skips Validate, and time.NewTicker panics on it. A
+		// load report is not worth taking the worker down for.
+		interval = 10 * time.Second
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			count, reserved := a.manager.Load()
+			err := a.reporter.WorkerUtilization(ctx, registry.Utilization{
+				MemUsed:       reserved,
+				MemTotal:      a.cfg.MemTotal,
+				ExecutorCount: count,
+			})
+			if err != nil && ctx.Err() == nil {
+				a.log.Warn("could not report worker utilization", logging.KeyError, err)
+			}
+		}
+	}
 }
 
 // register announces the worker to the router, retrying a transient outage.

@@ -35,7 +35,7 @@ internal/
   grpcserver/          gRPC transport: server, ExecutionService handler, status mapping
   execution/           orchestration of one request; depends on no transport types
   container/           container lifecycle: acquire, release, reclaim orphans
-  executor/            the unix-socket protocol shared with scripts/executor/app.py
+  executor/            the unix-socket protocol shared with ../executor/
   artifact/            generations: rootfs + the checkpoints captured against it
   sandbox/             the runtime seam — stdlib only, no runtime knowledge
   runsc/               the only package that knows gVisor exists
@@ -139,22 +139,41 @@ cleanup exists for, and one a runtime listing would not mention.
 ## Contracts
 
 **Router** — the protos declare no `package`, so the method is
-`/ExecutionService/RequestExecution`. `worker_id` stays `worker-1` and
-`worker_uri` stays `worker:50052`; the router hardcodes the former and dials
-the latter verbatim. The first response carries `worker_id`, `container_id`,
-`checkpoint_id`, `cpu_alloc` and `gpu_alloc`.
+`/ExecutionService/RequestExecution`. The router indexes this worker by whatever
+`worker_id` it registers with and dials `worker_uri` verbatim, so a fleet must
+give each worker a distinct id; `WORKER_ID` defaults to `worker-1` only because
+a single-worker stack needs no configuration. (An earlier router hardcoded
+`worker-1` in `provision()` and that constraint was real — it no longer is.)
+The first response carries `worker_id`, `container_id`, `checkpoint_id`,
+`cpu_alloc` and `gpu_alloc`.
 
-**Executor** (`../scripts/executor/app.py`) — the executor is the socket
+Capacity is reported rather than discovered. `WORKER_MEM_TOTAL` and
+`WORKER_MAX_EXECUTORS` ride on every `PostWorkerStatus`, and a
+`PostWorkerUtilization` every `WORKER_UTILIZATION_INTERVAL` carries live memory
+reservation and executor count. The router scores placement on those, so
+over-reporting capacity makes it overcommit this worker and the resulting
+failure is an OOM-killed sandbox mid-execution. The budget is configured rather
+than read from `/proc/meminfo` because the worker is usually containerised,
+where that file describes the host and not the cgroup the worker lives in.
+
+**Executor** (`../executor/`) — the executor is the socket
 server, binding `$EXECUTOR_DIR/executor.sock`, which the worker sees at
-`$WORKER_DIR/<id>/executor.sock` through the sandbox's one bind mount. Requests
-are raw cloudpickle in 1 MiB chunks terminated by a literal `EOF` written on its
-own; the response is streamed back before the executor closes the connection.
+`$WORKER_DIR/<id>/executor.sock` through the sandbox's one bind mount.
 
-Two properties of that protocol matter. The executor sleeps 30 seconds awaiting
-a checkpoint *before* binding, so `DIAL_TOTAL_TIMEOUT` must exceed it. And
-`app.py` strips the terminator with `rstrip(b"EOF")`, which removes any trailing
-run of `E`, `O` or `F` — a payload ending in those bytes is silently truncated.
-Fixing that needs length-prefixed framing on both ends.
+Both directions are a sequence of length-prefixed chunks ending in a
+zero-length one, carrying cloudpickle: `{func, args, kwargs}` out, a result
+envelope back. `internal/executor` implements this side; the Python side is in
+`../executor/`, and `../executor/tests/data/frames.golden.json` is decoded by
+both test suites so the two cannot drift.
+
+Two properties matter. The executor sleeps 30 seconds awaiting a checkpoint
+*before* binding, so `DIAL_TOTAL_TIMEOUT` must exceed it. And a `{"ok": false}`
+envelope is *not* a worker failure — the sandbox ran and the interpreter is
+healthy — so the execution is reported as a success and the container is paused
+for reuse. Only the client turns that envelope into an exception.
+
+A generation records `executor_protocol`, and `internal/artifact` refuses one
+whose version this worker does not implement, at load rather than at restore.
 
 **Spec compatibility** — the worker and the offline pipeline generate their
 bundles from the same `runsc.BuildSpec`, via `cmd/ocispec`. Two independent
@@ -172,6 +191,10 @@ for wire compatibility.
 ## Configuration
 
 Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`, `ARTIFACT_ROOT`.
+
+Capacity: `WORKER_MEM_TOTAL` (bytes, or a suffixed size such as `8Gi`;
+default 4 GiB), `WORKER_MAX_EXECUTORS` (0 meaning unbounded),
+`WORKER_UTILIZATION_INTERVAL`.
 
 Optional: `WORKER_ID`, `ACTIVE_GENERATION`, `RUNSC_BINARY`, `RUNSC_ROOT`,
 `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY`, `SANDBOX_PLATFORM`,
@@ -207,7 +230,7 @@ Everything below could not be checked on the development machine. Each has a
 test in `internal/runsc/e2e_linux_test.go`; when one passes, delete its line
 here. Ordered by blast radius.
 
-1. **`--host-uds=create`** — that the flag exists with that name and that a socket bound inside a sandbox is genuinely reachable from the host. Nothing in this repository has ever demonstrated it: the pipeline captures its checkpoints during the executor's pre-bind sleep. If it cannot be made to work, the fallback is to invert the socket direction — the worker listens, the executor connects — which changes `scripts/executor/app.py`. **Check this first.**
+1. **`--host-uds=create`** — that the flag exists with that name and that a socket bound inside a sandbox is genuinely reachable from the host. Nothing in this repository has ever demonstrated it: the pipeline captures its checkpoints during the executor's pre-bind sleep. If it cannot be made to work, the fallback is to invert the socket direction — the worker listens, the executor connects — which changes `../executor/`. **Check this first.**
 2. `runsc restore --detach` exists, and restore blocks without it.
 3. `runsc checkpoint --leave-running` exists. If not, `Manager.Checkpoint` is terminal and must be documented so.
 4. Whether `runsc checkpoint` works on a paused sandbox. The adapter assumes not, and resumes → checkpoints → re-pauses.

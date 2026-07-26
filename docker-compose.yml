@@ -18,6 +18,10 @@ services:
             timeout: 5s
             retries: 3
             start_period: 5s
+        # The router drains in-flight executions on SIGTERM. Without a grace
+        # period longer than that drain, `docker compose down` SIGKILLs it
+        # partway through and every in-flight client sees a broken stream.
+        stop_grace_period: 30s
     worker:
         build:
             context: ./worker
@@ -29,6 +33,14 @@ services:
         ports:
             - "50052:50052"
         container_name: worker
+        environment:
+            # What this worker will hand out to executors. The router schedules
+            # on it, so over-reporting makes it overcommit and the failure that
+            # produces is an OOM-killed sandbox mid-execution. Configured rather
+            # than read from /proc/meminfo, which inside a container describes
+            # the host and not this cgroup.
+            WORKER_MEM_TOTAL: ${CRFS_WORKER_MEM_TOTAL:-4Gi}
+            WORKER_MAX_EXECUTORS: ${CRFS_WORKER_MAX_EXECUTORS:-8}
         depends_on:
             router:
                 condition: service_healthy
@@ -44,7 +56,7 @@ services:
         # per execution.
         init: true
         volumes:
-            # The rootfs-and-checkpoints artifact, produced by scripts/. Read
+            # The rootfs-and-checkpoints artifact, produced by pipeline/. Read
             # only: every sandbox shares this tree and writes through the
             # runtime's copy-on-write overlay instead.
             - ${CRFS_ARTIFACT_ROOT:-/var/lib/crfs}:/var/lib/crfs:ro

@@ -35,6 +35,7 @@ import (
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/clock"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeexecutor"
@@ -374,6 +375,7 @@ func buildTestArtifacts(t *testing.T) (string, container.Artifacts) {
 		RunscVersion:       "runsc version test",
 		SpecFingerprint:    "sha256:test-spec",
 		ExecutorEntrypoint: "/app/executor/app.py",
+		ExecutorProtocol:   executor.ProtocolVersion,
 		PythonPath:         "/lib/python3.12/dist-packages",
 		CreatedAt:          time.Now().UTC(),
 	}))

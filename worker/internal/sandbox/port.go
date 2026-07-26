@@ -31,7 +31,7 @@ type Mount struct {
 //
 // The field values form a contract with the Python executor: it discovers its
 // socket directory through Env, and the bind mount for that directory is what
-// makes the socket visible to the worker. See scripts/executor/app.py before
+// makes the socket visible to the worker. See executor/ before
 // changing any of them.
 type CreateSpec struct {
 	// ID names the sandbox. It is the runtime's container id, the per-sandbox

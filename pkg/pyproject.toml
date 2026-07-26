@@ -1,0 +1,94 @@
+[project]
+name = "crfs-client"
+version = "0.1.0"
+description = "Client SDK for running Python functions on checkpoint-restore serverless workers"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "cloudpickle>=3.1",
+    "grpcio>=1.78.1",
+    "protobuf>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "grpcio-tools>=1.78.1",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "types-protobuf>=5.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crfs"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+extend-exclude = ["src/crfs/_proto"]
+
+[tool.ruff.lint]
+select = ["F","E","W","I","N","UP","B","A","C4","DTZ","T20","PT","RET","SIM","ARG","PTH","ERA","PL","RUF","ASYNC","S","TID","D"]
+ignore = ["D107","D203","D213","PLR0913"]
+
+[tool.ruff.lint.per-file-ignores]
+# Nested imports are the point in tests that analyse a function body; SLF001
+# because guard tests deliberately inspect internals.
+"tests/**" = ["S101","D100","D101","D102","D103","D104","PLR2004","ARG001","ARG002","PLC0415","SLF001","ASYNC109"]
+# A remote function importing inside its own body is the idiom, not a smell:
+# the import must run on the worker, not here.
+"examples/**" = ["T201","D100","D103","INP001","PLC0415"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["grpc.*", "cloudpickle.*", "crfs._proto.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "crfs._proto.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# grpcio-tools emits no type information for the generated service module.
+module = ["crfs.transport", "tests.fakes.*"]
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+# Tests are type-checked -- wrong argument types and missing attributes are
+# still errors -- but the throwaway inner functions a test defines to have
+# something to decorate carry no design information worth annotating.
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--strict-markers --strict-config -ra"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src/crfs"]
+omit = ["src/crfs/_proto/*"]

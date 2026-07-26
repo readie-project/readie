@@ -220,6 +220,13 @@ func (s *Server) ExecutorStatuses() []*pb.ExecutorStatus {
 	return append([]*pb.ExecutorStatus(nil), s.execStatus...)
 }
 
+// WorkerUtilizations returns the worker utilization messages received, in order.
+func (s *Server) WorkerUtilizations() []*pb.WorkerUtilization {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*pb.WorkerUtilization(nil), s.workerUtil...)
+}
+
 // ExecutorUtilizations returns the executor utilization messages received.
 func (s *Server) ExecutorUtilizations() []*pb.ExecutorUtilization {
 	s.mu.Lock()

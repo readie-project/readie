@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 )
 
@@ -37,6 +38,7 @@ func (b *builder) generation(id string, created time.Time, mutate ...func(*artif
 		RunscVersion:       "runsc version release-20250107.0",
 		SpecFingerprint:    "sha256:spec-" + id,
 		ExecutorEntrypoint: "/app/executor/app.py",
+		ExecutorProtocol:   executor.ProtocolVersion,
 		Overlay:            "root:memory",
 		Network:            "none",
 		CreatedAt:          created,
@@ -242,6 +244,7 @@ func TestLoad_SkipsUnusableGenerations(t *testing.T) {
 	require.NoError(t, artifact.WriteGeneration(noRootfs, artifact.Generation{
 		ID: "gen-no-rootfs", RootfsID: "x", RunscVersion: "x",
 		SpecFingerprint: "x", ExecutorEntrypoint: "/app/executor/app.py",
+		ExecutorProtocol: executor.ProtocolVersion,
 	}))
 
 	// A generation with unparseable metadata.
@@ -279,6 +282,7 @@ func TestLoadGeneration_RejectsAnIDThatContradictsItsDirectory(t *testing.T) {
 	require.NoError(t, artifact.WriteGeneration(dir, artifact.Generation{
 		ID: "gen-somewhere-else", RootfsID: "x", RunscVersion: "x",
 		SpecFingerprint: "x", ExecutorEntrypoint: "/app/executor/app.py",
+		ExecutorProtocol: executor.ProtocolVersion,
 	}))
 
 	_, err := artifact.LoadGeneration(dir)
@@ -318,7 +322,8 @@ func TestWriteGeneration_ProducesReadableStableJSON(t *testing.T) {
 	want := artifact.Generation{
 		ID: filepath.Base(dir), RootfsID: "sha256:abc", RunscVersion: "runsc version x",
 		SpecFingerprint: "sha256:def", ExecutorEntrypoint: "/app/executor/app.py",
-		Overlay: "root:memory", Network: "none", CreatedAt: older,
+		ExecutorProtocol: executor.ProtocolVersion,
+		Overlay:          "root:memory", Network: "none", CreatedAt: older,
 	}
 	require.NoError(t, artifact.WriteGeneration(dir, want))
 
@@ -372,4 +377,98 @@ func TestLoad_SkipsACheckpointClaimingTheWrongGeneration(t *testing.T) {
 
 	_, _, err = r.ResolveCheckpoint("checkpoint_2")
 	assert.NoError(t, err, "a sound checkpoint alongside a bad one stays usable")
+}
+
+// Argv is what the sandbox actually runs. The pipeline records it and the
+// worker replays it, rather than each assembling one — two generators cannot be
+// kept in agreement by review, and a disagreement here restores a checkpoint
+// into a sandbox running a different process.
+
+func TestArgv_PrefersTheRecordedCommand(t *testing.T) {
+	gen := artifact.Generation{
+		ExecutorArgv:       []string{"python", "-u", "-m", "crfs_executor"},
+		ExecutorEntrypoint: "/app/executor/app.py",
+	}
+
+	assert.Equal(t, []string{"python", "-u", "-m", "crfs_executor"}, gen.Argv())
+}
+
+func TestArgv_FallsBackToTheLegacyEntrypointPath(t *testing.T) {
+	// The executor used to be a loose file rather than an installed module, and
+	// a generation captured then records only the path.
+	gen := artifact.Generation{ExecutorEntrypoint: "/app/executor/app.py"}
+
+	assert.Equal(t, []string{"python", "-u", "/app/executor/app.py"}, gen.Argv())
+}
+
+func TestArgv_ReturnsACopySoACallerCannotMutateTheGeneration(t *testing.T) {
+	gen := artifact.Generation{ExecutorArgv: []string{"python", "-m", "crfs_executor"}}
+
+	got := gen.Argv()
+	got[0] = "sh"
+
+	assert.Equal(t, "python", gen.ExecutorArgv[0])
+}
+
+func TestValidate_AcceptsEitherExecutorField(t *testing.T) {
+	base := artifact.Generation{
+		ID: "gen-1", RootfsID: "sha256:a", RunscVersion: "runsc 1", SpecFingerprint: "sha256:b",
+		ExecutorProtocol: executor.ProtocolVersion,
+	}
+
+	withArgv := base
+	withArgv.ExecutorArgv = []string{"python", "-m", "crfs_executor"}
+	require.NoError(t, withArgv.Validate())
+
+	withPath := base
+	withPath.ExecutorEntrypoint = "/app/executor/app.py"
+	require.NoError(t, withPath.Validate())
+}
+
+func TestValidate_RejectsAGenerationThatNamesNoProcess(t *testing.T) {
+	gen := artifact.Generation{
+		ID: "gen-1", RootfsID: "sha256:a", RunscVersion: "runsc 1", SpecFingerprint: "sha256:b",
+		ExecutorProtocol: executor.ProtocolVersion,
+	}
+
+	err := gen.Validate()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "executor_argv")
+}
+
+// A generation whose executor speaks a format this worker does not implement is
+// refused when it loads, not when a request tries to use it. The failure
+// otherwise happens inside an execution, as a dial that succeeds followed by a
+// read that hangs until the deadline -- indistinguishable from a slow function.
+
+func TestProtocol_DefaultsToOneWhenTheFieldIsAbsent(t *testing.T) {
+	// Every generation captured before the field existed necessarily speaks
+	// version 1, so an absent value is that rather than an error.
+	assert.Equal(t, 1, artifact.Generation{}.Protocol())
+}
+
+func TestValidate_RefusesAGenerationFromAnOlderProtocol(t *testing.T) {
+	gen := artifact.Generation{
+		ID: "gen-old", RootfsID: "sha256:a", RunscVersion: "runsc 1",
+		SpecFingerprint: "sha256:b", ExecutorEntrypoint: "/app/executor/app.py",
+		// No ExecutorProtocol: this is what the previous pipeline wrote.
+	}
+
+	err := gen.Validate()
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrUnsupportedProtocol)
+	assert.Contains(t, err.Error(), "rebuild the generation",
+		"the message has to say what the operator should do about it")
+}
+
+func TestValidate_RefusesAGenerationFromAFutureProtocol(t *testing.T) {
+	gen := artifact.Generation{
+		ID: "gen-new", RootfsID: "sha256:a", RunscVersion: "runsc 1",
+		SpecFingerprint: "sha256:b", ExecutorArgv: []string{"python", "-m", "crfs_executor"},
+		ExecutorProtocol: executor.ProtocolVersion + 1,
+	}
+
+	assert.ErrorIs(t, gen.Validate(), artifact.ErrUnsupportedProtocol)
 }

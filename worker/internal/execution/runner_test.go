@@ -150,13 +150,14 @@ func (s *sliceStats) Close() error {
 // pipeDialer connects the runner to an in-process fake executor over net.Pipe,
 // so the runner's orchestration can be tested without the filesystem.
 type pipeDialer struct {
-	reply       []byte
-	replyDelay  time.Duration
-	holdOpen    bool
-	dialErr     error
-	stop        chan struct{}
-	mu          sync.Mutex
-	requestBody []byte
+	reply                 []byte
+	replyDelay            time.Duration
+	holdOpen              bool
+	stallBeforeTerminator bool
+	dialErr               error
+	stop                  chan struct{}
+	mu                    sync.Mutex
+	requestBody           []byte
 }
 
 func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
@@ -169,24 +170,38 @@ func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
 	return client, nil
 }
 
+// readFramedMessage reads length-prefixed chunks until the terminator, as the
+// Python executor does.
+func readFramedMessage(r io.Reader) ([]byte, error) {
+	var (
+		body   []byte
+		header = make([]byte, executor.LengthBytes)
+	)
+	for {
+		if _, err := io.ReadFull(r, header); err != nil {
+			return body, err
+		}
+		n, err := executor.DecodeLength(header)
+		if err != nil {
+			return body, err
+		}
+		if n == 0 {
+			return body, nil
+		}
+		chunk := make([]byte, n)
+		if _, err := io.ReadFull(r, chunk); err != nil {
+			return body, err
+		}
+		body = append(body, chunk...)
+	}
+}
+
 func (d *pipeDialer) serve(conn executor.Conn) {
 	defer func() { _ = conn.Close() }()
 
-	var body []byte
-	buf := make([]byte, 64*1024)
-	for {
-		n, err := conn.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			if bytes.HasSuffix(chunk, executor.EOFMarker) {
-				body = append(body, bytes.TrimSuffix(chunk, executor.EOFMarker)...)
-				break
-			}
-			body = append(body, chunk...)
-		}
-		if err != nil {
-			return
-		}
+	body, err := readFramedMessage(conn)
+	if err != nil {
+		return
 	}
 
 	d.mu.Lock()
@@ -200,12 +215,22 @@ func (d *pipeDialer) serve(conn executor.Conn) {
 			return
 		}
 	}
-	if _, err := conn.Write(d.reply); err != nil {
+	if _, err := conn.Write(append(executor.EncodeLength(len(d.reply)), d.reply...)); err != nil {
+		return
+	}
+	if d.stallBeforeTerminator {
+		// Every byte of the body arrived and the terminator never does: an
+		// executor killed mid-reply. Version 1 could not tell this from a
+		// finished response.
+		_, _ = io.Copy(io.Discard, conn)
+		return
+	}
+	if _, err := conn.Write(executor.Terminator()); err != nil {
 		return
 	}
 	if d.holdOpen {
-		// Stay open so the reader must fall back to its idle timeout, but
-		// unblock when the client hangs up rather than parking forever.
+		// A complete message, but the connection stays open for reuse. The
+		// terminator already ended the read, so this must not wedge anything.
 		_, _ = io.Copy(io.Discard, conn)
 	}
 }
@@ -399,8 +424,33 @@ func TestRun_ClientCancellationStillReleasesTheContainer(t *testing.T) {
 	assert.Equal(t, []container.Outcome{container.OutcomeFailure}, h.containers.Outcomes())
 }
 
-// An executor that never closes its connection must not wedge the request.
-func TestRun_IdleTimeoutCompletesAHeldOpenResponse(t *testing.T) {
+// An executor that keeps its connection open after a complete response must
+// not wedge the request. Under version 1 this could only be resolved by an idle
+// timeout, because nothing on the wire said where the response ended; the
+// terminator now does, and the read returns immediately.
+func TestRun_AHeldOpenConnectionDoesNotDelayACompleteResponse(t *testing.T) {
+	testutil.AssertNoLeak(t)
+
+	h := newHarness(t, execution.RunnerConfig{
+		SessionOptions: executor.SessionOptions{
+			FirstByteTimeout: 5 * time.Second,
+			// Long enough that a run relying on it would visibly hang.
+			IdleTimeout: 30 * time.Second,
+		},
+	}, func(h *harness) { h.dialer.holdOpen = true })
+
+	started := time.Now()
+	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
+
+	require.NoError(t, err)
+	assert.Equal(t, "result", string(h.sink.PayloadBytes()))
+	assert.Less(t, time.Since(started), 5*time.Second, "the terminator ended the read, not a timeout")
+}
+
+// A response body that arrives in full but is never terminated is a truncated
+// response, not a complete one. This is the failure version 1 reported as
+// success, handing the client a payload it could not unpickle.
+func TestRun_AResponseWithoutItsTerminatorIsAnError(t *testing.T) {
 	testutil.AssertNoLeak(t)
 
 	h := newHarness(t, execution.RunnerConfig{
@@ -408,11 +458,12 @@ func TestRun_IdleTimeoutCompletesAHeldOpenResponse(t *testing.T) {
 			FirstByteTimeout: 5 * time.Second,
 			IdleTimeout:      150 * time.Millisecond,
 		},
-	}, func(h *harness) { h.dialer.holdOpen = true })
+	}, func(h *harness) { h.dialer.stallBeforeTerminator = true })
 
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
-	require.NoError(t, err)
-	assert.Equal(t, "result", string(h.sink.PayloadBytes()))
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, executor.ErrTruncatedResponse)
 }
 
 // Logs are a convenience. The previous implementation dereferenced a nil

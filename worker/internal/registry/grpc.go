@@ -18,6 +18,7 @@ type GRPCReporter struct {
 	client    pb.RegistryServiceClient
 	workerID  string
 	workerURI string
+	capacity  Capacity
 	timeout   time.Duration
 	log       *slog.Logger
 }
@@ -31,6 +32,7 @@ var _ Reporter = (*GRPCReporter)(nil)
 func NewGRPCReporter(
 	client pb.RegistryServiceClient,
 	workerID, workerURI string,
+	capacity Capacity,
 	timeout time.Duration,
 	log *slog.Logger,
 ) *GRPCReporter {
@@ -44,6 +46,7 @@ func NewGRPCReporter(
 		client:    client,
 		workerID:  workerID,
 		workerURI: workerURI,
+		capacity:  capacity,
 		timeout:   timeout,
 		log:       log.With(logging.KeyWorkerID, workerID),
 	}
@@ -55,9 +58,11 @@ func (r *GRPCReporter) WorkerStatus(ctx context.Context, workerStatus pb.Status)
 	defer cancel()
 
 	res, err := r.client.PostWorkerStatus(ctx, &pb.WorkerStatus{
-		WorkerId:  r.workerID,
-		WorkerUri: r.workerURI,
-		Status:    workerStatus,
+		WorkerId:     r.workerID,
+		WorkerUri:    r.workerURI,
+		Status:       workerStatus,
+		MemTotal:     r.capacity.MemTotal,
+		MaxExecutors: r.capacity.MaxExecutors,
 	})
 	return r.check("worker status", err, res)
 }
@@ -89,11 +94,14 @@ func (r *GRPCReporter) WorkerUtilization(ctx context.Context, u Utilization) err
 	defer cancel()
 
 	res, err := r.client.PostWorkerUtilization(ctx, &pb.WorkerUtilization{
-		WorkerId: r.workerID,
-		CpuUtil:  u.CPUUtil,
-		CpuTotal: u.CPUTotal,
-		GpuUtil:  u.GPUUtil,
-		GpuTotal: u.GPUTotal,
+		WorkerId:      r.workerID,
+		CpuUtil:       u.CPUUtil,
+		CpuTotal:      u.CPUTotal,
+		GpuUtil:       u.GPUUtil,
+		GpuTotal:      u.GPUTotal,
+		MemUsed:       u.MemUsed,
+		MemTotal:      u.MemTotal,
+		ExecutorCount: u.ExecutorCount,
 	})
 	return r.check("worker utilization", err, res)
 }

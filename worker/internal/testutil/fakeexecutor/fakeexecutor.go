@@ -1,14 +1,13 @@
-// Package fakeexecutor is a Go stand-in for scripts/executor/app.py.
+// Package fakeexecutor is a Go stand-in for the Python executor in ../../../../executor/.
 //
 // It reproduces the real executor's socket behaviour: bind a unix socket,
-// accept one connection at a time, read until the literal "EOF" terminator,
-// reply in chunks, then close and accept again. The behavioural modes let tests
-// reproduce the executor's awkward edges — the 30-second pre-bind sleep, and an
-// executor that replies but never closes.
+// accept one connection at a time, read a length-prefixed message, reply with
+// another, then close and accept again. The behavioural modes let tests
+// reproduce the executor's awkward edges — the 30-second pre-bind sleep, an
+// executor that stalls, and one that dies part-way through a reply.
 package fakeexecutor
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"net"
@@ -18,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 )
 
 // Mode selects how the fake behaves once connected.
@@ -35,6 +36,10 @@ const (
 	ModeNoResponse
 	// ModeCloseImmediately closes as soon as the request arrives.
 	ModeCloseImmediately
+	// ModeTruncatedResponse writes a chunk header promising more than it
+	// sends, then closes — an executor killed mid-reply. Version 1 could not
+	// distinguish this from a complete short response.
+	ModeTruncatedResponse
 )
 
 // Options configures a Server.
@@ -170,11 +175,22 @@ func (s *Server) handle(conn net.Conn) {
 		}
 	}
 
+	if s.opts.Mode == ModeTruncatedResponse {
+		// A header claiming more than follows, then silence.
+		_, _ = conn.Write(executor.EncodeLength(len(s.opts.Reply) + 1024))
+		_, _ = conn.Write(s.opts.Reply)
+		return
+	}
+
 	for offset := 0; offset < len(s.opts.Reply); offset += s.opts.ChunkSize {
 		end := min(offset+s.opts.ChunkSize, len(s.opts.Reply))
-		if _, err := conn.Write(s.opts.Reply[offset:end]); err != nil {
+		piece := s.opts.Reply[offset:end]
+		if _, err := conn.Write(append(executor.EncodeLength(len(piece)), piece...)); err != nil {
 			return
 		}
+	}
+	if _, err := conn.Write(executor.Terminator()); err != nil {
+		return
 	}
 
 	if s.opts.Mode == ModeHoldOpen {
@@ -183,24 +199,31 @@ func (s *Server) handle(conn net.Conn) {
 	}
 }
 
-// readRequest reads until the literal "EOF" terminator, exactly as app.py does.
+// readRequest reads length-prefixed chunks until the zero-length terminator,
+// exactly as the Python executor does.
 func (s *Server) readRequest(conn net.Conn) ([]byte, error) {
-	var body []byte
-	buf := make([]byte, 1024*1024)
+	var (
+		body   []byte
+		header = make([]byte, executor.LengthBytes)
+	)
 
 	for {
-		n, err := conn.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			if bytes.HasSuffix(chunk, []byte("EOF")) {
-				body = append(body, bytes.TrimSuffix(chunk, []byte("EOF"))...)
-				return body, nil
-			}
-			body = append(body, chunk...)
+		if _, err := io.ReadFull(conn, header); err != nil {
+			return body, err
 		}
+		length, err := executor.DecodeLength(header)
 		if err != nil {
 			return body, err
 		}
+		if length == 0 {
+			return body, nil
+		}
+
+		chunk := make([]byte, length)
+		if _, err := io.ReadFull(conn, chunk); err != nil {
+			return body, err
+		}
+		body = append(body, chunk...)
 	}
 }
 
@@ -214,7 +237,7 @@ func (s *Server) WaitUntilListening(timeout time.Duration) bool {
 	}
 }
 
-// Requests returns the request bodies received, with the terminator stripped.
+// Requests returns the request bodies received, unframed.
 func (s *Server) Requests() [][]byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()

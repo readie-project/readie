@@ -15,6 +15,7 @@ import (
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
@@ -53,6 +54,7 @@ func buildArtifacts(t *testing.T, checkpoints ...string) (string, *artifact.Regi
 		RunscVersion:       "runsc version test",
 		SpecFingerprint:    "sha256:spec",
 		ExecutorEntrypoint: entrypoint,
+		ExecutorProtocol:   executor.ProtocolVersion,
 		PythonPath:         pythonPath,
 		CreatedAt:          time.Now().UTC(),
 	}))
@@ -543,4 +545,116 @@ func TestSpecFromConfig_UsesAShortContainerStopTimeout(t *testing.T) {
 	assert.Positive(t, spec.StopTimeout)
 	assert.LessOrEqual(t, spec.StopTimeout, 5*time.Second,
 		"reclamation runs during shutdown, inside the supervisor's grace period")
+}
+
+// Load answers "how much of this worker is spoken for". Nothing depends on it
+// for correctness, but the router schedules on it, so an over- or under-count
+// silently skews placement across the fleet.
+
+func TestLoad_IsZeroOnAFreshManager(t *testing.T) {
+	f := newFixture(t)
+
+	count, reserved := f.manager.Load()
+
+	assert.Zero(t, count)
+	assert.Zero(t, reserved)
+}
+
+func TestLoad_CountsAcquiredContainersAndTheirReservations(t *testing.T) {
+	f := newFixture(t)
+
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+	})
+	require.NoError(t, err)
+	_, err = f.manager.Acquire(context.Background(), container.AcquireRequest{
+		Alloc: container.Allocation{CPUAlloc: 256 << 20},
+	})
+	require.NoError(t, err)
+
+	count, reserved := f.manager.Load()
+
+	assert.Equal(t, int32(2), count)
+	assert.Equal(t, int64(768<<20), reserved)
+}
+
+func TestLoad_DropsAContainerOnRelease(t *testing.T) {
+	f := newFixture(t)
+	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+
+	count, reserved := f.manager.Load()
+	assert.Zero(t, count)
+	assert.Zero(t, reserved)
+}
+
+// A paused container holds pages but is reserved for nobody. Counting it as
+// occupied would strand the warm containers the whole system exists to reuse.
+func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
+	f := newFixture(t)
+	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+	})
+	require.NoError(t, err)
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+
+	// Resuming it makes it occupied again.
+	resumed, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		ContainerID: h.ID,
+		Alloc:       container.Allocation{CPUAlloc: 512 << 20},
+	})
+	require.NoError(t, err)
+
+	count, _ := f.manager.Load()
+	assert.Equal(t, int32(1), count)
+	assert.Equal(t, h.ID, resumed.ID)
+}
+
+// Release runs on the failure path too, and a pause that fails must not leave
+// the container reserved forever — that leaks capacity for the process's life.
+func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
+	f := newFixture(t)
+	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+	})
+	require.NoError(t, err)
+
+	f.runtime.FailOn("Pause", errors.New("runtime is wedged"))
+	require.Error(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+
+	count, _ := f.manager.Load()
+	assert.Zero(t, count)
+}
+
+func TestLoad_IsSafeUnderConcurrentAcquireAndRelease(t *testing.T) {
+	f := newFixture(t)
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+				Alloc: container.Allocation{CPUAlloc: 1 << 20},
+			})
+			if err != nil {
+				return
+			}
+			_, _ = f.manager.Load()
+			_ = f.manager.Release(
+				context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess)
+		}()
+	}
+	wg.Wait()
+
+	count, reserved := f.manager.Load()
+	assert.Zero(t, count)
+	assert.Zero(t, reserved)
 }

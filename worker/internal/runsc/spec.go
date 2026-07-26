@@ -26,7 +26,7 @@ const devShmSize = "1024m"
 
 // defaultPath is the sandbox's PATH.
 //
-// The rootfs binary directory is prepended, mirroring what scripts/setup.py
+// The rootfs binary directory is prepended, mirroring what the pipeline
 // does to make `python` resolvable.
 const defaultPath = "PATH=/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 

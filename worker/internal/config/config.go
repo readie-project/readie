@@ -25,8 +25,10 @@ var (
 
 // Defaults applied when the corresponding environment variable is unset.
 const (
-	// DefaultWorkerID must match the identifier the router hardcodes in
-	// router/scheduler.py:provision. Changing it breaks scheduling.
+	// DefaultWorkerID is used when WORKER_ID is unset. It is only a default:
+	// the router indexes workers by whatever id they register with, so a fleet
+	// must give each worker its own. (An earlier router hardcoded "worker-1"
+	// in provision(); it no longer does, and that constraint is gone.)
 	DefaultWorkerID = "worker-1"
 
 	// ContainerNamePrefix identifies containers this worker owns. Orphan cleanup
@@ -38,7 +40,7 @@ const (
 	DefaultChunkSize = 1024 * 1024
 
 	// ExecutorSocketName is the unix socket the Python executor binds inside its
-	// container. See scripts/executor/app.py:create_socket_connection.
+	// container. See executor/src/crfs_executor/server.py.
 	ExecutorSocketName = "executor.sock"
 
 	// ExecutorMountPath is where the per-container host directory is mounted
@@ -134,6 +136,19 @@ type Config struct {
 	// than discovering the mismatch minutes into the attempt.
 	CheckpointStrictCompat bool
 
+	// Capacity, reported to the router so it can schedule on real limits
+	// rather than in-flight count alone.
+	//
+	// MemTotal is the byte budget this worker will hand out to executors. It
+	// is configured rather than read from the host because the worker is
+	// itself usually containerised, where /proc/meminfo describes the host and
+	// not the cgroup the worker actually lives in.
+	MemTotal int64
+	// MaxExecutors caps concurrent containers. Zero means unbounded.
+	MaxExecutors int32
+	// UtilizationInterval paces worker-level load reports.
+	UtilizationInterval time.Duration
+
 	// Execution.
 	ExecutionTimeout time.Duration
 	ReleaseTimeout   time.Duration
@@ -228,7 +243,7 @@ func Load(getenv Getenv) (Config, error) {
 
 		ChunkSize: DefaultChunkSize,
 		// The executor sleeps 30s awaiting a checkpoint before it binds its
-		// socket (scripts/executor/app.py). A budget below that can never
+		// socket (see the executor's CRFS_CHECKPOINT_SLEEP). A budget below that
 		// succeed for a container started cold rather than restored.
 		DialTotalTimeout:    60 * time.Second,
 		DialRetryInterval:   100 * time.Millisecond,
@@ -236,6 +251,13 @@ func Load(getenv Getenv) (Config, error) {
 		SocketWriteTimeout:  30 * time.Second,
 		FirstByteTimeout:    time.Hour,
 		ResponseIdleTimeout: 30 * time.Second,
+
+		// 4 GiB is a deliberately conservative default: over-reporting capacity
+		// makes the router overcommit a worker, and the failure that produces
+		// is an OOM-killed sandbox mid-execution.
+		MemTotal:            4 << 30,
+		MaxExecutors:        0,
+		UtilizationInterval: 10 * time.Second,
 
 		ExecutionTimeout: time.Hour,
 		ReleaseTimeout:   30 * time.Second,
@@ -255,6 +277,9 @@ func Load(getenv Getenv) (Config, error) {
 	}
 
 	if err := applyDurationOverrides(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
+	if err := applyIntOverrides(getenv, &cfg); err != nil {
 		return Config{}, err
 	}
 	if err := applyBoolOverrides(getenv, &cfg); err != nil {
@@ -343,6 +368,15 @@ func (c Config) Validate() error {
 	if c.LogFormat != "json" && c.LogFormat != "text" {
 		errs = append(errs, fmt.Errorf("%w: LogFormat %q must be \"json\" or \"text\"", ErrInvalidEnv, c.LogFormat))
 	}
+	if c.MemTotal < 0 {
+		errs = append(errs, fmt.Errorf("%w: MemTotal must not be negative", ErrInvalidEnv))
+	}
+	if c.MaxExecutors < 0 {
+		errs = append(errs, fmt.Errorf("%w: MaxExecutors must not be negative", ErrInvalidEnv))
+	}
+	if c.UtilizationInterval <= 0 {
+		errs = append(errs, fmt.Errorf("%w: UtilizationInterval must be positive", ErrInvalidEnv))
+	}
 	if c.RegisterRetries < 0 {
 		errs = append(errs, fmt.Errorf("%w: RegisterRetries must not be negative", ErrInvalidEnv))
 	}
@@ -352,16 +386,17 @@ func (c Config) Validate() error {
 
 func applyDurationOverrides(getenv Getenv, cfg *Config) error {
 	overrides := map[string]*time.Duration{
-		"EXECUTION_TIMEOUT":      &cfg.ExecutionTimeout,
-		"DIAL_TOTAL_TIMEOUT":     &cfg.DialTotalTimeout,
-		"RESPONSE_IDLE_TIMEOUT":  &cfg.ResponseIdleTimeout,
-		"SHUTDOWN_TIMEOUT":       &cfg.ShutdownTimeout,
-		"CLEANUP_TIMEOUT":        &cfg.CleanupTimeout,
-		"STATS_INTERVAL":         &cfg.StatsInterval,
-		"CONTAINER_STOP_TIMEOUT": &cfg.ContainerStopTimeout,
-		"RUNSC_COMMAND_TIMEOUT":  &cfg.RuntimeCommandTimeout,
-		"RESTORE_TIMEOUT":        &cfg.RestoreTimeout,
-		"CHECKPOINT_TIMEOUT":     &cfg.CheckpointTimeout,
+		"EXECUTION_TIMEOUT":           &cfg.ExecutionTimeout,
+		"DIAL_TOTAL_TIMEOUT":          &cfg.DialTotalTimeout,
+		"RESPONSE_IDLE_TIMEOUT":       &cfg.ResponseIdleTimeout,
+		"SHUTDOWN_TIMEOUT":            &cfg.ShutdownTimeout,
+		"CLEANUP_TIMEOUT":             &cfg.CleanupTimeout,
+		"STATS_INTERVAL":              &cfg.StatsInterval,
+		"CONTAINER_STOP_TIMEOUT":      &cfg.ContainerStopTimeout,
+		"RUNSC_COMMAND_TIMEOUT":       &cfg.RuntimeCommandTimeout,
+		"RESTORE_TIMEOUT":             &cfg.RestoreTimeout,
+		"CHECKPOINT_TIMEOUT":          &cfg.CheckpointTimeout,
+		"WORKER_UTILIZATION_INTERVAL": &cfg.UtilizationInterval,
 	}
 	for name, target := range overrides {
 		raw := getenv(name)
@@ -375,6 +410,51 @@ func applyDurationOverrides(getenv Getenv, cfg *Config) error {
 		*target = d
 	}
 	return nil
+}
+
+// applyIntOverrides reads the numeric capacity settings. WORKER_MEM_TOTAL
+// accepts a plain byte count or a size suffix ("8Gi", "512Mi"), because a byte
+// count for a memory budget is unreadable in a compose file.
+func applyIntOverrides(getenv Getenv, cfg *Config) error {
+	if raw := strings.TrimSpace(getenv("WORKER_MEM_TOTAL")); raw != "" {
+		bytes, err := parseBytes(raw)
+		if err != nil {
+			return fmt.Errorf("%w: WORKER_MEM_TOTAL=%q: %w", ErrInvalidEnv, raw, err)
+		}
+		cfg.MemTotal = bytes
+	}
+	if raw := strings.TrimSpace(getenv("WORKER_MAX_EXECUTORS")); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil {
+			return fmt.Errorf("%w: WORKER_MAX_EXECUTORS=%q is not an integer: %w", ErrInvalidEnv, raw, err)
+		}
+		cfg.MaxExecutors = int32(n)
+	}
+	return nil
+}
+
+// byteSuffixes are checked longest-first so "Mi" is not read as "M".
+var byteSuffixes = []struct {
+	suffix string
+	scale  int64
+}{
+	{"KiB", 1 << 10}, {"MiB", 1 << 20}, {"GiB", 1 << 30}, {"TiB", 1 << 40},
+	{"Ki", 1 << 10}, {"Mi", 1 << 20}, {"Gi", 1 << 30}, {"Ti", 1 << 40},
+	{"KB", 1e3}, {"MB", 1e6}, {"GB", 1e9}, {"TB", 1e12},
+	{"K", 1e3}, {"M", 1e6}, {"G", 1e9}, {"T", 1e12},
+}
+
+func parseBytes(raw string) (int64, error) {
+	for _, s := range byteSuffixes {
+		if rest, ok := strings.CutSuffix(raw, s.suffix); ok {
+			n, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			return n * s.scale, nil
+		}
+	}
+	return strconv.ParseInt(raw, 10, 64)
 }
 
 func applyBoolOverrides(getenv Getenv, cfg *Config) error {

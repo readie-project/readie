@@ -46,7 +46,56 @@ func dialFake(t *testing.T, fake *fakeregistry.Server) pb.RegistryServiceClient 
 
 func newReporter(t *testing.T, fake *fakeregistry.Server) *registry.GRPCReporter {
 	t.Helper()
-	return registry.NewGRPCReporter(dialFake(t, fake), "worker-1", "worker:50052", time.Second, logging.Discard())
+	return newReporterWithCapacity(t, fake, registry.Capacity{})
+}
+
+func newReporterWithCapacity(
+	t *testing.T,
+	fake *fakeregistry.Server,
+	capacity registry.Capacity,
+) *registry.GRPCReporter {
+	t.Helper()
+	return registry.NewGRPCReporter(
+		dialFake(t, fake), "worker-1", "worker:50052", capacity, time.Second, logging.Discard())
+}
+
+// Capacity rides on every status rather than only the first, so a router that
+// restarts relearns it from the next report instead of scheduling blind.
+func TestWorkerStatus_StampsCapacityOnEveryReport(t *testing.T) {
+	fake := fakeregistry.NewServer()
+	reporter := newReporterWithCapacity(t, fake, registry.Capacity{
+		MemTotal:     8 << 30,
+		MaxExecutors: 12,
+	})
+
+	require.NoError(t, reporter.WorkerStatus(context.Background(), pb.Status_STATUS_READY))
+	require.NoError(t, reporter.WorkerStatus(context.Background(), pb.Status_STATUS_BUSY))
+
+	reports := fake.WorkerStatuses()
+	require.Len(t, reports, 2)
+	for _, report := range reports {
+		assert.Equal(t, int64(8<<30), report.GetMemTotal())
+		assert.Equal(t, int32(12), report.GetMaxExecutors())
+	}
+}
+
+// The router scores on memory pressure, so these three fields are the whole
+// point of the worker-level report.
+func TestWorkerUtilization_SendsMemoryAndExecutorCount(t *testing.T) {
+	fake := fakeregistry.NewServer()
+	reporter := newReporter(t, fake)
+
+	require.NoError(t, reporter.WorkerUtilization(context.Background(), registry.Utilization{
+		MemUsed:       3 << 30,
+		MemTotal:      8 << 30,
+		ExecutorCount: 4,
+	}))
+
+	reports := fake.WorkerUtilizations()
+	require.Len(t, reports, 1)
+	assert.Equal(t, int64(3<<30), reports[0].GetMemUsed())
+	assert.Equal(t, int64(8<<30), reports[0].GetMemTotal())
+	assert.Equal(t, int32(4), reports[0].GetExecutorCount())
 }
 
 // The router indexes workers by ID and dials the advertised URI verbatim, so

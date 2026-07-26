@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
@@ -153,6 +154,44 @@ type Manager struct {
 	artifacts Artifacts
 	spec      Spec
 	log       *slog.Logger
+
+	// live tracks acquired containers so the worker can report its own load.
+	//
+	// The Manager was otherwise stateless with respect to handles: it created,
+	// paused and destroyed containers without remembering any of them, and the
+	// runtime is the only durable record. That is still true of correctness —
+	// nothing here is consulted to decide anything — but "how much of this
+	// worker is spoken for" cannot be answered without it, and asking the
+	// runtime on every report would mean an exec per scheduling tick.
+	mu   sync.Mutex
+	live map[string]Allocation
+}
+
+// Load reports how much of this worker is currently committed.
+//
+// Both numbers count *acquired* containers, not merely existing ones: a paused
+// container waiting in the warm pool holds disk and memory pages but is not
+// reserved against anyone, and scheduling it as occupied would waste it.
+func (m *Manager) Load() (count int32, reservedBytes int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, alloc := range m.live {
+		reservedBytes += alloc.CPUAlloc
+	}
+	return int32(len(m.live)), reservedBytes
+}
+
+func (m *Manager) track(h Handle) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.live[h.ID] = h.Alloc
+}
+
+func (m *Manager) untrack(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.live, id)
 }
 
 // NewManager validates its dependencies and returns a Manager.
@@ -196,6 +235,7 @@ func NewManager(deps ManagerDeps) (*Manager, error) {
 		artifacts: deps.Artifacts,
 		spec:      deps.Spec,
 		log:       log,
+		live:      make(map[string]Allocation),
 	}, nil
 }
 
@@ -215,6 +255,7 @@ func (m *Manager) Acquire(ctx context.Context, req AcquireRequest) (Handle, erro
 		return Handle{}, fmt.Errorf("%w: %w", ErrAcquireFailed, err)
 	}
 
+	m.track(handle)
 	m.report(ctx, req.Ref, handle.ID, pb.Status_STATUS_BUSY)
 	return handle, nil
 }
@@ -337,6 +378,11 @@ func (m *Manager) Release(ctx context.Context, ref registry.ExecutionRef, h Hand
 	if h.ID == "" {
 		return nil
 	}
+	// Untrack before the runtime call, not after: pausing can fail, and a
+	// container the caller has finished with is not reserved for anyone
+	// regardless of whether the runtime cooperated.
+	m.untrack(h.ID)
+
 	if outcome == OutcomeSuccess {
 		return m.Pause(ctx, ref, h.ID)
 	}
@@ -495,7 +541,7 @@ func (m *Manager) createSpec(name string, alloc Allocation, generation artifact.
 		LogPath:      m.layout.LogPath(name),
 		RootfsPath:   generation.RootfsPath(),
 		RootReadonly: m.spec.RootReadonly,
-		Args:         []string{"python", "-u", generation.ExecutorEntrypoint},
+		Args:         generation.Argv(),
 		Env:          env,
 		Cwd:          "/",
 		Mounts: []sandbox.Mount{{

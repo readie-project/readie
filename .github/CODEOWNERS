@@ -1,0 +1,18 @@
+# Default owner for anything not matched below.
+*                       @illinoisdata
+
+# The wire contracts. A change here lands in three languages at once, so it
+# should never be reviewed by someone looking at only one of them.
+/protos/                @illinoisdata
+/buf.yaml               @illinoisdata
+/buf.gen.yaml           @illinoisdata
+
+# The executor protocol is implemented twice, in Python and in Go. Both ends and
+# the golden fixture move together or not at all.
+/executor/              @illinoisdata
+/worker/internal/executor/ @illinoisdata
+
+# Anything that changes what a checkpoint can restore into.
+/rootfs/                @illinoisdata
+/worker/internal/artifact/ @illinoisdata
+/worker/internal/runsc/spec.go @illinoisdata

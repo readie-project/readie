@@ -21,9 +21,11 @@ type SessionOptions struct {
 	// FirstByteTimeout is how long the executor may take to begin replying.
 	// This spans the user's function execution, so it is generous.
 	FirstByteTimeout time.Duration
-	// IdleTimeout is the gap after which a partially received response is
-	// treated as complete. It is a safety net: the executor normally closes
-	// the connection, which surfaces as io.EOF.
+	// IdleTimeout bounds the gap between two reads once a response has begun.
+	//
+	// Under version 1 an expired idle timeout meant "assume the response is
+	// complete", because nothing on the wire said where it ended. Framing says
+	// so explicitly, and this is now what it sounds like: a stalled peer.
 	IdleTimeout time.Duration
 }
 
@@ -65,20 +67,27 @@ func NewSession(conn Conn, opts SessionOptions, log *slog.Logger) *Session {
 	return &Session{conn: conn, opts: opts.withDefaults(), log: log}
 }
 
-// WriteChunk sends part of the request body.
+// WriteChunk sends part of the request body as one length-prefixed chunk.
+//
+// An empty chunk is dropped rather than written: a zero length is the message
+// terminator, so forwarding an empty relay chunk would end the request early.
 func (s *Session) WriteChunk(p []byte) error {
 	if len(p) == 0 {
 		return nil
 	}
-	return s.write(p, "request chunk")
+
+	// Prefix and body in one write. Two writes are two packets on some
+	// transports, and there is no reason to wake the reader twice per chunk.
+	framed := make([]byte, 0, LengthBytes+len(p))
+	framed = append(framed, EncodeLength(len(p))...)
+	framed = append(framed, p...)
+
+	return s.write(framed, "request chunk")
 }
 
-// CloseRequest terminates the request body.
-//
-// The marker is written on its own so it lands at the end of a recv boundary,
-// which is what app.py's endswith check depends on.
+// CloseRequest terminates the request body with a zero-length chunk.
 func (s *Session) CloseRequest() error {
-	return s.write(EOFMarker, "request terminator")
+	return s.write(Terminator(), "request terminator")
 }
 
 func (s *Session) write(p []byte, what string) error {
@@ -98,22 +107,16 @@ func (s *Session) write(p []byte, what string) error {
 	return nil
 }
 
-// ReadResponse streams the response, handing each chunk to sink.
+// ReadResponse streams the response body, handing each chunk to sink.
 //
-// Termination, in the order it is checked:
-//
-//   - io.EOF, which is what the executor's per-request connection close
-//     produces and therefore the normal path;
-//   - a read deadline expiring after at least one byte arrived, treated as the
-//     end of the response so an executor that holds the connection open cannot
-//     wedge the request;
-//   - a read deadline expiring with nothing received, reported as ErrNoResponse;
-//   - ctx being cancelled.
+// The body is read frame by frame until the terminating zero-length chunk. The
+// framing is what lets this be exact: version 1 ended at connection close, so a
+// short read was indistinguishable from a complete small response and an
+// executor killed mid-write was reported as a success.
 //
 // Cancellation works by pushing the connection's read deadline into the past,
-// which interrupts a blocked Read. The previous implementation polled ctx with
-// a non-blocking select before each read, which could never fire while a read
-// was in progress — the only state that mattered.
+// which interrupts a blocked Read. Polling ctx between reads could never fire
+// while a read was in progress — the only state that mattered.
 func (s *Session) ReadResponse(ctx context.Context, sink func([]byte) error) error {
 	// cancelled is set before the hook expires the deadline, so the loop below
 	// can tell "the deadline fired because we were cancelled" from "the
@@ -129,66 +132,124 @@ func (s *Session) ReadResponse(ctx context.Context, sink func([]byte) error) err
 	})
 	defer stop()
 
+	r := &frameReader{session: s, cancelled: &cancelled}
 	buf := make([]byte, s.opts.ChunkSize)
-	received := 0
+	header := make([]byte, LengthBytes)
 
 	for {
-		if cancelled.Load() {
-			return ctx.Err()
+		if err := r.readFull(ctx, header); err != nil {
+			return err
 		}
 
-		timeout := s.opts.IdleTimeout
-		if received == 0 {
-			timeout = s.opts.FirstByteTimeout
+		length, err := DecodeLength(header)
+		if err != nil {
+			return err
 		}
-		// A deadline that cannot be set is not itself a failure: the read that
-		// follows reports the real condition, which for an already-closed
-		// connection is the io.EOF that ends the response normally.
-		if err := s.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-			s.log.Debug("could not set read deadline", "err", err)
-		}
-		// Cancellation landing between the check above and the deadline just
-		// set would otherwise be undone by it, re-arming a full-length read.
-		if cancelled.Load() {
-			_ = s.conn.SetReadDeadline(time.Now())
-		}
-
-		n, err := s.conn.Read(buf)
-
-		// Deliver before inspecting the error: a read can return both data and
-		// io.EOF, and dropping that final chunk would truncate the response.
-		if n > 0 {
-			received += n
-			if sinkErr := sink(buf[:n]); sinkErr != nil {
-				return sinkErr
-			}
-		}
-
-		switch {
-		case err == nil:
-			continue
-
-		case errors.Is(err, io.EOF):
+		if length == 0 {
 			return nil
-
-		case errors.Is(err, os.ErrDeadlineExceeded):
-			// A deadline that fired because ctx ended is cancellation, not idleness.
-			if cancelled.Load() {
-				return ctx.Err()
-			}
-			if received == 0 {
-				return fmt.Errorf("%w within %s", ErrNoResponse, s.opts.FirstByteTimeout)
-			}
-			s.log.Warn("executor left the connection open after replying; treating the response as complete",
-				"idle_timeout", s.opts.IdleTimeout, "bytes", received)
-			return nil
-
-		default:
-			if cancelled.Load() {
-				return ctx.Err()
-			}
-			return fmt.Errorf("read response: %w", err)
 		}
+		if r.total+length > MaxMessageBytes {
+			return fmt.Errorf("%w: response exceeded %d bytes", ErrMalformedFrame, MaxMessageBytes)
+		}
+
+		// Streamed to the sink as it arrives rather than assembled first: the
+		// runner forwards these to the router, and buffering a whole response
+		// here would hold every in-flight result in worker memory.
+		for remaining := length; remaining > 0; {
+			want := min(remaining, len(buf))
+			n, err := r.read(ctx, buf[:want])
+			if n > 0 {
+				remaining -= n
+				if sinkErr := sink(buf[:n]); sinkErr != nil {
+					return sinkErr
+				}
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// frameReader applies this session's deadlines and cancellation to each read,
+// and translates a stream that ends early into ErrTruncatedResponse.
+//
+// It holds no context: ctx is passed to each call, so a reader cannot outlive
+// the cancellation it was built with.
+type frameReader struct {
+	session   *Session
+	cancelled *atomic.Bool
+	total     int
+}
+
+// readFull fills p exactly, or fails.
+func (r *frameReader) readFull(ctx context.Context, p []byte) error {
+	for filled := 0; filled < len(p); {
+		n, err := r.read(ctx, p[filled:])
+		filled += n
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// read performs one deadline-bounded read.
+func (r *frameReader) read(ctx context.Context, p []byte) (int, error) {
+	s := r.session
+
+	if r.cancelled.Load() {
+		return 0, ctx.Err()
+	}
+
+	// The executor spends the first-byte budget running the user's function,
+	// so it is generous; once bytes are flowing a gap means a stalled peer.
+	timeout := s.opts.IdleTimeout
+	if r.total == 0 {
+		timeout = s.opts.FirstByteTimeout
+	}
+	// A deadline that cannot be set is not itself a failure: the read that
+	// follows reports the real condition.
+	if err := s.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		s.log.Debug("could not set read deadline", "err", err)
+	}
+	// Cancellation landing between the check above and the deadline just set
+	// would otherwise be undone by it, re-arming a full-length read.
+	if r.cancelled.Load() {
+		_ = s.conn.SetReadDeadline(time.Now())
+	}
+
+	n, err := s.conn.Read(p)
+	r.total += n
+
+	switch {
+	case err == nil:
+		return n, nil
+
+	case errors.Is(err, io.EOF):
+		// The peer closed. With framing that is only legitimate after the
+		// terminator, and reaching here means we were still expecting bytes.
+		if r.total == 0 {
+			return n, fmt.Errorf("%w: connection closed before any output", ErrNoResponse)
+		}
+		return n, fmt.Errorf("%w after %d bytes", ErrTruncatedResponse, r.total)
+
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		// A deadline that fired because ctx ended is cancellation, not idleness.
+		if r.cancelled.Load() {
+			return n, ctx.Err()
+		}
+		if r.total == 0 {
+			return n, fmt.Errorf("%w within %s", ErrNoResponse, s.opts.FirstByteTimeout)
+		}
+		return n, fmt.Errorf("%w: executor stalled for %s after %d bytes",
+			ErrTruncatedResponse, s.opts.IdleTimeout, r.total)
+
+	default:
+		if r.cancelled.Load() {
+			return n, ctx.Err()
+		}
+		return n, fmt.Errorf("read response: %w", err)
 	}
 }
 
