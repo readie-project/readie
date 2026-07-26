@@ -16,5 +16,10 @@ env/
 .dockerignore
 Dockerfile
 
+# Test and tooling artifacts
+coverage.out
+coverage.html
+.golangci.yml
+
 # OS files
 .DS_Store

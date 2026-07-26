@@ -27,6 +27,22 @@ services:
         depends_on:
             router:
                 condition: service_healthy
+        # The worker orchestrates sibling containers through the host daemon, so
+        # it needs the socket. WORKER_DIR must then be mounted at the *same*
+        # path on both sides: the worker creates <WORKER_DIR>/<container> and
+        # hands that path to the daemon as a bind source, which the daemon
+        # resolves on the host. A named volume cannot satisfy that — the path
+        # would exist only inside this container and the daemon would reject the
+        # mount as "not shared from the host".
+        environment:
+            WORKER_DIR: ${WORKER_SHARED_DIR:-/tmp/crfs-worker-shared}
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - ${WORKER_SHARED_DIR:-/tmp/crfs-worker-shared}:${WORKER_SHARED_DIR:-/tmp/crfs-worker-shared}
+        # On shutdown the worker deregisters, drains in-flight executions and
+        # reclaims its containers. The base image declares StopTimeout=1, which
+        # would SIGKILL it partway through and strand containers.
+        stop_grace_period: 30s
         healthcheck:
             test:
                 [

@@ -1,0 +1,74 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose      # response/stream bodies must be closed (see the old GetContainerResources leak)
+    - containedctx   # no context.Context stored in structs
+    - contextcheck   # non-inherited contexts
+    - errcheck       # unchecked stream.Send / conn.Write
+    - errorlint      # %w over %v when wrapping
+    - govet          # includes copylocks and lostcancel
+    - ineffassign    # the `err = os.RemoveAll(...)` overwrite
+    - nilerr         # return nil after a non-nil error
+    - noctx          # I/O without a context
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    revive:
+      rules:
+        - name: exported
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: indent-error-flow
+        - name: var-naming
+        - name: package-comments
+          disabled: true
+    staticcheck:
+      checks:
+        - all
+
+  exclusions:
+    generated: lax
+    rules:
+      # Generated protobuf stubs.
+      - path: ^proto/
+        linters:
+          - errcheck
+          - govet
+          - revive
+          - staticcheck
+          - unused
+      # Tests and fakes may take shortcuts real code may not.
+      - path: (_test\.go|internal/testutil/)
+        linters:
+          - bodyclose
+          - containedctx
+          - contextcheck
+          - errcheck
+          - noctx
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/illinoisdata/checkpoint-restore-for-serverless/worker
