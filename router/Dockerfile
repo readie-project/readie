@@ -1,6 +1,6 @@
 # Slim rather than alpine: pydantic-core and grpcio publish manylinux wheels but
 # not musl ones, so alpine would build both from source on every image build.
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
