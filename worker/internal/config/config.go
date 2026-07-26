@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,9 +29,6 @@ const (
 	// router/scheduler.py:provision. Changing it breaks scheduling.
 	DefaultWorkerID = "worker-1"
 
-	// DefaultExecutorImage is the container image holding the Python executor.
-	DefaultExecutorImage = "test-agent"
-
 	// ContainerNamePrefix identifies containers this worker owns. Orphan cleanup
 	// matches on it, so it must remain stable across restarts.
 	ContainerNamePrefix = "exec_container-"
@@ -44,15 +42,19 @@ const (
 	ExecutorSocketName = "executor.sock"
 
 	// ExecutorMountPath is where the per-container host directory is mounted
-	// inside the executor. The executor reads it from $EXECUTOR_DIR.
+	// inside the sandbox. The executor reads it from $EXECUTOR_DIR and binds
+	// its socket there, which is how the worker reaches it.
 	ExecutorMountPath = "/tmp"
 
-	// SitePackagesMountPath is where the host site-packages tree is mounted
-	// read-only inside the executor, and the value of its $PYTHONPATH.
-	SitePackagesMountPath = "/tmp/site_packages"
+	// BundlesDirName is the sub-directory of WorkerDir holding OCI bundles.
+	// Bundles sit outside the per-container directories on purpose: those are
+	// mounted into the sandbox, and a sandbox has no business reading its own
+	// runtime spec.
+	BundlesDirName = "sandboxes"
 
-	// CheckpointDirName is the sub-directory of WorkerDir holding checkpoints.
-	CheckpointDirName = "checkpoints"
+	// SandboxLogName is the per-sandbox log file inside its bundle directory.
+	// The runtime has no log API, so this file is the only source of output.
+	SandboxLogName = "sandbox.log"
 )
 
 // Config is the fully resolved, validated worker configuration.
@@ -73,16 +75,42 @@ type Config struct {
 	RouterURI string
 
 	// Filesystem.
-	WorkerDir        string // host root for per-container directories
-	SitePackagesPath string // host site-packages tree, bind-mounted read-only
+	WorkerDir string // host root for per-container directories and bundles
+	// ArtifactRoot holds the generations this worker can run: each is a root
+	// filesystem plus the checkpoints captured against it.
+	ArtifactRoot string
+	// ActiveGeneration pins the generation used for cold starts. Empty selects
+	// the newest available.
+	ActiveGeneration string
+
+	// Sandbox runtime.
+	RunscBinary string
+	RunscRoot   string // runtime state directory, owned exclusively by this worker
+	// SandboxNetwork is "none": executors must not reach the network.
+	SandboxNetwork string
+	// SandboxHostUDS governs whether a socket bound inside the sandbox is
+	// visible on the host. The executor is a socket server, so anything that
+	// forbids it makes every execution fail at dial time.
+	SandboxHostUDS string
+	// SandboxOverlay gives each sandbox copy-on-write over the shared, read-only
+	// rootfs. It must never cover the socket bind mount.
+	SandboxOverlay string
+	// SandboxRootReadonly is coupled to the overlay mode and must match what a
+	// checkpoint was captured under.
+	SandboxRootReadonly bool
+	SandboxPlatform     string
+	// SandboxIgnoreCgroups disables cgroup enforcement where delegation is
+	// unavailable, such as inside some nested-container environments.
+	SandboxIgnoreCgroups bool
+	SandboxDebug         bool
+	SandboxDebugLogDir   string
 
 	// Container provisioning.
-	ExecutorImage       string
 	ContainerNamePrefix string
 	CPUQuota            int64
+	CPUPeriod           int64
 	PidsLimit           int64
-	ContainerRuntime    string // "" for the default runtime, "runsc" for gVisor
-	NetworkMode         string
+	CgroupParent        string
 	// ContainerStopTimeout bounds a container's own shutdown. It is short
 	// because reclamation runs during the worker's shutdown, inside whatever
 	// grace period the supervisor allows before it sends SIGKILL.
@@ -97,6 +125,15 @@ type Config struct {
 	FirstByteTimeout    time.Duration
 	ResponseIdleTimeout time.Duration
 
+	// Runtime call bounds.
+	RuntimeCommandTimeout time.Duration
+	RestoreTimeout        time.Duration
+	CheckpointTimeout     time.Duration
+	// CheckpointStrictCompat rejects a restore whose recorded fingerprint,
+	// runtime version or rootfs disagrees with the sandbox being built, rather
+	// than discovering the mismatch minutes into the attempt.
+	CheckpointStrictCompat bool
+
 	// Execution.
 	ExecutionTimeout time.Duration
 	ReleaseTimeout   time.Duration
@@ -106,11 +143,11 @@ type Config struct {
 	StatsInterval    time.Duration
 
 	// Lifecycle.
-	RegisterTimeout   time.Duration
-	RegisterRetries   int
-	CleanupTimeout    time.Duration
-	ShutdownTimeout   time.Duration
-	DockerPingTimeout time.Duration
+	RegisterTimeout     time.Duration
+	RegisterRetries     int
+	CleanupTimeout      time.Duration
+	ShutdownTimeout     time.Duration
+	RuntimeProbeTimeout time.Duration
 
 	// Observability.
 	LogLevel  slog.Level
@@ -120,17 +157,11 @@ type Config struct {
 // Getenv reads an environment variable. os.Getenv satisfies it.
 type Getenv func(string) string
 
-// ReadFile reads a file from disk. os.ReadFile satisfies it.
-type ReadFile func(string) ([]byte, error)
-
-// Load builds a Config from the environment. Both dependencies are injected so
-// configuration can be tested without touching the process environment or disk.
-func Load(getenv Getenv, readFile ReadFile) (Config, error) {
+// Load builds a Config from the environment. getenv is injected so
+// configuration can be tested without touching the process environment.
+func Load(getenv Getenv) (Config, error) {
 	if getenv == nil {
 		getenv = os.Getenv
-	}
-	if readFile == nil {
-		readFile = os.ReadFile
 	}
 
 	port, err := requireEnv(getenv, "PORT")
@@ -150,7 +181,7 @@ func Load(getenv Getenv, readFile ReadFile) (Config, error) {
 		return Config{}, err
 	}
 
-	sitePackages, err := loadSitePackagesPath(getenv, readFile)
+	artifactRoot, err := requireEnv(getenv, "ARTIFACT_ROOT")
 	if err != nil {
 		return Config{}, err
 	}
@@ -167,17 +198,33 @@ func Load(getenv Getenv, readFile ReadFile) (Config, error) {
 		RouterURI:  routerURI,
 
 		WorkerDir:        workerDir,
-		SitePackagesPath: sitePackages,
+		ArtifactRoot:     artifactRoot,
+		ActiveGeneration: getenv("ACTIVE_GENERATION"),
 
-		ExecutorImage:       valueOr(getenv("EXECUTOR_IMAGE"), DefaultExecutorImage),
-		ContainerNamePrefix: ContainerNamePrefix,
-		CPUQuota:            50000,
-		PidsLimit:           100,
-		// gVisor is installed in the image but not yet wired up; see the
-		// Dockerfile and the project README. Opt in with CONTAINER_RUNTIME=runsc.
-		ContainerRuntime:     getenv("CONTAINER_RUNTIME"),
-		NetworkMode:          "none",
+		RunscBinary:    valueOr(getenv("RUNSC_BINARY"), "/usr/local/bin/runsc"),
+		RunscRoot:      valueOr(getenv("RUNSC_ROOT"), "/run/crfs-runsc"),
+		SandboxNetwork: valueOr(getenv("SANDBOX_NETWORK"), "none"),
+		// The executor binds its socket inside the sandbox and the worker dials
+		// it from the host, which the runtime forbids by default.
+		SandboxHostUDS: valueOr(getenv("SANDBOX_HOST_UDS"), "create"),
+		// Copy-on-write over the shared rootfs, held in sandbox memory. Paired
+		// with a writable root; the two must move together or a restore fails.
+		SandboxOverlay:      valueOr(getenv("SANDBOX_OVERLAY"), "root:memory"),
+		SandboxRootReadonly: false,
+		SandboxPlatform:     getenv("SANDBOX_PLATFORM"),
+		SandboxDebugLogDir:  valueOr(getenv("SANDBOX_DEBUG_LOG_DIR"), "/var/log/runsc"),
+
+		ContainerNamePrefix:  ContainerNamePrefix,
+		CPUQuota:             50000,
+		CPUPeriod:            100000,
+		PidsLimit:            100,
+		CgroupParent:         valueOr(getenv("CGROUP_PARENT"), "/crfs"),
 		ContainerStopTimeout: 2 * time.Second,
+
+		RuntimeCommandTimeout:  30 * time.Second,
+		RestoreTimeout:         30 * time.Second,
+		CheckpointTimeout:      5 * time.Minute,
+		CheckpointStrictCompat: true,
 
 		ChunkSize: DefaultChunkSize,
 		// The executor sleeps 30s awaiting a checkpoint before it binds its
@@ -197,11 +244,11 @@ func Load(getenv Getenv, readFile ReadFile) (Config, error) {
 		StreamStats:      true,
 		StatsInterval:    time.Second,
 
-		RegisterTimeout:   5 * time.Second,
-		RegisterRetries:   3,
-		CleanupTimeout:    30 * time.Second,
-		ShutdownTimeout:   30 * time.Second,
-		DockerPingTimeout: 5 * time.Second,
+		RegisterTimeout:     5 * time.Second,
+		RegisterRetries:     3,
+		CleanupTimeout:      30 * time.Second,
+		ShutdownTimeout:     30 * time.Second,
+		RuntimeProbeTimeout: 5 * time.Second,
 
 		LogLevel:  logLevel,
 		LogFormat: valueOr(strings.ToLower(getenv("LOG_FORMAT")), "json"),
@@ -233,8 +280,10 @@ func (c Config) Validate() error {
 		{"ListenAddr", c.ListenAddr},
 		{"RouterURI", c.RouterURI},
 		{"WorkerDir", c.WorkerDir},
-		{"SitePackagesPath", c.SitePackagesPath},
-		{"ExecutorImage", c.ExecutorImage},
+		{"ArtifactRoot", c.ArtifactRoot},
+		{"RunscBinary", c.RunscBinary},
+		{"RunscRoot", c.RunscRoot},
+		{"SandboxNetwork", c.SandboxNetwork},
 		{"ContainerNamePrefix", c.ContainerNamePrefix},
 	} {
 		if f.value == "" {
@@ -242,12 +291,41 @@ func (c Config) Validate() error {
 		}
 	}
 
-	// A path containing whitespace produces a malformed Docker bind spec
-	// ("<path>\n:/tmp/site_packages:ro"), which the daemon rejects opaquely.
-	if strings.ContainsAny(c.SitePackagesPath, " \t\r\n:") {
+	for _, f := range []struct {
+		name  string
+		value string
+	}{
+		{"WorkerDir", c.WorkerDir},
+		{"ArtifactRoot", c.ArtifactRoot},
+		{"RunscBinary", c.RunscBinary},
+		{"RunscRoot", c.RunscRoot},
+	} {
+		if f.value != "" && !filepath.IsAbs(f.value) {
+			errs = append(errs, fmt.Errorf("%w: %s %q must be an absolute path",
+				ErrInvalidEnv, f.name, f.value))
+		}
+	}
+
+	// An overlay covering every mount would keep the executor's socket in the
+	// overlay's upper layer, where the worker cannot see it — every execution
+	// would then fail at dial time looking exactly like a dead executor.
+	if strings.HasPrefix(c.SandboxOverlay, "all:") {
 		errs = append(errs, fmt.Errorf(
-			"%w: SitePackagesPath %q contains whitespace or a colon and cannot be used in a bind spec",
-			ErrInvalidEnv, c.SitePackagesPath))
+			"%w: SandboxOverlay %q would hide the executor socket from the worker; use a root: overlay",
+			ErrInvalidEnv, c.SandboxOverlay))
+	}
+	// "self" places the upper layer inside the rootfs directory, which is
+	// shared by every sandbox on this worker.
+	if strings.Contains(c.SandboxOverlay, ":self") {
+		errs = append(errs, fmt.Errorf(
+			"%w: SandboxOverlay %q writes into the shared rootfs; use root:memory or root:dir=…",
+			ErrInvalidEnv, c.SandboxOverlay))
+	}
+	switch c.SandboxNetwork {
+	case "", "none", "sandbox", "host":
+	default:
+		errs = append(errs, fmt.Errorf("%w: SandboxNetwork %q must be none, sandbox or host",
+			ErrInvalidEnv, c.SandboxNetwork))
 	}
 
 	if c.ChunkSize <= 0 {
@@ -272,36 +350,18 @@ func (c Config) Validate() error {
 	return errors.Join(errs...)
 }
 
-// loadSitePackagesPath resolves the host site-packages directory. The path is
-// stored in a file (written at image build time by a `python -c print(...)`),
-// so it arrives with a trailing newline that must be trimmed before it can be
-// interpolated into a Docker bind specification.
-func loadSitePackagesPath(getenv Getenv, readFile ReadFile) (string, error) {
-	path, err := requireEnv(getenv, "SITEPACKAGES_TXT_PATH")
-	if err != nil {
-		return "", err
-	}
-
-	contents, err := readFile(path)
-	if err != nil {
-		return "", fmt.Errorf("%w: reading SITEPACKAGES_TXT_PATH %q: %w", ErrInvalidEnv, path, err)
-	}
-
-	sitePackages := strings.TrimSpace(string(contents))
-	if sitePackages == "" {
-		return "", fmt.Errorf("%w: site-packages path file %q is empty", ErrInvalidEnv, path)
-	}
-	return sitePackages, nil
-}
-
 func applyDurationOverrides(getenv Getenv, cfg *Config) error {
 	overrides := map[string]*time.Duration{
-		"EXECUTION_TIMEOUT":     &cfg.ExecutionTimeout,
-		"DIAL_TOTAL_TIMEOUT":    &cfg.DialTotalTimeout,
-		"RESPONSE_IDLE_TIMEOUT": &cfg.ResponseIdleTimeout,
-		"SHUTDOWN_TIMEOUT":      &cfg.ShutdownTimeout,
-		"CLEANUP_TIMEOUT":       &cfg.CleanupTimeout,
-		"STATS_INTERVAL":        &cfg.StatsInterval,
+		"EXECUTION_TIMEOUT":      &cfg.ExecutionTimeout,
+		"DIAL_TOTAL_TIMEOUT":     &cfg.DialTotalTimeout,
+		"RESPONSE_IDLE_TIMEOUT":  &cfg.ResponseIdleTimeout,
+		"SHUTDOWN_TIMEOUT":       &cfg.ShutdownTimeout,
+		"CLEANUP_TIMEOUT":        &cfg.CleanupTimeout,
+		"STATS_INTERVAL":         &cfg.StatsInterval,
+		"CONTAINER_STOP_TIMEOUT": &cfg.ContainerStopTimeout,
+		"RUNSC_COMMAND_TIMEOUT":  &cfg.RuntimeCommandTimeout,
+		"RESTORE_TIMEOUT":        &cfg.RestoreTimeout,
+		"CHECKPOINT_TIMEOUT":     &cfg.CheckpointTimeout,
 	}
 	for name, target := range overrides {
 		raw := getenv(name)
@@ -319,8 +379,11 @@ func applyDurationOverrides(getenv Getenv, cfg *Config) error {
 
 func applyBoolOverrides(getenv Getenv, cfg *Config) error {
 	overrides := map[string]*bool{
-		"STREAM_LOGS":  &cfg.StreamLogs,
-		"STREAM_STATS": &cfg.StreamStats,
+		"STREAM_LOGS":              &cfg.StreamLogs,
+		"STREAM_STATS":             &cfg.StreamStats,
+		"SANDBOX_IGNORE_CGROUPS":   &cfg.SandboxIgnoreCgroups,
+		"SANDBOX_DEBUG":            &cfg.SandboxDebug,
+		"CHECKPOINT_STRICT_COMPAT": &cfg.CheckpointStrictCompat,
 	}
 	for name, target := range overrides {
 		raw := getenv(name)

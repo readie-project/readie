@@ -13,10 +13,10 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 )
 
 // ErrInvalidRequest indicates the caller sent something unusable.
@@ -42,10 +42,10 @@ func toStatus(err error) error {
 		errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "execution timed out")
 
-	case errors.Is(err, docker.ErrNotFound):
+	case errors.Is(err, sandbox.ErrNotFound):
 		return status.Error(codes.NotFound, "container not found")
 
-	case errors.Is(err, docker.ErrDaemonUnavailable),
+	case errors.Is(err, sandbox.ErrRuntimeUnavailable),
 		errors.Is(err, executor.ErrDialTimeout),
 		errors.Is(err, registry.ErrRouterUnavailable):
 		return status.Error(codes.Unavailable, "worker temporarily unavailable")

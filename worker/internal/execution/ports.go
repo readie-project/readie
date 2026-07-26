@@ -13,8 +13,8 @@ import (
 	"io"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 )
 
 // Sentinel errors returned by a Runner.
@@ -36,7 +36,7 @@ type ContainerService interface {
 	Acquire(ctx context.Context, req container.AcquireRequest) (container.Handle, error)
 	Release(ctx context.Context, ref registry.ExecutionRef, h container.Handle, outcome container.Outcome) error
 	Logs(ctx context.Context, id string) (io.ReadCloser, error)
-	Stats(ctx context.Context, id string) (docker.StatsStream, error)
+	Stats(ctx context.Context, id string) (sandbox.StatsStream, error)
 }
 
 // PayloadSource yields request-body chunks after the first message.

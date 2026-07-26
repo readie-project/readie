@@ -7,12 +7,14 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path"
 	"time"
 
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
 )
 
@@ -81,13 +83,16 @@ type AcquireRequest struct {
 
 // Spec is the fixed part of every container this worker creates.
 type Spec struct {
-	Image            string
-	NamePrefix       string
-	SitePackagesPath string
-	CPUQuota         int64
-	PidsLimit        int64
-	Runtime          string
-	NetworkMode      string
+	NamePrefix string
+	CPUQuota   int64
+	CPUPeriod  int64
+	PidsLimit  int64
+	// RootReadonly is coupled to the runtime's overlay mode; both must match
+	// what a checkpoint was captured under.
+	RootReadonly bool
+	// CgroupParent is prepended to each sandbox's cgroup path. Empty lets the
+	// runtime choose.
+	CgroupParent string
 	// StopTimeout bounds how long a container may take to exit before it is
 	// killed. It must stay well inside the supervisor's own shutdown grace
 	// period, since reclamation happens during shutdown.
@@ -100,45 +105,61 @@ type Spec struct {
 // SpecFromConfig derives the container spec from worker configuration.
 func SpecFromConfig(cfg config.Config) Spec {
 	return Spec{
-		Image:            cfg.ExecutorImage,
-		NamePrefix:       cfg.ContainerNamePrefix,
-		SitePackagesPath: cfg.SitePackagesPath,
-		CPUQuota:         cfg.CPUQuota,
-		PidsLimit:        cfg.PidsLimit,
-		Runtime:          cfg.ContainerRuntime,
-		NetworkMode:      cfg.NetworkMode,
-		StopTimeout:      cfg.ContainerStopTimeout,
-		DirPerm:          0o777,
+		NamePrefix:   cfg.ContainerNamePrefix,
+		CPUQuota:     cfg.CPUQuota,
+		CPUPeriod:    cfg.CPUPeriod,
+		PidsLimit:    cfg.PidsLimit,
+		RootReadonly: cfg.SandboxRootReadonly,
+		CgroupParent: cfg.CgroupParent,
+		StopTimeout:  cfg.ContainerStopTimeout,
+		DirPerm:      0o777,
 	}
+}
+
+// SandboxExecutorDir is where a container's host directory is mounted inside
+// its sandbox. The executor binds its socket there and the worker dials it, so
+// the offline pipeline must describe the same mount or a restored sandbox is
+// unreachable.
+func SandboxExecutorDir() string { return config.ExecutorMountPath }
+
+// Artifacts resolves the rootfs and checkpoint images a sandbox runs against.
+// *artifact.Registry satisfies it.
+type Artifacts interface {
+	// Active is the generation cold starts use.
+	Active() artifact.Generation
+	// ResolveCheckpoint finds a checkpoint and the generation that owns it.
+	ResolveCheckpoint(ref string) (artifact.Checkpoint, artifact.Generation, error)
 }
 
 // ManagerDeps collects a Manager's collaborators.
 type ManagerDeps struct {
-	Docker   docker.Port
-	Reporter registry.Reporter
-	Layout   Layout
-	Names    NameGenerator
-	FS       FS
-	Spec     Spec
-	Log      *slog.Logger
+	Runtime   sandbox.Port
+	Reporter  registry.Reporter
+	Layout    Layout
+	Names     NameGenerator
+	FS        FS
+	Artifacts Artifacts
+	Spec      Spec
+	Log       *slog.Logger
 }
 
 // Manager owns executor container lifecycles.
 type Manager struct {
-	docker   docker.Port
-	reporter registry.Reporter
-	layout   Layout
-	names    NameGenerator
-	fs       FS
-	spec     Spec
-	log      *slog.Logger
+	runtime   sandbox.Port
+	reporter  registry.Reporter
+	layout    Layout
+	names     NameGenerator
+	fs        FS
+	artifacts Artifacts
+	spec      Spec
+	log       *slog.Logger
 }
 
 // NewManager validates its dependencies and returns a Manager.
 func NewManager(deps ManagerDeps) (*Manager, error) {
 	var missing []string
-	if deps.Docker == nil {
-		missing = append(missing, "Docker")
+	if deps.Runtime == nil {
+		missing = append(missing, "Runtime")
 	}
 	if deps.Reporter == nil {
 		missing = append(missing, "Reporter")
@@ -152,14 +173,11 @@ func NewManager(deps ManagerDeps) (*Manager, error) {
 	if deps.FS == nil {
 		missing = append(missing, "FS")
 	}
-	if deps.Spec.Image == "" {
-		missing = append(missing, "Spec.Image")
+	if deps.Artifacts == nil {
+		missing = append(missing, "Artifacts")
 	}
 	if deps.Spec.NamePrefix == "" {
 		missing = append(missing, "Spec.NamePrefix")
-	}
-	if deps.Spec.SitePackagesPath == "" {
-		missing = append(missing, "Spec.SitePackagesPath")
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidDeps, missing)
@@ -170,13 +188,14 @@ func NewManager(deps ManagerDeps) (*Manager, error) {
 		log = slog.Default()
 	}
 	return &Manager{
-		docker:   deps.Docker,
-		reporter: deps.Reporter,
-		layout:   deps.Layout,
-		names:    deps.Names,
-		fs:       deps.FS,
-		spec:     deps.Spec,
-		log:      log,
+		runtime:   deps.Runtime,
+		reporter:  deps.Reporter,
+		layout:    deps.Layout,
+		names:     deps.Names,
+		fs:        deps.FS,
+		artifacts: deps.Artifacts,
+		spec:      deps.Spec,
+		log:       log,
 	}, nil
 }
 
@@ -201,9 +220,23 @@ func (m *Manager) Acquire(ctx context.Context, req AcquireRequest) (Handle, erro
 }
 
 // create provisions a fresh container and starts it.
+//
+// The generation is resolved first, because it decides which root filesystem
+// the sandbox runs against. A checkpoint can only be restored into the
+// filesystem it was captured from, so the rootfs is looked up *through* the
+// checkpoint rather than assumed; a cold start falls back to the active
+// generation.
 func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error) {
 	name := m.names.NewName()
 	log := m.log.With(logging.KeyContainerID, name, logging.KeyRequestID, req.Ref.RequestID)
+
+	generation, checkpoint, restoreErr := m.resolve(req.CheckpointID)
+	if restoreErr != nil {
+		// Not fatal: an unresolvable checkpoint downgrades to a cold start on
+		// the active generation, exactly as a failed restore does.
+		log.Warn("cannot resolve the requested checkpoint; starting cold",
+			logging.KeyCheckpoint, req.CheckpointID, logging.KeyError, restoreErr)
+	}
 
 	dir := m.layout.ContainerDir(name)
 	// A stale directory from a crashed predecessor would leave a dead socket
@@ -213,7 +246,7 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 		return Handle{}, fmt.Errorf("prepare container directory %s: %w", dir, err)
 	}
 
-	id, err := m.docker.Create(ctx, m.createSpec(name, req.Alloc))
+	id, err := m.runtime.Create(ctx, m.createSpec(name, req.Alloc, generation))
 	if err != nil {
 		// Nothing was created, so the directory is garbage; leaving it behind
 		// would slowly fill the worker's disk.
@@ -223,9 +256,9 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 		}
 		return Handle{}, fmt.Errorf("create container: %w", err)
 	}
-	log.Info("container created", "docker_id", id)
+	log.Info("container created", "runtime_id", id)
 
-	checkpointID, err := m.start(ctx, name, req.CheckpointID, log)
+	checkpointID, err := m.start(ctx, name, checkpoint, log)
 	if err != nil {
 		return Handle{}, err
 	}
@@ -233,24 +266,41 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 	return Handle{ID: name, CheckpointID: checkpointID, Alloc: req.Alloc, Created: true}, nil
 }
 
+// resolve maps a checkpoint reference to the generation that owns it.
+//
+// An empty or unresolvable reference yields the active generation and no
+// checkpoint, which is the cold-start case.
+func (m *Manager) resolve(checkpointRef string) (artifact.Generation, artifact.Checkpoint, error) {
+	if checkpointRef == "" {
+		return m.artifacts.Active(), artifact.Checkpoint{}, nil
+	}
+
+	checkpoint, generation, err := m.artifacts.ResolveCheckpoint(checkpointRef)
+	if err != nil {
+		return m.artifacts.Active(), artifact.Checkpoint{}, err
+	}
+	return generation, checkpoint, nil
+}
+
 // start starts a container, downgrading to a cold start if a checkpoint
 // restore fails. It returns the checkpoint actually used, which is empty after
 // a downgrade so that callers report the truth to the router.
-func (m *Manager) start(ctx context.Context, id, checkpointID string, log *slog.Logger) (string, error) {
-	if checkpointID != "" {
-		err := m.docker.Start(ctx, id, docker.StartSpec{
-			CheckpointID:  checkpointID,
-			CheckpointDir: m.layout.CheckpointDir(),
+func (m *Manager) start(ctx context.Context, id string, checkpoint artifact.Checkpoint, log *slog.Logger) (string, error) {
+	if checkpoint.ID != "" {
+		err := m.runtime.Start(ctx, id, sandbox.StartSpec{
+			CheckpointID:  checkpoint.ID,
+			CheckpointDir: checkpoint.Dir,
 		})
 		if err == nil {
-			log.Info("container restored from checkpoint", logging.KeyCheckpoint, checkpointID)
-			return checkpointID, nil
+			log.Info("container restored from checkpoint",
+				logging.KeyCheckpoint, checkpoint.ID, "generation", checkpoint.GenerationID)
+			return checkpoint.ID, nil
 		}
 		log.Warn("checkpoint restore failed, falling back to a cold start",
-			logging.KeyCheckpoint, checkpointID, logging.KeyError, err)
+			logging.KeyCheckpoint, checkpoint.ID, logging.KeyError, err)
 	}
 
-	if err := m.docker.Start(ctx, id, docker.StartSpec{}); err != nil {
+	if err := m.runtime.Start(ctx, id, sandbox.StartSpec{}); err != nil {
 		return "", fmt.Errorf("start container: %w", err)
 	}
 	log.Info("container started")
@@ -261,12 +311,12 @@ func (m *Manager) start(ctx context.Context, id, checkpointID string, log *slog.
 func (m *Manager) resume(ctx context.Context, req AcquireRequest) (Handle, error) {
 	log := m.log.With(logging.KeyContainerID, req.ContainerID, logging.KeyRequestID, req.Ref.RequestID)
 
-	if err := m.docker.Unpause(ctx, req.ContainerID); err != nil {
+	if err := m.runtime.Unpause(ctx, req.ContainerID); err != nil {
 		m.report(ctx, req.Ref, req.ContainerID, pb.Status_STATUS_ERROR)
 		return Handle{}, fmt.Errorf("unpause container: %w", err)
 	}
 
-	if err := m.docker.Update(ctx, req.ContainerID, docker.UpdateSpec{MemoryBytes: req.Alloc.CPUAlloc}); err != nil {
+	if err := m.runtime.Update(ctx, req.ContainerID, sandbox.UpdateSpec{MemoryBytes: req.Alloc.CPUAlloc}); err != nil {
 		m.report(ctx, req.Ref, req.ContainerID, pb.Status_STATUS_ERROR)
 		return Handle{}, fmt.Errorf("update container resources: %w", err)
 	}
@@ -295,7 +345,7 @@ func (m *Manager) Release(ctx context.Context, ref registry.ExecutionRef, h Hand
 
 // Pause suspends a container so a later request can reuse it warm.
 func (m *Manager) Pause(ctx context.Context, ref registry.ExecutionRef, id string) error {
-	if err := m.docker.Pause(ctx, id); err != nil {
+	if err := m.runtime.Pause(ctx, id); err != nil {
 		m.report(ctx, ref, id, pb.Status_STATUS_ERROR)
 		return fmt.Errorf("pause container %s: %w", id, err)
 	}
@@ -323,18 +373,18 @@ func (m *Manager) Destroy(ctx context.Context, ref registry.ExecutionRef, id str
 	// are left paused for reuse, shutdown would otherwise stall long enough for
 	// the supervisor's own grace period to expire and SIGKILL the worker
 	// mid-cleanup. Unpausing first makes the signal deliverable.
-	if err := m.docker.Unpause(ctx, id); err != nil &&
-		!errors.Is(err, docker.ErrNotFound) && !errors.Is(err, docker.ErrConflict) {
+	if err := m.runtime.Unpause(ctx, id); err != nil &&
+		!errors.Is(err, sandbox.ErrNotFound) && !errors.Is(err, sandbox.ErrConflict) {
 		log.Debug("could not unpause before stopping", logging.KeyError, err)
 	}
 
 	var errs []error
-	if err := m.docker.Stop(ctx, id, m.spec.StopTimeout); err != nil && !errors.Is(err, docker.ErrNotFound) {
+	if err := m.runtime.Stop(ctx, id, m.spec.StopTimeout); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		errs = append(errs, fmt.Errorf("stop container %s: %w", id, err))
 	}
 
 	// Removal is forced so a container that refused to stop still goes away.
-	if err := m.docker.Remove(ctx, id, true); err != nil && !errors.Is(err, docker.ErrNotFound) {
+	if err := m.runtime.Remove(ctx, id, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		errs = append(errs, fmt.Errorf("remove container %s: %w", id, err))
 	}
 
@@ -348,9 +398,27 @@ func (m *Manager) Destroy(ctx context.Context, ref registry.ExecutionRef, id str
 	return nil
 }
 
+// Checkpoint snapshots a warm container so later requests can restore from it.
+//
+// There is no trigger for this today: execution.proto carries checkpoint_id as
+// an input only, so the router has no way to ask for a snapshot. The capability
+// exists and is tested; wiring a policy to it needs a protocol change.
+func (m *Manager) Checkpoint(ctx context.Context, id, checkpointID, dir string) error {
+	if err := m.runtime.Checkpoint(ctx, id, sandbox.CheckpointSpec{
+		Dir:          dir,
+		LeaveRunning: true,
+	}); err != nil {
+		return fmt.Errorf("checkpoint container %s: %w", id, err)
+	}
+
+	m.log.Info("container checkpointed",
+		logging.KeyContainerID, id, logging.KeyCheckpoint, checkpointID, "image", dir)
+	return nil
+}
+
 // Inspect reports a container's current allocation.
 func (m *Manager) Inspect(ctx context.Context, id, checkpointID string) (Handle, error) {
-	info, err := m.docker.Inspect(ctx, id)
+	info, err := m.runtime.Inspect(ctx, id)
 	if err != nil {
 		return Handle{}, fmt.Errorf("inspect container %s: %w", id, err)
 	}
@@ -364,7 +432,7 @@ func (m *Manager) Inspect(ctx context.Context, id, checkpointID string) (Handle,
 
 // Logs returns a container's demultiplexed output. The caller closes it.
 func (m *Manager) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
-	logs, err := m.docker.Logs(ctx, id, true)
+	logs, err := m.runtime.Logs(ctx, id, true)
 	if err != nil {
 		return nil, fmt.Errorf("open logs for container %s: %w", id, err)
 	}
@@ -372,8 +440,8 @@ func (m *Manager) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
 }
 
 // Stats subscribes to a container's resource samples. The caller closes it.
-func (m *Manager) Stats(ctx context.Context, id string) (docker.StatsStream, error) {
-	stream, err := m.docker.Stats(ctx, id, true)
+func (m *Manager) Stats(ctx context.Context, id string) (sandbox.StatsStream, error) {
+	stream, err := m.runtime.Stats(ctx, id, true)
 	if err != nil {
 		return nil, fmt.Errorf("open stats for container %s: %w", id, err)
 	}
@@ -386,7 +454,7 @@ func (m *Manager) Stats(ctx context.Context, id string) (docker.StatsStream, err
 // leaves containers and host directories behind, and startup is the only
 // opportunity to reclaim them.
 func (m *Manager) CleanupOrphans(ctx context.Context) error {
-	summaries, err := m.docker.List(ctx, m.spec.NamePrefix)
+	summaries, err := m.runtime.List(ctx, m.spec.NamePrefix)
 	if err != nil {
 		return fmt.Errorf("list orphaned containers: %w", err)
 	}
@@ -397,42 +465,59 @@ func (m *Manager) CleanupOrphans(ctx context.Context) error {
 
 	var errs []error
 	for _, summary := range summaries {
-		// Destroy by name rather than by Docker id, so the host directory —
-		// which is named after the container — is removed along with it.
-		id := summary.ID
-		if len(summary.Names) > 0 {
-			id = summary.Names[0]
-		}
-		if err := m.Destroy(ctx, registry.ExecutionRef{}, id); err != nil {
+		if err := m.Destroy(ctx, registry.ExecutionRef{}, summary.ID); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-// createSpec builds the container specification.
+// createSpec builds the sandbox specification.
 //
-// Every field here is load-bearing. The executor locates its socket through
-// EXECUTOR_DIR and its imports through PYTHONPATH, and both only resolve
-// because of the corresponding bind mounts.
-func (m *Manager) createSpec(name string, alloc Allocation) docker.CreateSpec {
-	return docker.CreateSpec{
-		Name:  name,
-		Image: m.spec.Image,
-		Env: []string{
-			"EXECUTOR_DIR=" + config.ExecutorMountPath,
-			"PYTHONPATH=" + config.SitePackagesMountPath,
-		},
-		NetworkMode: m.spec.NetworkMode,
-		Binds: []string{
-			fmt.Sprintf("%s:%s:rw", m.layout.ContainerDir(name), config.ExecutorMountPath),
-			fmt.Sprintf("%s:%s:ro", m.spec.SitePackagesPath, config.SitePackagesMountPath),
-		},
+// Every field is load-bearing. The executor locates its socket through
+// EXECUTOR_DIR, and the /tmp bind is what makes that socket visible to the
+// worker. The shape of this spec also has to match the sandbox a checkpoint
+// was captured from, so changing it invalidates existing checkpoints; see the
+// runsc adapter's Fingerprint.
+//
+// Note there is no site-packages mount: the generation's root filesystem
+// already carries the Python environment, so PYTHONPATH points inside the
+// rootfs and the sandbox needs exactly one bind.
+func (m *Manager) createSpec(name string, alloc Allocation, generation artifact.Generation) sandbox.CreateSpec {
+	env := []string{"EXECUTOR_DIR=" + config.ExecutorMountPath}
+	if generation.PythonPath != "" {
+		env = append(env, "PYTHONPATH="+generation.PythonPath)
+	}
+
+	return sandbox.CreateSpec{
+		ID:           name,
+		BundleDir:    m.layout.BundleDir(name),
+		LogPath:      m.layout.LogPath(name),
+		RootfsPath:   generation.RootfsPath(),
+		RootReadonly: m.spec.RootReadonly,
+		Args:         []string{"python", "-u", generation.ExecutorEntrypoint},
+		Env:          env,
+		Cwd:          "/",
+		Mounts: []sandbox.Mount{{
+			Source:      m.layout.ContainerDir(name),
+			Destination: config.ExecutorMountPath,
+			Type:        "bind",
+			Options:     []string{"rbind", "rw"},
+		}},
 		MemoryBytes: alloc.CPUAlloc,
 		CPUQuota:    m.spec.CPUQuota,
+		CPUPeriod:   m.spec.CPUPeriod,
 		PidsLimit:   m.spec.PidsLimit,
-		Runtime:     m.spec.Runtime,
+		CgroupsPath: m.cgroupsPath(name),
 	}
+}
+
+// cgroupsPath places a sandbox under the configured parent.
+func (m *Manager) cgroupsPath(name string) string {
+	if m.spec.CgroupParent == "" {
+		return ""
+	}
+	return path.Join(m.spec.CgroupParent, name)
 }
 
 // report posts a status to the router. Reporting is best-effort: a router

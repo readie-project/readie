@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -15,11 +14,11 @@ import (
 // validEnv mirrors the environment baked into worker/Dockerfile.
 func validEnv() map[string]string {
 	return map[string]string{
-		"SERVICE_NAME":          "worker",
-		"PORT":                  "50052",
-		"WORKER_DIR":            "/shared",
-		"ROUTER_URI":            "router:50051",
-		"SITEPACKAGES_TXT_PATH": "/app/sitepackages_path.txt",
+		"SERVICE_NAME":  "worker",
+		"PORT":          "50052",
+		"WORKER_DIR":    "/shared",
+		"ROUTER_URI":    "router:50051",
+		"ARTIFACT_ROOT": "/var/lib/crfs",
 	}
 }
 
@@ -27,12 +26,13 @@ func getenvFrom(env map[string]string) config.Getenv {
 	return func(key string) string { return env[key] }
 }
 
-func readFileReturning(contents string) config.ReadFile {
-	return func(string) ([]byte, error) { return []byte(contents), nil }
+func load(t *testing.T, env map[string]string) (config.Config, error) {
+	t.Helper()
+	return config.Load(getenvFrom(env))
 }
 
 func TestLoad_Defaults(t *testing.T) {
-	cfg, err := config.Load(getenvFrom(validEnv()), readFileReturning("/opt/conda/lib/python3.11/site-packages"))
+	cfg, err := load(t, validEnv())
 	require.NoError(t, err)
 
 	// Router contract: scheduler.py looks the worker up by this ID and dials
@@ -44,42 +44,57 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, ":50052", cfg.ListenAddr)
 
 	assert.Equal(t, "router:50051", cfg.RouterURI)
-	assert.Equal(t, "test-agent", cfg.ExecutorImage)
+	assert.Equal(t, "/var/lib/crfs", cfg.ArtifactRoot)
+	assert.Empty(t, cfg.ActiveGeneration, "empty selects the newest generation")
+
+	assert.Equal(t, "/usr/local/bin/runsc", cfg.RunscBinary)
+	assert.Equal(t, "/run/crfs-runsc", cfg.RunscRoot)
+	assert.Equal(t, "none", cfg.SandboxNetwork, "executors must not reach the network")
 	assert.Equal(t, "exec_container-", cfg.ContainerNamePrefix)
 	assert.Equal(t, int64(50000), cfg.CPUQuota)
+	assert.Equal(t, int64(100000), cfg.CPUPeriod)
 	assert.Equal(t, int64(100), cfg.PidsLimit)
-	assert.Equal(t, "none", cfg.NetworkMode)
-	assert.Empty(t, cfg.ContainerRuntime)
 	assert.Equal(t, 1024*1024, cfg.ChunkSize)
+	assert.True(t, cfg.CheckpointStrictCompat)
 	assert.Equal(t, slog.LevelInfo, cfg.LogLevel)
 	assert.Equal(t, "json", cfg.LogFormat)
 }
 
+// The executor binds its socket inside the sandbox and the worker dials it
+// from the host, which the runtime forbids unless told otherwise.
+func TestLoad_AllowsTheExecutorToBindAHostVisibleSocket(t *testing.T) {
+	cfg, err := load(t, validEnv())
+	require.NoError(t, err)
+	assert.Equal(t, "create", cfg.SandboxHostUDS)
+}
+
+// The overlay must give each sandbox copy-on-write over the shared rootfs
+// without covering the socket bind or writing into the shared tree.
+func TestLoad_OverlayIsCopyOnWriteInMemory(t *testing.T) {
+	cfg, err := load(t, validEnv())
+	require.NoError(t, err)
+
+	assert.Equal(t, "root:memory", cfg.SandboxOverlay)
+	assert.False(t, cfg.SandboxRootReadonly, "an overlay needs a writable root")
+}
+
 // The executor sleeps 30s before binding its socket, so a dial budget at or
-// below that can never succeed against a cold container.
+// below that can never succeed against a cold sandbox.
 func TestLoad_DialBudgetExceedsExecutorCheckpointSleep(t *testing.T) {
-	cfg, err := config.Load(getenvFrom(validEnv()), readFileReturning("/site-packages"))
+	cfg, err := load(t, validEnv())
 	require.NoError(t, err)
 
 	assert.Greater(t, cfg.DialTotalTimeout, 30*time.Second,
-		"dial budget must exceed the executor's 30s pre-bind sleep (scripts/executor/app.py)")
-}
-
-// A trailing newline survives into the Docker bind spec and the daemon rejects
-// it with an opaque error, so the loader must trim it.
-func TestLoad_TrimsSitePackagesWhitespace(t *testing.T) {
-	cfg, err := config.Load(getenvFrom(validEnv()), readFileReturning("/opt/conda/lib/python3.11/site-packages\n"))
-	require.NoError(t, err)
-	assert.Equal(t, "/opt/conda/lib/python3.11/site-packages", cfg.SitePackagesPath)
+		"the dial budget must exceed the executor's pre-bind sleep (scripts/executor/app.py)")
 }
 
 func TestLoad_MissingRequiredEnv(t *testing.T) {
-	for _, key := range []string{"SERVICE_NAME", "PORT", "WORKER_DIR", "ROUTER_URI", "SITEPACKAGES_TXT_PATH"} {
+	for _, key := range []string{"SERVICE_NAME", "PORT", "WORKER_DIR", "ROUTER_URI", "ARTIFACT_ROOT"} {
 		t.Run(key, func(t *testing.T) {
 			env := validEnv()
 			delete(env, key)
 
-			_, err := config.Load(getenvFrom(env), readFileReturning("/site-packages"))
+			_, err := load(t, env)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, config.ErrMissingEnv)
 			assert.Contains(t, err.Error(), key)
@@ -89,18 +104,16 @@ func TestLoad_MissingRequiredEnv(t *testing.T) {
 
 func TestLoad_InvalidValues(t *testing.T) {
 	tests := []struct {
-		name      string
-		env       map[string]string
-		fileValue string
-		readErr   error
+		name string
+		env  map[string]string
 	}{
-		{name: "empty site-packages file", fileValue: "   \n"},
-		{name: "unreadable site-packages file", readErr: errors.New("permission denied")},
-		{name: "bad log level", env: map[string]string{"LOG_LEVEL": "verbose"}, fileValue: "/site-packages"},
-		{name: "bad log format", env: map[string]string{"LOG_FORMAT": "xml"}, fileValue: "/site-packages"},
-		{name: "bad duration", env: map[string]string{"EXECUTION_TIMEOUT": "soon"}, fileValue: "/site-packages"},
-		{name: "bad bool", env: map[string]string{"STREAM_LOGS": "maybe"}, fileValue: "/site-packages"},
-		{name: "site-packages with colon", fileValue: "/opt:packages"},
+		{"bad log level", map[string]string{"LOG_LEVEL": "verbose"}},
+		{"bad log format", map[string]string{"LOG_FORMAT": "xml"}},
+		{"bad duration", map[string]string{"EXECUTION_TIMEOUT": "soon"}},
+		{"bad bool", map[string]string{"STREAM_LOGS": "maybe"}},
+		{"relative artifact root", map[string]string{"ARTIFACT_ROOT": "artifacts"}},
+		{"relative runsc root", map[string]string{"RUNSC_ROOT": "state"}},
+		{"unknown network", map[string]string{"SANDBOX_NETWORK": "bridge"}},
 	}
 
 	for _, tt := range tests {
@@ -109,36 +122,69 @@ func TestLoad_InvalidValues(t *testing.T) {
 			for k, v := range tt.env {
 				env[k] = v
 			}
-			readFile := readFileReturning(tt.fileValue)
-			if tt.readErr != nil {
-				readFile = func(string) ([]byte, error) { return nil, tt.readErr }
-			}
 
-			_, err := config.Load(getenvFrom(env), readFile)
+			_, err := load(t, env)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, config.ErrInvalidEnv)
 		})
 	}
 }
 
+// An overlay covering every mount keeps the executor's socket in the upper
+// layer, where the worker cannot see it — the execution then fails at dial
+// time looking exactly like a dead executor, which is the wrong diagnosis.
+func TestLoad_RejectsAnOverlayThatWouldHideTheSocket(t *testing.T) {
+	env := validEnv()
+	env["SANDBOX_OVERLAY"] = "all:memory"
+
+	_, err := load(t, env)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, config.ErrInvalidEnv)
+	assert.Contains(t, err.Error(), "executor socket")
+}
+
+// "self" puts the upper layer inside the rootfs directory, which every sandbox
+// on this worker shares.
+func TestLoad_RejectsAnOverlayThatWritesIntoTheSharedRootfs(t *testing.T) {
+	env := validEnv()
+	env["SANDBOX_OVERLAY"] = "root:self"
+
+	_, err := load(t, env)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, config.ErrInvalidEnv)
+	assert.Contains(t, err.Error(), "shared rootfs")
+}
+
 func TestLoad_Overrides(t *testing.T) {
 	env := validEnv()
 	env["WORKER_ID"] = "worker-7"
-	env["EXECUTOR_IMAGE"] = "custom-executor:v2"
-	env["CONTAINER_RUNTIME"] = "runsc"
+	env["ACTIVE_GENERATION"] = "gen-2026-06"
+	env["RUNSC_BINARY"] = "/opt/bin/runsc"
+	env["SANDBOX_PLATFORM"] = "systrap"
+	env["SANDBOX_IGNORE_CGROUPS"] = "true"
+	env["SANDBOX_DEBUG"] = "true"
+	env["CHECKPOINT_STRICT_COMPAT"] = "false"
 	env["EXECUTION_TIMEOUT"] = "90s"
+	env["RESTORE_TIMEOUT"] = "45s"
+	env["CHECKPOINT_TIMEOUT"] = "10m"
 	env["STATS_INTERVAL"] = "250ms"
 	env["STREAM_STATS"] = "false"
 	env["LOG_LEVEL"] = "debug"
 	env["LOG_FORMAT"] = "text"
 
-	cfg, err := config.Load(getenvFrom(env), readFileReturning("/site-packages"))
+	cfg, err := load(t, env)
 	require.NoError(t, err)
 
 	assert.Equal(t, "worker-7", cfg.WorkerID)
-	assert.Equal(t, "custom-executor:v2", cfg.ExecutorImage)
-	assert.Equal(t, "runsc", cfg.ContainerRuntime)
+	assert.Equal(t, "gen-2026-06", cfg.ActiveGeneration)
+	assert.Equal(t, "/opt/bin/runsc", cfg.RunscBinary)
+	assert.Equal(t, "systrap", cfg.SandboxPlatform)
+	assert.True(t, cfg.SandboxIgnoreCgroups)
+	assert.True(t, cfg.SandboxDebug)
+	assert.False(t, cfg.CheckpointStrictCompat)
 	assert.Equal(t, 90*time.Second, cfg.ExecutionTimeout)
+	assert.Equal(t, 45*time.Second, cfg.RestoreTimeout)
+	assert.Equal(t, 10*time.Minute, cfg.CheckpointTimeout)
 	assert.Equal(t, 250*time.Millisecond, cfg.StatsInterval)
 	assert.False(t, cfg.StreamStats)
 	assert.True(t, cfg.StreamLogs)
@@ -150,7 +196,7 @@ func TestValidate_ReportsAllProblemsAtOnce(t *testing.T) {
 	err := config.Config{LogFormat: "yaml", ChunkSize: -1}.Validate()
 	require.Error(t, err)
 
-	for _, want := range []string{"WorkerID", "RouterURI", "ChunkSize", "LogFormat"} {
+	for _, want := range []string{"WorkerID", "RouterURI", "ArtifactRoot", "ChunkSize", "LogFormat"} {
 		assert.Contains(t, err.Error(), want)
 	}
 }

@@ -11,10 +11,10 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
 )
 
@@ -132,8 +132,8 @@ func TestToStatus(t *testing.T) {
 		{"execution timeout", execution.ErrExecutionTimeout, codes.DeadlineExceeded},
 		{"no executor response", executor.ErrNoResponse, codes.DeadlineExceeded},
 		{"deadline exceeded", context.DeadlineExceeded, codes.DeadlineExceeded},
-		{"container missing", docker.ErrNotFound, codes.NotFound},
-		{"daemon down", docker.ErrDaemonUnavailable, codes.Unavailable},
+		{"container missing", sandbox.ErrNotFound, codes.NotFound},
+		{"daemon down", sandbox.ErrRuntimeUnavailable, codes.Unavailable},
 		{"executor unreachable", executor.ErrDialTimeout, codes.Unavailable},
 		{"router down", registry.ErrRouterUnavailable, codes.Unavailable},
 		{"cannot provision", container.ErrAcquireFailed, codes.ResourceExhausted},

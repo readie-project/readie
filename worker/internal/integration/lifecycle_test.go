@@ -13,9 +13,9 @@ import (
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakedocker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeexecutor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakesandbox"
 	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
 )
 
@@ -75,7 +75,7 @@ func TestStartup_ReclaimsOrphansBeforeServing(t *testing.T) {
 		config.ContainerNamePrefix + "orphan-b",
 	}
 
-	h := newHarness(t, withFakes(func(d *fakedocker.Docker, _ *fakeregistry.Server) {
+	h := newHarness(t, withFakes(func(d *fakesandbox.Sandbox, _ *fakeregistry.Server) {
 		for _, id := range orphans {
 			d.Seed(id)
 		}
@@ -84,19 +84,19 @@ func TestStartup_ReclaimsOrphansBeforeServing(t *testing.T) {
 	// newHarness returns only once health reports SERVING, so reclamation has
 	// already happened by the time this runs.
 	for _, id := range orphans {
-		state, ok := h.Docker.Get(id)
+		state, ok := h.Runtime.Get(id)
 		require.True(t, ok)
 		assert.True(t, state.Removed, "%s should have been reclaimed at startup", id)
 	}
-	assert.Empty(t, h.Docker.LiveIDs())
+	assert.Empty(t, h.Runtime.LiveIDs())
 }
 
 func TestStartup_LeavesForeignContainersAlone(t *testing.T) {
-	h := newHarness(t, withFakes(func(d *fakedocker.Docker, _ *fakeregistry.Server) {
+	h := newHarness(t, withFakes(func(d *fakesandbox.Sandbox, _ *fakeregistry.Server) {
 		d.Seed("some-other-service")
 	}))
 
-	state, ok := h.Docker.Get("some-other-service")
+	state, ok := h.Runtime.Get("some-other-service")
 	require.True(t, ok)
 	assert.False(t, state.Removed, "containers this worker does not own must survive")
 }
@@ -104,7 +104,7 @@ func TestStartup_LeavesForeignContainersAlone(t *testing.T) {
 // Health must not report SERVING until the worker can actually serve, so an
 // orchestrator never routes to a half-initialised process.
 func TestStartup_FailsWhenTheRouterRejectsRegistration(t *testing.T) {
-	err := newHarnessExpectingFailure(t, func(_ *fakedocker.Docker, r *fakeregistry.Server) {
+	err := newHarnessExpectingFailure(t, func(_ *fakesandbox.Sandbox, r *fakeregistry.Server) {
 		r.Updated = false // the router declines every update
 	})
 
@@ -120,13 +120,13 @@ func TestShutdown_DeregistersAndReclaimsContainers(t *testing.T) {
 	containerID := responses[0].GetContainerId()
 
 	// The container is warm and paused, so shutdown has something to reclaim.
-	state, ok := h.Docker.Get(containerID)
+	state, ok := h.Runtime.Get(containerID)
 	require.True(t, ok)
 	require.True(t, state.Paused)
 
 	require.NoError(t, h.Shutdown())
 
-	state, ok = h.Docker.Get(containerID)
+	state, ok = h.Runtime.Get(containerID)
 	require.True(t, ok)
 	assert.True(t, state.Removed, "warm containers must not outlive the worker")
 	assert.NoDirExists(t, h.Layout.ContainerDir(containerID))
@@ -137,7 +137,7 @@ func TestShutdown_DeregistersAndReclaimsContainers(t *testing.T) {
 	require.NotEmpty(t, statuses)
 	assert.Equal(t, pb.Status_STATUS_REMOVED, statuses[len(statuses)-1].GetStatus())
 
-	assert.True(t, h.Docker.Closed(), "the container runtime client must be closed")
+	assert.True(t, h.Runtime.Closed(), "the container runtime client must be closed")
 }
 
 // In-flight streams must be allowed to finish, because each one releases its
@@ -161,7 +161,7 @@ func TestShutdown_DrainsAnInFlightExecution(t *testing.T) {
 	}()
 
 	// Let the execution get underway, then ask the worker to stop.
-	require.Eventually(t, func() bool { return len(h.Docker.IDs()) > 0 }, 10*time.Second, 20*time.Millisecond)
+	require.Eventually(t, func() bool { return len(h.Runtime.IDs()) > 0 }, 10*time.Second, 20*time.Millisecond)
 	shutdownErr := make(chan error, 1)
 	go func() { shutdownErr <- h.Shutdown() }()
 

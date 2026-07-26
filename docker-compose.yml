@@ -21,27 +21,41 @@ services:
     worker:
         build:
             context: ./worker
+        # gVisor publishes amd64 and arm64 builds, but the executor rootfs is
+        # amd64-only, and gVisor works by intercepting syscalls — which is
+        # exactly what emulation sits in the middle of. This will not run on an
+        # Apple Silicon machine.
+        platform: linux/amd64
         ports:
             - "50052:50052"
         container_name: worker
         depends_on:
             router:
                 condition: service_healthy
-        # The worker orchestrates sibling containers through the host daemon, so
-        # it needs the socket. WORKER_DIR must then be mounted at the *same*
-        # path on both sides: the worker creates <WORKER_DIR>/<container> and
-        # hands that path to the daemon as a bind source, which the daemon
-        # resolves on the host. A named volume cannot satisfy that — the path
-        # would exist only inside this container and the daemon would reject the
-        # mount as "not shared from the host".
-        environment:
-            WORKER_DIR: ${WORKER_SHARED_DIR:-/tmp/crfs-worker-shared}
+        # gVisor creates user and mount namespaces and installs its own seccomp
+        # filters; Docker's default profiles block both.
+        privileged: true
+        security_opt:
+            - apparmor=unconfined
+            - seccomp=unconfined
+        # runsc daemonises a sandbox and a gofer per container, which reparent
+        # to PID 1 when the create command exits. Without an init the worker
+        # would be PID 1 and would never reap them, accumulating two zombies
+        # per execution.
+        init: true
         volumes:
-            - /var/run/docker.sock:/var/run/docker.sock
-            - ${WORKER_SHARED_DIR:-/tmp/crfs-worker-shared}:${WORKER_SHARED_DIR:-/tmp/crfs-worker-shared}
+            # The rootfs-and-checkpoints artifact, produced by scripts/. Read
+            # only: every sandbox shares this tree and writes through the
+            # runtime's copy-on-write overlay instead.
+            - ${CRFS_ARTIFACT_ROOT:-/var/lib/crfs}:/var/lib/crfs:ro
+            # Per-sandbox directories and OCI bundles. Sandboxes are this
+            # worker's own child processes, so unlike the previous Docker-based
+            # design nothing outside the container resolves these paths and a
+            # plain named volume is enough.
+            - worker-shared:/shared
         # On shutdown the worker deregisters, drains in-flight executions and
-        # reclaims its containers. The base image declares StopTimeout=1, which
-        # would SIGKILL it partway through and strand containers.
+        # reclaims its sandboxes. A short grace period would SIGKILL it partway
+        # through and strand them.
         stop_grace_period: 30s
         healthcheck:
             test:
@@ -56,3 +70,6 @@ services:
             timeout: 5s
             retries: 3
             start_period: 5s
+
+volumes:
+    worker-shared:

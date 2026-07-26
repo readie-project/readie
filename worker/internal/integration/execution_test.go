@@ -14,9 +14,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakedocker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeexecutor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakesandbox"
 	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
 )
 
@@ -103,7 +103,7 @@ func TestExecution_HappyPath(t *testing.T) {
 	assert.Equal(t, "sess-1", first.GetSessionId())
 
 	// A completed container is paused for reuse, not destroyed.
-	state, ok := h.Docker.Get(first.GetContainerId())
+	state, ok := h.Runtime.Get(first.GetContainerId())
 	require.True(t, ok)
 	assert.True(t, state.Paused)
 	assert.False(t, state.Removed)
@@ -125,19 +125,22 @@ func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
 	_, err := execute(t, h, "", []byte("body"))
 	require.NoError(t, err)
 
-	specs := h.Docker.CreateSpecs()
+	specs := h.Runtime.CreateSpecs()
 	require.Len(t, specs, 1)
 	spec := specs[0]
 
-	assert.Equal(t, "test-agent", spec.Image)
-	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/tmp/site_packages"}, spec.Env)
-	assert.Equal(t, "none", spec.NetworkMode)
+	assert.Equal(t, []string{"python", "-u", "/app/executor/app.py"}, spec.Args)
+	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/lib/python3.12/dist-packages"}, spec.Env)
 	assert.Equal(t, cpuAlloc, spec.MemoryBytes)
 	assert.Equal(t, int64(50000), spec.CPUQuota)
 	assert.Equal(t, int64(100), spec.PidsLimit)
-	require.Len(t, spec.Binds, 2)
-	assert.Contains(t, spec.Binds[0], ":/tmp:rw")
-	assert.Contains(t, spec.Binds[1], ":/tmp/site_packages:ro")
+	assert.Contains(t, spec.RootfsPath, testGeneration)
+
+	// One bind only: the generation's rootfs already carries the Python
+	// environment, so there is no site-packages mount.
+	require.Len(t, spec.Mounts, 1)
+	assert.Equal(t, "/tmp", spec.Mounts[0].Destination)
+	assert.Equal(t, "bind", spec.Mounts[0].Type)
 }
 
 func TestExecution_ReusesAWarmContainer(t *testing.T) {
@@ -153,9 +156,9 @@ func TestExecution_ReusesAWarmContainer(t *testing.T) {
 	require.NotEmpty(t, second)
 
 	assert.Equal(t, containerID, second[0].GetContainerId())
-	assert.Len(t, h.Docker.CreateSpecs(), 1, "a warm container must not be recreated")
+	assert.Len(t, h.Runtime.CreateSpecs(), 1, "a warm container must not be recreated")
 
-	state, ok := h.Docker.Get(containerID)
+	state, ok := h.Runtime.Get(containerID)
 	require.True(t, ok)
 	assert.True(t, state.Paused, "the container is paused again after the second execution")
 }
@@ -192,10 +195,10 @@ func TestExecution_TimeoutFailsAndDestroysTheContainer(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, codes.DeadlineExceeded, status.Code(err))
 
-	live := h.Docker.LiveIDs()
+	live := h.Runtime.LiveIDs()
 	assert.Empty(t, live, "a timed-out container must be destroyed, not reused")
 
-	ids := h.Docker.IDs()
+	ids := h.Runtime.IDs()
 	require.Len(t, ids, 1)
 	assert.NoDirExists(t, h.Layout.ContainerDir(ids[0]))
 
@@ -219,7 +222,7 @@ func TestExecution_UnreachableExecutorIsReportedAsUnavailable(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, codes.Unavailable, status.Code(err))
 
-	assert.Empty(t, h.Docker.LiveIDs(),
+	assert.Empty(t, h.Runtime.LiveIDs(),
 		"a container whose executor never answered is not reusable")
 }
 
@@ -247,12 +250,12 @@ func TestExecution_ClientCancellationReleasesTheContainer(t *testing.T) {
 	require.NoError(t, stream.CloseSend())
 
 	// Give the worker time to provision before hanging up.
-	require.Eventually(t, func() bool { return len(h.Docker.IDs()) > 0 }, 10*time.Second, 20*time.Millisecond)
+	require.Eventually(t, func() bool { return len(h.Runtime.IDs()) > 0 }, 10*time.Second, 20*time.Millisecond)
 	cancel()
 
 	// Cleanup runs on a context detached from the cancelled one.
 	require.Eventually(t, func() bool {
-		return len(h.Docker.LiveIDs()) == 0
+		return len(h.Runtime.LiveIDs()) == 0
 	}, 15*time.Second, 50*time.Millisecond, "cancellation must still release the container")
 }
 
@@ -281,7 +284,7 @@ func TestExecution_EmptyRequestStreamIsRejected(t *testing.T) {
 	_, err = stream.Recv()
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
-	assert.Empty(t, h.Docker.IDs(), "nothing should be provisioned for an empty stream")
+	assert.Empty(t, h.Runtime.IDs(), "nothing should be provisioned for an empty stream")
 }
 
 func TestExecution_ConcurrentRequestsGetDistinctContainers(t *testing.T) {
@@ -320,7 +323,7 @@ func TestExecution_ConcurrentRequestsGetDistinctContainers(t *testing.T) {
 func TestExecution_StreamsContainerLogs(t *testing.T) {
 	h := newHarness(t,
 		withConfig(func(c *config.Config) { c.StreamLogs = true }),
-		withFakes(func(d *fakedocker.Docker, _ *fakeregistry.Server) {
+		withFakes(func(d *fakesandbox.Sandbox, _ *fakeregistry.Server) {
 			d.LogData = []byte("hello from the executor\n")
 		}),
 	)

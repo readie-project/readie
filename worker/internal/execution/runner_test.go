@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakesink"
@@ -43,7 +43,7 @@ type fakeContainers struct {
 
 	logData     []byte
 	logsHang    bool
-	statsFrames []docker.Stats
+	statsFrames []sandbox.Stats
 }
 
 func newFakeContainers() *fakeContainers {
@@ -81,7 +81,7 @@ func (f *fakeContainers) Logs(ctx context.Context, _ string) (io.ReadCloser, err
 	return io.NopCloser(bytes.NewReader(f.logData)), nil
 }
 
-func (f *fakeContainers) Stats(_ context.Context, _ string) (docker.StatsStream, error) {
+func (f *fakeContainers) Stats(_ context.Context, _ string) (sandbox.StatsStream, error) {
 	if f.statsErr != nil {
 		return nil, f.statsErr
 	}
@@ -125,17 +125,17 @@ func (h *hangingReader) Close() error {
 
 type sliceStats struct {
 	mu     sync.Mutex
-	frames []docker.Stats
+	frames []sandbox.Stats
 	i      int
 	once   sync.Once
 	closed chan struct{}
 }
 
-func (s *sliceStats) Recv() (docker.Stats, error) {
+func (s *sliceStats) Recv() (sandbox.Stats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.i >= len(s.frames) {
-		return docker.Stats{}, io.EOF
+		return sandbox.Stats{}, io.EOF
 	}
 	frame := s.frames[s.i]
 	s.i++
@@ -337,12 +337,11 @@ func TestRun_SinkIsNeverUsedConcurrently(t *testing.T) {
 	}, func(h *harness) {
 		h.dialer.reply = bytes.Repeat([]byte("payload-chunk "), 500)
 		h.containers.logData = []byte(strings.Repeat("log line\n", 500))
-		h.containers.statsFrames = make([]docker.Stats, 100)
+		h.containers.statsFrames = make([]sandbox.Stats, 100)
 		for i := range h.containers.statsFrames {
-			h.containers.statsFrames[i] = docker.Stats{
+			h.containers.statsFrames[i] = sandbox.Stats{
 				CPUTotal: int64(200 * (i + 1)), PreCPUTotal: int64(100 * (i + 1)),
-				CPUSystem: int64(2000 * (i + 1)), PreCPUSystem: int64(1000 * (i + 1)),
-				OnlineCPUs: 4,
+				Elapsed: time.Second, OnlineCPUs: 4,
 			}
 		}
 		// Widen the window in which a second caller could overlap.
@@ -532,11 +531,10 @@ func TestRun_ReportsCPUUtilizationRatherThanMemory(t *testing.T) {
 		StreamStats:   true,
 		StatsInterval: time.Nanosecond,
 	}, func(h *harness) {
-		h.containers.statsFrames = []docker.Stats{{
+		h.containers.statsFrames = []sandbox.Stats{{
 			MemoryUsage: 999, MemoryLimit: 4096,
-			CPUTotal: 200, PreCPUTotal: 100,
-			CPUSystem: 2000, PreCPUSystem: 1000,
-			OnlineCPUs: 4,
+			CPUTotal: 1_400_000_000, PreCPUTotal: 1_000_000_000,
+			Elapsed: time.Second, OnlineCPUs: 4,
 		}}
 	})
 

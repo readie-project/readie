@@ -3,10 +3,10 @@
 // Everything above the process boundaries is real: the gRPC server, the
 // execution runner, the container manager, the executor socket protocol. Only
 // the three boundaries app.Deps exposes are substituted — the listener becomes
-// a bufconn, the container runtime becomes fakedocker, and the router becomes a
+// a bufconn, the sandbox runtime becomes fakesandbox, and the router becomes a
 // fakeregistry server on a second bufconn.
 //
-// The composition that makes this work is fakedocker's OnCreate hook: when the
+// The composition that makes this work is fakesandbox's OnCreate hook: when the
 // manager "creates" a container, the harness starts a fake Python executor on
 // exactly the socket path that container's layout resolves to, which is what
 // the worker then dials.
@@ -18,6 +18,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -29,14 +31,15 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/app"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/clock"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakedocker"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeexecutor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakesandbox"
 	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
 )
 
@@ -47,11 +50,11 @@ type harness struct {
 	Exec   pb.ExecutionServiceClient
 	Health healthpb.HealthClient
 
-	Conn   *grpc.ClientConn
-	Docker *fakedocker.Docker
-	Router *fakeregistry.Server
-	Layout container.Layout
-	Config config.Config
+	Conn    *grpc.ClientConn
+	Runtime *fakesandbox.Sandbox
+	Router  *fakeregistry.Server
+	Layout  container.Layout
+	Config  config.Config
 
 	WorkerDir string
 
@@ -87,7 +90,7 @@ type option func(*harnessOptions)
 type harnessOptions struct {
 	executor  fakeexecutor.Options
 	tuneCfg   func(*config.Config)
-	tuneFakes func(*fakedocker.Docker, *fakeregistry.Server)
+	tuneFakes func(*fakesandbox.Sandbox, *fakeregistry.Server)
 	// startExecutors controls whether creating a container boots a fake
 	// executor on its socket. Disabling it reproduces an executor that never
 	// comes up.
@@ -102,7 +105,7 @@ func withConfig(tune func(*config.Config)) option {
 	return func(o *harnessOptions) { o.tuneCfg = tune }
 }
 
-func withFakes(tune func(*fakedocker.Docker, *fakeregistry.Server)) option {
+func withFakes(tune func(*fakesandbox.Sandbox, *fakeregistry.Server)) option {
 	return func(o *harnessOptions) { o.tuneFakes = tune }
 }
 
@@ -124,23 +127,24 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	// UUID container name and "/executor.sock" are appended, exceeds the
 	// 104-byte sun_path limit and makes bind fail with "invalid argument".
 	workerDir := fakeexecutor.ShortTempDir(t)
+	artifactRoot, artifacts := buildTestArtifacts(t)
 
-	cfg := testConfig(workerDir)
+	cfg := testConfig(workerDir, artifactRoot)
 	if options.tuneCfg != nil {
 		options.tuneCfg(&cfg)
 	}
 
-	fakeDocker := fakedocker.New()
+	fakeRuntime := fakesandbox.New()
 	router := fakeregistry.NewServer()
 	if options.tuneFakes != nil {
-		options.tuneFakes(fakeDocker, router)
+		options.tuneFakes(fakeRuntime, router)
 	}
 
 	layout := container.NewDirLayout(workerDir)
 
 	h := &harness{
 		t:         t,
-		Docker:    fakeDocker,
+		Runtime:   fakeRuntime,
 		Router:    router,
 		Layout:    layout,
 		Config:    cfg,
@@ -152,7 +156,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	// real unix socket with a fake executor behind it, at the path the worker
 	// will dial.
 	if options.startExecutors {
-		fakeDocker.OnCreate = func(id string) {
+		fakeRuntime.OnCreate = func(id string) {
 			h.addExecutor(fakeexecutor.Start(t, layout.SocketPath(id), options.executor))
 		}
 	}
@@ -165,8 +169,11 @@ func newHarness(t *testing.T, opts ...option) *harness {
 
 	worker, err := app.New(ctx, cfg, logging.Discard(), app.Deps{
 		Listen: func(string, string) (net.Listener, error) { return workerLis, nil },
-		NewDocker: func(context.Context, *slog.Logger) (docker.Port, error) {
-			return fakeDocker, nil
+		NewRuntime: func(context.Context, config.Config, container.DirLayout, *slog.Logger) (sandbox.Port, error) {
+			return fakeRuntime, nil
+		},
+		LoadArtifacts: func(config.Config, *slog.Logger) (container.Artifacts, error) {
+			return artifacts, nil
 		},
 		DialRegistry: func(context.Context, string) (pb.RegistryServiceClient, io.Closer, error) {
 			return routerClient, io.NopCloser(nil), nil
@@ -193,19 +200,23 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	return h
 }
 
-func testConfig(workerDir string) config.Config {
+func testConfig(workerDir, artifactRoot string) config.Config {
 	return config.Config{
 		WorkerID:            "worker-1",
 		WorkerURI:           "worker:50052",
 		ListenAddr:          ":50052",
 		RouterURI:           "router:50051",
 		WorkerDir:           workerDir,
-		SitePackagesPath:    "/opt/conda/lib/python3.11/site-packages",
-		ExecutorImage:       "test-agent",
+		ArtifactRoot:        artifactRoot,
+		RunscBinary:         "/usr/local/bin/runsc",
+		RunscRoot:           filepath.Join(workerDir, "runsc-state"),
+		SandboxNetwork:      "none",
+		SandboxHostUDS:      "create",
+		SandboxOverlay:      "root:memory",
 		ContainerNamePrefix: config.ContainerNamePrefix,
 		CPUQuota:            50000,
+		CPUPeriod:           100000,
 		PidsLimit:           100,
-		NetworkMode:         "none",
 
 		ChunkSize:           1024 * 1024,
 		DialTotalTimeout:    5 * time.Second,
@@ -222,11 +233,11 @@ func testConfig(workerDir string) config.Config {
 		StreamStats:      false,
 		StatsInterval:    10 * time.Millisecond,
 
-		RegisterTimeout:   2 * time.Second,
-		RegisterRetries:   1,
-		CleanupTimeout:    5 * time.Second,
-		ShutdownTimeout:   10 * time.Second,
-		DockerPingTimeout: 2 * time.Second,
+		RegisterTimeout:     2 * time.Second,
+		RegisterRetries:     1,
+		CleanupTimeout:      5 * time.Second,
+		ShutdownTimeout:     10 * time.Second,
+		RuntimeProbeTimeout: 2 * time.Second,
 
 		LogLevel:  slog.LevelError,
 		LogFormat: "text",
@@ -307,17 +318,18 @@ func dialBufconnFor(t *testing.T, h *harness) *grpc.ClientConn {
 
 // newHarnessExpectingFailure assembles a worker whose startup is expected to
 // fail, and returns the error Run produced.
-func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakedocker.Docker, *fakeregistry.Server)) error {
+func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakesandbox.Sandbox, *fakeregistry.Server)) error {
 	t.Helper()
 
 	workerDir := fakeexecutor.ShortTempDir(t)
-	cfg := testConfig(workerDir)
+	artifactRoot, artifacts := buildTestArtifacts(t)
+	cfg := testConfig(workerDir, artifactRoot)
 	cfg.RegisterRetries = 0
 
-	fakeDocker := fakedocker.New()
+	fakeRuntime := fakesandbox.New()
 	router := fakeregistry.NewServer()
 	if tuneFakes != nil {
-		tuneFakes(fakeDocker, router)
+		tuneFakes(fakeRuntime, router)
 	}
 
 	workerLis := bufconn.Listen(1024 * 1024)
@@ -328,8 +340,11 @@ func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakedocker.Docker,
 
 	worker, err := app.New(ctx, cfg, logging.Discard(), app.Deps{
 		Listen: func(string, string) (net.Listener, error) { return workerLis, nil },
-		NewDocker: func(context.Context, *slog.Logger) (docker.Port, error) {
-			return fakeDocker, nil
+		NewRuntime: func(context.Context, config.Config, container.DirLayout, *slog.Logger) (sandbox.Port, error) {
+			return fakeRuntime, nil
+		},
+		LoadArtifacts: func(config.Config, *slog.Logger) (container.Artifacts, error) {
+			return artifacts, nil
 		},
 		DialRegistry: func(context.Context, string) (pb.RegistryServiceClient, io.Closer, error) {
 			return routerClient, io.NopCloser(nil), nil
@@ -340,4 +355,37 @@ func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakedocker.Docker,
 		return err
 	}
 	return worker.Run(ctx)
+}
+
+// testGeneration is the artifact generation every harness runs against.
+const testGeneration = "gen-test"
+
+// buildTestArtifacts lays out one generation with a single checkpoint, the way
+// the offline pipeline would.
+func buildTestArtifacts(t *testing.T) (string, container.Artifacts) {
+	t.Helper()
+
+	root := fakeexecutor.ShortTempDir(t)
+	dir := filepath.Join(root, artifact.GenerationsDirName, testGeneration)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
+	require.NoError(t, artifact.WriteGeneration(dir, artifact.Generation{
+		ID:                 testGeneration,
+		RootfsID:           "sha256:test-rootfs",
+		RunscVersion:       "runsc version test",
+		SpecFingerprint:    "sha256:test-spec",
+		ExecutorEntrypoint: "/app/executor/app.py",
+		PythonPath:         "/lib/python3.12/dist-packages",
+		CreatedAt:          time.Now().UTC(),
+	}))
+
+	image := filepath.Join(dir, artifact.CheckpointsDirName, "checkpoint_1")
+	require.NoError(t, os.MkdirAll(image, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(image, "checkpoint.img"), []byte("img"), 0o644))
+	require.NoError(t, artifact.WriteCheckpointMeta(image, artifact.Checkpoint{
+		ID: "checkpoint_1", GenerationID: testGeneration, Producer: "scripts",
+	}))
+
+	registry, err := artifact.Load(artifact.Options{Root: root, Log: logging.Discard()})
+	require.NoError(t, err)
+	return root, registry
 }

@@ -34,7 +34,7 @@ func run() error {
 
 	loadDotEnv()
 
-	cfg, err := config.Load(os.Getenv, os.ReadFile)
+	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
 	}

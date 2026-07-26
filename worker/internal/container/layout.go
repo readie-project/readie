@@ -14,16 +14,20 @@ import (
 
 // Layout resolves the on-disk paths belonging to a container.
 //
-// The previous implementation derived the socket path in one package and the
-// container directory in another, from the same root; a single owner keeps
-// them from drifting.
+// A single owner keeps them from drifting: the socket path and the directory
+// it lives in are derived from the same root, and the bundle deliberately sits
+// outside the directory the sandbox can see.
 type Layout interface {
-	// ContainerDir is the host directory bind-mounted into the executor.
+	// ContainerDir is the host directory bind-mounted into the executor. The
+	// executor's socket appears here.
 	ContainerDir(containerID string) string
 	// SocketPath is the executor's unix socket, as seen from the worker.
 	SocketPath(containerID string) string
-	// CheckpointDir holds checkpoint images.
-	CheckpointDir() string
+	// BundleDir holds the generated OCI config and per-sandbox runtime state.
+	// It must not be visible inside the sandbox.
+	BundleDir(containerID string) string
+	// LogPath is where the sandbox's merged output is captured.
+	LogPath(containerID string) string
 }
 
 // DirLayout lays containers out beneath a single worker directory.
@@ -51,9 +55,22 @@ func (l DirLayout) SocketPath(containerID string) string {
 	return filepath.Join(l.root, containerID, config.ExecutorSocketName)
 }
 
-// CheckpointDir returns <workerDir>/checkpoints.
-func (l DirLayout) CheckpointDir() string {
-	return filepath.Join(l.root, config.CheckpointDirName)
+// BundleDir returns <workerDir>/sandboxes/<containerID>.
+//
+// Bundles live outside ContainerDir on purpose: that directory is bind-mounted
+// into the sandbox, and the sandbox has no business reading its own OCI spec.
+func (l DirLayout) BundleDir(containerID string) string {
+	return filepath.Join(l.root, config.BundlesDirName, containerID)
+}
+
+// LogPath returns the sandbox's log file inside its bundle directory.
+func (l DirLayout) LogPath(containerID string) string {
+	return filepath.Join(l.BundleDir(containerID), config.SandboxLogName)
+}
+
+// BundlesRoot returns the directory holding every bundle.
+func (l DirLayout) BundlesRoot() string {
+	return filepath.Join(l.root, config.BundlesDirName)
 }
 
 // NameGenerator produces container names.
@@ -73,9 +90,9 @@ func NewUUIDNamer(prefix string) UUIDNamer {
 	return UUIDNamer{prefix: prefix}
 }
 
-// NewName returns a fresh, unique container name. Uniqueness matters: the
-// previous implementation returned a constant, so two concurrent requests
-// collided on both the Docker container name and the host directory.
+// NewName returns a fresh, unique container name. Uniqueness matters: two
+// concurrent requests must not collide on the runtime's container id or on the
+// host directory carrying the executor socket.
 func (n UUIDNamer) NewName() string {
 	return n.prefix + uuid.NewString()
 }

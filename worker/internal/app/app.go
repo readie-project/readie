@@ -14,20 +14,23 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/clock"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/grpcserver"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/runsc"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
 )
 
@@ -35,8 +38,12 @@ import (
 type Deps struct {
 	// Listen creates the gRPC listener.
 	Listen func(network, addr string) (net.Listener, error)
-	// NewDocker connects to the container runtime.
-	NewDocker func(ctx context.Context, log *slog.Logger) (docker.Port, error)
+	// NewRuntime builds the sandbox runtime. Substituting here — above the
+	// runsc adapter — is what keeps the integration suite runnable on a
+	// development machine, since gVisor is Linux-only.
+	NewRuntime func(ctx context.Context, cfg config.Config, layout container.DirLayout, log *slog.Logger) (sandbox.Port, error)
+	// LoadArtifacts discovers the generations this worker can run.
+	LoadArtifacts func(cfg config.Config, log *slog.Logger) (container.Artifacts, error)
 	// DialRegistry connects to the router, returning a client and the closer
 	// for the underlying connection.
 	DialRegistry func(ctx context.Context, target string) (pb.RegistryServiceClient, io.Closer, error)
@@ -48,10 +55,11 @@ func (d Deps) withDefaults() Deps {
 	if d.Listen == nil {
 		d.Listen = net.Listen
 	}
-	if d.NewDocker == nil {
-		d.NewDocker = func(ctx context.Context, log *slog.Logger) (docker.Port, error) {
-			return docker.NewMobyFromEnv(ctx, log)
-		}
+	if d.NewRuntime == nil {
+		d.NewRuntime = newRunscRuntime
+	}
+	if d.LoadArtifacts == nil {
+		d.LoadArtifacts = loadArtifacts
 	}
 	if d.DialRegistry == nil {
 		d.DialRegistry = dialRegistry
@@ -60,6 +68,41 @@ func (d Deps) withDefaults() Deps {
 		d.Clock = clock.NewSystem()
 	}
 	return d
+}
+
+// newRunscRuntime builds the gVisor adapter.
+func newRunscRuntime(
+	_ context.Context,
+	cfg config.Config,
+	layout container.DirLayout,
+	log *slog.Logger,
+) (sandbox.Port, error) {
+	return runsc.New(runsc.Options{
+		Binary:            cfg.RunscBinary,
+		Root:              cfg.RunscRoot,
+		BundlesDir:        layout.BundlesRoot(),
+		Network:           cfg.SandboxNetwork,
+		HostUDS:           cfg.SandboxHostUDS,
+		Overlay:           cfg.SandboxOverlay,
+		Platform:          cfg.SandboxPlatform,
+		IgnoreCgroups:     cfg.SandboxIgnoreCgroups,
+		Debug:             cfg.SandboxDebug,
+		DebugLogDir:       cfg.SandboxDebugLogDir,
+		CommandTimeout:    cfg.RuntimeCommandTimeout,
+		RestoreTimeout:    cfg.RestoreTimeout,
+		CheckpointTimeout: cfg.CheckpointTimeout,
+		StatsInterval:     cfg.StatsInterval,
+		Log:               log,
+	})
+}
+
+// loadArtifacts scans local storage for runnable generations.
+func loadArtifacts(cfg config.Config, log *slog.Logger) (container.Artifacts, error) {
+	return artifact.Load(artifact.Options{
+		Root:             cfg.ArtifactRoot,
+		ActiveGeneration: cfg.ActiveGeneration,
+		Log:              log,
+	})
 }
 
 func dialRegistry(_ context.Context, target string) (pb.RegistryServiceClient, io.Closer, error) {
@@ -97,7 +140,7 @@ type App struct {
 // established, orphans from a previous process are reclaimed, and only then is
 // the listener opened. The previous implementation began serving before either
 // client existed, so a request arriving in that window dereferenced a nil
-// Docker client.
+// runtime client.
 func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*App, error) {
 	deps = deps.withDefaults()
 
@@ -105,6 +148,15 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		log = slog.Default()
 	}
 	log = log.With(logging.KeyWorkerID, cfg.WorkerID)
+
+	// The runtime daemonises a sandbox and a gofer per container, both of
+	// which reparent to PID 1 when the create command exits. This process does
+	// not reap orphans, so being PID 1 would accumulate two zombies per
+	// execution until the pid limit is reached. Run under an init.
+	if os.Getpid() == 1 {
+		log.Warn("running as PID 1 with no init: orphaned sandbox processes will " +
+			"never be reaped. Set init: true in compose, or run under tini.")
+	}
 
 	app := &App{cfg: cfg, log: log}
 
@@ -117,36 +169,52 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		return nil, err
 	}
 
-	// 1. Container runtime, verified reachable before anything depends on it.
-	pingCtx, cancelPing := context.WithTimeout(ctx, cfg.DockerPingTimeout)
-	dockerPort, err := deps.NewDocker(pingCtx, log)
-	cancelPing()
-	if err != nil {
-		return nil, fmt.Errorf("connect to the container runtime: %w", err)
-	}
-	app.push("docker client", func(context.Context) error { return dockerPort.Close() })
+	layout := container.NewDirLayout(cfg.WorkerDir)
 
-	// 2. Router client. Lazy, so this cannot fail for connectivity reasons.
+	// 1. Artifacts. Without a root filesystem no sandbox can start at all, so
+	// this fails loudly here rather than at the first request.
+	artifacts, err := deps.LoadArtifacts(cfg, log)
+	if err != nil {
+		return nil, fmt.Errorf("load sandbox artifacts: %w", err)
+	}
+	log.Info("sandbox artifacts loaded",
+		"active_generation", artifacts.Active().ID,
+		"rootfs", artifacts.Active().RootfsPath())
+
+	// 2. Sandbox runtime, probed before anything depends on it.
+	runtimePort, err := deps.NewRuntime(ctx, cfg, layout, log)
+	if err != nil {
+		return nil, fmt.Errorf("build the sandbox runtime: %w", err)
+	}
+	app.push("sandbox runtime", func(context.Context) error { return runtimePort.Close() })
+
+	probeCtx, cancelProbe := context.WithTimeout(ctx, cfg.RuntimeProbeTimeout)
+	err = runtimePort.Probe(probeCtx)
+	cancelProbe()
+	if err != nil {
+		return fail(fmt.Errorf("probe the sandbox runtime: %w", err))
+	}
+
+	// 3. Router client. Lazy, so this cannot fail for connectivity reasons.
 	registryClient, registryConn, err := deps.DialRegistry(ctx, cfg.RouterURI)
 	if err != nil {
 		return fail(fmt.Errorf("connect to the router: %w", err))
 	}
 	app.push("router connection", func(context.Context) error { return registryConn.Close() })
 
-	// 3. Object graph. Pure construction, no I/O.
+	// 4. Object graph. Pure construction, no I/O.
 	reporter := registry.NewGRPCReporter(registryClient, cfg.WorkerID, cfg.WorkerURI, cfg.StatusTimeout, log)
 	app.reporter = reporter
 
-	layout := container.NewDirLayout(cfg.WorkerDir)
-
 	manager, err := container.NewManager(container.ManagerDeps{
-		Docker:   dockerPort,
-		Reporter: reporter,
-		Layout:   layout,
-		Names:    container.NewUUIDNamer(cfg.ContainerNamePrefix),
-		FS:       container.NewOSFS(),
-		Spec:     container.SpecFromConfig(cfg),
-		Log:      log,
+		Runtime:   runtimePort,
+		Reporter:  reporter,
+		Layout:    layout,
+		Names:     container.NewUUIDNamer(cfg.ContainerNamePrefix),
+		FS:        container.NewOSFS(),
+		Artifacts: artifacts,
+		Spec:      container.SpecFromConfig(cfg),
+		Log:       log,
 	})
 	if err != nil {
 		return fail(fmt.Errorf("build container manager: %w", err))
@@ -175,7 +243,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		},
 	}, log)
 
-	// 4. Reclaim orphans before serving. A process killed without warning
+	// 5. Reclaim orphans before serving. A process killed without warning
 	// leaves containers and directories behind, and startup is the only
 	// opportunity to reclaim them; the previous implementation swept only on
 	// shutdown, so a crash leaked them permanently.
@@ -187,7 +255,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	}
 	cancelCleanup()
 
-	// 5. Listener and services. Health starts NOT_SERVING.
+	// 6. Listener and services. Health starts NOT_SERVING.
 	listener, err := deps.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		return fail(fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err))

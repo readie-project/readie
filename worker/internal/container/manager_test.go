@@ -12,54 +12,97 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/docker"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakedocker"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakesandbox"
 	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
 )
 
-const sitePackages = "/opt/conda/lib/python3.11/site-packages"
+const (
+	pythonPath = "/lib/python3.12/dist-packages"
+	entrypoint = "/app/executor/app.py"
+	generation = "gen-a"
+)
 
 type fixture struct {
-	manager   *container.Manager
-	docker    *fakedocker.Docker
-	registry  *fakeregistry.Recorder
-	layout    container.DirLayout
-	workerDir string
+	manager      *container.Manager
+	runtime      *fakesandbox.Sandbox
+	registry     *fakeregistry.Recorder
+	layout       container.DirLayout
+	artifacts    *artifact.Registry
+	workerDir    string
+	artifactRoot string
+}
+
+// buildArtifacts lays out one generation with the given checkpoints, the way
+// the offline pipeline would.
+func buildArtifacts(t *testing.T, checkpoints ...string) (string, *artifact.Registry) {
+	t.Helper()
+
+	root := t.TempDir()
+	dir := filepath.Join(root, artifact.GenerationsDirName, generation)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
+	require.NoError(t, artifact.WriteGeneration(dir, artifact.Generation{
+		ID:                 generation,
+		RootfsID:           "sha256:rootfs",
+		RunscVersion:       "runsc version test",
+		SpecFingerprint:    "sha256:spec",
+		ExecutorEntrypoint: entrypoint,
+		PythonPath:         pythonPath,
+		CreatedAt:          time.Now().UTC(),
+	}))
+
+	for _, id := range checkpoints {
+		cdir := filepath.Join(dir, artifact.CheckpointsDirName, id)
+		require.NoError(t, os.MkdirAll(cdir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(cdir, "checkpoint.img"), []byte("img"), 0o644))
+		require.NoError(t, artifact.WriteCheckpointMeta(cdir, artifact.Checkpoint{
+			ID: id, GenerationID: generation, Producer: "scripts",
+		}))
+	}
+
+	registry, err := artifact.Load(artifact.Options{Root: root, Log: logging.Discard()})
+	require.NoError(t, err)
+	return root, registry
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
 	workerDir := t.TempDir()
-	fake := fakedocker.New()
+	fake := fakesandbox.New()
 	recorder := fakeregistry.NewRecorder()
 	layout := container.NewDirLayout(workerDir)
+	artifactRoot, artifacts := buildArtifacts(t, "checkpoint_1")
 
 	manager, err := container.NewManager(container.ManagerDeps{
-		Docker:   fake,
-		Reporter: recorder,
-		Layout:   layout,
-		Names:    container.NewUUIDNamer("exec_container-"),
-		FS:       container.NewOSFS(),
+		Runtime:   fake,
+		Reporter:  recorder,
+		Layout:    layout,
+		Names:     container.NewUUIDNamer("exec_container-"),
+		FS:        container.NewOSFS(),
+		Artifacts: artifacts,
 		Spec: container.Spec{
-			Image:            "test-agent",
-			NamePrefix:       "exec_container-",
-			SitePackagesPath: sitePackages,
-			CPUQuota:         50000,
-			PidsLimit:        100,
-			NetworkMode:      "none",
-			DirPerm:          0o777,
+			NamePrefix:   "exec_container-",
+			CPUQuota:     50000,
+			CPUPeriod:    100000,
+			PidsLimit:    100,
+			CgroupParent: "/crfs",
+			DirPerm:      0o777,
 		},
 		Log: logging.Discard(),
 	})
 	require.NoError(t, err)
 
-	return &fixture{manager: manager, docker: fake, registry: recorder, layout: layout, workerDir: workerDir}
+	return &fixture{
+		manager: manager, runtime: fake, registry: recorder, layout: layout,
+		artifacts: artifacts, workerDir: workerDir, artifactRoot: artifactRoot,
+	}
 }
 
 func acquireNew(t *testing.T, f *fixture) container.Handle {
@@ -73,29 +116,49 @@ func acquireNew(t *testing.T, f *fixture) container.Handle {
 }
 
 // The create specification is the contract with the Python executor: it finds
-// its socket through EXECUTOR_DIR and its imports through PYTHONPATH, and both
-// only resolve because of these bind mounts. Every field is asserted so a
-// regression here fails loudly rather than as a mysterious container hang.
+// its socket through EXECUTOR_DIR, and the /tmp bind is what makes that socket
+// visible to the worker. Every field is asserted so a regression here fails
+// loudly rather than as a mysterious dial timeout.
 func TestAcquire_LocksTheExecutorContract(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
 
-	specs := f.docker.CreateSpecs()
+	specs := f.runtime.CreateSpecs()
 	require.Len(t, specs, 1)
 	spec := specs[0]
 
-	assert.Equal(t, h.ID, spec.Name)
-	assert.Equal(t, "test-agent", spec.Image)
-	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/tmp/site_packages"}, spec.Env)
-	assert.Equal(t, "none", spec.NetworkMode, "executors must not reach the network")
-	assert.Equal(t, []string{
-		filepath.Join(f.workerDir, h.ID) + ":/tmp:rw",
-		sitePackages + ":/tmp/site_packages:ro",
-	}, spec.Binds)
+	assert.Equal(t, h.ID, spec.ID)
+	assert.Equal(t, []string{"python", "-u", entrypoint}, spec.Args)
+	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=" + pythonPath}, spec.Env)
+	assert.Equal(t, f.artifacts.Active().RootfsPath(), spec.RootfsPath)
+	assert.Equal(t, f.layout.BundleDir(h.ID), spec.BundleDir)
+	assert.Equal(t, f.layout.LogPath(h.ID), spec.LogPath)
+
+	// Exactly one bind: the rootfs already carries the Python environment, so
+	// there is no site-packages mount to keep in sync with a checkpoint.
+	require.Len(t, spec.Mounts, 1)
+	assert.Equal(t, sandbox.Mount{
+		Source:      filepath.Join(f.workerDir, h.ID),
+		Destination: "/tmp",
+		Type:        "bind",
+		Options:     []string{"rbind", "rw"},
+	}, spec.Mounts[0])
+
 	assert.Equal(t, int64(512<<20), spec.MemoryBytes)
 	assert.Equal(t, int64(50000), spec.CPUQuota)
+	assert.Equal(t, int64(100000), spec.CPUPeriod)
 	assert.Equal(t, int64(100), spec.PidsLimit)
-	assert.Empty(t, spec.Runtime, "gVisor stays opt-in until the image ships runsc")
+	assert.Equal(t, "/crfs/"+h.ID, spec.CgroupsPath)
+}
+
+// The bundle carries the sandbox's OCI spec and must not be reachable from
+// inside the sandbox, which can see everything under ContainerDir.
+func TestAcquire_KeepsTheBundleOutsideTheSandboxsView(t *testing.T) {
+	f := newFixture(t)
+	h := acquireNew(t, f)
+
+	assert.NotContains(t, f.layout.BundleDir(h.ID), f.layout.ContainerDir(h.ID),
+		"a sandbox has no business reading its own runtime spec")
 }
 
 func TestAcquire_CreatesTheHostDirectoryTheSocketLivesIn(t *testing.T) {
@@ -112,7 +175,7 @@ func TestAcquire_CreatesTheHostDirectoryTheSocketLivesIn(t *testing.T) {
 }
 
 // The previous generator returned a constant, so two concurrent requests
-// collided on both the Docker container name and the host directory.
+// collided on both the runtime's container id and the host directory.
 func TestAcquire_GeneratesADistinctNamePerContainer(t *testing.T) {
 	f := newFixture(t)
 
@@ -180,16 +243,55 @@ func TestAcquire_RestoresFromACheckpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "checkpoint_1", h.CheckpointID)
-	state, ok := f.docker.Get(h.ID)
+	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.Equal(t, "checkpoint_1", state.StartedFrom)
+}
+
+// A checkpoint only restores into the filesystem it was captured from, so the
+// rootfs must be looked up through the checkpoint rather than assumed.
+func TestAcquire_RestoreUsesTheCheckpointsOwnGeneration(t *testing.T) {
+	f := newFixture(t)
+
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		CheckpointID: "checkpoint_1",
+		Alloc:        container.Allocation{CPUAlloc: 1 << 20},
+	})
+	require.NoError(t, err)
+
+	checkpoint, gen, err := f.artifacts.ResolveCheckpoint("checkpoint_1")
+	require.NoError(t, err)
+
+	specs := f.runtime.CreateSpecs()
+	require.Len(t, specs, 1)
+	assert.Equal(t, gen.RootfsPath(), specs[0].RootfsPath)
+	assert.Equal(t, checkpoint.Dir, filepath.Join(gen.CheckpointsPath(), "checkpoint_1"))
+}
+
+// An unresolvable checkpoint is a cold start, not a failure: the request can
+// still be served, just without the warm image.
+func TestAcquire_UnknownCheckpointFallsBackToAColdStart(t *testing.T) {
+	f := newFixture(t)
+
+	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		CheckpointID: "checkpoint_does_not_exist",
+		Alloc:        container.Allocation{CPUAlloc: 1 << 20},
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, h.CheckpointID, "a cold start must not claim a checkpoint")
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.True(t, state.Started)
+	assert.Empty(t, state.StartedFrom)
+	assert.Equal(t, f.artifacts.Active().RootfsPath(), f.runtime.CreateSpecs()[0].RootfsPath)
 }
 
 // A failed restore must downgrade to a cold start and report the truth: the
 // container is not running the checkpoint the router asked for.
 func TestAcquire_DowngradesToAColdStartWhenRestoreFails(t *testing.T) {
 	f := newFixture(t)
-	f.docker.FailCheckpointStart = true
+	f.runtime.FailRestore = true
 
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		CheckpointID: "checkpoint_1",
@@ -198,7 +300,7 @@ func TestAcquire_DowngradesToAColdStartWhenRestoreFails(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, h.CheckpointID, "a downgraded start must not claim the checkpoint")
-	state, ok := f.docker.Get(h.ID)
+	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.True(t, state.Started)
 	assert.Empty(t, state.StartedFrom)
@@ -206,7 +308,7 @@ func TestAcquire_DowngradesToAColdStartWhenRestoreFails(t *testing.T) {
 
 func TestAcquire_CleansUpTheDirectoryWhenCreateFails(t *testing.T) {
 	f := newFixture(t)
-	f.docker.FailOn("Create", errors.New("no such image"))
+	f.runtime.FailOn("Create", errors.New("no such image"))
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		Alloc: container.Allocation{CPUAlloc: 1 << 20},
@@ -232,9 +334,9 @@ func TestAcquire_ResumesAnExistingContainer(t *testing.T) {
 
 	assert.Equal(t, first.ID, second.ID)
 	assert.False(t, second.Created)
-	assert.Len(t, f.docker.CreateSpecs(), 1, "resuming must not create a second container")
+	assert.Len(t, f.runtime.CreateSpecs(), 1, "resuming must not create a second container")
 
-	state, ok := f.docker.Get(first.ID)
+	state, ok := f.runtime.Get(first.ID)
 	require.True(t, ok)
 	assert.False(t, state.Paused)
 	assert.Equal(t, int64(256<<20), state.Memory, "the new allocation must be applied")
@@ -243,7 +345,7 @@ func TestAcquire_ResumesAnExistingContainer(t *testing.T) {
 func TestAcquire_ReportsErrorWhenResumeFails(t *testing.T) {
 	f := newFixture(t)
 	first := acquireNew(t, f)
-	f.docker.FailOn("Unpause", docker.ErrConflict)
+	f.runtime.FailOn("Unpause", sandbox.ErrConflict)
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: first.ID})
 	require.Error(t, err)
@@ -257,7 +359,7 @@ func TestRelease_SuccessPausesForReuse(t *testing.T) {
 
 	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
 
-	state, ok := f.docker.Get(h.ID)
+	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.True(t, state.Paused)
 	assert.False(t, state.Removed)
@@ -272,7 +374,7 @@ func TestRelease_FailureDestroysTheContainerAndItsDirectory(t *testing.T) {
 
 	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeFailure))
 
-	state, ok := f.docker.Get(h.ID)
+	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.True(t, state.Removed)
 
@@ -290,16 +392,16 @@ func TestRelease_ZeroOutcomeDestroys(t *testing.T) {
 	var outcome container.Outcome // deliberately not assigned
 	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, outcome))
 
-	state, ok := f.docker.Get(h.ID)
+	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.True(t, state.Removed)
 }
 
-func TestDestroy_RemovesTheDirectoryEvenWhenDockerFails(t *testing.T) {
+func TestDestroy_RemovesTheDirectoryEvenWhenTheRuntimeFails(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
-	f.docker.FailOn("Stop", errors.New("daemon is wedged"))
-	f.docker.FailOn("Remove", errors.New("daemon is wedged"))
+	f.runtime.FailOn("Stop", errors.New("daemon is wedged"))
+	f.runtime.FailOn("Remove", errors.New("daemon is wedged"))
 
 	err := f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID)
 	require.Error(t, err)
@@ -323,22 +425,22 @@ func TestCleanupOrphans_ReclaimsContainersFromAPreviousProcess(t *testing.T) {
 
 	orphans := []string{"exec_container-orphan-a", "exec_container-orphan-b"}
 	for _, id := range orphans {
-		f.docker.Seed(id)
+		f.runtime.Seed(id)
 		require.NoError(t, os.MkdirAll(f.layout.ContainerDir(id), 0o777))
 	}
 	// An unrelated container must survive.
-	f.docker.Seed("some-other-service")
+	f.runtime.Seed("some-other-service")
 
 	require.NoError(t, f.manager.CleanupOrphans(context.Background()))
 
 	for _, id := range orphans {
-		state, ok := f.docker.Get(id)
+		state, ok := f.runtime.Get(id)
 		require.True(t, ok)
 		assert.True(t, state.Removed, "%s should have been reclaimed", id)
 		assert.NoDirExists(t, f.layout.ContainerDir(id))
 	}
 
-	other, ok := f.docker.Get("some-other-service")
+	other, ok := f.runtime.Get("some-other-service")
 	require.True(t, ok)
 	assert.False(t, other.Removed, "containers this worker does not own must be left alone")
 }
@@ -350,11 +452,11 @@ func TestCleanupOrphans_NoOpWhenThereAreNone(t *testing.T) {
 
 func TestCleanupOrphans_SurfacesListFailures(t *testing.T) {
 	f := newFixture(t)
-	f.docker.FailOn("List", docker.ErrDaemonUnavailable)
+	f.runtime.FailOn("List", sandbox.ErrRuntimeUnavailable)
 
 	err := f.manager.CleanupOrphans(context.Background())
 	require.Error(t, err)
-	assert.ErrorIs(t, err, docker.ErrDaemonUnavailable)
+	assert.ErrorIs(t, err, sandbox.ErrRuntimeUnavailable)
 }
 
 func TestInspect_ReportsTheAppliedAllocation(t *testing.T) {
@@ -374,7 +476,7 @@ func TestNewManager_RejectsMissingDependencies(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, container.ErrInvalidDeps)
 
-	for _, want := range []string{"Docker", "Reporter", "Layout", "Names", "FS", "Spec.Image"} {
+	for _, want := range []string{"Runtime", "Reporter", "Layout", "Names", "FS", "Artifacts"} {
 		assert.Contains(t, err.Error(), want)
 	}
 }
@@ -401,13 +503,13 @@ func TestDestroy_UnpausesBeforeStoppingAPausedContainer(t *testing.T) {
 
 	// Leave it paused the way a completed execution does.
 	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
-	state, ok := f.docker.Get(h.ID)
+	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	require.True(t, state.Paused)
 
 	require.NoError(t, f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID))
 
-	state, ok = f.docker.Get(h.ID)
+	state, ok = f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.True(t, state.Removed)
 	assert.False(t, state.Paused)
@@ -418,11 +520,11 @@ func TestDestroy_UnpausesBeforeStoppingAPausedContainer(t *testing.T) {
 func TestDestroy_TolerantOfAnUnpausableContainer(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
-	f.docker.FailOn("Unpause", docker.ErrConflict)
+	f.runtime.FailOn("Unpause", sandbox.ErrConflict)
 
 	require.NoError(t, f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID))
 
-	state, ok := f.docker.Get(h.ID)
+	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.True(t, state.Removed)
 }
@@ -432,9 +534,9 @@ func TestSpecFromConfig_UsesAShortContainerStopTimeout(t *testing.T) {
 	cfg, err := config.Load(func(k string) string {
 		return map[string]string{
 			"SERVICE_NAME": "worker", "PORT": "50052", "WORKER_DIR": "/shared",
-			"ROUTER_URI": "router:50051", "SITEPACKAGES_TXT_PATH": "/sp.txt",
+			"ROUTER_URI": "router:50051", "ARTIFACT_ROOT": "/var/lib/crfs",
 		}[k]
-	}, func(string) ([]byte, error) { return []byte("/site-packages"), nil })
+	})
 	require.NoError(t, err)
 
 	spec := container.SpecFromConfig(cfg)

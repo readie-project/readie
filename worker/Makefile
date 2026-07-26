@@ -11,12 +11,13 @@ GOLANGCI_LINT      := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.
 GO      ?= go
 GOBIN   := $(shell $(GO) env GOPATH)/bin
 
-.PHONY: all build run test test-short cover race lint fmt tidy vet proto tools docker clean help
+.PHONY: all build run test test-short test-e2e cover race lint fmt tidy vet proto tools docker clean help
 
 all: fmt vet lint test build ## Run the full local pipeline
 
-build: ## Build the worker binary
+build: ## Build the worker and the OCI spec generator
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o $(BINARY) ./cmd/worker
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o ocispec ./cmd/ocispec
 
 run: ## Run the worker from source
 	$(GO) run ./cmd/worker
@@ -65,8 +66,11 @@ tools: ## Install the pinned code-generation and lint tools
 docker: ## Build the worker container image
 	docker build -t worker:latest .
 
+test-e2e: ## Run the real-runsc suite (Linux/amd64 with runsc installed)
+	$(GO) test -tags=runsc_e2e -count=1 ./internal/runsc/...
+
 clean: ## Remove build artifacts
-	rm -f $(BINARY) coverage.out coverage.html
+	rm -f $(BINARY) ocispec coverage.out coverage.html
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
