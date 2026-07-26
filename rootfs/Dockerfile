@@ -20,7 +20,7 @@
 # The executor, built as a wheel rather than copied as a loose file. A wheel
 # carries its own metadata and entry point, so the sandbox runs
 # `python -m crfs_executor` and the rootfs has no idea where the source lived.
-FROM python:3.12-slim AS executor-builder
+FROM python:3.14-slim AS executor-builder
 RUN pip install --no-cache-dir build
 WORKDIR /src
 COPY executor/ ./
