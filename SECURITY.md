@@ -58,11 +58,15 @@ kernel. Layered on top:
 - **One socket, one interpreter, one execution at a time**, so two users' code is
   never co-resident in one address space.
 
-The residual risk is a gVisor escape. `runsc` is pinned by release in both
-`worker/Dockerfile` and `pipeline/Dockerfile` — floating it would also silently
-invalidate every checkpoint, since the save format is not stable across releases.
-Track [gVisor's advisories](https://github.com/google/gvisor/security/advisories)
-and bump both pins together.
+The residual risk is a gVisor escape. `runsc` is pinned by release in one place,
+`pipeline/Dockerfile`'s `runsc` stage: the capture tool copies it from there, and
+the worker inherits it through `crfs-worker-base`. Floating that pin would also
+silently invalidate every checkpoint, since the save format is not stable across
+releases. Track
+[gVisor's advisories](https://github.com/google/gvisor/security/advisories) and
+bump it together with regenerating the checkpoints — which also means a worker
+rebuilt on a *new* base picks up a patched runsc, while `make worker-image` alone
+does not.
 
 ## Deployment expectations
 

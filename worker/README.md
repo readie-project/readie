@@ -64,8 +64,8 @@ free; `internal/runsc` holds `os/exec`, the OCI spec, and process lifetimes.
 
 ## Artifacts
 
-The root filesystem and the checkpoints are **baked into this image**, at a
-compiled-in path. Nothing is mounted:
+The root filesystem and the checkpoints are **baked into the base image** this one
+is built on, at a compiled-in path. Nothing is mounted:
 
 ```
 /var/lib/crfs/
@@ -76,36 +76,69 @@ compiled-in path. Nothing is mounted:
 ```
 
 **A gVisor checkpoint only restores into the filesystem it was captured from**,
-so the pairing has to be right. It is right here by construction: there is one
-rootfs, and the image build is the only way to put a rootfs and checkpoints
-together. That replaced a `rootfs_id` recorded in every artifact — which was
-never actually compared, only logged.
+so the pairing has to be right. It is right by construction: there is one rootfs,
+and the base image build is the only way to put a rootfs and checkpoints together.
+That replaced a `rootfs_id` recorded in every artifact — which was never actually
+compared, only logged.
 
 One rootfs also means checkpoint IDs are globally unique, so `checkpoint_1` is
 unambiguous. The previous layout nested them under `generations/<id>/` and needed
 a `gen-2026-06/checkpoint_1` reference to disambiguate.
 
-Build an image with checkpoints in it:
+## The two images
 
-```sh
-make generation          # capture, then bake; tags crfs-worker:<timestamp>
+[`Dockerfile`](Dockerfile) here builds only the server. Everything a checkpoint's
+validity is bound to — the pinned runsc, the rootfs, the checkpoints themselves —
+comes from `crfs-worker-base`, which the offline pipeline builds
+([`../pipeline/Dockerfile`](../pipeline/Dockerfile)).
+
+```
+crfs-worker-base            pipeline/Dockerfile --target worker-base
+  /usr/local/bin/runsc            pinned GVISOR_RELEASE, same as capture
+  /var/lib/crfs/rootfs
+  /var/lib/crfs/manifest.json
+  /var/lib/crfs/checkpoints/
+
+crfs-worker                 worker/Dockerfile, context ./worker
+  FROM crfs-worker-base
+  /app/go-server
+  /usr/local/bin/grpcurl          the compose healthcheck
 ```
 
-`docker compose build` also works and yields a usable worker — rootfs, no
-checkpoints, every start cold — because `worker/artifacts/` is committed empty.
-That is deliberate: it keeps `docker compose up` self-sufficient.
+The split is along what changes when. A new capture rebuilds the base; a code
+change rebuilds only this image, and that build reaches nothing large:
 
-The rootfs lives in a **base image**, `crfs-worker-base`, built from
-`Dockerfile.base` and rebuilt only when the rootfs or the pinned runsc release
-changes. The worker image is `FROM` it.
+### Redeploying a worker change
 
-That split is a measured decision, not a stylistic one. `COPY --from=<image>`
-produces a fresh layer every build: two otherwise-identical worker builds were
-observed to differ in the 25.9 GB rootfs layer's digest, so regenerating
-checkpoints would have re-uploaded all of it. A layer *inherited* from a base
-image has the same digest by definition, so every generation shares it — and a
-per-generation build takes seconds rather than eleven minutes, because the 26 GB
-copy does not happen at all.
+```sh
+make worker-image        # a Go build and two small layers; seconds
+docker compose up -d     # recreates the worker on the new crfs-worker:latest
+```
+
+No re-capture. The base already holds the rootfs and the checkpoints, and they are
+*inherited* rather than copied, so nothing here touches 26 GB. Two conditions:
+`crfs-worker-base:latest` has to be present (`make -C .. worker-base`) or
+pullable, and the worker comes up with whatever checkpoints that base was built
+with. If compose does not notice the new image, add `--force-recreate`.
+
+A whole generation, when the checkpoints themselves should change:
+
+```sh
+make generation          # capture -> base -> worker; tags crfs-worker:<timestamp>
+```
+
+`FROM crfs-worker-base:latest` names a *tag*, and a tag rather than a copy is the
+whole point. `COPY --from=` produces a fresh layer every build: two
+otherwise-identical worker builds were observed to differ in the 25.9 GB rootfs
+layer's digest, so a rebuild would have re-uploaded all of it. A layer inherited
+from a base image has the same digest by definition.
+
+`ocispec` is **not** in this image. It builds OCI bundles from the same code the
+worker uses, but only the pipeline ever runs it, so it ships in the pipeline image
+instead.
+
+The build context is `./worker`, so [`.dockerignore`](.dockerignore) here is
+load-bearing — anything it lists is invisible to the build.
 
 ## Request flow
 

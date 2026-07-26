@@ -11,7 +11,7 @@ GOLANGCI_LINT      := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.
 GO      ?= go
 GOBIN   := $(shell $(GO) env GOPATH)/bin
 
-.PHONY: all install build run test test-short test-e2e cover race lint fmt tidy vet proto tools docker clean help
+.PHONY: all install build run test test-short test-e2e cover race lint fmt tidy vet proto tools clean help
 
 all: fmt vet lint test build ## Run the full local pipeline
 
@@ -66,8 +66,9 @@ tools: ## Install the pinned code-generation and lint tools
 	$(GO) install $(PROTOC_GEN_GO_GRPC)
 	$(GO) install $(GOLANGCI_LINT)
 
-docker: ## Build the worker container image
-	docker build -t worker:latest .
+# No `docker` target. `Dockerfile` here is `FROM crfs-worker-base`, so building it
+# means resolving that tag and applying the repository's tagging convention:
+# `make -C .. worker-image` owns both.
 
 test-e2e: ## Run the real-runsc suite (Linux/amd64 with runsc installed)
 	$(GO) test -tags=runsc_e2e -count=1 ./internal/runsc/...

@@ -26,6 +26,15 @@ def test_derived_paths():
     assert s.corpus_path == Path("/data/dataset.json")
 
 
+def test_a_plan_dir_moves_the_plan_off_the_output_directory():
+    # The worker image COPYs output_dir wholesale, and the plan is an input to a
+    # capture rather than something the worker ships beside its manifest.
+    s = settings(plan_dir=Path("/app/plan"))
+    assert s.plan_path == Path("/app/plan/checkpoints.json")
+    assert s.fingerprint_path == Path("/app/plan/spec-fingerprint.txt")
+    assert s.checkpoints_dir == Path("/app/executor/checkpoints"), "outputs do not move"
+
+
 def test_the_socket_dir_is_a_host_path_distinct_from_the_sandbox_one():
     # Conflating the two once sent the pre-imported executor source to the wrong
     # place, so every checkpoint captured a bare executor.

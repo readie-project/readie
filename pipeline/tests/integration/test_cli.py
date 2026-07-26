@@ -103,6 +103,55 @@ def test_build_without_a_plan_says_to_plan_first(workspace: Path, capsys):
     assert "run `crfs-pipeline plan` first" in capsys.readouterr().err
 
 
+def test_capture_plans_before_it_captures(workspace: Path, tmp_path: Path, capsys, monkeypatch):
+    # `capture` exists because the image's entrypoint cannot plan at build time:
+    # the capture mounts a host directory over the output path and a bind mount
+    # hides whatever the image wrote there. So it must plan itself, and the proof
+    # is that it gets past planning to a stage that needs a binary this machine
+    # has no reason to have.
+    monkeypatch.setenv("OCISPEC_BINARY", str(tmp_path / "no-such-ocispec"))
+    bundle = tmp_path / "executorfs"
+    bundle.mkdir()
+
+    code = run(
+        "--data-dir",
+        str(DATA),
+        "--output-dir",
+        str(workspace),
+        "--bundle-dir",
+        str(bundle),
+        "capture",
+    )
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "no-such-ocispec" in err
+    assert "run `crfs-pipeline plan` first" not in err, "capture must plan, not demand a plan"
+    assert (workspace / "checkpoints.json").is_file()
+
+
+def test_the_plan_can_be_kept_out_of_the_output_directory(workspace: Path, tmp_path: Path):
+    # The image does this: output_dir is mounted out and copied into the worker
+    # image wholesale, and the plan is an input to a capture rather than
+    # something the worker should ship beside its manifest.
+    plans = tmp_path / "plan"
+
+    code = run(
+        "--data-dir",
+        str(DATA),
+        "--output-dir",
+        str(workspace),
+        "--plan-dir",
+        str(plans),
+        "plan",
+        "--no-spec",
+    )
+
+    assert code == 0
+    assert (plans / "checkpoints.json").is_file()
+    assert not (workspace / "checkpoints.json").exists()
+
+
 def test_a_traceback_is_never_printed_for_an_expected_failure(tmp_path: Path, capsys):
     # Every expected failure already explains itself; a traceback would bury the
     # explanation in argparse frames.
@@ -138,5 +187,5 @@ def test_the_help_lists_every_stage(capsys):
         run("--help")
 
     out = capsys.readouterr().out
-    for stage in ("corpus", "analyze", "plan", "build"):
+    for stage in ("corpus", "analyze", "plan", "build", "capture"):
         assert stage in out

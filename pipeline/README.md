@@ -22,10 +22,18 @@ crfs-pipeline corpus    # generate request snippets with a hosted model
 crfs-pipeline analyze   # measure package sizes and import times
 crfs-pipeline plan      # choose checkpoint contents, write the OCI spec
 crfs-pipeline build     # capture one gVisor checkpoint per planned set
+crfs-pipeline capture   # plan and then build, in one process
 ```
 
 Each runs alone. `plan` needs only the committed data — no runsc, no network, no
 container — so it is the stage to iterate on.
+
+`capture` is the image's default command and exists because those two stages have
+to share a container: `plan` writes the bundle's `config.json` under `$BASE_DIR`,
+which lives inside the image and is not mounted out, so a second `docker run`
+would start from a bundle with no spec in it. Planning at *build* time does not
+work either — the capture bind-mounts a host directory over `$EXECUTOR_DIR`, and
+a bind mount hides whatever the image wrote there.
 
 The previous `setup.py` and `main.py` were module-scope scripts that ran on
 *import*, so neither could be tested and neither stage could be run without the
@@ -70,33 +78,51 @@ sandbox — pinned by a test on the Go side.
 | `$EXECUTOR_DIR` (`/app/executor`) | host-side outputs; mount this out |
 | `$EXECUTOR_DIR/checkpoints/<id>/` | one checkpoint image plus its `meta.json` |
 | `$EXECUTOR_DIR/manifest.json` | what those checkpoints can be restored into |
+| `$CRFS_PLAN_DIR` (`/app/plan`) | the plan and the spec fingerprint |
 | `data/` | the committed corpus and package metadata |
 
 `$EXECUTOR_DIR` here is a *host* directory and is deliberately distinct from the
 sandbox's own `EXECUTOR_DIR`, which is `/tmp` — where the executor binds its
 socket.
 
+`$CRFS_PLAN_DIR` is separate from it because `$EXECUTOR_DIR` is copied into the
+base image wholesale. The plan and the fingerprint are inputs to a capture, not
+artifacts a worker ships beside its manifest. Unset, they go with the outputs,
+which is what a local `plan` run wants.
+
 ## Build and run
 
-From the repository root, one command captures checkpoints and bakes them into a
-worker image:
+[`Dockerfile`](Dockerfile) defines everything a checkpoint is bound to, in two
+targets:
+
+| Target | |
+|---|---|
+| `pipeline` | this tool: runsc, the planner, the rootfs as an OCI bundle, `ocispec` |
+| `worker-base` | what a worker runs on: runsc, the rootfs, the captured checkpoints |
+
+A gVisor checkpoint only restores into the filesystem it was captured from,
+through the runsc release that captured it — so both live here, and the gVisor
+release is pinned once for the capture and the restore alike. The worker's own
+image is `worker/Dockerfile`, which is `FROM crfs-worker-base` and adds only the Go
+server.
+
+From the repository root, one command captures checkpoints, bakes them into the
+base, and builds a worker on it:
 
 ```sh
 make generation                     # tags crfs-worker:<timestamp> and :latest
 make generation TAG=my-experiment
 ```
 
-It runs in two phases because `docker build` cannot capture a checkpoint: runsc
+Capture is its own phase because `docker build` cannot capture a checkpoint: runsc
 needs privileged namespace access, which a stock BuildKit builder will not grant.
-Phase one runs this pipeline as a privileged container; phase two builds the
-worker image around what it wrote.
+So this pipeline runs as a privileged container, and `worker-base` is built around
+what it wrote.
 
-`make capture` and `make worker-image` are the halves, if you want them
-separately. `make clean-artifacts` discards captured checkpoints.
-
-`make worker-base` rebuilds the base image carrying the root filesystem. It is
-only needed when the rootfs or the pinned runsc release changes; `worker-image`
-builds it automatically if it is missing.
+`make capture`, `make worker-base` and `make worker-image` are the three steps if
+you want them separately — and `make worker-image` alone is how a worker code
+change is redeployed, since the base already holds the checkpoints.
+`make clean-artifacts` discards what was captured.
 
 To iterate on planning alone — no gVisor, no network, no container:
 
@@ -108,7 +134,7 @@ docker run --rm crfs-pipeline plan --no-spec --max-checkpoints 3
 ## What it writes
 
 ```
-worker/artifacts/
+pipeline/out/
 ├── manifest.json           runsc_version, spec_fingerprint, executor_argv,
 │                           executor_protocol, python_path, overlay, network
 └── checkpoints/<id>/       runsc image + meta.json
@@ -120,15 +146,16 @@ between capturing a checkpoint and shipping it. Neither file carries a
 nothing to identify — the pairing is correct by construction rather than by a
 field nobody compared.
 
-Identity is the worker image tag. The manifest has no id of its own, which would
-be a second name for the same build, free to disagree.
+Identity is the base image tag. The manifest has no id of its own, which would be
+a second name for the same build, free to disagree.
 
 ## Configuration
 
 | | |
 |---|---|
 | `BASE_DIR`, `EXECUTOR_DIR` | the bundle and the output directory |
-| `ROOTFS_PYTHONPATH` | must correspond to the rootfs image |
+| `CRFS_PLAN_DIR` | where the plan goes, if not with the outputs |
+| `ROOTFS_PYTHONPATH` | must correspond to the rootfs stage |
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's |
 | `CRFS_PLANNER` | `greedy` or `fixed` |
 | `CRFS_MAX_CHECKPOINTS`, `CRFS_SIZE_BUDGET_MB` | planner bounds |

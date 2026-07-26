@@ -41,15 +41,15 @@ updates:
       actions:
         patterns: ["*"]
 
-  # Base images only. The runsc pins inside these Dockerfiles are ARG-based and
+  # Base images only. The runsc pin inside pipeline/Dockerfile is ARG-based and
   # deliberately not automated: gVisor's checkpoint format is not stable across
   # releases, so bumping it invalidates every existing checkpoint and has to be
-  # done together with regenerating them.
+  # done together with regenerating them. The same goes for the BASE_IMAGE arg in
+  # worker/Dockerfile, which names an image built from this repository.
   - package-ecosystem: docker
     directories:
       - /router
-      - /worker
       - /pipeline
-      - /rootfs
+      - /worker
     schedule:
       interval: weekly

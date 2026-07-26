@@ -7,6 +7,9 @@ Four stages, each runnable alone::
     crfs-pipeline plan      choose checkpoint contents, write the OCI spec
     crfs-pipeline build     capture one gVisor checkpoint per planned set
 
+plus ``capture``, which is ``plan`` and ``build`` in one process because the
+image's entrypoint needs them to share a container. See :func:`cmd_capture`.
+
 This replaces ``setup.py`` and ``main.py``, which were module-scope scripts:
 they executed on *import*, so neither could be tested, and neither stage could
 be run without the other.
@@ -173,9 +176,29 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_capture(settings: Settings, args: argparse.Namespace) -> int:
+    """Plan and capture in one process.
+
+    The two stages have to share a container. `plan` writes the bundle's
+    config.json under BASE_DIR, which lives in the image and is not mounted out,
+    so a second `docker run` would start from a bundle with no spec in it. This
+    is what the image's CMD is, and running `plan` at build time instead does not
+    work: the capture mounts a host directory over the output path, and a bind
+    mount hides whatever the image put there.
+    """
+    return cmd_plan(settings, args) or cmd_build(settings, args)
+
+
 # ---------------------------------------------------------------------------
 # Wiring
 # ---------------------------------------------------------------------------
+def add_planner_flags(parser: argparse.ArgumentParser) -> None:
+    """Attach the planner's knobs, shared by `plan` and `capture`."""
+    parser.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
+    parser.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
+    parser.add_argument("--size-budget-mb", type=float, help="per-checkpoint size budget")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Assemble the argument parser."""
     parser = argparse.ArgumentParser(
@@ -185,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-dir", type=Path, help="corpus and metadata location")
     parser.add_argument("--output-dir", type=Path, help="where build outputs are written")
     parser.add_argument("--bundle-dir", type=Path, help="the OCI bundle")
+    parser.add_argument(
+        "--plan-dir", type=Path, help="where the plan goes, if not with the outputs"
+    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -197,9 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_cmd.set_defaults(handler=cmd_analyze)
 
     plan = sub.add_parser("plan", help="choose checkpoint contents and write the spec")
-    plan.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
-    plan.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
-    plan.add_argument("--size-budget-mb", type=float, help="per-checkpoint size budget")
+    add_planner_flags(plan)
     plan.add_argument(
         "--no-spec",
         action="store_true",
@@ -209,6 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     build = sub.add_parser("build", help="capture a checkpoint for each planned set")
     build.set_defaults(handler=cmd_build)
+
+    capture_cmd = sub.add_parser("capture", help="plan and then capture, in one process")
+    add_planner_flags(capture_cmd)
+    # no_spec is not offered: a capture needs the spec `plan` writes, and the
+    # flag exists only so planning can run where the ocispec binary does not.
+    capture_cmd.set_defaults(handler=cmd_capture, no_spec=False)
 
     return parser
 
@@ -222,6 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             data_dir=getattr(args, "data_dir", None),
             output_dir=getattr(args, "output_dir", None),
             bundle_dir=getattr(args, "bundle_dir", None),
+            plan_dir=getattr(args, "plan_dir", None),
             planner=getattr(args, "planner", None),
             max_checkpoints=getattr(args, "max_checkpoints", None),
             checkpoint_size_budget_mb=getattr(args, "size_budget_mb", None),

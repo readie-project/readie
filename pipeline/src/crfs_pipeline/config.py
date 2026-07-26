@@ -47,6 +47,13 @@ class Settings:
     data_dir: Path
     """Corpus and package metadata."""
 
+    plan_dir: Path | None = None
+    """Where the plan and the spec fingerprint go, when they should not go with
+    the checkpoints. They are inputs to a capture rather than artifacts the
+    worker ships, and output_dir is copied into the worker image wholesale, so
+    the image sets this to keep them out of it. None means output_dir, which is
+    what a local `plan` run wants."""
+
     rootfs_pythonpath: str = "/lib/python3.12/dist-packages"
 
     # Runtime modes. Part of what a checkpoint is sensitive to, so they must
@@ -93,12 +100,12 @@ class Settings:
     @property
     def plan_path(self) -> Path:
         """The checkpoint plan, written by `plan` and read by `build`."""
-        return self.output_dir / "checkpoints.json"
+        return (self.plan_dir or self.output_dir) / "checkpoints.json"
 
     @property
     def fingerprint_path(self) -> Path:
         """The spec fingerprint, so `build` need not regenerate the spec."""
-        return self.output_dir / "spec-fingerprint.txt"
+        return (self.plan_dir or self.output_dir) / "spec-fingerprint.txt"
 
     @property
     def corpus_path(self) -> Path:
@@ -160,10 +167,15 @@ class Settings:
         def path_of(name: str, default: str) -> Path:
             return Path(source.get(name) or default)
 
+        def optional_path(name: str) -> Path | None:
+            raw = (source.get(name) or "").strip()
+            return Path(raw) if raw else None
+
         values: dict[str, object] = {
             "bundle_dir": path_of("BASE_DIR", "/app/executorfs"),
             "output_dir": path_of("EXECUTOR_DIR", "/app/executor"),
             "data_dir": path_of("CRFS_DATA_DIR", str(_default_data_dir())),
+            "plan_dir": optional_path("CRFS_PLAN_DIR"),
             "rootfs_pythonpath": source.get("ROOTFS_PYTHONPATH") or "/lib/python3.12/dist-packages",
             "sandbox_network": source.get("SANDBOX_NETWORK") or "none",
             "sandbox_host_uds": source.get("SANDBOX_HOST_UDS") or "create",

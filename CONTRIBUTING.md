@@ -13,9 +13,15 @@ Five, each with its own build, its own tests, and its own entry in CI. The root
 | [`pkg/`](pkg/) | Python 3.11+ | `crfs-client`, the `@remote` SDK users import |
 | [`pipeline/`](pipeline/) | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
 
-`protos/` is the single source of truth for every wire contract.
-`rootfs/Dockerfile` is the one filesystem every checkpoint is captured against,
-and it is baked into the worker image alongside them.
+`protos/` is the single source of truth for every wire contract, and
+`pipeline/Dockerfile` for everything a checkpoint is bound to: its two targets are
+the tool that captures checkpoints (`pipeline`) and the base image carrying the
+pinned runsc, the root filesystem and the captured checkpoints (`worker-base`) —
+one file, because a gVisor checkpoint only restores into the filesystem it was
+captured from, through the runsc that captured it.
+
+`worker/Dockerfile` builds `FROM` that base and adds only the Go server and
+grpcurl, so a worker code change rebuilds in seconds and never touches 26 GB.
 
 The two Python version floors are deliberate. `pkg` and `executor` are installed
 into someone else's process — a user's script and the sandbox image respectively
@@ -111,8 +117,11 @@ should explain what was broken and why the fix is the right shape — the diff
 already says what changed.
 
 CI must be green: lint, types and tests for all five components, `go test -race`
-for the worker, `buf` for the protos, no generated-stub drift, and all four
-images building.
+for the worker, `buf` for the protos, no generated-stub drift, and the images
+still building. The router and worker images are built in full — the worker
+against a stub base, since it embeds no rootfs. The pipeline's targets are ~35 GB
+and cannot be built on a runner with 14 GB of disk, so those are lint-checked
+only; say what a green run proves rather than more.
 
 ## What is deliberately not done
 
@@ -122,11 +131,13 @@ Listed here so nobody "fixes" one by accident:
   re-register. The alternative puts a datastore on the hot path of every
   placement decision.
 - **The rootfs is the full base image**, regardless of what the planner selects.
-  Regenerating checkpoints should not mean rebuilding tens of gigabytes, which is
-  why it lives in `crfs-worker-base` and the worker image inherits it.
-- **Artifacts are baked in, not mounted.** New checkpoints mean a new worker
-  image (`make generation`) and a new container. One deployable, nothing to
-  mis-mount, at the cost of a ~35 GB image.
+  Rebuilding a worker should not mean rebuilding tens of gigabytes, which is why
+  the rootfs lives in `crfs-worker-base` and `worker/Dockerfile` inherits that
+  image by tag rather than copying a rootfs in.
+- **Artifacts are baked in, not mounted.** New checkpoints mean a new base image
+  (`make generation`) and a new container. One deployable, nothing to mis-mount,
+  at the cost of a ~35 GB image. Redeploying worker *code* is cheap by contrast:
+  `make worker-image`.
 - **`cloudpickle.loads` on router-supplied bytes** in the client is an inherent
   remote-code-execution surface. It is confined behind a `ResultCodec` protocol
   and documented in [SECURITY.md](SECURITY.md), not papered over.

@@ -24,11 +24,20 @@ services:
         stop_grace_period: 30s
     worker:
         build:
-            # The repository root: the image needs the rootfs image and the
-            # pipeline's captured checkpoints, neither of which lives under
-            # worker/.
-            context: .
-            dockerfile: worker/Dockerfile
+            # Just ./worker: runsc, the rootfs and the checkpoints all arrive
+            # through crfs-worker-base, so this build needs nothing outside the
+            # worker's own source and takes seconds.
+            context: ./worker
+            # `FROM crfs-worker-base:latest`, which the offline pipeline builds.
+            # It must be present locally (`make worker-base`) or pullable — unlike
+            # the router, this service cannot be built from a bare checkout.
+            dockerfile: Dockerfile
+        # The same tag `make generation` writes, so `docker compose up` runs the
+        # image that was built on the base rather than a second, differently-named
+        # one. Rebuilding through compose replaces :latest with a worker built from
+        # the current source on the current base — the checkpoints come with the
+        # base either way, and the generation's :<timestamp> tag is untouched.
+        image: crfs-worker:latest
         # gVisor publishes amd64 and arm64 builds, but the executor rootfs is
         # amd64-only, and gVisor works by intercepting syscalls — which is
         # exactly what emulation sits in the middle of. This will not run on an

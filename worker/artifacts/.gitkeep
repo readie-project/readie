@@ -1,5 +1,0 @@
-# Where `make generation` writes the manifest and checkpoints the image bakes in.
-#
-# Committed empty on purpose: the worker Dockerfile COPYs this directory, so
-# `docker compose build` has to find something. An empty one yields a worker with
-# a rootfs and no checkpoints — every start cold, which works.

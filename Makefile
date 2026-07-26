@@ -18,10 +18,14 @@ CLIENT_PROTOS := proxy.proto
 STAGE := .build/proto-stage
 
 # --- generation --------------------------------------------------------------
-# Where the pipeline writes its captured checkpoints, and where the worker
-# Dockerfile copies them from.
-ARTIFACTS_DIR   := worker/artifacts
-ROOTFS_IMAGE    := crfs-executor-rootfs:latest
+# Where the pipeline writes its captured checkpoints, and where the worker-base
+# target copies them from.
+ARTIFACTS_DIR   := pipeline/out
+# The pipeline's Dockerfile defines the rootfs, the capture tool and the base a
+# worker runs on — everything a checkpoint's validity is bound to, in one file.
+# The worker's own image is worker/Dockerfile, built from ./worker.
+PIPELINE_DOCKERFILE := pipeline/Dockerfile
+WORKER_DOCKERFILE   := worker/Dockerfile
 PIPELINE_IMAGE  := crfs-pipeline:latest
 WORKER_BASE     := crfs-worker-base:latest
 WORKER_IMAGE    := crfs-worker
@@ -29,7 +33,7 @@ WORKER_IMAGE    := crfs-worker
 TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
-        rootfs-image worker-base pipeline-image capture worker-image generation clean-artifacts \
+        worker-base pipeline-image capture worker-image generation clean-artifacts \
         router-% pkg-% executor-% pipeline-% worker-% lint type test help
 
 all: protos lint type test ## Generate, check and test everything
@@ -99,33 +103,42 @@ clean-protos: ## Remove generated Python stubs
 	rm -rf pkg/src/crfs/_proto/*_pb2*.py pkg/src/crfs/_proto/*.pyi
 
 # ---------------------------------------------------------------------------
-# Generation: capture checkpoints, then bake them into a worker image.
+# Generation: capture checkpoints, bake them into the base, put a worker on it.
 #
-# Two phases, because `docker build` cannot capture a checkpoint: runsc needs
-# privileged namespace access, which a stock BuildKit builder will not grant
-# without a builder created for `--allow security.insecure`. Running the
+# Capture is its own phase because `docker build` cannot capture a checkpoint:
+# runsc needs privileged namespace access, which a stock BuildKit builder will not
+# grant without a builder created for `--allow security.insecure`. Running the
 # pipeline as a privileged container is portable; that is not.
 #
 # gVisor is amd64-only and dies under emulation, so `capture` only works on an
 # amd64 Linux host. It fails loudly rather than leaving a checkpointless image
 # that looks like a successful build.
+#
+# To redeploy a worker code change, run `worker-image` alone: the base already has
+# the rootfs and the checkpoints, so it is a Go build and nothing else.
 # ---------------------------------------------------------------------------
-generation: capture worker-image ## Capture checkpoints and bake them into a worker image
+# Three ordered steps rather than prerequisites. The base bakes what capture
+# wrote, so the order is load-bearing and `make -j` is free to reorder
+# prerequisites. worker-image deliberately does not depend on capture: that is
+# what keeps the redeploy loop from re-capturing.
+generation: ## Capture checkpoints, bake them into the base, build a worker
+	@$(MAKE) --no-print-directory capture
+	@$(MAKE) --no-print-directory worker-base
+	@$(MAKE) --no-print-directory worker-image
 	@echo
 	@echo "  image:  $(WORKER_IMAGE):$(TAG)"
 	@echo "  also:   $(WORKER_IMAGE):latest"
 	@echo "  run it: docker compose up -d"
 
-rootfs-image: ## Build the executor root filesystem image
-	@echo "==> [1/3] rootfs image"
-	docker build -t $(ROOTFS_IMAGE) -f rootfs/Dockerfile .
+pipeline-image: ## Build the offline pipeline image
+	@echo "==> [1/3] pipeline image"
+	docker build --target pipeline -t $(PIPELINE_IMAGE) -f $(PIPELINE_DOCKERFILE) .
 
-pipeline-image: rootfs-image ## Build the offline pipeline image
-	@echo "==> [2/3] pipeline image"
-	docker build -t $(PIPELINE_IMAGE) -f pipeline/Dockerfile .
-
+# One run, not two: `capture` plans and captures in the same container because
+# the plan writes the bundle's config.json into the image's own filesystem, which
+# a second container would not see.
 capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
-	@echo "==> [3/3] capturing checkpoints (privileged; needs amd64 gVisor)"
+	@echo "==> [2/3] capturing checkpoints (privileged; needs amd64 gVisor)"
 	@rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints
 	@mkdir -p $(ARTIFACTS_DIR)
 	docker run --rm \
@@ -133,23 +146,32 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 		--security-opt apparmor=unconfined \
 		--security-opt seccomp=unconfined \
 		-v "$(CURDIR)/$(ARTIFACTS_DIR):/app/executor" \
-		$(PIPELINE_IMAGE) build
+		$(PIPELINE_IMAGE) capture
 	@test -f $(ARTIFACTS_DIR)/manifest.json \
 		|| { echo "capture produced no manifest; refusing to build a checkpointless image" >&2; exit 1; }
 	@echo "==> captured: $$(ls $(ARTIFACTS_DIR)/checkpoints | tr '\n' ' ')"
 
-worker-base: rootfs-image ## Build the worker base: runsc plus the root filesystem
-	@echo "==> worker base image (only needed when the rootfs or runsc changes)"
-	docker build -t $(WORKER_BASE) -f worker/Dockerfile.base .
+# Says what it baked, because building this from an empty $(ARTIFACTS_DIR) yields
+# a base that works and serves nothing but cold starts — which otherwise looks
+# exactly like a normal build.
+worker-base: ## Build the base a worker runs on: runsc, rootfs, checkpoints
+	@echo "==> [3/3] worker base image: runsc, rootfs, and $$(ls $(ARTIFACTS_DIR)/checkpoints 2>/dev/null | wc -l | tr -d ' ') checkpoint(s)"
+	docker build --target worker-base -t $(WORKER_BASE) \
+		--build-arg ARTIFACTS_DIR=$(ARTIFACTS_DIR) \
+		-f $(PIPELINE_DOCKERFILE) .
 
-worker-image: ## Build the worker image around whatever is in $(ARTIFACTS_DIR)
+# worker/Dockerfile is `FROM $(WORKER_BASE)`, so the base has to exist as an image
+# rather than be built on the way. That is what makes the rootfs layer inherited
+# by digest instead of recopied; see worker/Dockerfile. The context is ./worker —
+# nothing outside it is needed, which is what makes this build seconds long.
+worker-image: ## Build the worker image on top of $(WORKER_BASE)
 	@docker image inspect $(WORKER_BASE) >/dev/null 2>&1 \
 		|| $(MAKE) --no-print-directory worker-base
 	@echo "==> worker image $(WORKER_IMAGE):$(TAG)"
 	docker build \
 		-t $(WORKER_IMAGE):$(TAG) -t $(WORKER_IMAGE):latest \
-		--build-arg ARTIFACTS_DIR=$(ARTIFACTS_DIR) \
-		-f worker/Dockerfile .
+		--build-arg BASE_IMAGE=$(WORKER_BASE) \
+		-f $(WORKER_DOCKERFILE) ./worker
 
 clean-artifacts: ## Discard captured checkpoints, keeping the placeholder
 	rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints

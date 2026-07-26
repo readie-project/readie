@@ -176,22 +176,34 @@ jobs:
       - name: Build the router image
         run: docker compose build router
 
-      # The worker, pipeline and rootfs images all embed the executor root
-      # filesystem, which is ~35 GB. A GitHub-hosted runner has about 14 GB of
-      # disk, so they cannot be built here at all -- not slowly, not at all.
-      #
-      # What is checked instead is that their Dockerfiles are still valid and
-      # that everything up to the rootfs COPY builds. That catches a broken
-      # Dockerfile, a bad build arg or a missing file; it does not catch a
-      # problem inside the 35 GB copy itself, which needs a machine with the
-      # disk for it.
-      - name: Check the worker image builds up to its rootfs layer
+      # The worker image is built here in full. It carries no rootfs -- that
+      # arrives through crfs-worker-base -- so with BASE_IMAGE pointed at a stub
+      # it fits a runner comfortably, and CI exercises the whole file rather than
+      # linting it. A stub base has no runsc, which is why worker/Dockerfile
+      # deliberately does not verify runsc at build time.
+      - name: Build the worker image
         run: |
-          docker build --target go-builder -f worker/Dockerfile . \
-            --tag crfs-worker-gobuild:ci
-          docker build --check -f worker/Dockerfile . || true
-          docker build --check -f rootfs/Dockerfile . || true
-          docker build --check -f pipeline/Dockerfile . || true
+          docker build -f worker/Dockerfile ./worker \
+            --build-arg BASE_IMAGE=debian:bookworm-slim \
+            --tag crfs-worker:ci
+          docker run --rm crfs-worker:ci sh -c 'test -x /app/go-server && grpcurl --version'
+
+      # pipeline/Dockerfile's targets both embed the ~35 GB executor root
+      # filesystem, and a GitHub-hosted runner has about 14 GB of disk, so they
+      # cannot be built here at all -- not slowly, not at all. What is checked
+      # instead is that the Go stage compiles and the Dockerfile is still valid:
+      # that catches a broken stage, a bad build arg or a missing file, but not a
+      # problem inside the 35 GB copy, which needs a machine with the disk for it.
+      #
+      # --check is scoped with --target because it resolves the base image of
+      # every stage it can reach. Both of these targets are self-contained, so
+      # these checks can fail the build rather than be tolerated with `|| true`.
+      - name: Check the pipeline images still build
+        run: |
+          docker build --target ocispec-builder -f pipeline/Dockerfile . \
+            --tag crfs-ocispec:ci
+          docker build --check --target pipeline -f pipeline/Dockerfile .
+          docker build --check --target worker-base -f pipeline/Dockerfile .
 
       # gVisor is amd64-only and works by intercepting syscalls, so capturing a
       # checkpoint or executing a function needs a real amd64 host regardless of

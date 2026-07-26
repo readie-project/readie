@@ -38,10 +38,11 @@ ENV/
 env.bak/
 venv.bak/
 
-# Pipeline output: an exported generation is checkpoint images plus a rootfs,
-# which is gigabytes, and is an artifact rather than a source.
-pipeline/out/
-/generations/
+# What `make capture` writes: checkpoint images are gigabytes, and are an
+# artifact rather than a source. The directory itself is committed (see its
+# .gitkeep) because the worker-base image build COPYs it.
+pipeline/out/*
+!pipeline/out/.gitkeep
 
 # Proto staging, created and removed by `make protos`.
 .build/

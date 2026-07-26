@@ -1,4 +1,8 @@
-# Binaries
+# Load-bearing: this directory is the build context for Dockerfile, so anything
+# listed here is invisible to the image build.
+
+# Binaries. A locally built go-server would otherwise be copied in and then
+# overwritten by the one the build produces.
 bin/
 go-server
 
