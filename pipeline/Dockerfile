@@ -32,7 +32,7 @@ ARG ROOTFS_PLATFORM=linux/amd64
 # carries its own metadata and entry point, so the sandbox runs
 # `python -m crfs_executor` and the rootfs has no idea where the source lived.
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS executor-wheel
+FROM python:3.14-slim AS executor-wheel
 RUN pip install --no-cache-dir build
 WORKDIR /src
 COPY executor/ ./
@@ -108,7 +108,7 @@ RUN apt-get update \
 # are worth pre-importing, and captures one gVisor checkpoint per set against
 # the rootfs above.
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS pipeline
+FROM python:3.14-slim AS pipeline
 
 COPY --from=runsc /usr/local/bin/runsc /usr/local/bin/runsc
 
