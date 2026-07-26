@@ -20,7 +20,7 @@
 # assembles — and so a deployment can pull a published base by digest.
 ARG BASE_IMAGE=crfs-worker-base:latest
 
-FROM golang:1.25-bookworm AS go-builder
+FROM golang:1.26-bookworm AS go-builder
 
 WORKDIR /app
 
