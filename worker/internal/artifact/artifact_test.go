@@ -121,7 +121,7 @@ func TestLoad_ActiveDefaultsToNewest(t *testing.T) {
 		generation("gen-b", newer).
 		mustLoad("")
 
-	assert.Equal(t, "gen-b", r.Active().ID)
+	assertActive(t, r, "gen-b")
 	assert.Equal(t, []string{"gen-b", "gen-a"}, []string{r.Generations()[0].ID, r.Generations()[1].ID},
 		"generations are ordered newest first")
 }
@@ -132,7 +132,7 @@ func TestLoad_ActiveCanBePinned(t *testing.T) {
 		generation("gen-b", newer).
 		mustLoad("gen-a")
 
-	assert.Equal(t, "gen-a", r.Active().ID)
+	assertActive(t, r, "gen-a")
 }
 
 func TestLoad_PinningAnAbsentGenerationFails(t *testing.T) {
@@ -183,7 +183,7 @@ func TestResolveCheckpoint_RootfsComesFromTheOwningGeneration(t *testing.T) {
 		generation("gen-b", newer)
 	r := b.mustLoad("")
 
-	require.Equal(t, "gen-b", r.Active().ID, "cold starts use the newest generation")
+	assertActive(t, r, "gen-b") // cold starts use the newest generation
 
 	_, gen, err := r.ResolveCheckpoint("checkpoint_1")
 	require.NoError(t, err)
@@ -260,19 +260,80 @@ func TestLoad_SkipsUnusableGenerations(t *testing.T) {
 
 // A worker with no rootfs cannot start a sandbox at all, so this must fail
 // loudly rather than at the first request.
-func TestLoad_FailsWhenNothingIsUsable(t *testing.T) {
+// A worker with no generation cannot start a sandbox, but it can still come up,
+// serve health and say why it is unusable. That is far easier to diagnose than
+// a container which exits before it logs anything, so the failure is moved from
+// startup onto the execution that actually needs a sandbox.
+
+func TestLoad_SucceedsWhenTheGenerationsDirectoryIsEmpty(t *testing.T) {
 	b := newBuilder(t)
 	require.NoError(t, os.MkdirAll(filepath.Join(b.root, artifact.GenerationsDirName), 0o755))
 
-	_, err := b.load("")
-	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrNoGenerations)
+	r, err := b.load("")
+
+	require.NoError(t, err)
+	assert.True(t, r.Empty())
 }
 
-func TestLoad_FailsWhenTheArtifactRootIsAbsent(t *testing.T) {
-	_, err := artifact.Load(artifact.Options{Root: filepath.Join(t.TempDir(), "nope"), Log: logging.Discard()})
+func TestLoad_SucceedsWhenTheArtifactRootIsAbsent(t *testing.T) {
+	r, err := artifact.Load(artifact.Options{
+		Root: filepath.Join(t.TempDir(), "nope"), Log: logging.Discard(),
+	})
+
+	require.NoError(t, err)
+	assert.True(t, r.Empty())
+}
+
+func TestLoad_SucceedsWhenEveryGenerationIsUnusable(t *testing.T) {
+	// One corrupt artifact should not take a worker offline, and neither should
+	// all of them.
+	b := newBuilder(t)
+	dir := filepath.Join(b.root, artifact.GenerationsDirName, "gen-broken")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, artifact.GenerationFileName), []byte("{"), 0o600))
+
+	r, err := b.load("")
+
+	require.NoError(t, err)
+	assert.True(t, r.Empty())
+}
+
+func TestActive_ReportsWhyNothingCanRun(t *testing.T) {
+	// An error rather than a zero Generation: a zero value has an empty Dir, so
+	// RootfsPath() would be the relative path "rootfs" and runsc would fail deep
+	// inside a create with an error naming neither the worker nor the artifact.
+	r, err := artifact.Load(artifact.Options{Root: t.TempDir(), Log: logging.Discard()})
+	require.NoError(t, err)
+
+	_, activeErr := r.Active()
+
+	require.Error(t, activeErr)
+	assert.ErrorIs(t, activeErr, artifact.ErrNoGenerations)
+	assert.Contains(t, activeErr.Error(), "install one",
+		"the message has to say what the operator should do about it")
+}
+
+func TestEmpty_IsFalseOnceAGenerationLoads(t *testing.T) {
+	b := newBuilder(t)
+	b.generation("gen-a", time.Now())
+
+	r, err := b.load("")
+
+	require.NoError(t, err)
+	assert.False(t, r.Empty())
+}
+
+// A requested generation that is missing stays fatal. That is a configuration
+// mistake rather than a missing artifact, and silently starting on a different
+// generation than the operator named would be worse than not starting.
+func TestLoad_StillFailsWhenTheRequestedGenerationIsAbsent(t *testing.T) {
+	b := newBuilder(t)
+	b.generation("gen-a", time.Now())
+
+	_, err := b.load("gen-typo")
+
 	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrNoGenerations)
+	assert.ErrorIs(t, err, artifact.ErrUnknownGeneration)
 }
 
 func TestLoadGeneration_RejectsAnIDThatContradictsItsDirectory(t *testing.T) {
@@ -308,9 +369,11 @@ func TestLoadGeneration_RejectsMissingRequiredFields(t *testing.T) {
 func TestLoad_GenerationWithoutCheckpointsStillServesColdStarts(t *testing.T) {
 	r := newBuilder(t).generation("gen-a", older).mustLoad("")
 
-	assert.Equal(t, "gen-a", r.Active().ID)
+	assertActive(t, r, "gen-a")
 	assert.Empty(t, r.CheckpointRefs())
-	assert.DirExists(t, r.Active().RootfsPath())
+	active, err := r.Active()
+	require.NoError(t, err)
+	assert.DirExists(t, active.RootfsPath())
 }
 
 // Metadata is written atomically so a concurrent reader never sees a partial
@@ -471,4 +534,12 @@ func TestValidate_RefusesAGenerationFromAFutureProtocol(t *testing.T) {
 	}
 
 	assert.ErrorIs(t, gen.Validate(), artifact.ErrUnsupportedProtocol)
+}
+
+// assertActive names the generation cold starts should use.
+func assertActive(t *testing.T, r *artifact.Registry, want string) {
+	t.Helper()
+	active, err := r.Active()
+	require.NoError(t, err)
+	assert.Equal(t, want, active.ID)
 }

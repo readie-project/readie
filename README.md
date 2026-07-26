@@ -97,19 +97,38 @@ it *loads* the generation, rather than failing opaquely minutes into a request.
 
 ## Running it
 
+Docker Compose is the whole runtime story. No other tooling is needed to stand
+the system up.
+
+```sh
+docker compose up -d --build   # router on 50051, worker on 50052
+docker compose logs -f router
+docker compose down --remove-orphans
+```
+
+The worker needs `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI` and
+`ARTIFACT_ROOT`; the compose file supplies them. Point a client at
+`localhost:50051` with `CRFS_ROUTER_URI` and it will reach the router.
+
+Only `router` and `worker` are services. `executor` runs *inside* a sandbox the
+worker creates, `pkg` is a library you install into your own program, and
+`pipeline` is an offline tool — none of them belong in Compose.
+
+## Developing it
+
+`make` covers what Compose cannot: linting, type-checking and running the tests
+across five components in two languages, without building an image per change.
+
 ```sh
 make install          # sync every Python virtualenv from its lockfile
 make lint type test   # ruff, mypy --strict, pytest, go test -race, golangci-lint
 make protos           # regenerate every stub (generated code is committed)
-make up               # docker compose up -d --build
 make help             # every target
 ```
 
-`make up` starts the router on `50051` and a worker on `50052`. The worker needs
-`SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI` and `ARTIFACT_ROOT`; the
-compose file supplies them.
-
-Per component, `make -C router test` or the passthrough `make router-test`.
+Per component, `make -C router test`, or the passthrough `make router-test`.
+Each component's Makefile takes the same verbs — `install`, `fmt`, `lint`,
+`type`, `test` — so you never have to remember which tool a directory uses.
 
 ## Building checkpoints
 
@@ -160,6 +179,10 @@ Not built. Each of these is a real gap, not an oversight:
   is write-only. Every request gets the same 512 MiB. The prediction model lives
   in [a separate repository](https://github.com/illinoisdata/python-execution-memory-prediction)
   and is not wired in; `ResourceEstimator` is the seam it would slot into.
+- **Picking up a generation without a restart.** A worker reads its artifact
+  registry once at startup. It now *starts* without one — registering as
+  unusable rather than exiting, so the stack comes up and says why — but
+  installing a generation still needs a restart to take effect.
 - **Persistence.** Router state is in memory. A restart loses sessions — their
   containers are then reclaimed by the workers' own TTLs — and workers
   re-register on their next status report.

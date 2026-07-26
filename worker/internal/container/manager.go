@@ -126,8 +126,9 @@ func SandboxExecutorDir() string { return config.ExecutorMountPath }
 // Artifacts resolves the rootfs and checkpoint images a sandbox runs against.
 // *artifact.Registry satisfies it.
 type Artifacts interface {
-	// Active is the generation cold starts use.
-	Active() artifact.Generation
+	// Active is the generation cold starts use. It errors when the worker
+	// holds no usable generation, which is a state it can now start in.
+	Active() (artifact.Generation, error)
 	// ResolveCheckpoint finds a checkpoint and the generation that owns it.
 	ResolveCheckpoint(ref string) (artifact.Checkpoint, artifact.Generation, error)
 }
@@ -272,6 +273,14 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 	log := m.log.With(logging.KeyContainerID, name, logging.KeyRequestID, req.Ref.RequestID)
 
 	generation, checkpoint, restoreErr := m.resolve(req.CheckpointID)
+	if errors.Is(restoreErr, artifact.ErrNoGenerations) {
+		// This one *is* fatal. An unresolvable checkpoint downgrades to a cold
+		// start, but a worker with no generation has no rootfs to start cold
+		// against — there is nothing to downgrade to. Failing here names the
+		// missing artifact; carrying on would hand runsc a rootfs path of
+		// "rootfs" and fail with an error naming neither.
+		return Handle{}, restoreErr
+	}
 	if restoreErr != nil {
 		// Not fatal: an unresolvable checkpoint downgrades to a cold start on
 		// the active generation, exactly as a failed restore does.
@@ -313,12 +322,21 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 // checkpoint, which is the cold-start case.
 func (m *Manager) resolve(checkpointRef string) (artifact.Generation, artifact.Checkpoint, error) {
 	if checkpointRef == "" {
-		return m.artifacts.Active(), artifact.Checkpoint{}, nil
+		active, err := m.artifacts.Active()
+		return active, artifact.Checkpoint{}, err
 	}
 
 	checkpoint, generation, err := m.artifacts.ResolveCheckpoint(checkpointRef)
 	if err != nil {
-		return m.artifacts.Active(), artifact.Checkpoint{}, err
+		// Fall back to a cold start on the active generation, which is what the
+		// caller does with an unresolvable checkpoint. If there is no active
+		// generation either, that error is the one worth reporting: it explains
+		// why nothing can run, where "unknown checkpoint" would not.
+		active, activeErr := m.artifacts.Active()
+		if activeErr != nil {
+			return artifact.Generation{}, artifact.Checkpoint{}, activeErr
+		}
+		return active, artifact.Checkpoint{}, err
 	}
 	return generation, checkpoint, nil
 }

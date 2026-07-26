@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
@@ -24,8 +25,10 @@ var ErrInvalidRequest = errors.New("invalid execution request")
 
 // toStatus maps an internal error onto a gRPC status.
 //
-// Status messages stay generic on purpose: the specifics belong in the log
-// line keyed by request_id, not on a wire the worker does not control.
+// Status messages stay generic on purpose: the specifics belong in the log line
+// keyed by request_id, not on a wire the worker does not control. The one
+// exception is a misconfigured worker, where the specifics are the whole point
+// -- nobody debugging it is reading this worker's logs yet.
 func toStatus(err error) error {
 	switch {
 	case err == nil:
@@ -49,6 +52,16 @@ func toStatus(err error) error {
 		errors.Is(err, executor.ErrDialTimeout),
 		errors.Is(err, registry.ErrRouterUnavailable):
 		return status.Error(codes.Unavailable, "worker temporarily unavailable")
+
+	case errors.Is(err, artifact.ErrNoGenerations):
+		// FailedPrecondition, not ResourceExhausted: this worker is not out of
+		// capacity, it has no root filesystem to run anything against. And the
+		// message names the cause rather than staying generic, because no
+		// amount of retrying or scaling fixes it -- an operator has to install
+		// a generation, and the router will otherwise keep reporting a
+		// capacity problem that does not exist.
+		return status.Error(codes.FailedPrecondition,
+			"worker has no usable generations; install one under its artifact root")
 
 	case errors.Is(err, container.ErrAcquireFailed):
 		return status.Error(codes.ResourceExhausted, "could not provision a container")

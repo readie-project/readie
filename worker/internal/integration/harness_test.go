@@ -96,6 +96,9 @@ type harnessOptions struct {
 	// executor on its socket. Disabling it reproduces an executor that never
 	// comes up.
 	startExecutors bool
+	// noArtifacts starts the worker over an empty artifact root, reproducing a
+	// node brought up before any generation was installed on it.
+	noArtifacts bool
 }
 
 func withExecutor(opts fakeexecutor.Options) option {
@@ -114,6 +117,10 @@ func withoutExecutors() option {
 	return func(o *harnessOptions) { o.startExecutors = false }
 }
 
+func withoutArtifacts() option {
+	return func(o *harnessOptions) { o.noArtifacts = true }
+}
+
 // newHarness assembles a running worker and returns clients for it.
 func newHarness(t *testing.T, opts ...option) *harness {
 	t.Helper()
@@ -129,6 +136,11 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	// 104-byte sun_path limit and makes bind fail with "invalid argument".
 	workerDir := fakeexecutor.ShortTempDir(t)
 	artifactRoot, artifacts := buildTestArtifacts(t)
+	if options.noArtifacts {
+		empty, loadErr := artifact.Load(artifact.Options{Root: t.TempDir(), Log: logging.Discard()})
+		require.NoError(t, loadErr)
+		artifacts = empty
+	}
 
 	cfg := testConfig(workerDir, artifactRoot)
 	if options.tuneCfg != nil {

@@ -35,7 +35,7 @@ type fixture struct {
 	runtime      *fakesandbox.Sandbox
 	registry     *fakeregistry.Recorder
 	layout       container.DirLayout
-	artifacts    *artifact.Registry
+	artifacts    container.Artifacts
 	workerDir    string
 	artifactRoot string
 }
@@ -75,12 +75,25 @@ func buildArtifacts(t *testing.T, checkpoints ...string) (string, *artifact.Regi
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	_, artifacts := buildArtifacts(t, "checkpoint_1")
+	return newFixtureWith(t, artifacts)
+}
+
+// newFixtureWith builds a manager over a caller-supplied artifact registry, so
+// a test can exercise a worker that holds no usable generation.
+func newFixtureWith(t *testing.T, artifacts container.Artifacts) *fixture {
+	t.Helper()
 
 	workerDir := t.TempDir()
 	fake := fakesandbox.New()
 	recorder := fakeregistry.NewRecorder()
 	layout := container.NewDirLayout(workerDir)
-	artifactRoot, artifacts := buildArtifacts(t, "checkpoint_1")
+	// Only a real registry has a root on disk; the empty-artifact tests do not
+	// need one.
+	artifactRoot := ""
+	if reg, ok := artifacts.(*artifact.Registry); ok {
+		artifactRoot = reg.Root()
+	}
 
 	manager, err := container.NewManager(container.ManagerDeps{
 		Runtime:   fake,
@@ -132,7 +145,7 @@ func TestAcquire_LocksTheExecutorContract(t *testing.T) {
 	assert.Equal(t, h.ID, spec.ID)
 	assert.Equal(t, []string{"python", "-u", entrypoint}, spec.Args)
 	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=" + pythonPath}, spec.Env)
-	assert.Equal(t, f.artifacts.Active().RootfsPath(), spec.RootfsPath)
+	assert.Equal(t, activeRootfs(t, f), spec.RootfsPath)
 	assert.Equal(t, f.layout.BundleDir(h.ID), spec.BundleDir)
 	assert.Equal(t, f.layout.LogPath(h.ID), spec.LogPath)
 
@@ -286,7 +299,7 @@ func TestAcquire_UnknownCheckpointFallsBackToAColdStart(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, state.Started)
 	assert.Empty(t, state.StartedFrom)
-	assert.Equal(t, f.artifacts.Active().RootfsPath(), f.runtime.CreateSpecs()[0].RootfsPath)
+	assert.Equal(t, activeRootfs(t, f), f.runtime.CreateSpecs()[0].RootfsPath)
 }
 
 // A failed restore must downgrade to a cold start and report the truth: the
@@ -657,4 +670,64 @@ func TestLoad_IsSafeUnderConcurrentAcquireAndRelease(t *testing.T) {
 	count, reserved := f.manager.Load()
 	assert.Zero(t, count)
 	assert.Zero(t, reserved)
+}
+
+// activeRootfs is the rootfs a cold start in this fixture runs against.
+func activeRootfs(t *testing.T, f *fixture) string {
+	t.Helper()
+	active, err := f.artifacts.Active()
+	require.NoError(t, err)
+	return active.RootfsPath()
+}
+
+// A worker can now start with no usable generation. It cannot create a
+// container, and the failure has to name the missing artifact rather than
+// surface from somewhere inside runsc.
+
+// emptyArtifacts is a registry over an artifact root that holds nothing.
+func emptyArtifacts(t *testing.T) container.Artifacts {
+	t.Helper()
+	registry, err := artifact.Load(artifact.Options{Root: t.TempDir(), Log: logging.Discard()})
+	require.NoError(t, err)
+	return registry
+}
+
+func TestAcquire_WithoutAGenerationFailsBeforeTouchingTheRuntime(t *testing.T) {
+	f := newFixtureWith(t, emptyArtifacts(t))
+
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrNoGenerations)
+	assert.ErrorIs(t, err, container.ErrAcquireFailed)
+	assert.Empty(t, f.runtime.CreateSpecs(),
+		"nothing may reach the runtime: there is no rootfs to hand it")
+}
+
+func TestAcquire_WithoutAGenerationLeavesNoContainerDirectoryBehind(t *testing.T) {
+	// Failing before the directory is created is what keeps a worker in this
+	// state from slowly filling its disk with one directory per rejected
+	// request.
+	f := newFixtureWith(t, emptyArtifacts(t))
+
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{})
+
+	require.Error(t, err)
+	count, reserved := f.manager.Load()
+	assert.Zero(t, count)
+	assert.Zero(t, reserved)
+}
+
+func TestAcquire_AnUnknownCheckpointWithoutAGenerationReportsTheMissingArtifact(t *testing.T) {
+	// "unknown checkpoint" would be true but useless here: the reason nothing
+	// can run is that there is no generation at all.
+	f := newFixtureWith(t, emptyArtifacts(t))
+
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		CheckpointID: "checkpoint_1",
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrNoGenerations)
+	assert.NotErrorIs(t, err, artifact.ErrUnknownCheckpoint)
 }

@@ -188,6 +188,33 @@ Note `container.Allocation.CPUAlloc` is a byte count despite its name: the
 router sends a memory budget in a field called `cpu_alloc`, and the name is kept
 for wire compatibility.
 
+## Starting without artifacts
+
+A worker whose `ARTIFACT_ROOT` holds no usable generation still starts. It
+listens, serves health as SERVING, and registers — but as `STATUS_ERROR` rather
+than `STATUS_READY`, so the router keeps it visible and probed while never
+placing work on it (`is_selectable` requires READY). Any execution that reaches
+it anyway is refused with `FailedPrecondition` and a message naming the missing
+artifact.
+
+Exiting at startup instead was worse in practice: a container that dies before
+it logs tells an operator nothing, and under a restart policy it crash-loops
+with no indication which of a dozen causes applies.
+
+Health stays SERVING deliberately. NOT_SERVING would have the router's prober
+evict the worker after three failed probes, hiding the very state the ERROR
+registration exists to expose.
+
+Two things are still fatal at startup, because neither is a missing artifact:
+an `ACTIVE_GENERATION` that names a generation which is not present (a
+configuration typo — starting on a different one than asked for would be
+worse), and an artifact directory that exists but cannot be read (a permissions
+or mount fault, where hiding it would strand a worker that should have seen its
+artifacts).
+
+Installing a generation requires a restart; the registry is read once at
+startup.
+
 ## Configuration
 
 Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`, `ARTIFACT_ROOT`.

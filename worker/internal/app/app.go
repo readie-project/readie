@@ -129,6 +129,12 @@ type App struct {
 	manager  *container.Manager
 	reporter registry.Reporter
 
+	// degraded is non-nil when this worker started without a usable
+	// generation. It cannot run anything, so it registers ERROR rather than
+	// READY: the router keeps it visible and probed, and never places work on
+	// it. is_selectable on the router side requires READY.
+	degraded error
+
 	// shutdown is unwound in reverse, so each step runs only if the step that
 	// established it succeeded.
 	shutdown []closer
@@ -171,15 +177,23 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 
 	layout := container.NewDirLayout(cfg.WorkerDir)
 
-	// 1. Artifacts. Without a root filesystem no sandbox can start at all, so
-	// this fails loudly here rather than at the first request.
+	// 1. Artifacts. A worker with no generation still starts: it serves health,
+	// registers itself, and reports that it cannot run anything — which is far
+	// easier to diagnose than a container that exits before it logs. Executions
+	// then fail fast, naming the missing artifact.
 	artifacts, err := deps.LoadArtifacts(cfg, log)
 	if err != nil {
 		return nil, fmt.Errorf("load sandbox artifacts: %w", err)
 	}
-	log.Info("sandbox artifacts loaded",
-		"active_generation", artifacts.Active().ID,
-		"rootfs", artifacts.Active().RootfsPath())
+	if active, activeErr := artifacts.Active(); activeErr != nil {
+		app.degraded = activeErr
+		log.Error("starting without a usable generation; no execution can succeed",
+			"artifact_root", cfg.ArtifactRoot, logging.KeyError, activeErr)
+	} else {
+		log.Info("sandbox artifacts loaded",
+			"active_generation", active.ID,
+			"rootfs", active.RootfsPath())
+	}
 
 	// 2. Sandbox runtime, probed before anything depends on it.
 	runtimePort, err := deps.NewRuntime(ctx, cfg, layout, log)
@@ -287,9 +301,21 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.Join(err, a.Shutdown(context.WithoutCancel(ctx)))
 	}
 
-	// Only now is the worker genuinely able to serve.
+	// Only now is the worker genuinely able to serve. Health tracks the
+	// process, so it goes SERVING even when degraded: NOT_SERVING would have
+	// the router's prober evict this worker after three strikes, hiding the
+	// very state the ERROR registration exists to make visible.
 	a.server.SetServing(true)
-	a.log.Info("worker ready", "addr", a.cfg.WorkerURI, "router", a.cfg.RouterURI)
+	if a.degraded != nil {
+		// Not "ready". It is listening and registered, and it cannot run
+		// anything — saying otherwise two lines after reporting that would be
+		// the kind of log that costs someone an afternoon.
+		a.log.Warn("worker serving but unusable; every execution will be refused",
+			"addr", a.cfg.WorkerURI, "router", a.cfg.RouterURI,
+			logging.KeyError, a.degraded)
+	} else {
+		a.log.Info("worker ready", "addr", a.cfg.WorkerURI, "router", a.cfg.RouterURI)
+	}
 
 	// Started after registration, so the router has a record to attach the load
 	// to. It stops with ctx and is never waited on: a report in flight during
@@ -353,6 +379,19 @@ func (a *App) utilizationLoop(ctx context.Context) {
 	}
 }
 
+// registrationStatus is what this worker tells the router about itself.
+//
+// ERROR rather than READY when it holds no usable generation. Registering READY
+// would have the router place work here that can only fail; not registering at
+// all would make the worker invisible, so an operator would see "no workers"
+// with no indication that one is running and why it is useless.
+func (a *App) registrationStatus() pb.Status {
+	if a.degraded != nil {
+		return pb.Status_STATUS_ERROR
+	}
+	return pb.Status_STATUS_READY
+}
+
 // register announces the worker to the router, retrying a transient outage.
 func (a *App) register(ctx context.Context) error {
 	var lastErr error
@@ -366,7 +405,7 @@ func (a *App) register(ctx context.Context) error {
 			}
 		}
 
-		lastErr = a.reporter.WorkerStatus(ctx, pb.Status_STATUS_READY)
+		lastErr = a.reporter.WorkerStatus(ctx, a.registrationStatus())
 		if lastErr == nil {
 			a.log.Info("registered with the router", "attempt", attempt+1)
 			return nil

@@ -44,8 +44,18 @@ type Options struct {
 //
 // A generation that fails to load is logged and skipped rather than failing
 // startup: one corrupt artifact should not take a worker offline when others
-// are serviceable. Load fails only when nothing usable remains, because a
-// worker with no rootfs cannot start a sandbox at all.
+// are serviceable.
+//
+// Finding nothing at all is not an error either. A worker with no rootfs cannot
+// start a sandbox, but it can still come up, serve health, register itself and
+// say why it is unusable — which is far easier to diagnose than a container
+// that exits before it logs anything. Active reports ErrNoGenerations, so the
+// failure lands on the execution that needs a sandbox rather than on startup.
+//
+// An explicitly requested ActiveGeneration that is not present is still fatal.
+// That is a configuration mistake, not a missing artifact, and starting with a
+// different generation than the operator asked for would be worse than not
+// starting.
 func Load(opts Options) (*Registry, error) {
 	log := opts.Log
 	if log == nil {
@@ -53,18 +63,24 @@ func Load(opts Options) (*Registry, error) {
 	}
 
 	generationsDir := filepath.Join(opts.Root, GenerationsDirName)
-	entries, err := os.ReadDir(generationsDir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%w: %s does not exist", ErrNoGenerations, generationsDir)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("reading artifact root %s: %w", generationsDir, err)
-	}
 
 	registry := &Registry{
 		root:        opts.Root,
 		generations: make(map[string]Generation),
 		index:       make(map[string]string),
+	}
+
+	entries, err := os.ReadDir(generationsDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		log.Warn("no artifact directory; this worker cannot start sandboxes until a generation is installed",
+			"path", generationsDir)
+		return registry, nil
+	}
+	if err != nil {
+		// A directory that exists but cannot be read is a real fault —
+		// permissions, a bad mount — and hiding it would strand the worker with
+		// artifacts it should have been able to see.
+		return nil, fmt.Errorf("reading artifact root %s: %w", generationsDir, err)
 	}
 
 	for _, entry := range entries {
@@ -88,7 +104,9 @@ func Load(opts Options) (*Registry, error) {
 	}
 
 	if len(registry.generations) == 0 {
-		return nil, fmt.Errorf("%w under %s", ErrNoGenerations, generationsDir)
+		log.Warn("no usable generation found; this worker cannot start sandboxes",
+			"path", generationsDir, "entries", len(entries))
+		return registry, nil
 	}
 
 	registry.buildOrder()
@@ -152,7 +170,26 @@ func (r *Registry) buildIndex(log *slog.Logger) {
 func (r *Registry) Root() string { return r.root }
 
 // Active returns the generation cold starts use.
-func (r *Registry) Active() Generation { return r.generations[r.active] }
+//
+// It returns ErrNoGenerations when the artifact root held nothing usable. The
+// error rather than a zero Generation is deliberate: a zero value has an empty
+// Dir, so RootfsPath() would be the relative path "rootfs" and runsc would fail
+// somewhere deep inside a create with an error naming neither the worker nor
+// the missing artifact.
+func (r *Registry) Active() (Generation, error) {
+	if r.active == "" {
+		return Generation{}, fmt.Errorf(
+			"%w under %s; install one and restart the worker",
+			ErrNoGenerations, filepath.Join(r.root, GenerationsDirName))
+	}
+	return r.generations[r.active], nil
+}
+
+// Empty reports whether this registry holds no usable generation.
+//
+// The worker uses it to register itself as unusable rather than READY, so the
+// router keeps it visible but never places work on it.
+func (r *Registry) Empty() bool { return len(r.generations) == 0 }
 
 // Generations returns every loaded generation, newest first.
 func (r *Registry) Generations() []Generation {

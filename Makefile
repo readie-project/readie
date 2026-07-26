@@ -17,7 +17,7 @@ CLIENT_PROTOS := proxy.proto
 STAGE := .build/proto-stage
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
-        router-% pkg-% executor-% pipeline-% worker-% lint type test build up down help
+        router-% pkg-% executor-% pipeline-% worker-% lint type test help
 
 all: protos lint type test ## Generate, check and test everything
 
@@ -126,14 +126,10 @@ test: ## Test every component
 	@$(MAKE) --no-print-directory -C pipeline test
 	@$(MAKE) --no-print-directory -C worker test
 
-build: ## Build every container image
-	docker compose build
-
-up: ## Bring the stack up
-	docker compose up -d --build
-
-down: ## Tear the stack down
-	docker compose down --remove-orphans
+# No up/down/build targets. They were one-line aliases for the equivalent
+# docker compose commands, which added a layer of indirection and made `make`
+# look like a prerequisite for running the system. It is not: compose runs the
+# stack, and this file covers the development loop compose cannot.
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) \

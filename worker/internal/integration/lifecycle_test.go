@@ -8,8 +8,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection/grpc_reflection_v1"
+	"google.golang.org/grpc/status"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
@@ -200,4 +202,68 @@ func TestShutdown_LeavesNoContainerDirectoriesBehind(t *testing.T) {
 	entries, err := os.ReadDir(h.WorkerDir)
 	require.NoError(t, err)
 	assert.Empty(t, entries, "every per-container directory must be reclaimed")
+}
+
+// A node brought up before any generation is installed on it — the ordinary
+// case for a fresh worker, and what `docker compose up` does with no artifact
+// volume mounted.
+//
+// It starts. A worker that exits before it logs is far harder to diagnose than
+// one that is running and says why it is useless, and a crash-looping container
+// tells an operator nothing about which of a dozen causes applies.
+
+func TestStartup_SucceedsWithNoUsableGeneration(t *testing.T) {
+	h := newHarness(t, withoutArtifacts())
+
+	require.NotNil(t, h.App)
+	assert.NotNil(t, h.App.Addr(), "the gRPC server is listening")
+}
+
+// ERROR rather than READY: the router's is_selectable requires READY, so this
+// keeps the worker visible and probed while never placing work on it.
+// Registering READY would route executions here that can only fail; not
+// registering at all would show an operator "no workers" with no hint that one
+// is running.
+func TestStartup_WithoutAGenerationRegistersAsErrorNotReady(t *testing.T) {
+	h := newHarness(t, withoutArtifacts())
+
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		return len(s.WorkerStatuses()) > 0
+	}, 5*time.Second))
+
+	registered := h.Router.WorkerStatuses()[0]
+	assert.Equal(t, pb.Status_STATUS_ERROR, registered.GetStatus())
+	assert.Equal(t, "worker-1", registered.GetWorkerId(),
+		"it still identifies itself, so an operator can see which node is unusable")
+	assert.Equal(t, "worker:50052", registered.GetWorkerUri())
+}
+
+// Health tracks the process, not the artifacts. NOT_SERVING would have the
+// router's prober evict the worker after three strikes, hiding the very state
+// this change exists to make visible.
+func TestStartup_WithoutAGenerationStillServesHealth(t *testing.T) {
+	h := newHarness(t, withoutArtifacts())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := h.Health.Check(ctx, &healthpb.HealthCheckRequest{})
+
+	require.NoError(t, err)
+	assert.Equal(t, healthpb.HealthCheckResponse_SERVING, res.GetStatus())
+}
+
+func TestExecution_WithoutAGenerationFailsNamingTheMissingArtifact(t *testing.T) {
+	h := newHarness(t, withoutArtifacts())
+
+	_, err := execute(t, h, "", []byte("body"))
+
+	require.Error(t, err)
+	// FailedPrecondition, not ResourceExhausted: the worker is not out of
+	// capacity, and reporting that would send an operator looking at memory.
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.Contains(t, err.Error(), "no usable generations",
+		"the failure has to name the artifact, not surface from inside runsc")
+	assert.Contains(t, err.Error(), "install one",
+		"and say what to do about it")
 }
