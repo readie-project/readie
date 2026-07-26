@@ -65,7 +65,7 @@ RUN python -c "import crfs_executor; print('crfs-executor', crfs_executor.__vers
 # Only ocispec is built. The worker's server is built by worker/Dockerfile, which
 # owns its own image.
 # ---------------------------------------------------------------------------
-FROM golang:1.25-bookworm AS ocispec-builder
+FROM golang:1.26-bookworm AS ocispec-builder
 WORKDIR /src
 
 # Dependencies first, so the module cache layer survives source edits.
