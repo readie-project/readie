@@ -204,15 +204,14 @@ func TestShutdown_LeavesNoContainerDirectoriesBehind(t *testing.T) {
 	assert.Empty(t, entries, "every per-container directory must be reclaimed")
 }
 
-// A node brought up before any generation is installed on it — the ordinary
-// case for a fresh worker, and what `docker compose up` does with no artifact
-// volume mounted.
+// A worker image built with no artifacts baked in — what `docker compose build`
+// produces before any checkpoint has been captured.
 //
 // It starts. A worker that exits before it logs is far harder to diagnose than
 // one that is running and says why it is useless, and a crash-looping container
 // tells an operator nothing about which of a dozen causes applies.
 
-func TestStartup_SucceedsWithNoUsableGeneration(t *testing.T) {
+func TestStartup_SucceedsWithNoRootfs(t *testing.T) {
 	h := newHarness(t, withoutArtifacts())
 
 	require.NotNil(t, h.App)
@@ -224,7 +223,7 @@ func TestStartup_SucceedsWithNoUsableGeneration(t *testing.T) {
 // Registering READY would route executions here that can only fail; not
 // registering at all would show an operator "no workers" with no hint that one
 // is running.
-func TestStartup_WithoutAGenerationRegistersAsErrorNotReady(t *testing.T) {
+func TestStartup_WithoutARootfsRegistersAsErrorNotReady(t *testing.T) {
 	h := newHarness(t, withoutArtifacts())
 
 	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
@@ -241,7 +240,7 @@ func TestStartup_WithoutAGenerationRegistersAsErrorNotReady(t *testing.T) {
 // Health tracks the process, not the artifacts. NOT_SERVING would have the
 // router's prober evict the worker after three strikes, hiding the very state
 // this change exists to make visible.
-func TestStartup_WithoutAGenerationStillServesHealth(t *testing.T) {
+func TestStartup_WithoutARootfsStillServesHealth(t *testing.T) {
 	h := newHarness(t, withoutArtifacts())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -253,7 +252,7 @@ func TestStartup_WithoutAGenerationStillServesHealth(t *testing.T) {
 	assert.Equal(t, healthpb.HealthCheckResponse_SERVING, res.GetStatus())
 }
 
-func TestExecution_WithoutAGenerationFailsNamingTheMissingArtifact(t *testing.T) {
+func TestExecution_WithoutARootfsFailsNamingTheMissingArtifact(t *testing.T) {
 	h := newHarness(t, withoutArtifacts())
 
 	_, err := execute(t, h, "", []byte("body"))
@@ -262,8 +261,8 @@ func TestExecution_WithoutAGenerationFailsNamingTheMissingArtifact(t *testing.T)
 	// FailedPrecondition, not ResourceExhausted: the worker is not out of
 	// capacity, and reporting that would send an operator looking at memory.
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
-	assert.Contains(t, err.Error(), "no usable generations",
+	assert.Contains(t, err.Error(), "no root filesystem",
 		"the failure has to name the artifact, not surface from inside runsc")
-	assert.Contains(t, err.Error(), "install one",
+	assert.Contains(t, err.Error(), "make generation",
 		"and say what to do about it")
 }

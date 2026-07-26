@@ -59,8 +59,8 @@ safe to interrupt. The previous implementation prepended `import` lines to the
 executor *inside the shared rootfs* and restored the file in a `finally`; a
 build killed in between left that tree mutated for the next run. It also works
 only because `runsc.Fingerprint` excludes `process.env` deliberately, so every
-checkpoint in a generation shares one fingerprint and all of them restore into
-the worker's sandbox — pinned by a test on the Go side.
+checkpoint shares one fingerprint and all of them restore into the worker's
+sandbox — pinned by a test on the Go side.
 
 ## Layout
 
@@ -69,7 +69,7 @@ the worker's sandbox — pinned by a test on the Go side.
 | `$BASE_DIR` (`/app/executorfs`) | the OCI bundle: `config.json` + `rootfs/` |
 | `$EXECUTOR_DIR` (`/app/executor`) | host-side outputs; mount this out |
 | `$EXECUTOR_DIR/checkpoints/<id>/` | one checkpoint image plus its `meta.json` |
-| `$EXECUTOR_DIR/generation.json` | the manifest binding those checkpoints to a rootfs |
+| `$EXECUTOR_DIR/manifest.json` | what those checkpoints can be restored into |
 | `data/` | the committed corpus and package metadata |
 
 `$EXECUTOR_DIR` here is a *host* directory and is deliberately distinct from the
@@ -78,58 +78,56 @@ socket.
 
 ## Build and run
 
-The rootfs is defined once, in `../rootfs/Dockerfile`, and consumed by both this
-pipeline and the worker. Build it first:
+From the repository root, one command captures checkpoints and bakes them into a
+worker image:
 
 ```sh
-cd ..
-docker build -t crfs-executor-rootfs:latest -f rootfs/Dockerfile .
-docker build -t crfs-pipeline -f pipeline/Dockerfile .
+make generation                     # tags crfs-worker:<timestamp> and :latest
+make generation TAG=my-experiment
 ```
 
-gVisor needs to create namespaces and install seccomp filters, which the default
-profiles block:
+It runs in two phases because `docker build` cannot capture a checkpoint: runsc
+needs privileged namespace access, which a stock BuildKit builder will not grant.
+Phase one runs this pipeline as a privileged container; phase two builds the
+worker image around what it wrote.
+
+`make capture` and `make worker-image` are the halves, if you want them
+separately. `make clean-artifacts` discards captured checkpoints.
+
+`make worker-base` rebuilds the base image carrying the root filesystem. It is
+only needed when the rootfs or the pinned runsc release changes; `worker-image`
+builds it automatically if it is missing.
+
+To iterate on planning alone — no gVisor, no network, no container:
 
 ```sh
-mkdir -p out
-docker run --rm \
-  --privileged \
-  --security-opt apparmor=unconfined \
-  --security-opt seccomp=unconfined \
-  -e GENERATION_ID=gen-$(date -u +%Y%m%d-%H%M%S) \
-  -e ROOTFS_ID=$(docker inspect --format '{{index .RepoDigests 0}}' crfs-executor-rootfs:latest) \
-  -v "$PWD/out:/app/executor" \
-  crfs-pipeline
+make -C pipeline test
+docker run --rm crfs-pipeline plan --no-spec --max-checkpoints 3
 ```
 
-`ROOTFS_ID` is the identity the worker checks a checkpoint against, so it should
-be the image digest rather than a tag.
+## What it writes
 
-## Install a generation on a worker
-
-```sh
-GEN=<generation id from the run output>
-DEST=/var/lib/crfs/generations/$GEN
-
-mkdir -p "$DEST/rootfs"
-cp out/generation.json "$DEST/"
-cp -r out/checkpoints  "$DEST/"
-
-docker create --name rootfs-export crfs-executor-rootfs:latest
-docker export rootfs-export | tar -x -C "$DEST/rootfs"
-docker rm rootfs-export
+```
+worker/artifacts/
+├── manifest.json           runsc_version, spec_fingerprint, executor_argv,
+│                           executor_protocol, python_path, overlay, network
+└── checkpoints/<id>/       runsc image + meta.json
 ```
 
-The worker scans `$ARTIFACT_ROOT/generations/` at startup and can hold several at
-once, so installing a new one alongside the old lets warm sandboxes finish on the
-filesystem they started with.
+Exactly the shape `worker/internal/artifact` reads, so nothing is reshaped
+between capturing a checkpoint and shipping it. Neither file carries a
+`rootfs_id`: there is one rootfs, baked in beside these checkpoints, so there is
+nothing to identify — the pairing is correct by construction rather than by a
+field nobody compared.
+
+Identity is the worker image tag. The manifest has no id of its own, which would
+be a second name for the same build, free to disagree.
 
 ## Configuration
 
 | | |
 |---|---|
 | `BASE_DIR`, `EXECUTOR_DIR` | the bundle and the output directory |
-| `GENERATION_ID`, `ROOTFS_ID` | generation identity; `ROOTFS_ID` should be an image digest |
 | `ROOTFS_PYTHONPATH` | must correspond to the rootfs image |
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's |
 | `CRFS_PLANNER` | `greedy` or `fixed` |

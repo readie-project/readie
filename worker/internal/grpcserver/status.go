@@ -53,15 +53,15 @@ func toStatus(err error) error {
 		errors.Is(err, registry.ErrRouterUnavailable):
 		return status.Error(codes.Unavailable, "worker temporarily unavailable")
 
-	case errors.Is(err, artifact.ErrNoGenerations):
+	case errors.Is(err, artifact.ErrNoArtifacts), errors.Is(err, artifact.ErrIncompleteArtifacts):
 		// FailedPrecondition, not ResourceExhausted: this worker is not out of
 		// capacity, it has no root filesystem to run anything against. And the
 		// message names the cause rather than staying generic, because no
-		// amount of retrying or scaling fixes it -- an operator has to install
-		// a generation, and the router will otherwise keep reporting a
+		// amount of retrying or scaling fixes it -- the worker image was built
+		// without artifacts, and the router would otherwise keep reporting a
 		// capacity problem that does not exist.
 		return status.Error(codes.FailedPrecondition,
-			"worker has no usable generations; install one under its artifact root")
+			"worker has no root filesystem; rebuild its image with `make generation`")
 
 	case errors.Is(err, container.ErrAcquireFailed):
 		return status.Error(codes.ResourceExhausted, "could not provision a container")

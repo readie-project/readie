@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -25,7 +24,7 @@ from crfs_pipeline.capture.build import CaptureError, capture
 from crfs_pipeline.capture.spec import SpecError, build_config, runsc_version
 from crfs_pipeline.config import ConfigError, CorpusSettings, Settings
 from crfs_pipeline.corpus.models import Corpus, CorpusError
-from crfs_pipeline.manifest import CheckpointMeta, Generation, write_plan
+from crfs_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from crfs_pipeline.metadata.analyze import analyze
 from crfs_pipeline.metadata.models import Metadata, MetadataError
 from crfs_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
@@ -139,9 +138,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
 
-    generation_id = settings.generation_id or time.strftime("gen-%Y%m%d-%H%M%S", time.gmtime())
     print(f"[*] building {len(plans)} checkpoints with {version}")
-    print(f"[*] generation {generation_id}")
 
     for index, plan in enumerate(plans, start=1):
         checkpoint_id = f"checkpoint_{index}"
@@ -157,17 +154,13 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         destination = capture(settings, checkpoint_id, plan, write_spec=write_spec)
         CheckpointMeta(
             checkpoint_id=checkpoint_id,
-            generation_id=generation_id,
             runsc_version=version,
             spec_fingerprint=fingerprint,
-            rootfs_id=settings.rootfs_id,
             imports=plan.imports,
         ).write(destination)
         print(f"    captured at {destination}")
 
-    Generation(
-        id=generation_id,
-        rootfs_id=settings.rootfs_id,
+    Manifest(
         runsc_version=version,
         spec_fingerprint=fingerprint,
         python_path=settings.rootfs_pythonpath,
@@ -175,9 +168,8 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         network=settings.sandbox_network,
     ).write(settings.output_dir)
 
-    print(f"[*] built generation {generation_id}")
-    print(f"[*] export {settings.output_dir}/generation.json, {settings.checkpoints_dir}/")
-    print(f"[*] and the rootfs as <ARTIFACT_ROOT>/generations/{generation_id}/ on the worker")
+    print(f"[*] captured {len(plans)} checkpoints into {settings.output_dir}")
+    print("[*] `make generation` bakes these into a worker image alongside the rootfs")
     return 0
 
 

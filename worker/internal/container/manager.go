@@ -126,11 +126,13 @@ func SandboxExecutorDir() string { return config.ExecutorMountPath }
 // Artifacts resolves the rootfs and checkpoint images a sandbox runs against.
 // *artifact.Registry satisfies it.
 type Artifacts interface {
-	// Active is the generation cold starts use. It errors when the worker
-	// holds no usable generation, which is a state it can now start in.
-	Active() (artifact.Generation, error)
-	// ResolveCheckpoint finds a checkpoint and the generation that owns it.
-	ResolveCheckpoint(ref string) (artifact.Checkpoint, artifact.Generation, error)
+	// Rootfs is the one root filesystem every sandbox runs against. It errors
+	// when none is installed, which is a state the worker can now start in.
+	Rootfs() (string, error)
+	// Manifest describes what the installed checkpoints restore into.
+	Manifest() artifact.Manifest
+	// ResolveCheckpoint finds a checkpoint by ID.
+	ResolveCheckpoint(id string) (artifact.Checkpoint, error)
 }
 
 // ManagerDeps collects a Manager's collaborators.
@@ -265,25 +267,25 @@ func (m *Manager) Acquire(ctx context.Context, req AcquireRequest) (Handle, erro
 //
 // The generation is resolved first, because it decides which root filesystem
 // the sandbox runs against. A checkpoint can only be restored into the
-// filesystem it was captured from, so the rootfs is looked up *through* the
-// checkpoint rather than assumed; a cold start falls back to the active
-// generation.
+// filesystem it was captured from — which is guaranteed here by construction,
+// because the rootfs and the checkpoints are baked into the worker image
+// together and there is only ever one of the former.
 func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error) {
 	name := m.names.NewName()
 	log := m.log.With(logging.KeyContainerID, name, logging.KeyRequestID, req.Ref.RequestID)
 
-	generation, checkpoint, restoreErr := m.resolve(req.CheckpointID)
-	if errors.Is(restoreErr, artifact.ErrNoGenerations) {
+	rootfs, checkpoint, restoreErr := m.resolve(req.CheckpointID)
+	if errors.Is(restoreErr, artifact.ErrNoArtifacts) {
 		// This one *is* fatal. An unresolvable checkpoint downgrades to a cold
-		// start, but a worker with no generation has no rootfs to start cold
-		// against — there is nothing to downgrade to. Failing here names the
-		// missing artifact; carrying on would hand runsc a rootfs path of
-		// "rootfs" and fail with an error naming neither.
+		// start, but a worker with no rootfs has nothing to start cold against
+		// — there is nothing to downgrade to. Failing here names the missing
+		// artifact; carrying on would hand runsc an empty rootfs path and fail
+		// with an error naming neither.
 		return Handle{}, restoreErr
 	}
 	if restoreErr != nil {
 		// Not fatal: an unresolvable checkpoint downgrades to a cold start on
-		// the active generation, exactly as a failed restore does.
+		// the same rootfs, exactly as a failed restore does.
 		log.Warn("cannot resolve the requested checkpoint; starting cold",
 			logging.KeyCheckpoint, req.CheckpointID, logging.KeyError, restoreErr)
 	}
@@ -296,7 +298,7 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 		return Handle{}, fmt.Errorf("prepare container directory %s: %w", dir, err)
 	}
 
-	id, err := m.runtime.Create(ctx, m.createSpec(name, req.Alloc, generation))
+	id, err := m.runtime.Create(ctx, m.createSpec(name, req.Alloc, rootfs))
 	if err != nil {
 		// Nothing was created, so the directory is garbage; leaving it behind
 		// would slowly fill the worker's disk.
@@ -316,29 +318,30 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 	return Handle{ID: name, CheckpointID: checkpointID, Alloc: req.Alloc, Created: true}, nil
 }
 
-// resolve maps a checkpoint reference to the generation that owns it.
+// resolve maps a checkpoint ID to the image to restore, and the rootfs to run
+// it against.
 //
-// An empty or unresolvable reference yields the active generation and no
-// checkpoint, which is the cold-start case.
-func (m *Manager) resolve(checkpointRef string) (artifact.Generation, artifact.Checkpoint, error) {
-	if checkpointRef == "" {
-		active, err := m.artifacts.Active()
-		return active, artifact.Checkpoint{}, err
+// An empty or unresolvable ID yields no checkpoint, which is the cold-start
+// case. There is one rootfs either way, so it is looked up unconditionally: a
+// worker without it cannot run anything at all, and that is the error worth
+// returning even when the caller also named a checkpoint that does not exist.
+func (m *Manager) resolve(checkpointID string) (string, artifact.Checkpoint, error) {
+	rootfs, err := m.artifacts.Rootfs()
+	if err != nil {
+		return "", artifact.Checkpoint{}, err
 	}
 
-	checkpoint, generation, err := m.artifacts.ResolveCheckpoint(checkpointRef)
-	if err != nil {
-		// Fall back to a cold start on the active generation, which is what the
-		// caller does with an unresolvable checkpoint. If there is no active
-		// generation either, that error is the one worth reporting: it explains
-		// why nothing can run, where "unknown checkpoint" would not.
-		active, activeErr := m.artifacts.Active()
-		if activeErr != nil {
-			return artifact.Generation{}, artifact.Checkpoint{}, activeErr
-		}
-		return active, artifact.Checkpoint{}, err
+	if checkpointID == "" {
+		return rootfs, artifact.Checkpoint{}, nil
 	}
-	return generation, checkpoint, nil
+
+	checkpoint, err := m.artifacts.ResolveCheckpoint(checkpointID)
+	if err != nil {
+		// Not fatal: an unresolvable checkpoint downgrades to a cold start on
+		// the same rootfs, exactly as a failed restore does.
+		return rootfs, artifact.Checkpoint{}, err
+	}
+	return rootfs, checkpoint, nil
 }
 
 // start starts a container, downgrading to a cold start if a checkpoint
@@ -352,7 +355,7 @@ func (m *Manager) start(ctx context.Context, id string, checkpoint artifact.Chec
 		})
 		if err == nil {
 			log.Info("container restored from checkpoint",
-				logging.KeyCheckpoint, checkpoint.ID, "generation", checkpoint.GenerationID)
+				logging.KeyCheckpoint, checkpoint.ID)
 			return checkpoint.ID, nil
 		}
 		log.Warn("checkpoint restore failed, falling back to a cold start",
@@ -544,22 +547,24 @@ func (m *Manager) CleanupOrphans(ctx context.Context) error {
 // was captured from, so changing it invalidates existing checkpoints; see the
 // runsc adapter's Fingerprint.
 //
-// Note there is no site-packages mount: the generation's root filesystem
-// already carries the Python environment, so PYTHONPATH points inside the
-// rootfs and the sandbox needs exactly one bind.
-func (m *Manager) createSpec(name string, alloc Allocation, generation artifact.Generation) sandbox.CreateSpec {
+// Note there is no site-packages mount: the root filesystem already carries the
+// Python environment, so PYTHONPATH points inside the rootfs and the sandbox
+// needs exactly one bind.
+func (m *Manager) createSpec(name string, alloc Allocation, rootfs string) sandbox.CreateSpec {
+	manifest := m.artifacts.Manifest()
+
 	env := []string{"EXECUTOR_DIR=" + config.ExecutorMountPath}
-	if generation.PythonPath != "" {
-		env = append(env, "PYTHONPATH="+generation.PythonPath)
+	if manifest.PythonPath != "" {
+		env = append(env, "PYTHONPATH="+manifest.PythonPath)
 	}
 
 	return sandbox.CreateSpec{
 		ID:           name,
 		BundleDir:    m.layout.BundleDir(name),
 		LogPath:      m.layout.LogPath(name),
-		RootfsPath:   generation.RootfsPath(),
+		RootfsPath:   rootfs,
 		RootReadonly: m.spec.RootReadonly,
-		Args:         generation.Argv(),
+		Args:         manifest.Argv(),
 		Env:          env,
 		Cwd:          "/",
 		Mounts: []sandbox.Mount{{

@@ -58,6 +58,9 @@ type harness struct {
 	Config  config.Config
 
 	WorkerDir string
+	// ArtifactRoot is where this harness laid out its rootfs and checkpoints.
+	// The worker binary compiles the path in; a test injects one.
+	ArtifactRoot string
 
 	// executors is guarded because OnCreate fires from whichever goroutine is
 	// provisioning, and concurrent requests provision at the same time.
@@ -142,7 +145,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		artifacts = empty
 	}
 
-	cfg := testConfig(workerDir, artifactRoot)
+	cfg := testConfig(workerDir)
 	if options.tuneCfg != nil {
 		options.tuneCfg(&cfg)
 	}
@@ -156,13 +159,14 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	layout := container.NewDirLayout(workerDir)
 
 	h := &harness{
-		t:         t,
-		Runtime:   fakeRuntime,
-		Router:    router,
-		Layout:    layout,
-		Config:    cfg,
-		WorkerDir: workerDir,
-		runErr:    make(chan error, 1),
+		t:            t,
+		Runtime:      fakeRuntime,
+		Router:       router,
+		Layout:       layout,
+		Config:       cfg,
+		WorkerDir:    workerDir,
+		ArtifactRoot: artifactRoot,
+		runErr:       make(chan error, 1),
 	}
 
 	// This is the join between the two fakes: a "created" container gets a
@@ -213,14 +217,13 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	return h
 }
 
-func testConfig(workerDir, artifactRoot string) config.Config {
+func testConfig(workerDir string) config.Config {
 	return config.Config{
 		WorkerID:            "worker-1",
 		WorkerURI:           "worker:50052",
 		ListenAddr:          ":50052",
 		RouterURI:           "router:50051",
 		WorkerDir:           workerDir,
-		ArtifactRoot:        artifactRoot,
 		RunscBinary:         "/usr/local/bin/runsc",
 		RunscRoot:           filepath.Join(workerDir, "runsc-state"),
 		SandboxNetwork:      "none",
@@ -335,8 +338,8 @@ func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakesandbox.Sandbo
 	t.Helper()
 
 	workerDir := fakeexecutor.ShortTempDir(t)
-	artifactRoot, artifacts := buildTestArtifacts(t)
-	cfg := testConfig(workerDir, artifactRoot)
+	_, artifacts := buildTestArtifacts(t)
+	cfg := testConfig(workerDir)
 	cfg.RegisterRetries = 0
 
 	fakeRuntime := fakesandbox.New()
@@ -370,33 +373,27 @@ func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakesandbox.Sandbo
 	return worker.Run(ctx)
 }
 
-// testGeneration is the artifact generation every harness runs against.
-const testGeneration = "gen-test"
-
-// buildTestArtifacts lays out one generation with a single checkpoint, the way
-// the offline pipeline would.
+// buildTestArtifacts lays out a rootfs, a manifest and a single checkpoint, the
+// way the worker image bakes them.
 func buildTestArtifacts(t *testing.T) (string, container.Artifacts) {
 	t.Helper()
 
 	root := fakeexecutor.ShortTempDir(t)
-	dir := filepath.Join(root, artifact.GenerationsDirName, testGeneration)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
-	require.NoError(t, artifact.WriteGeneration(dir, artifact.Generation{
-		ID:                 testGeneration,
-		RootfsID:           "sha256:test-rootfs",
-		RunscVersion:       "runsc version test",
-		SpecFingerprint:    "sha256:test-spec",
-		ExecutorEntrypoint: "/app/executor/app.py",
-		ExecutorProtocol:   executor.ProtocolVersion,
-		PythonPath:         "/lib/python3.12/dist-packages",
-		CreatedAt:          time.Now().UTC(),
+	require.NoError(t, os.MkdirAll(filepath.Join(root, artifact.RootfsDirName), 0o755))
+	require.NoError(t, artifact.WriteManifest(root, artifact.Manifest{
+		RunscVersion:     "runsc version test",
+		SpecFingerprint:  "sha256:test-spec",
+		ExecutorArgv:     []string{"python", "-u", "-m", "crfs_executor"},
+		ExecutorProtocol: executor.ProtocolVersion,
+		PythonPath:       "/lib/python3.12/dist-packages",
+		CreatedAt:        time.Now().UTC(),
 	}))
 
-	image := filepath.Join(dir, artifact.CheckpointsDirName, "checkpoint_1")
+	image := filepath.Join(root, artifact.CheckpointsDirName, "checkpoint_1")
 	require.NoError(t, os.MkdirAll(image, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(image, "checkpoint.img"), []byte("img"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(image, "checkpoint.img"), []byte("img"), 0o600))
 	require.NoError(t, artifact.WriteCheckpointMeta(image, artifact.Checkpoint{
-		ID: "checkpoint_1", GenerationID: testGeneration, Producer: "scripts",
+		ID: "checkpoint_1", Producer: "pipeline",
 	}))
 
 	registry, err := artifact.Load(artifact.Options{Root: root, Log: logging.Discard()})

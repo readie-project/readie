@@ -1,5 +1,6 @@
-# Umbrella for the three components. Each keeps authority over its own build;
-# this only coordinates them and owns the one thing they share: the protos.
+# Umbrella for the five components. Each keeps authority over its own build;
+# this coordinates them and owns the two things they share: the protos, and
+# building a worker image with checkpoints baked in.
 
 PROTO_SRC   := protos
 PROTO_FILES := execution.proto proxy.proto registry.proto
@@ -16,7 +17,19 @@ CLIENT_PROTOS := proxy.proto
 
 STAGE := .build/proto-stage
 
+# --- generation --------------------------------------------------------------
+# Where the pipeline writes its captured checkpoints, and where the worker
+# Dockerfile copies them from.
+ARTIFACTS_DIR   := worker/artifacts
+ROOTFS_IMAGE    := crfs-executor-rootfs:latest
+PIPELINE_IMAGE  := crfs-pipeline:latest
+WORKER_BASE     := crfs-worker-base:latest
+WORKER_IMAGE    := crfs-worker
+# Overridable so an experiment can be tagged something meaningful.
+TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
+
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
+        rootfs-image worker-base pipeline-image capture worker-image generation clean-artifacts \
         router-% pkg-% executor-% pipeline-% worker-% lint type test help
 
 all: protos lint type test ## Generate, check and test everything
@@ -84,6 +97,62 @@ protos-go: ## Regenerate the worker's Go stubs
 clean-protos: ## Remove generated Python stubs
 	rm -rf router/src/crfs_router/proto/*_pb2*.py router/src/crfs_router/proto/*.pyi
 	rm -rf pkg/src/crfs/_proto/*_pb2*.py pkg/src/crfs/_proto/*.pyi
+
+# ---------------------------------------------------------------------------
+# Generation: capture checkpoints, then bake them into a worker image.
+#
+# Two phases, because `docker build` cannot capture a checkpoint: runsc needs
+# privileged namespace access, which a stock BuildKit builder will not grant
+# without a builder created for `--allow security.insecure`. Running the
+# pipeline as a privileged container is portable; that is not.
+#
+# gVisor is amd64-only and dies under emulation, so `capture` only works on an
+# amd64 Linux host. It fails loudly rather than leaving a checkpointless image
+# that looks like a successful build.
+# ---------------------------------------------------------------------------
+generation: capture worker-image ## Capture checkpoints and bake them into a worker image
+	@echo
+	@echo "  image:  $(WORKER_IMAGE):$(TAG)"
+	@echo "  also:   $(WORKER_IMAGE):latest"
+	@echo "  run it: docker compose up -d"
+
+rootfs-image: ## Build the executor root filesystem image
+	@echo "==> [1/3] rootfs image"
+	docker build -t $(ROOTFS_IMAGE) -f rootfs/Dockerfile .
+
+pipeline-image: rootfs-image ## Build the offline pipeline image
+	@echo "==> [2/3] pipeline image"
+	docker build -t $(PIPELINE_IMAGE) -f pipeline/Dockerfile .
+
+capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
+	@echo "==> [3/3] capturing checkpoints (privileged; needs amd64 gVisor)"
+	@rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints
+	@mkdir -p $(ARTIFACTS_DIR)
+	docker run --rm \
+		--privileged \
+		--security-opt apparmor=unconfined \
+		--security-opt seccomp=unconfined \
+		-v "$(CURDIR)/$(ARTIFACTS_DIR):/app/executor" \
+		$(PIPELINE_IMAGE) build
+	@test -f $(ARTIFACTS_DIR)/manifest.json \
+		|| { echo "capture produced no manifest; refusing to build a checkpointless image" >&2; exit 1; }
+	@echo "==> captured: $$(ls $(ARTIFACTS_DIR)/checkpoints | tr '\n' ' ')"
+
+worker-base: rootfs-image ## Build the worker base: runsc plus the root filesystem
+	@echo "==> worker base image (only needed when the rootfs or runsc changes)"
+	docker build -t $(WORKER_BASE) -f worker/Dockerfile.base .
+
+worker-image: ## Build the worker image around whatever is in $(ARTIFACTS_DIR)
+	@docker image inspect $(WORKER_BASE) >/dev/null 2>&1 \
+		|| $(MAKE) --no-print-directory worker-base
+	@echo "==> worker image $(WORKER_IMAGE):$(TAG)"
+	docker build \
+		-t $(WORKER_IMAGE):$(TAG) -t $(WORKER_IMAGE):latest \
+		--build-arg ARTIFACTS_DIR=$(ARTIFACTS_DIR) \
+		-f worker/Dockerfile .
+
+clean-artifacts: ## Discard captured checkpoints, keeping the placeholder
+	rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints
 
 # ---------------------------------------------------------------------------
 # Per-component passthrough: `make router-test`, `make worker-lint`, …

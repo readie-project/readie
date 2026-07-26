@@ -48,6 +48,14 @@ const (
 	// its socket there, which is how the worker reaches it.
 	ExecutorMountPath = "/tmp"
 
+	// ArtifactRoot is where the worker image bakes its root filesystem and
+	// checkpoints. Compiled in rather than configurable: there is one place a
+	// worker image puts them, and a settable path invited a deployment where
+	// the mount and the expectation disagreed. The image build and this
+	// constant are the only two things that need to agree, and both live in
+	// this repository.
+	ArtifactRoot = "/var/lib/crfs"
+
 	// BundlesDirName is the sub-directory of WorkerDir holding OCI bundles.
 	// Bundles sit outside the per-container directories on purpose: those are
 	// mounted into the sandbox, and a sandbox has no business reading its own
@@ -77,13 +85,11 @@ type Config struct {
 	RouterURI string
 
 	// Filesystem.
-	WorkerDir string // host root for per-container directories and bundles
-	// ArtifactRoot holds the generations this worker can run: each is a root
-	// filesystem plus the checkpoints captured against it.
-	ArtifactRoot string
-	// ActiveGeneration pins the generation used for cold starts. Empty selects
-	// the newest available.
-	ActiveGeneration string
+	//
+	// WorkerDir is the host root for per-container directories and bundles. It
+	// is writable runtime scratch and stays a volume; the artifacts do not,
+	// they are baked into the image at ArtifactRoot.
+	WorkerDir string
 
 	// Sandbox runtime.
 	RunscBinary string
@@ -196,11 +202,6 @@ func Load(getenv Getenv) (Config, error) {
 		return Config{}, err
 	}
 
-	artifactRoot, err := requireEnv(getenv, "ARTIFACT_ROOT")
-	if err != nil {
-		return Config{}, err
-	}
-
 	logLevel, err := parseLogLevel(getenv("LOG_LEVEL"))
 	if err != nil {
 		return Config{}, err
@@ -212,9 +213,7 @@ func Load(getenv Getenv) (Config, error) {
 		ListenAddr: ":" + port,
 		RouterURI:  routerURI,
 
-		WorkerDir:        workerDir,
-		ArtifactRoot:     artifactRoot,
-		ActiveGeneration: getenv("ACTIVE_GENERATION"),
+		WorkerDir: workerDir,
 
 		RunscBinary:    valueOr(getenv("RUNSC_BINARY"), "/usr/local/bin/runsc"),
 		RunscRoot:      valueOr(getenv("RUNSC_ROOT"), "/run/crfs-runsc"),
@@ -305,7 +304,6 @@ func (c Config) Validate() error {
 		{"ListenAddr", c.ListenAddr},
 		{"RouterURI", c.RouterURI},
 		{"WorkerDir", c.WorkerDir},
-		{"ArtifactRoot", c.ArtifactRoot},
 		{"RunscBinary", c.RunscBinary},
 		{"RunscRoot", c.RunscRoot},
 		{"SandboxNetwork", c.SandboxNetwork},
@@ -321,7 +319,6 @@ func (c Config) Validate() error {
 		value string
 	}{
 		{"WorkerDir", c.WorkerDir},
-		{"ArtifactRoot", c.ArtifactRoot},
 		{"RunscBinary", c.RunscBinary},
 		{"RunscRoot", c.RunscRoot},
 	} {

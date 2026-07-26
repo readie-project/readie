@@ -24,7 +24,11 @@ services:
         stop_grace_period: 30s
     worker:
         build:
-            context: ./worker
+            # The repository root: the image needs the rootfs image and the
+            # pipeline's captured checkpoints, neither of which lives under
+            # worker/.
+            context: .
+            dockerfile: worker/Dockerfile
         # gVisor publishes amd64 and arm64 builds, but the executor rootfs is
         # amd64-only, and gVisor works by intercepting syscalls — which is
         # exactly what emulation sits in the middle of. This will not run on an
@@ -34,6 +38,12 @@ services:
             - "50052:50052"
         container_name: worker
         environment:
+            # cgroup v2 delegation inside Docker Desktop refuses the subtree
+            # write runsc needs, so every sandbox create fails with "device or
+            # resource busy". Harmless on a host with proper delegation, and the
+            # offline pipeline already passes --ignore-cgroups for the same
+            # reason.
+            SANDBOX_IGNORE_CGROUPS: ${CRFS_IGNORE_CGROUPS:-true}
             # What this worker will hand out to executors. The router schedules
             # on it, so over-reporting makes it overcommit and the failure that
             # produces is an OOM-killed sandbox mid-execution. Configured rather
@@ -56,14 +66,14 @@ services:
         # per execution.
         init: true
         volumes:
-            # The rootfs-and-checkpoints artifact, produced by pipeline/. Read
-            # only: every sandbox shares this tree and writes through the
-            # runtime's copy-on-write overlay instead.
-            - ${CRFS_ARTIFACT_ROOT:-/var/lib/crfs}:/var/lib/crfs:ro
-            # Per-sandbox directories and OCI bundles. Sandboxes are this
-            # worker's own child processes, so unlike the previous Docker-based
-            # design nothing outside the container resolves these paths and a
-            # plain named volume is enough.
+            # Per-sandbox directories and OCI bundles — writable runtime
+            # scratch, and the only volume this worker needs. The rootfs and
+            # checkpoints are baked into the image, so there is no artifact
+            # mount to get wrong.
+            #
+            # Sandboxes are this worker's own child processes, so unlike the
+            # previous Docker-based design nothing outside the container
+            # resolves these paths and a plain named volume is enough.
             - worker-shared:/shared
         # On shutdown the worker deregisters, drains in-flight executions and
         # reclaims its sandboxes. A short grace period would SIGKILL it partway

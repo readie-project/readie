@@ -106,9 +106,11 @@ docker compose logs -f router
 docker compose down --remove-orphans
 ```
 
-The worker needs `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI` and
-`ARTIFACT_ROOT`; the compose file supplies them. Point a client at
-`localhost:50051` with `CRFS_ROUTER_URI` and it will reach the router.
+Point a client at `localhost:50051` with `CRFS_ROUTER_URI` and it will reach the
+router.
+
+The worker image built this way carries the root filesystem but no checkpoints,
+so every start is cold. `make generation` builds one with checkpoints in it.
 
 Only `router` and `worker` are services. `executor` runs *inside* a sandbox the
 worker creates, `pkg` is a library you install into your own program, and
@@ -132,25 +134,31 @@ Each component's Makefile takes the same verbs — `install`, `fmt`, `lint`,
 
 ## Building checkpoints
 
-Offline, and separate from serving. The rootfs is built first because both the
-pipeline and the worker consume it:
+Offline, and separate from serving. One command captures checkpoints and bakes
+them into a worker image alongside the root filesystem:
 
 ```sh
-docker build -t crfs-executor-rootfs:latest -f rootfs/Dockerfile .
-docker build -t crfs-pipeline -f pipeline/Dockerfile .
-
-docker run --rm --privileged \
-  --security-opt apparmor=unconfined --security-opt seccomp=unconfined \
-  -e GENERATION_ID=gen-$(date -u +%Y%m%d-%H%M%S) \
-  -e ROOTFS_ID=$(docker inspect --format '{{index .RepoDigests 0}}' crfs-executor-rootfs:latest) \
-  -v "$PWD/out:/app/executor" \
-  crfs-pipeline
+make generation                     # tags crfs-worker:<timestamp> and :latest
+make generation TAG=my-experiment
 ```
 
-The output is a **generation**: the rootfs plus every checkpoint captured against
-it. They install together, because a gVisor checkpoint only restores into the
-filesystem it was taken from. [`pipeline/`](pipeline/) has the install steps and
-the planner's algorithm.
+Two phases behind one target, because `docker build` cannot capture a checkpoint
+— runsc needs privileged namespace access that a stock BuildKit builder will not
+grant. Phase one runs the pipeline privileged; phase two builds the image around
+what it wrote.
+
+The result is a single deployable: the Go binary, runsc, the root filesystem and
+the checkpoints, all in one image, with nothing mounted. That costs ~35 GB per
+image and buys the guarantee that a running worker's artifacts are exactly the
+ones its tag names.
+
+The 26 GB root filesystem sits in a base image the worker inherits, rather than
+being copied in. `COPY --from=<image>` produces a fresh layer every build — two
+identical worker builds were measured producing different digests for it — so
+inheriting is what makes a regenerated image share that layer instead of
+re-uploading it, and makes a per-generation build take seconds.
+
+[`pipeline/`](pipeline/) has the planner's algorithm and the individual stages.
 
 ## What works, and what does not
 
@@ -179,10 +187,10 @@ Not built. Each of these is a real gap, not an oversight:
   is write-only. Every request gets the same 512 MiB. The prediction model lives
   in [a separate repository](https://github.com/illinoisdata/python-execution-memory-prediction)
   and is not wired in; `ResourceEstimator` is the seam it would slot into.
-- **Picking up a generation without a restart.** A worker reads its artifact
-  registry once at startup. It now *starts* without one — registering as
-  unusable rather than exiting, so the stack comes up and says why — but
-  installing a generation still needs a restart to take effect.
+- **Swapping checkpoints without a new image.** Artifacts are baked in and read
+  once at startup, so new checkpoints mean a new image and a new container. That
+  is the trade taken deliberately — one deployable, nothing mounted — but it does
+  mean a ~40 GB image per capture, and rolling one out drains warm containers.
 - **Persistence.** Router state is in memory. A restart loses sessions — their
   containers are then reclaimed by the workers' own TTLs — and workers
   re-register on their next status report.

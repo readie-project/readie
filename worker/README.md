@@ -36,7 +36,7 @@ internal/
   execution/           orchestration of one request; depends on no transport types
   container/           container lifecycle: acquire, release, reclaim orphans
   executor/            the unix-socket protocol shared with ../executor/
-  artifact/            generations: rootfs + the checkpoints captured against it
+  artifact/            the baked-in rootfs, manifest and checkpoints
   sandbox/             the runtime seam — stdlib only, no runtime knowledge
   runsc/               the only package that knows gVisor exists
   registry/            reporting worker and executor state to the router
@@ -62,40 +62,50 @@ Dependencies point inward and every I/O boundary is an interface:
 free; `internal/runsc` holds `os/exec`, the OCI spec, and process lifetimes.
 `container.Manager` never learns the runtime's name.
 
-## Generations
+## Artifacts
 
-One run of the offline pipeline produces one immutable artifact:
+The root filesystem and the checkpoints are **baked into this image**, at a
+compiled-in path. Nothing is mounted:
 
 ```
-$ARTIFACT_ROOT/generations/<generationID>/
-├── generation.json     id, rootfs_id, runsc_version, spec_fingerprint, …
-├── rootfs/             the executor root filesystem
-└── checkpoints/<id>/   runsc image + meta.json
+/var/lib/crfs/
+├── rootfs/                 the one executor root filesystem
+├── manifest.json           runsc_version, spec_fingerprint, executor_argv,
+│                           executor_protocol, python_path, overlay, network
+└── checkpoints/<id>/       runsc image + meta.json
 ```
 
-Pairing them is not a convenience. **A gVisor checkpoint only restores into the
-filesystem it was captured from**, so a checkpoint that travels without its
-rootfs is unusable. A worker may hold several generations at once; each
-checkpoint names its owner, and the rootfs a restore runs against is looked up
-*through* the checkpoint rather than assumed. That is what makes a mismatched
-pair impossible rather than merely detected.
+**A gVisor checkpoint only restores into the filesystem it was captured from**,
+so the pairing has to be right. It is right here by construction: there is one
+rootfs, and the image build is the only way to put a rootfs and checkpoints
+together. That replaced a `rootfs_id` recorded in every artifact — which was
+never actually compared, only logged.
 
-A bare `checkpoint_1` resolves to the newest generation containing it; a
-qualified `gen-2026-06/checkpoint_1` pins one exactly. Cold starts use the
-active generation (newest by default, `ACTIVE_GENERATION` to pin). A generation
-whose rootfs is missing is logged and skipped rather than failing startup — one
-bad artifact should not take a worker offline when others are serviceable.
+One rootfs also means checkpoint IDs are globally unique, so `checkpoint_1` is
+unambiguous. The previous layout nested them under `generations/<id>/` and needed
+a `gen-2026-06/checkpoint_1` reference to disambiguate.
 
-Building and installing one:
+Build an image with checkpoints in it:
 
 ```sh
-docker build -t crfs-executor-rootfs:<tag> -f rootfs/Dockerfile .
-docker create --name export crfs-executor-rootfs:<tag>
-mkdir -p /var/lib/crfs/generations/<gen>/rootfs
-docker export export | tar -x -C /var/lib/crfs/generations/<gen>/rootfs
-docker rm export
-# then copy generation.json and checkpoints/ from the scripts pipeline
+make generation          # capture, then bake; tags crfs-worker:<timestamp>
 ```
+
+`docker compose build` also works and yields a usable worker — rootfs, no
+checkpoints, every start cold — because `worker/artifacts/` is committed empty.
+That is deliberate: it keeps `docker compose up` self-sufficient.
+
+The rootfs lives in a **base image**, `crfs-worker-base`, built from
+`Dockerfile.base` and rebuilt only when the rootfs or the pinned runsc release
+changes. The worker image is `FROM` it.
+
+That split is a measured decision, not a stylistic one. `COPY --from=<image>`
+produces a fresh layer every build: two otherwise-identical worker builds were
+observed to differ in the 25.9 GB rootfs layer's digest, so regenerating
+checkpoints would have re-uploaded all of it. A layer *inherited* from a base
+image has the same digest by definition, so every generation shares it — and a
+per-generation build takes seconds rather than eleven minutes, because the 26 GB
+copy does not happen at all.
 
 ## Request flow
 
@@ -172,8 +182,9 @@ envelope is *not* a worker failure — the sandbox ran and the interpreter is
 healthy — so the execution is reported as a success and the container is paused
 for reuse. Only the client turns that envelope into an exception.
 
-A generation records `executor_protocol`, and `internal/artifact` refuses one
-whose version this worker does not implement, at load rather than at restore.
+The manifest records `executor_protocol`, and `internal/artifact` refuses
+artifacts whose version this worker does not implement, at load rather than at
+restore.
 
 **Spec compatibility** — the worker and the offline pipeline generate their
 bundles from the same `runsc.BuildSpec`, via `cmd/ocispec`. Two independent
@@ -190,11 +201,11 @@ for wire compatibility.
 
 ## Starting without artifacts
 
-A worker whose `ARTIFACT_ROOT` holds no usable generation still starts. It
-listens, serves health as SERVING, and registers — but as `STATUS_ERROR` rather
-than `STATUS_READY`, so the router keeps it visible and probed while never
-placing work on it (`is_selectable` requires READY). Any execution that reaches
-it anyway is refused with `FailedPrecondition` and a message naming the missing
+A worker whose image was built with no root filesystem still starts. It listens,
+serves health as SERVING, and registers — but as `STATUS_ERROR` rather than
+`STATUS_READY`, so the router keeps it visible and probed while never placing
+work on it (`is_selectable` requires READY). Any execution that reaches it
+anyway is refused with `FailedPrecondition` and a message naming the missing
 artifact.
 
 Exiting at startup instead was worse in practice: a container that dies before
@@ -205,25 +216,38 @@ Health stays SERVING deliberately. NOT_SERVING would have the router's prober
 evict the worker after three failed probes, hiding the very state the ERROR
 registration exists to expose.
 
-Two things are still fatal at startup, because neither is a missing artifact:
-an `ACTIVE_GENERATION` that names a generation which is not present (a
-configuration typo — starting on a different one than asked for would be
-worse), and an artifact directory that exists but cannot be read (a permissions
-or mount fault, where hiding it would strand a worker that should have seen its
-artifacts).
+Three things are still fatal at startup, because none of them is simply an
+absent artifact:
 
-Installing a generation requires a restart; the registry is read once at
-startup.
+- **Checkpoints with no rootfs.** Something assembled half an artifact, and
+  restoring any of them is undefined. An empty tree is fine; a half-filled one
+  is not.
+- **A malformed `manifest.json`**, or one missing what a restore needs.
+- **An artifact directory that exists but cannot be read** — a permissions or
+  mount fault, where hiding it would strand a worker that should have seen its
+  artifacts.
+
+A rootfs with no manifest is *not* fatal: that is what the image ships with
+before any checkpoint has been captured, and it serves cold starts.
+
+The artifact tree is read once at startup, so a new image means a new container.
+That is the point of baking them in.
 
 ## Configuration
 
-Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`, `ARTIFACT_ROOT`.
+Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`.
+
+The artifact root is **not** configurable: it is a compiled-in constant
+(`config.ArtifactRoot`, `/var/lib/crfs`) because there is one place a worker
+image puts its rootfs and checkpoints, and a settable path invited a deployment
+where the mount and the expectation disagreed. `artifact.Load` still takes a
+root as a parameter, which is how the tests build fixtures in temp directories.
 
 Capacity: `WORKER_MEM_TOTAL` (bytes, or a suffixed size such as `8Gi`;
 default 4 GiB), `WORKER_MAX_EXECUTORS` (0 meaning unbounded),
 `WORKER_UTILIZATION_INTERVAL`.
 
-Optional: `WORKER_ID`, `ACTIVE_GENERATION`, `RUNSC_BINARY`, `RUNSC_ROOT`,
+Optional: `WORKER_ID`, `RUNSC_BINARY`, `RUNSC_ROOT`,
 `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY`, `SANDBOX_PLATFORM`,
 `SANDBOX_IGNORE_CGROUPS`, `SANDBOX_DEBUG`, `SANDBOX_DEBUG_LOG_DIR`,
 `CGROUP_PARENT`, `CHECKPOINT_STRICT_COMPAT`, `LOG_LEVEL`, `LOG_FORMAT`,

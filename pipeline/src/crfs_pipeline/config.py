@@ -48,8 +48,6 @@ class Settings:
     """Corpus and package metadata."""
 
     rootfs_pythonpath: str = "/lib/python3.12/dist-packages"
-    generation_id: str = ""
-    rootfs_id: str = ""
 
     # Runtime modes. Part of what a checkpoint is sensitive to, so they must
     # match the worker's configuration or a restore fails on the fingerprint.
@@ -86,6 +84,11 @@ class Settings:
     def checkpoints_dir(self) -> Path:
         """Where captured checkpoint images are written."""
         return self.output_dir / "checkpoints"
+
+    @property
+    def manifest_path(self) -> Path:
+        """The manifest the worker image bakes in beside the checkpoints."""
+        return self.output_dir / "manifest.json"
 
     @property
     def plan_path(self) -> Path:
@@ -162,8 +165,6 @@ class Settings:
             "output_dir": path_of("EXECUTOR_DIR", "/app/executor"),
             "data_dir": path_of("CRFS_DATA_DIR", str(_default_data_dir())),
             "rootfs_pythonpath": source.get("ROOTFS_PYTHONPATH") or "/lib/python3.12/dist-packages",
-            "generation_id": source.get("GENERATION_ID", ""),
-            "rootfs_id": source.get("ROOTFS_ID", ""),
             "sandbox_network": source.get("SANDBOX_NETWORK") or "none",
             "sandbox_host_uds": source.get("SANDBOX_HOST_UDS") or "create",
             "sandbox_overlay": source.get("SANDBOX_OVERLAY") or "root:memory",

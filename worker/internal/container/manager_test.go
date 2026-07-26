@@ -26,9 +26,9 @@ import (
 
 const (
 	pythonPath = "/lib/python3.12/dist-packages"
-	entrypoint = "/app/executor/app.py"
-	generation = "gen-a"
 )
+
+var executorArgv = []string{"python", "-u", "-m", "crfs_executor"}
 
 type fixture struct {
 	manager      *container.Manager
@@ -40,31 +40,28 @@ type fixture struct {
 	artifactRoot string
 }
 
-// buildArtifacts lays out one generation with the given checkpoints, the way
-// the offline pipeline would.
+// buildArtifacts lays out a rootfs, a manifest and the given checkpoints, the
+// way the worker image bakes them.
 func buildArtifacts(t *testing.T, checkpoints ...string) (string, *artifact.Registry) {
 	t.Helper()
 
 	root := t.TempDir()
-	dir := filepath.Join(root, artifact.GenerationsDirName, generation)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
-	require.NoError(t, artifact.WriteGeneration(dir, artifact.Generation{
-		ID:                 generation,
-		RootfsID:           "sha256:rootfs",
-		RunscVersion:       "runsc version test",
-		SpecFingerprint:    "sha256:spec",
-		ExecutorEntrypoint: entrypoint,
-		ExecutorProtocol:   executor.ProtocolVersion,
-		PythonPath:         pythonPath,
-		CreatedAt:          time.Now().UTC(),
+	require.NoError(t, os.MkdirAll(filepath.Join(root, artifact.RootfsDirName), 0o755))
+	require.NoError(t, artifact.WriteManifest(root, artifact.Manifest{
+		RunscVersion:     "runsc version test",
+		SpecFingerprint:  "sha256:spec",
+		ExecutorArgv:     executorArgv,
+		ExecutorProtocol: executor.ProtocolVersion,
+		PythonPath:       pythonPath,
+		CreatedAt:        time.Now().UTC(),
 	}))
 
 	for _, id := range checkpoints {
-		cdir := filepath.Join(dir, artifact.CheckpointsDirName, id)
+		cdir := filepath.Join(root, artifact.CheckpointsDirName, id)
 		require.NoError(t, os.MkdirAll(cdir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(cdir, "checkpoint.img"), []byte("img"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(cdir, "checkpoint.img"), []byte("img"), 0o600))
 		require.NoError(t, artifact.WriteCheckpointMeta(cdir, artifact.Checkpoint{
-			ID: id, GenerationID: generation, Producer: "scripts",
+			ID: id, Producer: "pipeline",
 		}))
 	}
 
@@ -80,7 +77,7 @@ func newFixture(t *testing.T) *fixture {
 }
 
 // newFixtureWith builds a manager over a caller-supplied artifact registry, so
-// a test can exercise a worker that holds no usable generation.
+// a test can exercise a worker that holds no root filesystem.
 func newFixtureWith(t *testing.T, artifacts container.Artifacts) *fixture {
 	t.Helper()
 
@@ -143,7 +140,7 @@ func TestAcquire_LocksTheExecutorContract(t *testing.T) {
 	spec := specs[0]
 
 	assert.Equal(t, h.ID, spec.ID)
-	assert.Equal(t, []string{"python", "-u", entrypoint}, spec.Args)
+	assert.Equal(t, executorArgv, spec.Args, "the manifest records argv; the worker replays it")
 	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=" + pythonPath}, spec.Env)
 	assert.Equal(t, activeRootfs(t, f), spec.RootfsPath)
 	assert.Equal(t, f.layout.BundleDir(h.ID), spec.BundleDir)
@@ -274,13 +271,16 @@ func TestAcquire_RestoreUsesTheCheckpointsOwnGeneration(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	checkpoint, gen, err := f.artifacts.ResolveCheckpoint("checkpoint_1")
+	checkpoint, err := f.artifacts.ResolveCheckpoint("checkpoint_1")
 	require.NoError(t, err)
 
+	// There is one rootfs, so a restore and a cold start run against the same
+	// tree — which is what makes the pairing correct by construction.
 	specs := f.runtime.CreateSpecs()
 	require.Len(t, specs, 1)
-	assert.Equal(t, gen.RootfsPath(), specs[0].RootfsPath)
-	assert.Equal(t, checkpoint.Dir, filepath.Join(gen.CheckpointsPath(), "checkpoint_1"))
+	assert.Equal(t, activeRootfs(t, f), specs[0].RootfsPath)
+	assert.Equal(t, filepath.Join(f.artifactRoot, artifact.CheckpointsDirName, "checkpoint_1"),
+		checkpoint.Dir)
 }
 
 // An unresolvable checkpoint is a cold start, not a failure: the request can
@@ -672,17 +672,17 @@ func TestLoad_IsSafeUnderConcurrentAcquireAndRelease(t *testing.T) {
 	assert.Zero(t, reserved)
 }
 
-// activeRootfs is the rootfs a cold start in this fixture runs against.
+// activeRootfs is the rootfs every sandbox in this fixture runs against.
 func activeRootfs(t *testing.T, f *fixture) string {
 	t.Helper()
-	active, err := f.artifacts.Active()
+	rootfs, err := f.artifacts.Rootfs()
 	require.NoError(t, err)
-	return active.RootfsPath()
+	return rootfs
 }
 
-// A worker can now start with no usable generation. It cannot create a
-// container, and the failure has to name the missing artifact rather than
-// surface from somewhere inside runsc.
+// A worker can now start with no root filesystem. It cannot create a container,
+// and the failure has to name the missing artifact rather than surface from
+// somewhere inside runsc.
 
 // emptyArtifacts is a registry over an artifact root that holds nothing.
 func emptyArtifacts(t *testing.T) container.Artifacts {
@@ -692,19 +692,19 @@ func emptyArtifacts(t *testing.T) container.Artifacts {
 	return registry
 }
 
-func TestAcquire_WithoutAGenerationFailsBeforeTouchingTheRuntime(t *testing.T) {
+func TestAcquire_WithoutARootfsFailsBeforeTouchingTheRuntime(t *testing.T) {
 	f := newFixtureWith(t, emptyArtifacts(t))
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{})
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrNoGenerations)
+	assert.ErrorIs(t, err, artifact.ErrNoArtifacts)
 	assert.ErrorIs(t, err, container.ErrAcquireFailed)
 	assert.Empty(t, f.runtime.CreateSpecs(),
 		"nothing may reach the runtime: there is no rootfs to hand it")
 }
 
-func TestAcquire_WithoutAGenerationLeavesNoContainerDirectoryBehind(t *testing.T) {
+func TestAcquire_WithoutARootfsLeavesNoContainerDirectoryBehind(t *testing.T) {
 	// Failing before the directory is created is what keeps a worker in this
 	// state from slowly filling its disk with one directory per rejected
 	// request.
@@ -718,9 +718,9 @@ func TestAcquire_WithoutAGenerationLeavesNoContainerDirectoryBehind(t *testing.T
 	assert.Zero(t, reserved)
 }
 
-func TestAcquire_AnUnknownCheckpointWithoutAGenerationReportsTheMissingArtifact(t *testing.T) {
+func TestAcquire_AnUnknownCheckpointWithoutARootfsReportsTheMissingArtifact(t *testing.T) {
 	// "unknown checkpoint" would be true but useless here: the reason nothing
-	// can run is that there is no generation at all.
+	// can run is that there is no root filesystem at all.
 	f := newFixtureWith(t, emptyArtifacts(t))
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
@@ -728,6 +728,6 @@ func TestAcquire_AnUnknownCheckpointWithoutAGenerationReportsTheMissingArtifact(
 	})
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrNoGenerations)
+	assert.ErrorIs(t, err, artifact.ErrNoArtifacts)
 	assert.NotErrorIs(t, err, artifact.ErrUnknownCheckpoint)
 }

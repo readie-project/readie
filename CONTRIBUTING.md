@@ -14,7 +14,8 @@ Five, each with its own build, its own tests, and its own entry in CI. The root
 | [`pipeline/`](pipeline/) | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
 
 `protos/` is the single source of truth for every wire contract.
-`rootfs/Dockerfile` is the filesystem every checkpoint is captured against.
+`rootfs/Dockerfile` is the one filesystem every checkpoint is captured against,
+and it is baked into the worker image alongside them.
 
 The two Python version floors are deliberate. `pkg` and `executor` are installed
 into someone else's process — a user's script and the sandbox image respectively
@@ -121,7 +122,11 @@ Listed here so nobody "fixes" one by accident:
   re-register. The alternative puts a datastore on the hot path of every
   placement decision.
 - **The rootfs is the full base image**, regardless of what the planner selects.
-  Regenerating checkpoints should not mean rebuilding tens of gigabytes.
+  Regenerating checkpoints should not mean rebuilding tens of gigabytes, which is
+  why it lives in `crfs-worker-base` and the worker image inherits it.
+- **Artifacts are baked in, not mounted.** New checkpoints mean a new worker
+  image (`make generation`) and a new container. One deployable, nothing to
+  mis-mount, at the cost of a ~35 GB image.
 - **`cloudpickle.loads` on router-supplied bytes** in the client is an inherent
   remote-code-execution surface. It is confined behind a `ResultCodec` protocol
   and documented in [SECURITY.md](SECURITY.md), not papered over.

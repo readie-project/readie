@@ -15,7 +15,7 @@ import (
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 )
 
-// builder assembles artifact trees on disk the way the pipeline would.
+// builder lays out an artifact tree the way the worker image bakes one.
 type builder struct {
 	t    *testing.T
 	root string
@@ -26,520 +26,353 @@ func newBuilder(t *testing.T) *builder {
 	return &builder{t: t, root: t.TempDir()}
 }
 
-func (b *builder) generation(id string, created time.Time, mutate ...func(*artifact.Generation)) *builder {
+// rootfs creates the one root filesystem.
+func (b *builder) rootfs() *builder {
 	b.t.Helper()
-
-	dir := filepath.Join(b.root, artifact.GenerationsDirName, id)
-	require.NoError(b.t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
-
-	gen := artifact.Generation{
-		ID:                 id,
-		RootfsID:           "sha256:rootfs-" + id,
-		RunscVersion:       "runsc version release-20250107.0",
-		SpecFingerprint:    "sha256:spec-" + id,
-		ExecutorEntrypoint: "/app/executor/app.py",
-		ExecutorProtocol:   executor.ProtocolVersion,
-		Overlay:            "root:memory",
-		Network:            "none",
-		CreatedAt:          created,
-	}
-	for _, m := range mutate {
-		m(&gen)
-	}
-	require.NoError(b.t, artifact.WriteGeneration(dir, gen))
+	require.NoError(b.t, os.MkdirAll(filepath.Join(b.root, artifact.RootfsDirName), 0o755))
 	return b
 }
 
-func (b *builder) checkpoint(genID, checkpointID string, mutate ...func(*artifact.Checkpoint)) *builder {
-	b.t.Helper()
+func validManifest() artifact.Manifest {
+	return artifact.Manifest{
+		RunscVersion:     "runsc version release-20260721.0",
+		SpecFingerprint:  "sha256:spec",
+		ExecutorArgv:     []string{"python", "-u", "-m", "crfs_executor"},
+		ExecutorProtocol: executor.ProtocolVersion,
+		PythonPath:       "/lib/python3.12/dist-packages",
+		Overlay:          "root:memory",
+		Network:          "none",
+		CreatedAt:        time.Now().UTC().Truncate(time.Second),
+	}
+}
 
-	dir := filepath.Join(b.root, artifact.GenerationsDirName, genID, artifact.CheckpointsDirName, checkpointID)
+// manifest writes manifest.json, optionally mutated.
+func (b *builder) manifest(mutate ...func(*artifact.Manifest)) *builder {
+	b.t.Helper()
+	m := validManifest()
+	for _, f := range mutate {
+		f(&m)
+	}
+	require.NoError(b.t, artifact.WriteManifest(b.root, m))
+	return b
+}
+
+// checkpoint creates one checkpoint image directory with its meta.json.
+func (b *builder) checkpoint(id string, imports ...string) *builder {
+	b.t.Helper()
+	dir := filepath.Join(b.root, artifact.CheckpointsDirName, id)
 	require.NoError(b.t, os.MkdirAll(dir, 0o755))
-	require.NoError(b.t, os.WriteFile(filepath.Join(dir, "checkpoint.img"), []byte("image"), 0o644))
-
-	meta := artifact.Checkpoint{
-		ID:              checkpointID,
-		GenerationID:    genID,
-		Producer:        "scripts",
-		RunscVersion:    "runsc version release-20250107.0",
-		SpecFingerprint: "sha256:spec-" + genID,
-		RootfsID:        "sha256:rootfs-" + genID,
-		Imports:         []string{"pandas", "numpy"},
-		CreatedAt:       time.Now().UTC().Truncate(time.Second),
-	}
-	for _, m := range mutate {
-		m(&meta)
-	}
-	require.NoError(b.t, artifact.WriteCheckpointMeta(dir, meta))
+	require.NoError(b.t, os.WriteFile(filepath.Join(dir, "checkpoint.img"), []byte("img"), 0o600))
+	require.NoError(b.t, artifact.WriteCheckpointMeta(dir, artifact.Checkpoint{
+		ID: id, Producer: "pipeline", Imports: imports,
+	}))
 	return b
 }
 
-// checkpointWithoutMeta creates an image directory carrying no meta.json.
-func (b *builder) checkpointWithoutMeta(genID, checkpointID string) *builder {
+// bare creates a checkpoint directory with no meta.json, as a checkpoint
+// produced before the metadata convention existed would look.
+func (b *builder) bare(id string) *builder {
 	b.t.Helper()
-
-	dir := filepath.Join(b.root, artifact.GenerationsDirName, genID, artifact.CheckpointsDirName, checkpointID)
-	require.NoError(b.t, os.MkdirAll(dir, 0o755))
-	require.NoError(b.t, os.WriteFile(filepath.Join(dir, "checkpoint.img"), []byte("image"), 0o644))
+	require.NoError(b.t, os.MkdirAll(
+		filepath.Join(b.root, artifact.CheckpointsDirName, id), 0o755))
 	return b
 }
 
-func (b *builder) load(active string) (*artifact.Registry, error) {
+func (b *builder) load() (*artifact.Registry, error) {
 	b.t.Helper()
-	return artifact.Load(artifact.Options{Root: b.root, ActiveGeneration: active, Log: logging.Discard()})
+	return artifact.Load(artifact.Options{Root: b.root, Log: logging.Discard()})
 }
 
-func (b *builder) mustLoad(active string) *artifact.Registry {
+func (b *builder) mustLoad() *artifact.Registry {
 	b.t.Helper()
-	r, err := b.load(active)
+	r, err := b.load()
 	require.NoError(b.t, err)
 	return r
 }
 
-var (
-	older = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	newer = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-)
+// ---------------------------------------------------------------------------
+// The happy path
+// ---------------------------------------------------------------------------
+func TestLoad_ReadsARootfsManifestAndCheckpoints(t *testing.T) {
+	r := newBuilder(t).rootfs().manifest().
+		checkpoint("checkpoint_1", "pandas").checkpoint("checkpoint_2", "torch").mustLoad()
 
-func TestLoad_IndexesGenerationsAndCheckpoints(t *testing.T) {
-	r := newBuilder(t).
-		generation("gen-a", older).
-		checkpoint("gen-a", "checkpoint_1").
-		checkpoint("gen-a", "checkpoint_2").
-		mustLoad("")
-
-	gens := r.Generations()
-	require.Len(t, gens, 1)
-	assert.Equal(t, "gen-a", gens[0].ID)
-	assert.Len(t, gens[0].Checkpoints, 2)
-	assert.Equal(t, []string{"gen-a/checkpoint_1", "gen-a/checkpoint_2"}, r.CheckpointRefs())
-}
-
-func TestLoad_ActiveDefaultsToNewest(t *testing.T) {
-	r := newBuilder(t).
-		generation("gen-a", older).
-		generation("gen-b", newer).
-		mustLoad("")
-
-	assertActive(t, r, "gen-b")
-	assert.Equal(t, []string{"gen-b", "gen-a"}, []string{r.Generations()[0].ID, r.Generations()[1].ID},
-		"generations are ordered newest first")
-}
-
-func TestLoad_ActiveCanBePinned(t *testing.T) {
-	r := newBuilder(t).
-		generation("gen-a", older).
-		generation("gen-b", newer).
-		mustLoad("gen-a")
-
-	assertActive(t, r, "gen-a")
-}
-
-func TestLoad_PinningAnAbsentGenerationFails(t *testing.T) {
-	_, err := newBuilder(t).generation("gen-a", older).load("gen-missing")
-	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrUnknownGeneration)
-}
-
-// The pipeline names checkpoints checkpoint_1, checkpoint_2, … per run, so the
-// same ID exists in every generation. A bare reference must not be ambiguous.
-func TestResolveCheckpoint_BareReferenceTakesTheNewestGeneration(t *testing.T) {
-	r := newBuilder(t).
-		generation("gen-a", older).
-		checkpoint("gen-a", "checkpoint_1").
-		generation("gen-b", newer).
-		checkpoint("gen-b", "checkpoint_1").
-		mustLoad("")
-
-	checkpoint, gen, err := r.ResolveCheckpoint("checkpoint_1")
+	rootfs, err := r.Rootfs()
 	require.NoError(t, err)
+	assert.DirExists(t, rootfs)
+	assert.Equal(t, []string{"checkpoint_1", "checkpoint_2"}, r.Checkpoints())
+	assert.False(t, r.Empty())
+}
 
-	assert.Equal(t, "gen-b", gen.ID)
+// A bare ID is unambiguous now that checkpoints are not nested under
+// generations. The router sends exactly this.
+func TestResolveCheckpoint_FindsACheckpointByBareID(t *testing.T) {
+	r := newBuilder(t).rootfs().manifest().checkpoint("checkpoint_1", "pandas", "numpy").mustLoad()
+
+	checkpoint, err := r.ResolveCheckpoint("checkpoint_1")
+
+	require.NoError(t, err)
 	assert.Equal(t, "checkpoint_1", checkpoint.ID)
-	assert.Equal(t, "sha256:rootfs-gen-b", checkpoint.RootfsID)
+	assert.Equal(t, []string{"pandas", "numpy"}, checkpoint.Imports)
+	assert.DirExists(t, checkpoint.Dir)
 }
 
-func TestResolveCheckpoint_QualifiedReferencePinsAnOlderGeneration(t *testing.T) {
-	r := newBuilder(t).
-		generation("gen-a", older).
-		checkpoint("gen-a", "checkpoint_1").
-		generation("gen-b", newer).
-		checkpoint("gen-b", "checkpoint_1").
-		mustLoad("")
+func TestResolveCheckpoint_InheritsCompatibilityFieldsFromTheManifest(t *testing.T) {
+	// Duplicated onto the checkpoint so its directory is self-describing even
+	// in isolation.
+	r := newBuilder(t).rootfs().manifest().checkpoint("checkpoint_1").mustLoad()
 
-	checkpoint, gen, err := r.ResolveCheckpoint("gen-a/checkpoint_1")
+	checkpoint, err := r.ResolveCheckpoint("checkpoint_1")
+
 	require.NoError(t, err)
-
-	assert.Equal(t, "gen-a", gen.ID)
-	assert.Equal(t, "sha256:rootfs-gen-a", checkpoint.RootfsID)
+	assert.Equal(t, r.Manifest().RunscVersion, checkpoint.RunscVersion)
+	assert.Equal(t, r.Manifest().SpecFingerprint, checkpoint.SpecFingerprint)
 }
 
-// The rootfs a restore runs against is looked up through the checkpoint, never
-// assumed — which is what makes a mismatched pair impossible.
-func TestResolveCheckpoint_RootfsComesFromTheOwningGeneration(t *testing.T) {
-	b := newBuilder(t).
-		generation("gen-a", older).
-		checkpoint("gen-a", "checkpoint_1").
-		generation("gen-b", newer)
-	r := b.mustLoad("")
+func TestResolveCheckpoint_ReportsOneThatIsNotInstalled(t *testing.T) {
+	r := newBuilder(t).rootfs().manifest().checkpoint("checkpoint_1").mustLoad()
 
-	assertActive(t, r, "gen-b") // cold starts use the newest generation
+	_, err := r.ResolveCheckpoint("checkpoint_9")
 
-	_, gen, err := r.ResolveCheckpoint("checkpoint_1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrUnknownCheckpoint)
+}
+
+func TestLoad_ACheckpointWithoutMetaStillLoads(t *testing.T) {
+	// It restores, it simply cannot be pre-verified.
+	r := newBuilder(t).rootfs().manifest().bare("checkpoint_1").mustLoad()
+
+	checkpoint, err := r.ResolveCheckpoint("checkpoint_1")
+
 	require.NoError(t, err)
-	assert.Equal(t, "gen-a", gen.ID, "the restore must use the checkpoint's own generation")
-	assert.Equal(t,
-		filepath.Join(b.root, artifact.GenerationsDirName, "gen-a", artifact.RootfsDirName),
-		gen.RootfsPath())
+	assert.Equal(t, "checkpoint_1", checkpoint.ID)
 }
 
-func TestResolveCheckpoint_Errors(t *testing.T) {
-	r := newBuilder(t).
-		generation("gen-a", older).
-		checkpoint("gen-a", "checkpoint_1").
-		mustLoad("")
+func TestLoad_SkipsAMalformedCheckpointAndKeepsTheRest(t *testing.T) {
+	// One bad image must not cost the worker every other checkpoint and its
+	// rootfs.
+	b := newBuilder(t).rootfs().manifest().checkpoint("checkpoint_1")
+	broken := filepath.Join(b.root, artifact.CheckpointsDirName, "checkpoint_bad")
+	require.NoError(t, os.MkdirAll(broken, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(broken, "meta.json"), []byte("{"), 0o600))
 
-	tests := []struct {
-		name string
-		ref  string
-		want error
-	}{
-		{"empty", "", artifact.ErrUnknownCheckpoint},
-		{"unknown bare", "checkpoint_9", artifact.ErrUnknownCheckpoint},
-		{"unknown generation", "gen-z/checkpoint_1", artifact.ErrUnknownGeneration},
-		{"unknown in known generation", "gen-a/checkpoint_9", artifact.ErrUnknownCheckpoint},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := r.ResolveCheckpoint(tt.ref)
+	assert.Equal(t, []string{"checkpoint_1"}, b.mustLoad().Checkpoints())
+}
+
+func TestLoad_SkipsACheckpointClaimingADifferentID(t *testing.T) {
+	// The directory name is authoritative: it is how the router addresses the
+	// checkpoint, so a meta.json claiming another ID would make lookups
+	// inconsistent.
+	b := newBuilder(t).rootfs().manifest()
+	dir := filepath.Join(b.root, artifact.CheckpointsDirName, "checkpoint_1")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, artifact.WriteCheckpointMeta(dir,
+		artifact.Checkpoint{ID: "checkpoint_elsewhere"}))
+
+	assert.Empty(t, b.mustLoad().Checkpoints())
+}
+
+func TestLoad_IgnoresFilesAmongTheCheckpointDirectories(t *testing.T) {
+	b := newBuilder(t).rootfs().manifest().checkpoint("checkpoint_1")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(b.root, artifact.CheckpointsDirName, "notes.txt"), []byte("x"), 0o600))
+
+	assert.Equal(t, []string{"checkpoint_1"}, b.mustLoad().Checkpoints())
+}
+
+func TestCheckpoints_AreSortedSoLogsAndTestsAreStable(t *testing.T) {
+	r := newBuilder(t).rootfs().manifest().
+		checkpoint("checkpoint_3").checkpoint("checkpoint_1").checkpoint("checkpoint_2").mustLoad()
+
+	assert.Equal(t, []string{"checkpoint_1", "checkpoint_2", "checkpoint_3"}, r.Checkpoints())
+}
+
+func TestRoot_ReportsWhereItLoadedFrom(t *testing.T) {
+	b := newBuilder(t).rootfs()
+	assert.Equal(t, b.root, b.mustLoad().Root())
+}
+
+// ---------------------------------------------------------------------------
+// Degraded and broken trees
+// ---------------------------------------------------------------------------
+
+// A worker with no rootfs cannot start a sandbox, but it can come up, serve
+// health and say why it is unusable. That is far easier to diagnose than a
+// container which exits before it logs anything.
+func TestLoad_SucceedsWithAnEmptyTree(t *testing.T) {
+	r := newBuilder(t).mustLoad()
+
+	assert.True(t, r.Empty())
+	assert.Empty(t, r.Checkpoints())
+}
+
+func TestRootfs_ReportsWhyNothingCanRun(t *testing.T) {
+	// An error rather than an empty string: an empty path would reach runsc as
+	// a relative "rootfs" and fail deep inside a create, naming neither the
+	// worker nor the artifact.
+	_, err := newBuilder(t).mustLoad().Rootfs()
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrNoArtifacts)
+	assert.Contains(t, err.Error(), "rebuild the worker image",
+		"the message has to say what to do about it")
+}
+
+// Checkpoints with no rootfs is a different thing from an empty tree: something
+// assembled half an artifact, and restoring any of them is undefined.
+func TestLoad_RefusesCheckpointsWithNoRootfs(t *testing.T) {
+	_, err := newBuilder(t).manifest().checkpoint("checkpoint_1").load()
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrIncompleteArtifacts)
+	assert.Contains(t, err.Error(), artifact.RootfsDirName,
+		"the message names the missing path")
+}
+
+func TestLoad_ARootfsWithNoManifestServesColdStartsOnly(t *testing.T) {
+	// What the worker image ships with before any checkpoint is captured.
+	r := newBuilder(t).rootfs().mustLoad()
+
+	assert.False(t, r.Empty())
+	assert.Empty(t, r.Checkpoints())
+	_, err := r.Rootfs()
+	assert.NoError(t, err)
+}
+
+func TestLoad_RefusesAMalformedManifest(t *testing.T) {
+	b := newBuilder(t).rootfs()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(b.root, artifact.ManifestFileName), []byte("{"), 0o600))
+
+	_, err := b.load()
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrInvalidManifest)
+}
+
+func TestLoad_RefusesAManifestMissingWhatARestoreNeeds(t *testing.T) {
+	for _, field := range []string{"runsc_version", "spec_fingerprint", "executor_argv"} {
+		t.Run(field, func(t *testing.T) {
+			b := newBuilder(t).rootfs().manifest(func(m *artifact.Manifest) {
+				switch field {
+				case "runsc_version":
+					m.RunscVersion = ""
+				case "spec_fingerprint":
+					m.SpecFingerprint = ""
+				case "executor_argv":
+					m.ExecutorArgv = nil
+				}
+			})
+
+			_, err := b.load()
+
 			require.Error(t, err)
-			assert.ErrorIs(t, err, tt.want)
+			assert.ErrorIs(t, err, artifact.ErrInvalidManifest)
+			assert.Contains(t, err.Error(), field)
 		})
 	}
 }
 
-// A checkpoint written before the metadata convention existed still restores;
-// it simply inherits the generation's identity and cannot be pre-verified.
-func TestLoad_CheckpointWithoutMetaInheritsTheGeneration(t *testing.T) {
-	r := newBuilder(t).
-		generation("gen-a", older).
-		checkpointWithoutMeta("gen-a", "checkpoint_1").
-		mustLoad("")
+// ---------------------------------------------------------------------------
+// The executor protocol gate
+// ---------------------------------------------------------------------------
 
-	checkpoint, _, err := r.ResolveCheckpoint("checkpoint_1")
-	require.NoError(t, err)
-
-	assert.Equal(t, "sha256:rootfs-gen-a", checkpoint.RootfsID)
-	assert.Equal(t, "sha256:spec-gen-a", checkpoint.SpecFingerprint)
-	assert.Equal(t, "runsc version release-20250107.0", checkpoint.RunscVersion)
+// Artifacts whose executor speaks a format this worker does not implement are
+// refused at load, not at restore. The failure otherwise happens inside a
+// request, as a dial that succeeds followed by a read that hangs to the
+// deadline — indistinguishable from a slow function.
+func TestProtocol_DefaultsToOneWhenTheFieldIsAbsent(t *testing.T) {
+	assert.Equal(t, 1, artifact.Manifest{}.Protocol())
 }
 
-// One corrupt artifact must not take a worker offline when others are usable.
-func TestLoad_SkipsUnusableGenerations(t *testing.T) {
-	b := newBuilder(t).generation("gen-good", newer).checkpoint("gen-good", "checkpoint_1")
+func TestLoad_RefusesArtifactsFromAnOlderProtocol(t *testing.T) {
+	b := newBuilder(t).rootfs().manifest(func(m *artifact.Manifest) { m.ExecutorProtocol = 0 })
 
-	// A generation whose rootfs never made it across.
-	noRootfs := filepath.Join(b.root, artifact.GenerationsDirName, "gen-no-rootfs")
-	require.NoError(t, os.MkdirAll(noRootfs, 0o755))
-	require.NoError(t, artifact.WriteGeneration(noRootfs, artifact.Generation{
-		ID: "gen-no-rootfs", RootfsID: "x", RunscVersion: "x",
-		SpecFingerprint: "x", ExecutorEntrypoint: "/app/executor/app.py",
-		ExecutorProtocol: executor.ProtocolVersion,
-	}))
+	_, err := b.load()
 
-	// A generation with unparseable metadata.
-	corrupt := filepath.Join(b.root, artifact.GenerationsDirName, "gen-corrupt")
-	require.NoError(t, os.MkdirAll(filepath.Join(corrupt, artifact.RootfsDirName), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(corrupt, artifact.GenerationFileName), []byte("{not json"), 0o644))
-
-	r := b.mustLoad("")
-
-	require.Len(t, r.Generations(), 1)
-	assert.Equal(t, "gen-good", r.Generations()[0].ID)
-}
-
-// A worker with no rootfs cannot start a sandbox at all, so this must fail
-// loudly rather than at the first request.
-// A worker with no generation cannot start a sandbox, but it can still come up,
-// serve health and say why it is unusable. That is far easier to diagnose than
-// a container which exits before it logs anything, so the failure is moved from
-// startup onto the execution that actually needs a sandbox.
-
-func TestLoad_SucceedsWhenTheGenerationsDirectoryIsEmpty(t *testing.T) {
-	b := newBuilder(t)
-	require.NoError(t, os.MkdirAll(filepath.Join(b.root, artifact.GenerationsDirName), 0o755))
-
-	r, err := b.load("")
-
-	require.NoError(t, err)
-	assert.True(t, r.Empty())
-}
-
-func TestLoad_SucceedsWhenTheArtifactRootIsAbsent(t *testing.T) {
-	r, err := artifact.Load(artifact.Options{
-		Root: filepath.Join(t.TempDir(), "nope"), Log: logging.Discard(),
-	})
-
-	require.NoError(t, err)
-	assert.True(t, r.Empty())
-}
-
-func TestLoad_SucceedsWhenEveryGenerationIsUnusable(t *testing.T) {
-	// One corrupt artifact should not take a worker offline, and neither should
-	// all of them.
-	b := newBuilder(t)
-	dir := filepath.Join(b.root, artifact.GenerationsDirName, "gen-broken")
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, artifact.GenerationFileName), []byte("{"), 0o600))
-
-	r, err := b.load("")
-
-	require.NoError(t, err)
-	assert.True(t, r.Empty())
-}
-
-func TestActive_ReportsWhyNothingCanRun(t *testing.T) {
-	// An error rather than a zero Generation: a zero value has an empty Dir, so
-	// RootfsPath() would be the relative path "rootfs" and runsc would fail deep
-	// inside a create with an error naming neither the worker nor the artifact.
-	r, err := artifact.Load(artifact.Options{Root: t.TempDir(), Log: logging.Discard()})
-	require.NoError(t, err)
-
-	_, activeErr := r.Active()
-
-	require.Error(t, activeErr)
-	assert.ErrorIs(t, activeErr, artifact.ErrNoGenerations)
-	assert.Contains(t, activeErr.Error(), "install one",
+	require.Error(t, err)
+	assert.ErrorIs(t, err, artifact.ErrUnsupportedProtocol)
+	assert.Contains(t, err.Error(), "rebuild the worker image",
 		"the message has to say what the operator should do about it")
 }
 
-func TestEmpty_IsFalseOnceAGenerationLoads(t *testing.T) {
-	b := newBuilder(t)
-	b.generation("gen-a", time.Now())
+func TestLoad_RefusesArtifactsFromAFutureProtocol(t *testing.T) {
+	b := newBuilder(t).rootfs().manifest(func(m *artifact.Manifest) {
+		m.ExecutorProtocol = executor.ProtocolVersion + 1
+	})
 
-	r, err := b.load("")
-
-	require.NoError(t, err)
-	assert.False(t, r.Empty())
+	assert.ErrorIs(t, mustLoadErr(t, b), artifact.ErrUnsupportedProtocol)
 }
 
-// A requested generation that is missing stays fatal. That is a configuration
-// mistake rather than a missing artifact, and silently starting on a different
-// generation than the operator named would be worse than not starting.
-func TestLoad_StillFailsWhenTheRequestedGenerationIsAbsent(t *testing.T) {
-	b := newBuilder(t)
-	b.generation("gen-a", time.Now())
-
-	_, err := b.load("gen-typo")
-
+func mustLoadErr(t *testing.T, b *builder) error {
+	t.Helper()
+	_, err := b.load()
 	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrUnknownGeneration)
+	return err
 }
 
-func TestLoadGeneration_RejectsAnIDThatContradictsItsDirectory(t *testing.T) {
-	b := newBuilder(t)
-	dir := filepath.Join(b.root, artifact.GenerationsDirName, "gen-a")
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
-	require.NoError(t, artifact.WriteGeneration(dir, artifact.Generation{
-		ID: "gen-somewhere-else", RootfsID: "x", RunscVersion: "x",
-		SpecFingerprint: "x", ExecutorEntrypoint: "/app/executor/app.py",
-		ExecutorProtocol: executor.ProtocolVersion,
-	}))
+// ---------------------------------------------------------------------------
+// Argv and serialisation
+// ---------------------------------------------------------------------------
 
-	_, err := artifact.LoadGeneration(dir)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrInvalidGeneration)
+// The pipeline records the command and the worker replays it, rather than each
+// assembling one — two generators cannot be kept in agreement by review, and a
+// disagreement restores a checkpoint into a sandbox running a different process.
+func TestArgv_ReturnsTheRecordedCommand(t *testing.T) {
+	m := artifact.Manifest{ExecutorArgv: []string{"python", "-u", "-m", "crfs_executor"}}
+
+	assert.Equal(t, []string{"python", "-u", "-m", "crfs_executor"}, m.Argv())
 }
 
-func TestLoadGeneration_RejectsMissingRequiredFields(t *testing.T) {
-	b := newBuilder(t)
-	dir := filepath.Join(b.root, artifact.GenerationsDirName, "gen-a")
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, artifact.GenerationFileName),
-		[]byte(`{"id":"gen-a"}`), 0o644))
+func TestArgv_ReturnsACopySoACallerCannotMutateTheManifest(t *testing.T) {
+	m := artifact.Manifest{ExecutorArgv: []string{"python", "-m", "crfs_executor"}}
 
-	_, err := artifact.LoadGeneration(dir)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrInvalidGeneration)
-	for _, field := range []string{"rootfs_id", "runsc_version", "spec_fingerprint", "executor_entrypoint"} {
-		assert.Contains(t, err.Error(), field)
-	}
+	got := m.Argv()
+	got[0] = "sh"
+
+	assert.Equal(t, "python", m.ExecutorArgv[0])
 }
 
-func TestLoad_GenerationWithoutCheckpointsStillServesColdStarts(t *testing.T) {
-	r := newBuilder(t).generation("gen-a", older).mustLoad("")
-
-	assertActive(t, r, "gen-a")
-	assert.Empty(t, r.CheckpointRefs())
-	active, err := r.Active()
-	require.NoError(t, err)
-	assert.DirExists(t, active.RootfsPath())
-}
-
-// Metadata is written atomically so a concurrent reader never sees a partial
-// file, and the on-disk form must stay stable for the Python pipeline.
-func TestWriteGeneration_ProducesReadableStableJSON(t *testing.T) {
+func TestWriteManifest_ProducesReadableStableJSON(t *testing.T) {
+	// The pipeline writes this file and the worker reads it; the field names are
+	// the contract between them.
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, artifact.RootfsDirName), 0o755))
+	want := validManifest()
 
-	want := artifact.Generation{
-		ID: filepath.Base(dir), RootfsID: "sha256:abc", RunscVersion: "runsc version x",
-		SpecFingerprint: "sha256:def", ExecutorEntrypoint: "/app/executor/app.py",
-		ExecutorProtocol: executor.ProtocolVersion,
-		Overlay:          "root:memory", Network: "none", CreatedAt: older,
-	}
-	require.NoError(t, artifact.WriteGeneration(dir, want))
+	require.NoError(t, artifact.WriteManifest(dir, want))
 
-	raw, err := os.ReadFile(filepath.Join(dir, artifact.GenerationFileName))
+	raw, err := os.ReadFile(filepath.Join(dir, artifact.ManifestFileName))
 	require.NoError(t, err)
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(raw, &got))
-	assert.Equal(t, "sha256:abc", got["rootfs_id"])
-	assert.Equal(t, "/app/executor/app.py", got["executor_entrypoint"])
+	assert.Equal(t, want.RunscVersion, got["runsc_version"])
+	assert.Equal(t, want.SpecFingerprint, got["spec_fingerprint"])
+	assert.InDelta(t, float64(executor.ProtocolVersion), got["executor_protocol"], 0)
+	assert.NotContains(t, got, "id", "identity is the image tag, not a manifest field")
+	assert.NotContains(t, got, "rootfs_id", "there is one rootfs, so nothing to identify")
+}
 
-	loaded, err := artifact.LoadGeneration(dir)
-	require.NoError(t, err)
-	assert.Equal(t, want.RootfsID, loaded.RootfsID)
-	assert.True(t, want.CreatedAt.Equal(loaded.CreatedAt))
+func TestWriteManifest_RoundTrips(t *testing.T) {
+	b := newBuilder(t).rootfs()
+	want := validManifest()
+	require.NoError(t, artifact.WriteManifest(b.root, want))
 
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	for _, e := range entries {
-		assert.NotContains(t, e.Name(), ".tmp", "no temp file may survive an atomic write")
-		assert.False(t, len(e.Name()) > 0 && e.Name()[0] == '.', "no dotfile may survive: %s", e.Name())
-	}
+	got := b.mustLoad().Manifest()
+
+	assert.Equal(t, want.RunscVersion, got.RunscVersion)
+	assert.Equal(t, want.SpecFingerprint, got.SpecFingerprint)
+	assert.Equal(t, want.ExecutorArgv, got.ExecutorArgv)
+	assert.Equal(t, want.PythonPath, got.PythonPath)
+	assert.True(t, want.CreatedAt.Equal(got.CreatedAt))
 }
 
 func TestWriteCheckpointMeta_RoundTrips(t *testing.T) {
-	b := newBuilder(t).generation("gen-a", older).checkpoint("gen-a", "checkpoint_1", func(c *artifact.Checkpoint) {
-		c.Producer = "worker"
-		c.Imports = []string{"torch"}
-	})
-	r := b.mustLoad("")
+	r := newBuilder(t).rootfs().manifest().checkpoint("checkpoint_1", "pandas").mustLoad()
 
-	checkpoint, _, err := r.ResolveCheckpoint("checkpoint_1")
+	checkpoint, err := r.ResolveCheckpoint("checkpoint_1")
+
 	require.NoError(t, err)
-	assert.Equal(t, "worker", checkpoint.Producer)
-	assert.Equal(t, []string{"torch"}, checkpoint.Imports)
-	assert.Equal(t, "gen-a", checkpoint.GenerationID)
-}
-
-// A checkpoint claiming a different owner than the directory it sits in is a
-// packaging error and must not be silently indexed under the wrong rootfs.
-func TestLoad_SkipsACheckpointClaimingTheWrongGeneration(t *testing.T) {
-	b := newBuilder(t).
-		generation("gen-a", older).
-		checkpoint("gen-a", "checkpoint_1", func(c *artifact.Checkpoint) { c.GenerationID = "gen-elsewhere" }).
-		checkpoint("gen-a", "checkpoint_2")
-
-	r := b.mustLoad("")
-
-	_, _, err := r.ResolveCheckpoint("checkpoint_1")
-	assert.ErrorIs(t, err, artifact.ErrUnknownCheckpoint)
-
-	_, _, err = r.ResolveCheckpoint("checkpoint_2")
-	assert.NoError(t, err, "a sound checkpoint alongside a bad one stays usable")
-}
-
-// Argv is what the sandbox actually runs. The pipeline records it and the
-// worker replays it, rather than each assembling one — two generators cannot be
-// kept in agreement by review, and a disagreement here restores a checkpoint
-// into a sandbox running a different process.
-
-func TestArgv_PrefersTheRecordedCommand(t *testing.T) {
-	gen := artifact.Generation{
-		ExecutorArgv:       []string{"python", "-u", "-m", "crfs_executor"},
-		ExecutorEntrypoint: "/app/executor/app.py",
-	}
-
-	assert.Equal(t, []string{"python", "-u", "-m", "crfs_executor"}, gen.Argv())
-}
-
-func TestArgv_FallsBackToTheLegacyEntrypointPath(t *testing.T) {
-	// The executor used to be a loose file rather than an installed module, and
-	// a generation captured then records only the path.
-	gen := artifact.Generation{ExecutorEntrypoint: "/app/executor/app.py"}
-
-	assert.Equal(t, []string{"python", "-u", "/app/executor/app.py"}, gen.Argv())
-}
-
-func TestArgv_ReturnsACopySoACallerCannotMutateTheGeneration(t *testing.T) {
-	gen := artifact.Generation{ExecutorArgv: []string{"python", "-m", "crfs_executor"}}
-
-	got := gen.Argv()
-	got[0] = "sh"
-
-	assert.Equal(t, "python", gen.ExecutorArgv[0])
-}
-
-func TestValidate_AcceptsEitherExecutorField(t *testing.T) {
-	base := artifact.Generation{
-		ID: "gen-1", RootfsID: "sha256:a", RunscVersion: "runsc 1", SpecFingerprint: "sha256:b",
-		ExecutorProtocol: executor.ProtocolVersion,
-	}
-
-	withArgv := base
-	withArgv.ExecutorArgv = []string{"python", "-m", "crfs_executor"}
-	require.NoError(t, withArgv.Validate())
-
-	withPath := base
-	withPath.ExecutorEntrypoint = "/app/executor/app.py"
-	require.NoError(t, withPath.Validate())
-}
-
-func TestValidate_RejectsAGenerationThatNamesNoProcess(t *testing.T) {
-	gen := artifact.Generation{
-		ID: "gen-1", RootfsID: "sha256:a", RunscVersion: "runsc 1", SpecFingerprint: "sha256:b",
-		ExecutorProtocol: executor.ProtocolVersion,
-	}
-
-	err := gen.Validate()
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "executor_argv")
-}
-
-// A generation whose executor speaks a format this worker does not implement is
-// refused when it loads, not when a request tries to use it. The failure
-// otherwise happens inside an execution, as a dial that succeeds followed by a
-// read that hangs until the deadline -- indistinguishable from a slow function.
-
-func TestProtocol_DefaultsToOneWhenTheFieldIsAbsent(t *testing.T) {
-	// Every generation captured before the field existed necessarily speaks
-	// version 1, so an absent value is that rather than an error.
-	assert.Equal(t, 1, artifact.Generation{}.Protocol())
-}
-
-func TestValidate_RefusesAGenerationFromAnOlderProtocol(t *testing.T) {
-	gen := artifact.Generation{
-		ID: "gen-old", RootfsID: "sha256:a", RunscVersion: "runsc 1",
-		SpecFingerprint: "sha256:b", ExecutorEntrypoint: "/app/executor/app.py",
-		// No ExecutorProtocol: this is what the previous pipeline wrote.
-	}
-
-	err := gen.Validate()
-
-	require.Error(t, err)
-	assert.ErrorIs(t, err, artifact.ErrUnsupportedProtocol)
-	assert.Contains(t, err.Error(), "rebuild the generation",
-		"the message has to say what the operator should do about it")
-}
-
-func TestValidate_RefusesAGenerationFromAFutureProtocol(t *testing.T) {
-	gen := artifact.Generation{
-		ID: "gen-new", RootfsID: "sha256:a", RunscVersion: "runsc 1",
-		SpecFingerprint: "sha256:b", ExecutorArgv: []string{"python", "-m", "crfs_executor"},
-		ExecutorProtocol: executor.ProtocolVersion + 1,
-	}
-
-	assert.ErrorIs(t, gen.Validate(), artifact.ErrUnsupportedProtocol)
-}
-
-// assertActive names the generation cold starts should use.
-func assertActive(t *testing.T, r *artifact.Registry, want string) {
-	t.Helper()
-	active, err := r.Active()
-	require.NoError(t, err)
-	assert.Equal(t, want, active.ID)
+	assert.Equal(t, "pipeline", checkpoint.Producer)
+	assert.Equal(t, []string{"pandas"}, checkpoint.Imports)
 }

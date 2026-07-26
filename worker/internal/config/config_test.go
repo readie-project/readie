@@ -14,11 +14,10 @@ import (
 // validEnv mirrors the environment baked into worker/Dockerfile.
 func validEnv() map[string]string {
 	return map[string]string{
-		"SERVICE_NAME":  "worker",
-		"PORT":          "50052",
-		"WORKER_DIR":    "/shared",
-		"ROUTER_URI":    "router:50051",
-		"ARTIFACT_ROOT": "/var/lib/crfs",
+		"SERVICE_NAME": "worker",
+		"PORT":         "50052",
+		"WORKER_DIR":   "/shared",
+		"ROUTER_URI":   "router:50051",
 	}
 }
 
@@ -46,8 +45,9 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, ":50052", cfg.ListenAddr)
 
 	assert.Equal(t, "router:50051", cfg.RouterURI)
-	assert.Equal(t, "/var/lib/crfs", cfg.ArtifactRoot)
-	assert.Empty(t, cfg.ActiveGeneration, "empty selects the newest generation")
+	// The artifact root is a compiled-in constant rather than configuration:
+	// there is one place a worker image puts its rootfs and checkpoints.
+	assert.Equal(t, "/var/lib/crfs", config.ArtifactRoot)
 
 	assert.Equal(t, "/usr/local/bin/runsc", cfg.RunscBinary)
 	assert.Equal(t, "/run/crfs-runsc", cfg.RunscRoot)
@@ -91,7 +91,7 @@ func TestLoad_DialBudgetExceedsExecutorCheckpointSleep(t *testing.T) {
 }
 
 func TestLoad_MissingRequiredEnv(t *testing.T) {
-	for _, key := range []string{"SERVICE_NAME", "PORT", "WORKER_DIR", "ROUTER_URI", "ARTIFACT_ROOT"} {
+	for _, key := range []string{"SERVICE_NAME", "PORT", "WORKER_DIR", "ROUTER_URI"} {
 		t.Run(key, func(t *testing.T) {
 			env := validEnv()
 			delete(env, key)
@@ -113,7 +113,6 @@ func TestLoad_InvalidValues(t *testing.T) {
 		{"bad log format", map[string]string{"LOG_FORMAT": "xml"}},
 		{"bad duration", map[string]string{"EXECUTION_TIMEOUT": "soon"}},
 		{"bad bool", map[string]string{"STREAM_LOGS": "maybe"}},
-		{"relative artifact root", map[string]string{"ARTIFACT_ROOT": "artifacts"}},
 		{"relative runsc root", map[string]string{"RUNSC_ROOT": "state"}},
 		{"unknown network", map[string]string{"SANDBOX_NETWORK": "bridge"}},
 	}
@@ -160,7 +159,6 @@ func TestLoad_RejectsAnOverlayThatWritesIntoTheSharedRootfs(t *testing.T) {
 func TestLoad_Overrides(t *testing.T) {
 	env := validEnv()
 	env["WORKER_ID"] = "worker-7"
-	env["ACTIVE_GENERATION"] = "gen-2026-06"
 	env["RUNSC_BINARY"] = "/opt/bin/runsc"
 	env["SANDBOX_PLATFORM"] = "systrap"
 	env["SANDBOX_IGNORE_CGROUPS"] = "true"
@@ -178,7 +176,6 @@ func TestLoad_Overrides(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "worker-7", cfg.WorkerID)
-	assert.Equal(t, "gen-2026-06", cfg.ActiveGeneration)
 	assert.Equal(t, "/opt/bin/runsc", cfg.RunscBinary)
 	assert.Equal(t, "systrap", cfg.SandboxPlatform)
 	assert.True(t, cfg.SandboxIgnoreCgroups)
@@ -198,7 +195,7 @@ func TestValidate_ReportsAllProblemsAtOnce(t *testing.T) {
 	err := config.Config{LogFormat: "yaml", ChunkSize: -1}.Validate()
 	require.Error(t, err)
 
-	for _, want := range []string{"WorkerID", "RouterURI", "ArtifactRoot", "ChunkSize", "LogFormat"} {
+	for _, want := range []string{"WorkerID", "RouterURI", "ChunkSize", "LogFormat"} {
 		assert.Contains(t, err.Error(), want)
 	}
 }

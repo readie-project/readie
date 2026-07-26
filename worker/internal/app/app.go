@@ -96,13 +96,14 @@ func newRunscRuntime(
 	})
 }
 
-// loadArtifacts scans local storage for runnable generations.
-func loadArtifacts(cfg config.Config, log *slog.Logger) (container.Artifacts, error) {
-	return artifact.Load(artifact.Options{
-		Root:             cfg.ArtifactRoot,
-		ActiveGeneration: cfg.ActiveGeneration,
-		Log:              log,
-	})
+// loadArtifacts reads the rootfs and checkpoints baked into this image.
+//
+// The root is a compiled-in constant rather than configuration: there is one
+// place a worker image puts its artifacts, and making it settable invited a
+// deployment where the mount and the expectation disagreed. Load still takes it
+// as a parameter, so tests build fixtures in temporary directories.
+func loadArtifacts(_ config.Config, log *slog.Logger) (container.Artifacts, error) {
+	return artifact.Load(artifact.Options{Root: config.ArtifactRoot, Log: log})
 }
 
 func dialRegistry(_ context.Context, target string) (pb.RegistryServiceClient, io.Closer, error) {
@@ -185,14 +186,12 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	if err != nil {
 		return nil, fmt.Errorf("load sandbox artifacts: %w", err)
 	}
-	if active, activeErr := artifacts.Active(); activeErr != nil {
-		app.degraded = activeErr
-		log.Error("starting without a usable generation; no execution can succeed",
-			"artifact_root", cfg.ArtifactRoot, logging.KeyError, activeErr)
+	if rootfs, rootfsErr := artifacts.Rootfs(); rootfsErr != nil {
+		app.degraded = rootfsErr
+		log.Error("starting without a root filesystem; no execution can succeed",
+			"artifact_root", config.ArtifactRoot, logging.KeyError, rootfsErr)
 	} else {
-		log.Info("sandbox artifacts loaded",
-			"active_generation", active.ID,
-			"rootfs", active.RootfsPath())
+		log.Info("sandbox artifacts loaded", "rootfs", rootfs)
 	}
 
 	// 2. Sandbox runtime, probed before anything depends on it.
