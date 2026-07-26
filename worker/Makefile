@@ -11,7 +11,7 @@ GOLANGCI_LINT      := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.
 GO      ?= go
 GOBIN   := $(shell $(GO) env GOPATH)/bin
 
-.PHONY: all build run test test-short test-e2e cover race lint fmt tidy vet proto tools docker clean help
+.PHONY: all install build run test test-short test-e2e cover race lint fmt tidy vet proto tools docker clean help
 
 all: fmt vet lint test build ## Run the full local pipeline
 
@@ -57,6 +57,9 @@ proto: ## Regenerate the gRPC stubs from ../protos
 		--go_out=. --go_opt=module=$(MODULE) \
 		--go-grpc_out=. --go-grpc_opt=module=$(MODULE) \
 		$(PROTOS)
+
+install: ## Download module dependencies
+	$(GO) mod download
 
 tools: ## Install the pinned code-generation and lint tools
 	$(GO) install $(PROTOC_GEN_GO)

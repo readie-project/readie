@@ -1,124 +1,189 @@
 # checkpoint-restore-for-serverless
 
-<img width="5110" height="1966" alt="image" src="https://github.com/user-attachments/assets/fd7994c9-ac79-4e59-b2e5-cd345f868e61" />
+Run a Python function on a remote sandbox that has already imported the
+libraries it needs.
 
-## Main/Router node
-The main node accepts all incoming execution requests, and executes them through a series of processes to allocate a worker with the execution task. The main node is orchestrates multiple worker nodes and provisions the worker nodes based on the load and compute requirements. It follows a series of processes to assign a particular execution request to a worker which are as follows:
+A serverless cold start is dominated by imports — `import pandas` alone costs a
+quarter of a second, `torch` several. This platform pays that cost once, offline:
+it runs an executor with a chosen set of packages imported, checkpoints the live
+process with gVisor, and restores that image to serve a request. The restored
+process is already past its imports.
 
-### Code Analysis
-The user's code is parsed to extract resources (packages, models, datasets) required to execute the code. This is done by parsing the AST of the code. Input variables/arguments are identified and profiled to get their type, size and other metadata.
-
-A Merkle tree is created with a TTL to track changes in its arguments. In the case the same function is being requested for execution with different arguments, a traversal of the Merkle tree allows to only transfer those arguments whose values have changed since the last execution.
-
-### Resource Estimation
-We have a model to predict how much compute resources (CPU, GPU) will a function require given the metadata of the input variables (as obtained in the previous step). The source of the prediction model can be accessed [here](https://github.com/illinoisdata/python-execution-memory-prediction). This step tries to minimize over-provisioning of resources over static minimum provisioning.
-
-### State Table
-The state table is connected to the workers via a gRPC Client Streaming endpoint. The workers send over utilization and the current processes, container states and configurations over to the main node, which are stored in the state table. The state table keeps track of all active workers, and ongoing executions and idle containers inside each of them and also active requests.
-
-### Router
-Based on the data collected from the code analysis, resource estimation and the state table values, the route creates the required configuration and makes the decision to direct the request to a particular worker. After shortlisting the workers which have the available compute to run the function based on the resource estimation, the router has to choose the most suitable idle container given the configuration or choose from a set of checkpoints, the best suited to run the given configuration - minimizing both startup times and idle resource times. Below are functions based on which decisions are taken by the router.
-
-#### Cold Start Time
-This is the time taken to ready a container when a particular checkpoint is restored. Given the resources required in the code, the checkpoint image which minimizes the startup time is selected. It is calculated using the below equation:
-
-(equation to be added later)
-
-#### Maximizing Warm Container Resuability
-
-##### For repeating requests/requests from the same session
-Containers are kept warm for a specified time (TTL), before they are destroyed. If a request is received from the same session or same function while the container is alive, it is directly assigned to that container and only the changed arguments are streamed to the worker.
-
-##### For new requests
-In order to reuse warm containers without compromising on startup times, we compare the existing idle container configurations to serve the request by calculating partial initialization times using the below equation. We then compare the calculated cold start time from above to the obtained warm start times, and select one of the idle containers if the time delta is within a reasonably small threashold.
-
-(equation to be added later)
-
-#### Maximizing Checkpoint Density
-Grouping together executions which share the same base checkpoint, allows them to share the initialized resources (packages, models, datasets) on restore, until any of the containers write to the resources in which case a copy of the resource is made into its memory segment i.e. Copy-on-Write (CoW). We want to increase the number of containers running the same base checkpoint inside the same worker (i.e. checkpoint density) as this allows to share the memory allocated to the resources amongst all the containers using them. At the same time, it also allows faster fetching of the checkpoint, as it would be present in the local SSD of that worker already, instead of pulling it from the remote storage.
-
-## Worker nodes
-Each worker node is a set of GVisor containers either idling or running different function executions. These containers are managed by the proxy service running inside each worker. The worker is responsible to execute the functions and stream back the output to the main node, which then streams it back to the user as the response.
-
-Every worker node has a local NVMe SSD attached to it which loads frequently used resources and recently used checkpoints on initialization for faster access. If a resource or checkpoint requested does not exist in the local SSD it is then pulled from the remote storage.
-
-### Proxy Service
-The proxy service acts as the orchestrator of the containers inside the worker, written in GoLang for better concurrency control. It drives `runsc` — the gVisor runtime — directly to provision, destroy, pause, resume and restore sandboxes, rather than going through a container daemon: checkpoint and restore are gVisor operations, and a daemon in the middle adds a dependency and a failure mode without adding a capability. It also monitors each container's allocated compute for memory overflow. The proxy service has an active connection to the main node always, and sends utilization and allocation information against each container to the main node via gRPC.
-
-#### Queuing
-When a new request arrives with a configuration, it is first queued with the proxy service until a container with the required configuration inside the worker becomes available or a new container is provisioned.
-
-#### State table
-Contains the same data as the state table of the main node, scoped only for the containers present inside the worker.
-
-### Unix Domain Socket
-The proxy service establishes a bi-directional connection to each of the containers using a Unix Domain Socket (UDS). This is used to send new execution requests to the provisioned containers and receive execution statuses, outputs and errors from them.
-
-## Advantages of this architecture over standard FaaS
-The comparisions are drawn by comparing the features and optimizations with AWS Lambda (generic), GCP Cloud Functions (generic), Modal AI (Python), Beam Cloud (Python) RunPod (Python).
-
-### Efficient Storage
-Using checkpointing features such as AWS SnapStart and Modal's checkpoint-restore for functions, requires a checkpoint to be stored for each serverless function. This leads to high storage costs which are then transferred to users in exchange for lower cold start times. The above strategy focuses on having generalized checkpoints which can server multiple serverless execution requests, saving storage and can be a storage cost v/s start time tradeoff.
-
-### Reduced Cold Start Time
-Using checkpoint-restore for reducing cold starts only works when the function to execute is already available with the provider and has been executed at least once. However, the startup time is still high for functions which just execute once or are under development. The above strategy makes use of generalized checkpoints to match a request to the checkpoint which can execute it with the least initialization time. These checkpoints are created based on historical requests, aiming to minimize the cold start initialization time across all of them, and to determine sets of resources to do so by solving the below equation:
-
-(equation to be added later)
-
-### Minimal Over-provisioning
-In traditional serverless platforms, the user has to define the compute resources required to execute the serverless functions. However, many times the allocated compute is not used to the limit and the compute resources are wasted and at the same time, the user is also charged for them. The resource prediction model developed allows to allocate only the required compute resources and scale-up in case more compute is required. The model adapts with changing function arguments and this reduces the compute that remains idle due to over-provisioning along with the checkpoint density maximization policies of the router.
-
-### Tiered placement of resources and checkpoints
-Unlike a static placement of resources across three levels in Modal - high speed cache, local SSD and remote storage, the strategy is to dynamically allocate the checkpoints and resources, which would be different for each worker. This is done based on the functions being executed currently and past executions in the worker, in order to reduce startup times by increasing hits, reducing local SSD storage costs by keeping only those resources which are required and rarely accessing the remote storage. The placements are determined using the below equation:
-
-(equation to be added later)
+```python
+from crfs import remote
 
 
+@remote
+def add(a, b):
+    return a + b
 
-## Repository layout
 
-| | | |
+print(add(1, 2))  # blocking
+print(await add.aio(1, 2))  # from an event loop
+```
+
+The decorated function is serialised with `cloudpickle` and executed inside the
+sandbox, so it must be picklable and its imports must exist in the worker's
+image. See [`pkg/`](pkg/) for sessions, error handling and the async surface.
+
+## How a request flows
+
+```
+crfs-client ──ProxyService.RequestExecution──▶ router
+                                                 │  place: affinity, then
+                                                 │  memory headroom and load
+                                                 ▼
+                              ExecutionService.RequestExecution ──▶ worker
+                                                                      │
+                                             Manager.Acquire: restore a
+                                             checkpoint, or start cold
+                                                                      ▼
+                                              $EXECUTOR_DIR/executor.sock
+                                                                      │
+                                                                      ▼
+                                                    executor, in the sandbox
+```
+
+The client cloudpickles `{func, args, kwargs}` and streams it to the router,
+which decides where it runs and relays it to a worker. The worker acquires a
+container — resuming a paused one, restoring a checkpoint, or starting cold —
+and writes the payload over a unix socket to the executor inside it. The
+executor unpickles the call, makes it, and sends back a result envelope, which
+the worker relays to the router and the router to the client, alongside anything
+the function printed.
+
+A container serves one execution at a time: it is a single Python interpreter
+behind a single socket. That is why a client session pins to a container and why
+the router serialises the calls within one.
+
+## Components
+
+| | Language | |
 |---|---|---|
-| [`router/`](router/) | Python | Placement, the cluster registry, and the client-facing proxy |
+| [`router/`](router/) | Python 3.13 | Placement, the cluster registry, the client-facing proxy |
 | [`worker/`](worker/) | Go | Sandbox lifecycle, checkpoint/restore, executor I/O |
-| [`pkg/`](pkg/) | Python | `crfs-client`, the `@remote` SDK users import |
-| [`executor/`](executor/) | Python | Runs *inside* every sandbox; unpickles and calls the function |
-| [`pipeline/`](pipeline/) | Python | Offline: corpus, package analysis, checkpoint planning and capture |
-| [`rootfs/`](rootfs/) | — | The executor root filesystem every checkpoint is captured against |
-| [`protos/`](protos/) | — | The single source of truth for all three wire contracts |
+| [`executor/`](executor/) | Python 3.11+ | Runs *inside* every sandbox; unpickles and calls the function |
+| [`pkg/`](pkg/) | Python 3.11+ | `crfs-client`, the `@remote` SDK users import |
+| [`pipeline/`](pipeline/) | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
 
-Each component owns its own build. The root `Makefile` is an umbrella over them
-and owns the one thing they share:
+[`protos/`](protos/) is the single source of truth for every wire contract.
+[`rootfs/`](rootfs/) is the filesystem every checkpoint is captured against.
+
+The two Python floors are deliberate. `pkg` and `executor` are installed into
+someone else's process — a user's script and the sandbox image — so they must
+work on whatever is already there. `router` and `pipeline` control their own
+images and pin.
+
+## The contracts
+
+Three things hold the components together, and each is enforced rather than
+documented and hoped for.
+
+**The gRPC services** in `protos/`, shared by three languages: `ProxyService`
+(client↔router), `ExecutionService` (router↔worker), `RegistryService`
+(worker→router). `buf lint` and `buf breaking` run in CI, and a job fails if the
+committed stubs are stale. The protos declare no `package`, so service names are
+bare — the compose healthcheck's grpcurl and the worker both depend on that.
+
+**The executor socket protocol**, implemented twice: `executor/` in Python and
+`worker/internal/executor` in Go. Length-prefixed chunks terminated by a
+zero-length one, carrying cloudpickle in both directions. A fixture generated by
+the Python side and decoded by the Go tests keeps them from drifting.
+
+**The generation manifest**, written by `pipeline/` and read by `worker/`. It
+records the runsc version, the OCI spec fingerprint, the rootfs identity and the
+executor protocol version. A worker refuses a checkpoint it cannot restore when
+it *loads* the generation, rather than failing opaquely minutes into a request.
+
+## Running it
 
 ```sh
 make install          # sync every Python virtualenv from its lockfile
+make lint type test   # ruff, mypy --strict, pytest, go test -race, golangci-lint
 make protos           # regenerate every stub (generated code is committed)
-make lint type test   # fan out to all five components
 make up               # docker compose up -d --build
-make help             # list every target
+make help             # every target
 ```
 
-`docker compose up` brings up the router and a worker. On an Apple Silicon
-machine the router half is fully exercisable but the worker is not: gVisor is
-amd64-only and works by intercepting syscalls, which is precisely what emulation
-sits in the middle of.
+`make up` starts the router on `50051` and a worker on `50052`. The worker needs
+`SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI` and `ARTIFACT_ROOT`; the
+compose file supplies them.
 
-## How the pieces meet
+Per component, `make -C router test` or the passthrough `make router-test`.
 
-Three contracts hold the system together, and each is enforced rather than
-documented and hoped for:
+## Building checkpoints
 
-- **The gRPC services** in `protos/`, shared by all three languages. `buf lint`
-  and `buf breaking` run in CI; the stubs are committed and a job fails if they
-  are stale. The protos declare no `package`, so service names are bare — the
-  compose healthcheck and the worker both depend on that.
-- **The executor socket protocol**, implemented twice: `executor/` in Python and
-  `worker/internal/executor` in Go. A fixture generated by one and decoded by
-  the other keeps them from drifting.
-- **The generation manifest**, written by `pipeline/` and read by `worker/`. It
-  records the runsc version, the OCI spec fingerprint, the rootfs identity and
-  the executor protocol version, so a worker refuses a checkpoint it cannot
-  restore *before* trying — rather than failing opaquely minutes into a request.
+Offline, and separate from serving. The rootfs is built first because both the
+pipeline and the worker consume it:
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) to work on any of them, and
-[SECURITY.md](SECURITY.md) for the trust boundaries.
+```sh
+docker build -t crfs-executor-rootfs:latest -f rootfs/Dockerfile .
+docker build -t crfs-pipeline -f pipeline/Dockerfile .
+
+docker run --rm --privileged \
+  --security-opt apparmor=unconfined --security-opt seccomp=unconfined \
+  -e GENERATION_ID=gen-$(date -u +%Y%m%d-%H%M%S) \
+  -e ROOTFS_ID=$(docker inspect --format '{{index .RepoDigests 0}}' crfs-executor-rootfs:latest) \
+  -v "$PWD/out:/app/executor" \
+  crfs-pipeline
+```
+
+The output is a **generation**: the rootfs plus every checkpoint captured against
+it. They install together, because a gVisor checkpoint only restores into the
+filesystem it was taken from. [`pipeline/`](pipeline/) has the install steps and
+the planner's algorithm.
+
+## What works, and what does not
+
+Built and tested:
+
+- Session affinity, warm-container reuse, and the per-session serialisation it
+  forces.
+- Placement on real memory pressure, with liveness probed over `grpc.health.v1`
+  and TTL eviction for workers, containers and sessions.
+- Checkpoint planning by greedy set cover over a 9,773-request corpus and 918
+  measured packages, maximising import time saved per megabyte.
+- Capture and restore through gVisor, with runsc version, spec fingerprint and
+  rootfs identity checked before a restore is attempted.
+- Graceful shutdown on both sides: the router drains in-flight calls, the worker
+  deregisters before draining and reclaims its sandboxes.
+
+Not built. Each of these is a real gap, not an oversight:
+
+- **Checkpoint selection at request time.** The pipeline emits a plan and each
+  checkpoint records its imports, but the router has no catalogue to choose
+  from — it only reuses the checkpoint already attached to a warm container. So
+  every genuinely cold start is uncheckpointed today, which is the one gap that
+  blunts the whole idea. It is the next piece of work.
+- **Resource estimation.** The client AST-walks the function and the router
+  forwards its imports, but nothing reads them: `WorkerExecutionRequest.resources`
+  is write-only. Every request gets the same 512 MiB. The prediction model lives
+  in [a separate repository](https://github.com/illinoisdata/python-execution-memory-prediction)
+  and is not wired in; `ResourceEstimator` is the seam it would slot into.
+- **Persistence.** Router state is in memory. A restart loses sessions — their
+  containers are then reclaimed by the workers' own TTLs — and workers
+  re-register on their next status report.
+- **Authentication and transport security.** The router and worker speak
+  plaintext gRPC with no authorization anywhere in the request path. Anything
+  that can reach port 50051 can run code on the cluster. See
+  [SECURITY.md](SECURITY.md).
+- **Datasets, models and tokenizers.** Carried through the corpus schema and the
+  plan, but only packages are pre-imported. Loading a model into the captured
+  process changes what a checkpoint costs to store.
+- **Storage tiering.** Generations are read from a local directory. There is no
+  remote store and no cache hierarchy.
+
+## Platform
+
+gVisor is amd64-only and works by intercepting syscalls, which is exactly what
+emulation sits in the middle of. On Apple Silicon and in CI the router↔worker
+gRPC path, the executor framing and the planner are all exercisable; capturing a
+checkpoint and executing a function are not.
+
+## More
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to build and test each component, the
+  conventions, and what is deliberately not done
+- [SECURITY.md](SECURITY.md) — the trust boundaries, including why the client
+  unpickling cluster-supplied bytes is inherent rather than a defect
+- [LICENSE](LICENSE) — Apache-2.0
