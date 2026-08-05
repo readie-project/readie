@@ -3,17 +3,17 @@
 # building a worker image with checkpoints baked in.
 
 PROTO_SRC   := protos
-PROTO_FILES := execution.proto proxy.proto registry.proto
+PROTO_FILES := execution.proto proxy.proto registry.proto resources.proto
 
-# Router needs all three (it bridges clients to workers); the client needs only
-# the client-facing one.
+# Router needs all of them (it bridges clients to workers); the client needs the
+# client-facing one plus resources.proto, which proxy.proto imports.
 ROUTER_PKG   := crfs_router.proto
 ROUTER_OUT   := router/src
-ROUTER_PROTOS := execution.proto proxy.proto registry.proto
+ROUTER_PROTOS := execution.proto proxy.proto registry.proto resources.proto
 
 CLIENT_PKG    := crfs._proto
 CLIENT_OUT    := pkg/src
-CLIENT_PROTOS := proxy.proto
+CLIENT_PROTOS := proxy.proto resources.proto
 
 STAGE := .build/proto-stage
 
@@ -84,6 +84,10 @@ _stage_and_generate:
 	stage="$(STAGE)/$$pkg_path"; \
 	rm -rf "$(STAGE)"; mkdir -p "$$stage"; \
 	for p in $(PROTOS); do cp "$(PROTO_SRC)/$$p" "$$stage/"; done; \
+	for p in $(PROTOS); do \
+		sed -i.bak "s|import \"$$p\"|import \"$$pkg_path/$$p\"|g" "$$stage"/*.proto; \
+	done; \
+	rm -f "$$stage"/*.bak; \
 	mkdir -p "$(OUT)/$$pkg_path"; \
 	echo "  generating $(PKG) -> $(OUT)/$$pkg_path"; \
 	cd router && uv run python -m grpc_tools.protoc \

@@ -19,6 +19,24 @@ The decorated function is serialised with `cloudpickle` and executed by a Python
 interpreter inside a gVisor sandbox, so it must be picklable and its imports must
 exist in the worker's image.
 
+## Resource budgets
+
+Declare how much memory a function needs on the decorator. Each budget takes a
+byte count or a size string (`"512Mi"`, `"4Gi"`); an unset budget falls back to
+the cluster default.
+
+```python
+@remote(memory="2Gi", max_memory="8Gi")
+def train(rows): ...
+```
+
+`memory` is the container's initial limit and `max_memory` the ceiling the
+worker may auto-expand to when the function needs more; `gpu_memory` /
+`max_gpu_memory` are the same for GPU device memory. The client also statically
+extracts the function's imports and forwards them so the worker can pick a
+checkpoint that already imported them — this is automatic and needs no
+configuration.
+
 ```sh
 make install   # sync the virtualenv from the lockfile
 make test      # unit + in-process gRPC integration tests

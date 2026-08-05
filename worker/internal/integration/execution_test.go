@@ -24,6 +24,16 @@ import (
 
 const cpuAlloc = int64(512 << 20)
 
+// memAllocOf returns the memory budget's alloc from a wire budget list.
+func memAllocOf(budgets []*pb.ResourceBudget) int64 {
+	for _, b := range budgets {
+		if b.GetKind() == pb.ResourceKind_RESOURCE_KIND_MEMORY {
+			return b.GetAlloc()
+		}
+	}
+	return 0
+}
+
 // execute drives a full request/response cycle the way the router does.
 func execute(
 	t *testing.T,
@@ -45,7 +55,7 @@ func execute(
 			SessionId: "sess-1",
 			WorkerId:  "worker-1",
 			Payload:   chunk,
-			CpuAlloc:  cpuAlloc,
+			Budgets:   []*pb.ResourceBudget{{Kind: pb.ResourceKind_RESOURCE_KIND_MEMORY, Alloc: cpuAlloc}},
 		}
 		// The router stamps the scheduling decision on every message; the
 		// first is the one the worker acts on.
@@ -96,7 +106,7 @@ func TestExecution_HappyPath(t *testing.T) {
 	first := responses[0]
 	assert.Equal(t, "worker-1", first.GetWorkerId())
 	assert.NotEmpty(t, first.GetContainerId())
-	assert.Equal(t, cpuAlloc, first.GetCpuAlloc())
+	assert.Equal(t, cpuAlloc, memAllocOf(first.GetBudgets()))
 	assert.True(t, first.GetSuccess())
 
 	// The router copies these through to its own client; the previous
@@ -250,7 +260,8 @@ func TestExecution_ClientCancellationReleasesTheContainer(t *testing.T) {
 	empty := ""
 	require.NoError(t, stream.Send(&pb.WorkerExecutionRequest{
 		RequestId: "req-1", SessionId: "sess-1",
-		ContainerId: &empty, Payload: []byte("body"), CpuAlloc: cpuAlloc,
+		ContainerId: &empty, Payload: []byte("body"),
+		Budgets: []*pb.ResourceBudget{{Kind: pb.ResourceKind_RESOURCE_KIND_MEMORY, Alloc: cpuAlloc}},
 	}))
 	require.NoError(t, stream.CloseSend())
 

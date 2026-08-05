@@ -21,7 +21,6 @@ from crfs_router.grpcserver.registry_service import RegistryService
 from crfs_router.grpcserver.server import RouterServer
 from crfs_router.grpcserver.session_gate import SessionGate
 from crfs_router.logging import KEY_ERROR
-from crfs_router.scheduling.estimator import ResourceEstimator, StaticEstimator
 from crfs_router.scheduling.policy import default_selector
 from crfs_router.scheduling.reaper import Reaper, ReaperPolicy
 from crfs_router.scheduling.scheduler import Scheduler
@@ -40,7 +39,6 @@ class Deps:
     """
 
     clock: Clock = field(default_factory=MonotonicClock)
-    estimator: ResourceEstimator | None = None
     executions: ExecutionClient | None = None
     health: HealthClient | None = None
 
@@ -58,11 +56,6 @@ class App:
         self._scheduler = Scheduler(
             state=self._state,
             selector=default_selector(memory_headroom=settings.memory_headroom),
-            estimator=deps.estimator
-            or StaticEstimator(
-                cpu_alloc=settings.default_cpu_alloc,
-                gpu_alloc=settings.default_gpu_alloc,
-            ),
             clock=self._clock,
         )
 
@@ -98,6 +91,7 @@ class App:
                 executions=self._executions,
                 gate=SessionGate(wait_timeout=settings.session_wait_timeout),
                 execution_timeout=settings.execution_timeout,
+                default_memory=settings.default_memory,
             ),
             registry=RegistryService(state=self._state, clock=self._clock),
             listen_addr=settings.listen_addr,

@@ -1,36 +1,29 @@
 syntax = "proto3";
 
+import "resources.proto";
+
 option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
 
-// Variable metadata
-message Variables {
-  string id = 1;
-  string value = 2;
-  optional string ctx = 3;
-  string type = 4;
-  string shape = 5;
-}
+// Per-call configuration the client sends as the first message of a stream.
+message ExecutionConfig {
+  // Top-level module names the function refers to, from the client's static
+  // analysis. Forwarded to the worker so it can pick a checkpoint that already
+  // imported them. Attribution/selection only: not a memory hint.
+  repeated string imports = 1;
 
-// Import references
-message Imports {
-  string id = 1;
-  string name = 2;
-}
-
-// Message for resource estimation
-message ResourceEstimation {
-  string code = 1;
-  repeated Variables variables = 2;
-  repeated Imports imports = 3;
+  // Resource budgets the user set on the decorator (memory, GPU memory, ...).
+  // A budget with alloc == 0 asks the router to apply its default for that kind.
+  repeated ResourceBudget budgets = 2;
 }
 
 // Message used for code execution requests from clients
 message ClientExecutionRequest {
   string request_id = 1;
   string session_id = 2;
+  reserved 3; // was ResourceEstimation resources; replaced by config below
   oneof data {
-    ResourceEstimation resources = 3;
     bytes payload = 4;
+    ExecutionConfig config = 5;
   }
 }
 

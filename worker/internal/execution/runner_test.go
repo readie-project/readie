@@ -35,6 +35,7 @@ type fakeContainers struct {
 	mu       sync.Mutex
 	acquired []container.AcquireRequest
 	released []container.Outcome
+	grown    []int64
 
 	handle     container.Handle
 	acquireErr error
@@ -46,10 +47,14 @@ type fakeContainers struct {
 	statsFrames []sandbox.Stats
 }
 
+func memAlloc(n int64) container.Allocation {
+	return container.Allocation{Budgets: []container.Budget{{Kind: container.KindMemory, Alloc: n}}}
+}
+
 func newFakeContainers() *fakeContainers {
 	return &fakeContainers{handle: container.Handle{
 		ID:      "exec_container-test",
-		Alloc:   container.Allocation{CPUAlloc: 512 << 20},
+		Alloc:   memAlloc(512 << 20),
 		Created: true,
 	}}
 }
@@ -86,6 +91,19 @@ func (f *fakeContainers) Stats(_ context.Context, _ string) (sandbox.StatsStream
 		return nil, f.statsErr
 	}
 	return &sliceStats{frames: f.statsFrames, closed: make(chan struct{})}, nil
+}
+
+func (f *fakeContainers) Grow(_ context.Context, _ string, memBytes int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.grown = append(f.grown, memBytes)
+	return nil
+}
+
+func (f *fakeContainers) Grown() []int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int64(nil), f.grown...)
 }
 
 func (f *fakeContainers) Outcomes() []container.Outcome {
@@ -303,7 +321,7 @@ func newHarness(t *testing.T, cfg execution.RunnerConfig, tune func(*harness)) *
 func request() execution.Request {
 	return execution.Request{
 		Ref:            registry.ExecutionRef{RequestID: "req-1", SessionID: "sess-1"},
-		Alloc:          container.Allocation{CPUAlloc: 512 << 20},
+		Alloc:          memAlloc(512 << 20),
 		InitialPayload: []byte("first-"),
 	}
 }
@@ -343,7 +361,8 @@ func TestRun_ProvisionsBeforeAnyOutput(t *testing.T) {
 	require.Len(t, provisions, 1, "Provision must be called exactly once")
 	assert.Equal(t, "worker-1", provisions[0].WorkerID)
 	assert.Equal(t, "exec_container-test", provisions[0].ContainerID)
-	assert.Equal(t, int64(512<<20), provisions[0].CPUAlloc)
+	assert.Equal(t, int64(512<<20),
+		container.Allocation{Budgets: provisions[0].Budgets}.Memory().Alloc)
 	// The router copies these straight through to its own client; the previous
 	// implementation left them empty.
 	assert.Equal(t, "req-1", provisions[0].Ref.RequestID)

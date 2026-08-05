@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from crfs.budget import Budget, ResourceKind
 from crfs.client import Client, Session
 from crfs.codec import CloudpickleCodec
 from crfs.config import Settings
@@ -15,7 +16,6 @@ from crfs.errors import (
     ClientClosedError,
     ClusterUnavailableError,
 )
-from crfs.resources import NullEstimator
 from tests.fakes.transport import AsyncRecordingTransport, RecordingTransport
 
 SETTINGS = Settings(router_uri="127.0.0.1:1")
@@ -35,7 +35,6 @@ def build(
         SETTINGS,
         transport=sync,
         async_transport=a_sync,
-        estimator=NullEstimator(),
         **kwargs,
     )
     return client, sync, a_sync
@@ -104,13 +103,12 @@ def test_a_per_call_timeout_overrides_the_setting() -> None:
         Settings(router_uri="h:1", timeout=30.0),
         transport=(sync := RecordingTransport()),
         async_transport=AsyncRecordingTransport(),
-        estimator=NullEstimator(),
     )
     client.call(add)
-    assert sync.last[3] == 30.0
+    assert sync.last[4] == 30.0
 
     client.call(add, timeout=5.0)
-    assert sync.last[3] == 5.0
+    assert sync.last[4] == 5.0
 
 
 def test_transport_errors_propagate_unchanged() -> None:
@@ -128,7 +126,6 @@ def test_logs_reach_the_sink_when_streaming_is_on() -> None:
         SETTINGS,
         transport=sync,
         async_transport=AsyncRecordingTransport(1),
-        estimator=NullEstimator(),
         log_sink=seen.append,
     )
     client.call(add)
@@ -143,7 +140,6 @@ def test_streaming_can_be_turned_off() -> None:
         Settings(router_uri="h:1", stream_logs=False),
         transport=sync,
         async_transport=AsyncRecordingTransport(1),
-        estimator=NullEstimator(),
         log_sink=seen.append,
     )
     client.call(add)
@@ -250,30 +246,25 @@ def test_a_custom_codec_is_used_for_both_directions() -> None:
         SETTINGS,
         transport=RecordingTransport("quiet"),
         async_transport=AsyncRecordingTransport("quiet"),
-        estimator=NullEstimator(),
         codec=ShoutingCodec(),
     )
     assert client.call(add) == "QUIET"
 
 
-def test_the_estimator_output_reaches_the_transport() -> None:
-    from crfs.resources import AstEstimator
-
+def test_imports_and_budgets_reach_the_transport() -> None:
     def uses_json():
         import json
 
         return json
 
     sync = RecordingTransport(1)
-    client = Client(
-        SETTINGS,
-        transport=sync,
-        async_transport=AsyncRecordingTransport(1),
-        estimator=AstEstimator(),
-    )
-    client.call(uses_json)
+    client = Client(SETTINGS, transport=sync, async_transport=AsyncRecordingTransport(1))
+    budgets = (Budget(ResourceKind.MEMORY, alloc=1 << 20),)
+    client.call(uses_json, budgets=budgets)
 
-    assert any(i.name == "json" for i in sync.last[2].imports)
+    # Recorded tuple: (ref, payload, imports, budgets, timeout).
+    assert "json" in sync.last[2]
+    assert sync.last[3] == budgets
 
 
 def test_repr_names_the_router() -> None:

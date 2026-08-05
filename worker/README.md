@@ -187,8 +187,8 @@ cleanup exists for, and one a runtime listing would not mention.
 give each worker a distinct id; `WORKER_ID` defaults to `worker-1` only because
 a single-worker stack needs no configuration. (An earlier router hardcoded
 `worker-1` in `provision()` and that constraint was real — it no longer is.)
-The first response carries `worker_id`, `container_id`, `checkpoint_id`,
-`cpu_alloc` and `gpu_alloc`.
+The first response carries `worker_id`, `container_id`, `checkpoint_id` and the
+resource `budgets` the container actually ran with.
 
 Capacity is reported rather than discovered. `WORKER_MEM_TOTAL` and
 `WORKER_MAX_EXECUTORS` ride on every `PostWorkerStatus`, and a
@@ -228,9 +228,10 @@ namespaces, cpu/pids limits, overlay and network — and deliberately excludes
 mount sources, the memory limit and the cgroup path, so per-request variation
 and `runtime-spec` upgrades do not invalidate checkpoints.
 
-Note `container.Allocation.CPUAlloc` is a byte count despite its name: the
-router sends a memory budget in a field called `cpu_alloc`, and the name is kept
-for wire compatibility.
+A request's `container.Allocation` is a set of `ResourceBudget`s in bytes. The
+worker enforces the memory budget as the container's `memory.max` and, when the
+budget names a larger max, raises it as the container fills up; other kinds
+(GPU memory) are honoured as hints. See the memory auto-expand settings below.
 
 ## Starting without artifacts
 
@@ -279,6 +280,14 @@ root as a parameter, which is how the tests build fixtures in temp directories.
 Capacity: `WORKER_MEM_TOTAL` (bytes, or a suffixed size such as `8Gi`;
 default 4 GiB), `WORKER_MAX_EXECUTORS` (0 meaning unbounded),
 `WORKER_UTILIZATION_INTERVAL`.
+
+Memory auto-expand: `DEFAULT_CONTAINER_MEM` (the limit for a request that
+carries no memory budget; default 512 MiB), `MEM_GROWTH_THRESHOLD` (the fraction
+of a container's limit whose use triggers a raise; default 0.9) and
+`MEM_GROWTH_FACTOR` (how much the limit is multiplied by; default 2.0). The live
+`memory.max` raise is best-effort — where cgroup delegation is unavailable
+(`SANDBOX_IGNORE_CGROUPS`), it applies on the container's next acquisition and a
+hard OOM is caught by a one-shot retry with a larger container instead.
 
 Optional: `WORKER_ID`, `RUNSC_BINARY`, `RUNSC_ROOT`,
 `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY`, `SANDBOX_PLATFORM`,

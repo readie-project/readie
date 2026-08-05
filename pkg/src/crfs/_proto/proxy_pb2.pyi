@@ -1,3 +1,4 @@
+from crfs._proto import resources_pb2 as _resources_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
@@ -6,49 +7,25 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
-class Variables(_message.Message):
-    __slots__ = ("id", "value", "ctx", "type", "shape")
-    ID_FIELD_NUMBER: _ClassVar[int]
-    VALUE_FIELD_NUMBER: _ClassVar[int]
-    CTX_FIELD_NUMBER: _ClassVar[int]
-    TYPE_FIELD_NUMBER: _ClassVar[int]
-    SHAPE_FIELD_NUMBER: _ClassVar[int]
-    id: str
-    value: str
-    ctx: str
-    type: str
-    shape: str
-    def __init__(self, id: _Optional[str] = ..., value: _Optional[str] = ..., ctx: _Optional[str] = ..., type: _Optional[str] = ..., shape: _Optional[str] = ...) -> None: ...
-
-class Imports(_message.Message):
-    __slots__ = ("id", "name")
-    ID_FIELD_NUMBER: _ClassVar[int]
-    NAME_FIELD_NUMBER: _ClassVar[int]
-    id: str
-    name: str
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
-
-class ResourceEstimation(_message.Message):
-    __slots__ = ("code", "variables", "imports")
-    CODE_FIELD_NUMBER: _ClassVar[int]
-    VARIABLES_FIELD_NUMBER: _ClassVar[int]
+class ExecutionConfig(_message.Message):
+    __slots__ = ("imports", "budgets")
     IMPORTS_FIELD_NUMBER: _ClassVar[int]
-    code: str
-    variables: _containers.RepeatedCompositeFieldContainer[Variables]
-    imports: _containers.RepeatedCompositeFieldContainer[Imports]
-    def __init__(self, code: _Optional[str] = ..., variables: _Optional[_Iterable[_Union[Variables, _Mapping]]] = ..., imports: _Optional[_Iterable[_Union[Imports, _Mapping]]] = ...) -> None: ...
+    BUDGETS_FIELD_NUMBER: _ClassVar[int]
+    imports: _containers.RepeatedScalarFieldContainer[str]
+    budgets: _containers.RepeatedCompositeFieldContainer[_resources_pb2.ResourceBudget]
+    def __init__(self, imports: _Optional[_Iterable[str]] = ..., budgets: _Optional[_Iterable[_Union[_resources_pb2.ResourceBudget, _Mapping]]] = ...) -> None: ...
 
 class ClientExecutionRequest(_message.Message):
-    __slots__ = ("request_id", "session_id", "resources", "payload")
+    __slots__ = ("request_id", "session_id", "payload", "config")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
-    RESOURCES_FIELD_NUMBER: _ClassVar[int]
     PAYLOAD_FIELD_NUMBER: _ClassVar[int]
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     session_id: str
-    resources: ResourceEstimation
     payload: bytes
-    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., resources: _Optional[_Union[ResourceEstimation, _Mapping]] = ..., payload: _Optional[bytes] = ...) -> None: ...
+    config: ExecutionConfig
+    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., payload: _Optional[bytes] = ..., config: _Optional[_Union[ExecutionConfig, _Mapping]] = ...) -> None: ...
 
 class ClientExecutionResponse(_message.Message):
     __slots__ = ("request_id", "session_id", "success", "logs", "payload", "worker_id", "container_id")

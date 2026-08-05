@@ -27,14 +27,47 @@ var (
 	ErrInvalidDeps = errors.New("invalid manager dependencies")
 )
 
-// Allocation is the compute reserved for an execution.
+// Resource kinds, mirroring ResourceKind in protos/resources.proto.
+const (
+	KindMemory    = int32(pb.ResourceKind_RESOURCE_KIND_MEMORY)
+	KindGPUMemory = int32(pb.ResourceKind_RESOURCE_KIND_GPU_MEMORY)
+)
+
+// Budget is one resource budget for an execution, in bytes.
 //
-// CPUAlloc is a byte count, not a core count: the router transmits a memory
-// budget in registry.proto's cpu_alloc field and the worker maps it onto the
-// container's memory limit. The name is preserved for wire compatibility.
+// Alloc is the initial reservation the worker sets at container create; Max is
+// the ceiling auto-expand may grow it to, or 0 for "bounded by worker capacity".
+type Budget struct {
+	Kind  int32
+	Alloc int64
+	Max   int64
+}
+
+// Allocation is the set of resource budgets reserved for an execution.
+//
+// The router carries these as repeated ResourceBudget on the wire. The worker
+// enforces and grows the memory budget; other kinds are honoured as hints.
 type Allocation struct {
-	CPUAlloc int64
-	GPUAlloc int64
+	Budgets []Budget
+}
+
+// Memory returns the memory budget, or a zero-valued one if none was set.
+func (a Allocation) Memory() Budget {
+	return a.budget(KindMemory)
+}
+
+// GPU returns the GPU-memory budget, or a zero-valued one if none was set.
+func (a Allocation) GPU() Budget {
+	return a.budget(KindGPUMemory)
+}
+
+func (a Allocation) budget(kind int32) Budget {
+	for _, b := range a.Budgets {
+		if b.Kind == kind {
+			return b
+		}
+	}
+	return Budget{Kind: kind}
 }
 
 // Handle identifies an acquired container.
@@ -101,19 +134,23 @@ type Spec struct {
 	// DirPerm is the mode for per-container host directories. The executor runs
 	// as an arbitrary uid, so it must be able to create its socket here.
 	DirPerm os.FileMode
+	// DefaultMemoryBytes is the memory limit for a request that carries no
+	// memory budget, so a budgetless container is bounded rather than unlimited.
+	DefaultMemoryBytes int64
 }
 
 // SpecFromConfig derives the container spec from worker configuration.
 func SpecFromConfig(cfg config.Config) Spec {
 	return Spec{
-		NamePrefix:   cfg.ContainerNamePrefix,
-		CPUQuota:     cfg.CPUQuota,
-		CPUPeriod:    cfg.CPUPeriod,
-		PidsLimit:    cfg.PidsLimit,
-		RootReadonly: cfg.SandboxRootReadonly,
-		CgroupParent: cfg.CgroupParent,
-		StopTimeout:  cfg.ContainerStopTimeout,
-		DirPerm:      0o777,
+		NamePrefix:         cfg.ContainerNamePrefix,
+		CPUQuota:           cfg.CPUQuota,
+		CPUPeriod:          cfg.CPUPeriod,
+		PidsLimit:          cfg.PidsLimit,
+		RootReadonly:       cfg.SandboxRootReadonly,
+		CgroupParent:       cfg.CgroupParent,
+		StopTimeout:        cfg.ContainerStopTimeout,
+		DirPerm:            0o777,
+		DefaultMemoryBytes: cfg.DefaultContainerMem,
 	}
 }
 
@@ -180,9 +217,18 @@ func (m *Manager) Load() (count int32, reservedBytes int64) {
 	defer m.mu.Unlock()
 
 	for _, alloc := range m.live {
-		reservedBytes += alloc.CPUAlloc
+		reservedBytes += m.memoryLimit(alloc)
 	}
 	return int32(len(m.live)), reservedBytes
+}
+
+// memoryLimit is the container memory limit for an allocation: its memory
+// budget, or the configured default when the request set none.
+func (m *Manager) memoryLimit(alloc Allocation) int64 {
+	if mem := alloc.Memory().Alloc; mem > 0 {
+		return mem
+	}
+	return m.spec.DefaultMemoryBytes
 }
 
 func (m *Manager) track(h Handle) {
@@ -378,7 +424,7 @@ func (m *Manager) resume(ctx context.Context, req AcquireRequest) (Handle, error
 		return Handle{}, fmt.Errorf("unpause container: %w", err)
 	}
 
-	if err := m.runtime.Update(ctx, req.ContainerID, sandbox.UpdateSpec{MemoryBytes: req.Alloc.CPUAlloc}); err != nil {
+	if err := m.runtime.Update(ctx, req.ContainerID, sandbox.UpdateSpec{MemoryBytes: m.memoryLimit(req.Alloc)}); err != nil {
 		m.report(ctx, req.Ref, req.ContainerID, pb.Status_STATUS_ERROR)
 		return Handle{}, fmt.Errorf("update container resources: %w", err)
 	}
@@ -493,8 +539,43 @@ func (m *Manager) Inspect(ctx context.Context, id, checkpointID string) (Handle,
 	return Handle{
 		ID:           id,
 		CheckpointID: checkpointID,
-		Alloc:        Allocation{CPUAlloc: info.MemoryBytes},
+		Alloc:        Allocation{Budgets: []Budget{{Kind: KindMemory, Alloc: info.MemoryBytes}}},
 	}, nil
+}
+
+// Grow raises a live container's memory limit to memBytes.
+//
+// Checkpoint-safe: the memory limit is excluded from the sandbox fingerprint,
+// so expanding it never invalidates a checkpoint. The tracked allocation is
+// updated too, so the worker's load report reflects the larger footprint.
+func (m *Manager) Grow(ctx context.Context, id string, memBytes int64) error {
+	if err := m.runtime.Update(ctx, id, sandbox.UpdateSpec{MemoryBytes: memBytes}); err != nil {
+		return fmt.Errorf("grow container %s memory: %w", id, err)
+	}
+	m.mu.Lock()
+	if alloc, ok := m.live[id]; ok {
+		m.live[id] = withMemory(alloc, memBytes)
+	}
+	m.mu.Unlock()
+	return nil
+}
+
+// withMemory returns a copy of alloc whose memory budget's Alloc is memBytes,
+// preserving its ceiling and every other budget.
+func withMemory(alloc Allocation, memBytes int64) Allocation {
+	budgets := make([]Budget, 0, len(alloc.Budgets)+1)
+	replaced := false
+	for _, b := range alloc.Budgets {
+		if b.Kind == KindMemory {
+			b.Alloc = memBytes
+			replaced = true
+		}
+		budgets = append(budgets, b)
+	}
+	if !replaced {
+		budgets = append(budgets, Budget{Kind: KindMemory, Alloc: memBytes})
+	}
+	return Allocation{Budgets: budgets}
 }
 
 // Logs returns a container's demultiplexed output. The caller closes it.
@@ -573,7 +654,7 @@ func (m *Manager) createSpec(name string, alloc Allocation, rootfs string) sandb
 			Type:        "bind",
 			Options:     []string{"rbind", "rw"},
 		}},
-		MemoryBytes: alloc.CPUAlloc,
+		MemoryBytes: m.memoryLimit(alloc),
 		CPUQuota:    m.spec.CPUQuota,
 		CPUPeriod:   m.spec.CPUPeriod,
 		PidsLimit:   m.spec.PidsLimit,

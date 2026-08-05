@@ -35,6 +35,16 @@ type RunnerConfig struct {
 	// StatsInterval throttles utilization reports to the router.
 	StatsInterval time.Duration
 
+	// Memory auto-expand. When a container's memory use crosses
+	// MemGrowthThreshold of its limit, the stats watcher raises the limit by
+	// MemGrowthFactor, up to the request's max budget or, when it sets none,
+	// WorkerMemTotal * MemoryHeadroom. Zero WorkerMemTotal with no per-request
+	// max means no ceiling is known, so growth is skipped.
+	MemGrowthThreshold float64
+	MemGrowthFactor    float64
+	WorkerMemTotal     int64
+	MemoryHeadroom     float64
+
 	// EventBuffer sizes the channel between the producers and the sink. A
 	// small buffer smooths bursts without letting a slow caller accumulate
 	// unbounded output in memory.
@@ -56,6 +66,15 @@ func (c RunnerConfig) withDefaults() RunnerConfig {
 	}
 	if c.EventBuffer <= 0 {
 		c.EventBuffer = 16
+	}
+	if c.MemGrowthThreshold <= 0 || c.MemGrowthThreshold > 1 {
+		c.MemGrowthThreshold = 0.9
+	}
+	if c.MemGrowthFactor <= 1 {
+		c.MemGrowthFactor = 2.0
+	}
+	if c.MemoryHeadroom <= 0 || c.MemoryHeadroom > 1 {
+		c.MemoryHeadroom = 0.9
 	}
 	return c
 }
@@ -89,7 +108,80 @@ func NewRunner(
 	}
 }
 
-// Run executes a request and relays its output to sink.
+// Run executes a request, retrying once with a larger memory limit if the
+// first attempt dies in a way consistent with an out-of-memory kill.
+//
+// The retry is the reactive half of auto-expand: where a live cgroup grow
+// cannot take effect the container is killed before the watcher can react, and
+// a fresh container created with a bigger limit is what saves the request. It
+// is strictly bounded — one retry, only on an OOM-shaped failure, only when
+// there is room to grow — because re-running is unsafe for a function with side
+// effects. The request body is buffered so it can be replayed on the retry.
+func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
+	rec := &recordingSource{inner: src}
+
+	result, err := r.runOnce(ctx, req, rec, sink)
+	if err == nil || ctx.Err() != nil || !looksLikeOOM(err) {
+		return result, err
+	}
+
+	grown, ok := r.grownRequest(req)
+	if !ok {
+		return result, err // no room to grow; report the original failure
+	}
+	r.log.Warn("execution failed as if out of memory; retrying with a larger limit",
+		logging.KeyRequestID, req.Ref.RequestID,
+		"from", req.Alloc.Memory().Alloc, "to", grown.Alloc.Memory().Alloc,
+		logging.KeyError, err)
+
+	rec.rewind()
+	return r.runOnce(ctx, grown, rec, sink)
+}
+
+// looksLikeOOM reports whether a failure is consistent with the executor being
+// OOM-killed: it died without a complete response. This is a heuristic — the
+// runtime exposes no OOM signal today — so it only ever triggers a single,
+// bounded retry.
+func looksLikeOOM(err error) bool {
+	return errors.Is(err, executor.ErrNoResponse) || errors.Is(err, executor.ErrTruncatedResponse)
+}
+
+// grownRequest returns req with its memory budget expanded toward its ceiling,
+// and whether there was any room to grow.
+func (r *Runner) grownRequest(req Request) (Request, bool) {
+	mem := req.Alloc.Memory()
+	if mem.Alloc <= 0 {
+		return req, false // no known size to grow from
+	}
+	ceiling := r.growthCeiling(mem.Max)
+	if ceiling <= mem.Alloc {
+		return req, false
+	}
+	target := int64(float64(mem.Alloc) * r.cfg.MemGrowthFactor)
+	if target > ceiling {
+		target = ceiling
+	}
+	if target <= mem.Alloc {
+		return req, false
+	}
+
+	budgets := make([]container.Budget, 0, len(req.Alloc.Budgets)+1)
+	replaced := false
+	for _, b := range req.Alloc.Budgets {
+		if b.Kind == container.KindMemory {
+			b.Alloc = target
+			replaced = true
+		}
+		budgets = append(budgets, b)
+	}
+	if !replaced {
+		budgets = append(budgets, container.Budget{Kind: container.KindMemory, Alloc: target})
+	}
+	req.Alloc = container.Allocation{Budgets: budgets}
+	return req, true
+}
+
+// runOnce executes a request and relays its output to sink.
 //
 // Concurrency shape: several producers (the response reader, the log tailer,
 // the stats sampler) feed a single events channel, and only this goroutine
@@ -101,7 +193,7 @@ func NewRunner(
 // outcome variable whose zero value destroys it. Success has to be recorded
 // explicitly on the final line, so every early return — including a timeout —
 // fails safe.
-func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
+func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
 	log := r.log.With(
 		logging.KeyRequestID, req.Ref.RequestID,
 		logging.KeySessionID, req.Ref.SessionID,
@@ -166,7 +258,8 @@ func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink S
 		side.Go(func() error { r.pumpLogs(sideCtx, handle.ID, events, log); return nil })
 	}
 	if r.cfg.StreamStats {
-		side.Go(func() error { r.pumpStats(sideCtx, handle.ID, log); return nil })
+		memMax := handle.Alloc.Memory().Max
+		side.Go(func() error { r.pumpStats(sideCtx, handle.ID, memMax, log); return nil })
 	}
 
 	// Closing events is what ends the drain loop below, so it must happen only
@@ -229,13 +322,42 @@ func (r *Runner) classify(ctx, execCtx context.Context, sendErr, waitErr error) 
 	return nil
 }
 
+// recordingSource buffers the request body so it can be replayed on a retry.
+//
+// Next records each chunk it reads from inner; rewind replays the recorded
+// chunks before reading further ones, so a second attempt sees the same body
+// followed by whatever had not yet arrived when the first attempt failed.
+type recordingSource struct {
+	inner PayloadSource
+	buf   [][]byte
+	pos   int
+}
+
+func (rs *recordingSource) Next(ctx context.Context) ([]byte, error) {
+	if rs.pos < len(rs.buf) {
+		chunk := rs.buf[rs.pos]
+		rs.pos++
+		return chunk, nil
+	}
+	chunk, err := rs.inner.Next(ctx)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // preserve io.EOF and the inner error
+	}
+	saved := make([]byte, len(chunk))
+	copy(saved, chunk)
+	rs.buf = append(rs.buf, saved)
+	rs.pos = len(rs.buf)
+	return saved, nil
+}
+
+func (rs *recordingSource) rewind() { rs.pos = 0 }
+
 func (r *Runner) provisionInfo(req Request, h container.Handle) ProvisionInfo {
 	return ProvisionInfo{
 		Ref:          req.Ref,
 		WorkerID:     r.cfg.WorkerID,
 		ContainerID:  h.ID,
 		CheckpointID: h.CheckpointID,
-		CPUAlloc:     h.Alloc.CPUAlloc,
-		GPUAlloc:     h.Alloc.GPUAlloc,
+		Budgets:      h.Alloc.Budgets,
 	}
 }

@@ -10,12 +10,20 @@ from __future__ import annotations
 import pytest
 
 from crfs_router.clock import FakeClock
-from crfs_router.scheduling.estimator import Estimate, StaticEstimator
-from crfs_router.scheduling.models import STATUS_ERROR, STATUS_READY, Outcome
+from crfs_router.scheduling.models import (
+    RESOURCE_MEMORY,
+    STATUS_ERROR,
+    STATUS_READY,
+    Budget,
+    Demand,
+    Outcome,
+)
 from crfs_router.scheduling.policy import default_selector
 from crfs_router.scheduling.reaper import Reaper, ReaperPolicy
 from crfs_router.scheduling.scheduler import ProvisionRequest, Scheduler
 from crfs_router.scheduling.state import ClusterState
+
+DEMAND = Demand(budgets=(Budget(kind=RESOURCE_MEMORY, alloc=512 * 1024 * 1024),))
 
 POLICY = ReaperPolicy(
     worker_ttl=30.0,
@@ -42,7 +50,6 @@ def scheduler(state: ClusterState, clock: FakeClock) -> Scheduler:
     return Scheduler(
         state=state,
         selector=default_selector(),
-        estimator=StaticEstimator(),
         clock=clock,
     )
 
@@ -85,9 +92,7 @@ def test_a_session_with_work_in_flight_is_kept(
     state: ClusterState, clock: FakeClock, scheduler: Scheduler, reaper: Reaper
 ) -> None:
     state.apply_worker_status("w1", "w1:50052", STATUS_READY, clock.now())
-    scheduler.provision(
-        ProvisionRequest(request_id="req-1", session_id="sess-1", estimate=Estimate())
-    )
+    scheduler.provision(ProvisionRequest(request_id="req-1", session_id="sess-1", demand=DEMAND))
 
     clock.advance(1801.0)
     reaper.sweep()
@@ -124,9 +129,7 @@ def test_a_leaked_lease_is_force_released(
     reservation for minutes rather than for the life of the process.
     """
     state.apply_worker_status("w1", "w1:50052", STATUS_READY, clock.now())
-    scheduler.provision(
-        ProvisionRequest(request_id="req-1", session_id="sess-1", estimate=Estimate())
-    )
+    scheduler.provision(ProvisionRequest(request_id="req-1", session_id="sess-1", demand=DEMAND))
 
     worker = state.worker("w1")
     assert worker is not None
@@ -163,9 +166,7 @@ def test_release_after_a_forced_release_is_harmless(
 ) -> None:
     """The handler's finally still runs after the reaper has intervened."""
     state.apply_worker_status("w1", "w1:50052", STATUS_READY, clock.now())
-    scheduler.provision(
-        ProvisionRequest(request_id="req-1", session_id="sess-1", estimate=Estimate())
-    )
+    scheduler.provision(ProvisionRequest(request_id="req-1", session_id="sess-1", demand=DEMAND))
 
     clock.advance(7201.0)
     reaper.sweep()

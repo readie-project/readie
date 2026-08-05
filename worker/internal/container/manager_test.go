@@ -30,6 +30,11 @@ const (
 
 var executorArgv = []string{"python", "-u", "-m", "crfs_executor"}
 
+// memAlloc is an allocation carrying a single memory budget of n bytes.
+func memAlloc(n int64) container.Allocation {
+	return container.Allocation{Budgets: []container.Budget{{Kind: container.KindMemory, Alloc: n}}}
+}
+
 type fixture struct {
 	manager      *container.Manager
 	runtime      *fakesandbox.Sandbox
@@ -121,7 +126,7 @@ func acquireNew(t *testing.T, f *fixture) container.Handle {
 	t.Helper()
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		Ref:   registry.ExecutionRef{RequestID: "req-1", SessionID: "sess-1"},
-		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+		Alloc: memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 	return h
@@ -216,7 +221,7 @@ func TestAcquire_IsSafeUnderConcurrency(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-				Alloc: container.Allocation{CPUAlloc: 1 << 20},
+				Alloc: memAlloc(1 << 20),
 			})
 			assert.NoError(t, err)
 
@@ -250,7 +255,7 @@ func TestAcquire_RestoresFromACheckpoint(t *testing.T) {
 
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		CheckpointID: "checkpoint_1",
-		Alloc:        container.Allocation{CPUAlloc: 1 << 20},
+		Alloc:        memAlloc(1 << 20),
 	})
 	require.NoError(t, err)
 
@@ -267,7 +272,7 @@ func TestAcquire_RestoreUsesTheCheckpointsOwnGeneration(t *testing.T) {
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		CheckpointID: "checkpoint_1",
-		Alloc:        container.Allocation{CPUAlloc: 1 << 20},
+		Alloc:        memAlloc(1 << 20),
 	})
 	require.NoError(t, err)
 
@@ -290,7 +295,7 @@ func TestAcquire_UnknownCheckpointFallsBackToAColdStart(t *testing.T) {
 
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		CheckpointID: "checkpoint_does_not_exist",
-		Alloc:        container.Allocation{CPUAlloc: 1 << 20},
+		Alloc:        memAlloc(1 << 20),
 	})
 	require.NoError(t, err)
 
@@ -310,7 +315,7 @@ func TestAcquire_DowngradesToAColdStartWhenRestoreFails(t *testing.T) {
 
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		CheckpointID: "checkpoint_1",
-		Alloc:        container.Allocation{CPUAlloc: 1 << 20},
+		Alloc:        memAlloc(1 << 20),
 	})
 	require.NoError(t, err)
 
@@ -326,7 +331,7 @@ func TestAcquire_CleansUpTheDirectoryWhenCreateFails(t *testing.T) {
 	f.runtime.FailOn("Create", errors.New("no such image"))
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-		Alloc: container.Allocation{CPUAlloc: 1 << 20},
+		Alloc: memAlloc(1 << 20),
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, container.ErrAcquireFailed)
@@ -343,7 +348,7 @@ func TestAcquire_ResumesAnExistingContainer(t *testing.T) {
 
 	second, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		ContainerID: first.ID,
-		Alloc:       container.Allocation{CPUAlloc: 256 << 20},
+		Alloc:       memAlloc(256 << 20),
 	})
 	require.NoError(t, err)
 
@@ -483,7 +488,7 @@ func TestInspect_ReportsTheAppliedAllocation(t *testing.T) {
 
 	assert.Equal(t, h.ID, inspected.ID)
 	assert.Equal(t, "checkpoint_1", inspected.CheckpointID)
-	assert.Equal(t, int64(512<<20), inspected.Alloc.CPUAlloc)
+	assert.Equal(t, int64(512<<20), inspected.Alloc.Memory().Alloc)
 }
 
 func TestNewManager_RejectsMissingDependencies(t *testing.T) {
@@ -502,7 +507,7 @@ func TestManager_TreatsRouterFailuresAsNonFatal(t *testing.T) {
 	f.registry.FailOn("ExecutorStatus", errors.New("router is down"))
 
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-		Alloc: container.Allocation{CPUAlloc: 1 << 20},
+		Alloc: memAlloc(1 << 20),
 	})
 	require.NoError(t, err)
 	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
@@ -577,11 +582,11 @@ func TestLoad_CountsAcquiredContainersAndTheirReservations(t *testing.T) {
 	f := newFixture(t)
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+		Alloc: memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 	_, err = f.manager.Acquire(context.Background(), container.AcquireRequest{
-		Alloc: container.Allocation{CPUAlloc: 256 << 20},
+		Alloc: memAlloc(256 << 20),
 	})
 	require.NoError(t, err)
 
@@ -594,7 +599,7 @@ func TestLoad_CountsAcquiredContainersAndTheirReservations(t *testing.T) {
 func TestLoad_DropsAContainerOnRelease(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+		Alloc: memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 
@@ -611,7 +616,7 @@ func TestLoad_DropsAContainerOnRelease(t *testing.T) {
 func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+		Alloc: memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 	require.NoError(t, f.manager.Release(
@@ -620,7 +625,7 @@ func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
 	// Resuming it makes it occupied again.
 	resumed, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		ContainerID: h.ID,
-		Alloc:       container.Allocation{CPUAlloc: 512 << 20},
+		Alloc:       memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 
@@ -634,7 +639,7 @@ func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
 func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-		Alloc: container.Allocation{CPUAlloc: 512 << 20},
+		Alloc: memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 
@@ -655,7 +660,7 @@ func TestLoad_IsSafeUnderConcurrentAcquireAndRelease(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
-				Alloc: container.Allocation{CPUAlloc: 1 << 20},
+				Alloc: memAlloc(1 << 20),
 			})
 			if err != nil {
 				return

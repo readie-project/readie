@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 import grpc
 import pytest
 
-from crfs_router.proto import proxy_pb2
+from crfs_router.proto import execution_pb2, proxy_pb2, resources_pb2
 from tests.fakes.worker import FakeWorker
 from tests.integration.conftest import Harness
 
@@ -18,16 +18,32 @@ def header(
     session_id: str = "sess-1",
     *,
     imports: tuple[str, ...] = ("pandas", "numpy"),
+    memory: int = 0,
+    max_memory: int = 0,
 ) -> proxy_pb2.ClientExecutionRequest:
     """The first message a client must send."""
+    budgets = []
+    if memory or max_memory:
+        budgets.append(
+            resources_pb2.ResourceBudget(
+                kind=resources_pb2.RESOURCE_KIND_MEMORY, alloc=memory, max=max_memory
+            )
+        )
     return proxy_pb2.ClientExecutionRequest(
         request_id=request_id,
         session_id=session_id,
-        resources=proxy_pb2.ResourceEstimation(
-            code="print(1)",
-            imports=[proxy_pb2.Imports(id=str(i), name=n) for i, n in enumerate(imports)],
-        ),
+        config=proxy_pb2.ExecutionConfig(imports=list(imports), budgets=budgets),
     )
+
+
+def memory_budget(
+    request: execution_pb2.WorkerExecutionRequest,
+) -> resources_pb2.ResourceBudget | None:
+    """The memory budget on a worker request, if any."""
+    for budget in request.budgets:
+        if budget.kind == resources_pb2.RESOURCE_KIND_MEMORY:
+            return budget
+    return None
 
 
 def chunk(
@@ -107,12 +123,12 @@ async def test_logs_and_payload_are_demultiplexed(harness: Harness) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The resource estimate
+# Import hints and resource budgets
 # ---------------------------------------------------------------------------
 
 
-async def test_the_resource_estimate_reaches_the_worker(harness: Harness) -> None:
-    """The previous router consumed it and forwarded nothing.
+async def test_the_import_hints_reach_the_worker(harness: Harness) -> None:
+    """The previous router consumed them and forwarded nothing.
 
     The worker's `resources` field — the thing checkpoint selection is meant to
     be built on — was always empty.
@@ -135,8 +151,22 @@ async def test_the_placement_is_stamped_on_the_first_worker_message(
     assert sent.worker_id == "w-alpha"
     assert sent.request_id == "req-1"
     assert sent.session_id == "sess-1"
-    assert sent.cpu_alloc == 512 * 1024 * 1024
+    # No budget on the request, so the router applies its default.
+    budget = memory_budget(sent)
+    assert budget is not None
+    assert budget.alloc == 512 * 1024 * 1024
     assert sent.container_id == "", "an empty container id asks for a cold start"
+
+
+async def test_a_client_supplied_memory_budget_reaches_the_worker(harness: Harness) -> None:
+    await harness.register_worker()
+
+    await execute(harness, header(memory=256 << 20, max_memory=1 << 30), chunk(b"x"))
+
+    budget = memory_budget(harness.worker.calls[0].header)
+    assert budget is not None
+    assert budget.alloc == 256 << 20, "the client's budget, not the 512 MiB default"
+    assert budget.max == 1 << 30, "the auto-expand ceiling is forwarded too"
 
 
 async def test_the_client_is_told_which_worker_and_container_ran_the_call(

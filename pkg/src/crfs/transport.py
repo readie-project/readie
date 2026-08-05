@@ -24,8 +24,8 @@ from crfs.protocol import CallRef, Outcome, RequestEncoder, ResponseAssembler
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from crfs.budget import Budget
     from crfs.config import Settings
-    from crfs.resources import Estimate
 
 
 @runtime_checkable
@@ -36,7 +36,8 @@ class Transport(Protocol):
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate,
+        imports: tuple[str, ...],
+        budgets: tuple[Budget, ...],
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
@@ -57,7 +58,8 @@ class AsyncTransport(Protocol):
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate,
+        imports: tuple[str, ...],
+        budgets: tuple[Budget, ...],
         *,
         timeout: float | None,  # noqa: ASYNC109 - the deadline is the gRPC call's, not a wrapper's
         on_log: Callable[[str], None] | None,
@@ -82,7 +84,8 @@ class GrpcTransport:
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate,
+        imports: tuple[str, ...],
+        budgets: tuple[Budget, ...],
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
@@ -90,7 +93,7 @@ class GrpcTransport:
         """Stream the call to the router and assemble the response."""
         stub = proxy_pb2_grpc.ProxyServiceStub(self._channels.get())
         assembler = ResponseAssembler(on_log=on_log)
-        requests = self._encoder.encode(ref, payload, estimate)
+        requests = self._encoder.encode(ref, payload, imports, budgets)
 
         call = stub.RequestExecution(requests, timeout=timeout)
         try:
@@ -127,7 +130,8 @@ class AsyncGrpcTransport:
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate,
+        imports: tuple[str, ...],
+        budgets: tuple[Budget, ...],
         *,
         timeout: float | None,  # noqa: ASYNC109 - the deadline is the gRPC call's, not a wrapper's
         on_log: Callable[[str], None] | None,
@@ -139,7 +143,7 @@ class AsyncGrpcTransport:
         # The request iterator is synchronous and grpc.aio accepts that: chunking
         # an in-memory buffer never blocks, so an async generator would add a
         # scheduling hop per megabyte and buy nothing.
-        requests = self._encoder.encode(ref, payload, estimate)
+        requests = self._encoder.encode(ref, payload, imports, budgets)
 
         call = stub.RequestExecution(requests, timeout=timeout)
         try:

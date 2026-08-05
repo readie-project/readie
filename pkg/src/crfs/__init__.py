@@ -16,6 +16,7 @@ exist in the worker's image.
 
 from __future__ import annotations
 
+from crfs.budget import Budget, ResourceKind
 from crfs.client import Client, Session
 from crfs.codec import CloudpickleCodec, ResultCodec
 from crfs.config import Settings
@@ -38,22 +39,14 @@ from crfs.errors import (
     TransportError,
 )
 from crfs.protocol import CallRef, Outcome
-from crfs.resources import (
-    AstEstimator,
-    Estimate,
-    Import,
-    NullEstimator,
-    ResourceEstimator,
-    Variable,
-)
 from crfs.transport import AsyncTransport, Transport
 
 __version__ = "0.1.0"
 
 __all__ = [
-    "AstEstimator",
     "AsyncTransport",
     "BlockingCallInEventLoopError",
+    "Budget",
     "CallRef",
     "Client",
     "ClientClosedError",
@@ -62,26 +55,22 @@ __all__ = [
     "ConfigurationError",
     "CrfsError",
     "EmptyResultError",
-    "Estimate",
     "ExecutionCancelledError",
     "ExecutionError",
-    "Import",
     "InvalidRequestError",
-    "NullEstimator",
     "Outcome",
     "PermissionDeniedError",
     "RemoteExecutionError",
     "RemoteFunction",
     "RemoteTimeoutError",
-    "ResourceEstimator",
     "ResourceExhaustedError",
+    "ResourceKind",
     "ResultCodec",
     "SerializationError",
     "Session",
     "Settings",
     "Transport",
     "TransportError",
-    "Variable",
     "__version__",
     "configure",
     "default_client",

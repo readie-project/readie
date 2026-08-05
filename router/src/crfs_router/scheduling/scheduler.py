@@ -13,8 +13,9 @@ from dataclasses import dataclass
 
 from crfs_router.clock import Clock
 from crfs_router.errors import NoCapacityError, NoWorkersRegisteredError
-from crfs_router.scheduling.estimator import Estimate, ResourceEstimator
 from crfs_router.scheduling.models import (
+    RESOURCE_MEMORY,
+    Demand,
     Outcome,
     Placement,
     SessionRecord,
@@ -30,7 +31,7 @@ class ProvisionRequest:
 
     request_id: str
     session_id: str
-    estimate: Estimate
+    demand: Demand
 
 
 class Scheduler:
@@ -40,12 +41,10 @@ class Scheduler:
         self,
         state: ClusterState,
         selector: WorkerSelector,
-        estimator: ResourceEstimator,
         clock: Clock,
     ) -> None:
         self._state = state
         self._selector = selector
-        self._estimator = estimator
         self._clock = clock
 
     # -- Placement --------------------------------------------------------
@@ -67,7 +66,7 @@ class Scheduler:
         session = self._state.touch_session(request.session_id, now)
         session.requests.add(request.request_id)
 
-        demand = self._estimator.estimate(request.estimate)
+        demand = request.demand
         lease_id = self._state.next_lease_id()
 
         worker_id, container_id, checkpoint_id, warm = self._resolve_target(session, demand)
@@ -76,7 +75,10 @@ class Scheduler:
             raise NoWorkersRegisteredError
 
         worker.inflight += 1
-        worker.reserved_bytes += demand.cpu_alloc
+        # Only memory is reserved: it is the tight resource and the one the
+        # cluster reports capacity for. The reservation covers the initial
+        # budget; in-flight growth is bounded by the worker's own capacity.
+        worker.reserved_bytes += demand.alloc_of(RESOURCE_MEMORY)
 
         placement = Placement(
             lease_id=lease_id,
@@ -86,8 +88,7 @@ class Scheduler:
             worker_uri=worker.worker_uri,
             container_id=container_id,
             checkpoint_id=checkpoint_id,
-            cpu_alloc=demand.cpu_alloc,
-            gpu_alloc=demand.gpu_alloc,
+            budgets=demand.budgets,
             resources=demand.resources,
             warm=warm,
             opened_at=now,
@@ -102,7 +103,7 @@ class Scheduler:
 
         return placement
 
-    def _resolve_target(self, session: SessionRecord, demand: object) -> tuple[str, str, str, bool]:
+    def _resolve_target(self, session: SessionRecord, demand: Demand) -> tuple[str, str, str, bool]:
         """Pick a worker and, when reusing, the container to resume.
 
         Affinity beats load. A warm container holds the session's live Python
@@ -131,7 +132,7 @@ class Scheduler:
         if not candidates:
             raise NoWorkersRegisteredError
 
-        chosen = self._selector.select(candidates, demand)  # type: ignore[arg-type]
+        chosen = self._selector.select(candidates, demand)
         if chosen is None:
             raise NoCapacityError(candidates=len(candidates))
 
@@ -173,7 +174,7 @@ class Scheduler:
         worker = self._state.worker(lease.worker_id)
         if worker is not None:
             worker.inflight = max(0, worker.inflight - 1)
-            worker.reserved_bytes = max(0, worker.reserved_bytes - lease.cpu_alloc)
+            worker.reserved_bytes = max(0, worker.reserved_bytes - lease.alloc_of(RESOURCE_MEMORY))
 
         session = self._state.session(lease.session_id)
         if session is None:

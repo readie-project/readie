@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from crfs_router.scheduling.models import Demand, WorkerView
+from crfs_router.scheduling.models import RESOURCE_MEMORY, Demand, WorkerView
 
 
 class WorkerFilter(Protocol):
@@ -39,25 +39,25 @@ class WorkerSelector(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class MemoryHeadroomFilter:
-    """Rejects a worker that cannot fit the request's allocation.
+class ResourceHeadroomFilter:
+    """Rejects a worker that cannot fit the request's budget for one resource.
 
-    Counts memory already committed to placements that have not reported back
-    yet, not just what the worker last reported: two requests arriving between
-    utilisation samples would otherwise both see an idle worker.
-
-    Inert when the worker has not reported a total, which is the state until
-    the worker starts sending capacity.
+    Generic over resource kind: the worker's ``capacity(kind)`` reports what is
+    used (including reservations for placements that have not reported back yet)
+    and available. Inert when the worker reports no total for that kind, which
+    is the state until the cluster starts advertising it -- so a kind with no
+    capacity signal yet (GPU memory today) simply never rejects.
     """
 
+    kind: int = RESOURCE_MEMORY
     headroom: float = 0.9
 
     def admits(self, worker: WorkerView, demand: Demand) -> bool:
-        """Return whether the allocation fits within the configured headroom."""
-        if worker.mem_total <= 0:
+        """Return whether the budget fits within the configured headroom."""
+        used, total = worker.capacity(self.kind)
+        if total <= 0:
             return True
-        committed = worker.mem_used + worker.reserved_bytes + demand.cpu_alloc
-        return committed <= worker.mem_total * self.headroom
+        return used + demand.alloc_of(self.kind) <= total * self.headroom
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,9 +79,9 @@ class LeastLoadedScorer:
     """Prefers the least loaded worker, on the best signal available.
 
     The terms are ordered by how directly they measure what placement actually
-    consumes. Memory is first because ``cpu_alloc`` is a memory budget; CPU is
-    a weaker proxy; in-flight count is always available and is the only signal
-    that exists before a worker reports capacity.
+    consumes. Memory is first because it is the tight resource; CPU is a weaker
+    proxy; in-flight count is always available and is the only signal that
+    exists before a worker reports capacity.
 
     Every term is present in the key so the later ones break ties, and the
     worker id is last so the result is deterministic — a single-worker or
@@ -120,8 +120,17 @@ class CompositeSelector:
 
 
 def default_selector(*, memory_headroom: float = 0.9) -> CompositeSelector:
-    """Build the selector the router uses."""
+    """Build the selector the router uses.
+
+    Memory is the only resource the cluster reports capacity for today, so it is
+    the only headroom filter wired in. Adding GPU-memory placement is one more
+    ``ResourceHeadroomFilter(RESOURCE_GPU_MEMORY, ...)`` here, once workers
+    advertise GPU-memory capacity.
+    """
     return CompositeSelector(
-        filters=(MemoryHeadroomFilter(headroom=memory_headroom), ExecutorCountFilter()),
+        filters=(
+            ResourceHeadroomFilter(kind=RESOURCE_MEMORY, headroom=memory_headroom),
+            ExecutorCountFilter(),
+        ),
         scorer=LeastLoadedScorer(),
     )

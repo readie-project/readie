@@ -119,6 +119,15 @@ type Config struct {
 	CPUPeriod           int64
 	PidsLimit           int64
 	CgroupParent        string
+	// DefaultContainerMem is the memory limit applied when a request carries no
+	// memory budget. Without it a budgetless request runs unbounded.
+	DefaultContainerMem int64
+	// MemGrowthThreshold is the fraction of a container's memory limit whose use
+	// triggers a proactive expansion; MemGrowthFactor is how much the limit is
+	// multiplied by when it does. Auto-expand stops at the request's max budget,
+	// or the worker's own capacity when the request sets none.
+	MemGrowthThreshold float64
+	MemGrowthFactor    float64
 	// ContainerStopTimeout bounds a container's own shutdown. It is short
 	// because reclamation runs during the worker's shutdown, inside whatever
 	// grace period the supervisor allows before it sends SIGKILL.
@@ -234,6 +243,9 @@ func Load(getenv Getenv) (Config, error) {
 		PidsLimit:            100,
 		CgroupParent:         valueOr(getenv("CGROUP_PARENT"), "/crfs"),
 		ContainerStopTimeout: 2 * time.Second,
+		DefaultContainerMem:  512 << 20,
+		MemGrowthThreshold:   0.9,
+		MemGrowthFactor:      2.0,
 
 		RuntimeCommandTimeout:  30 * time.Second,
 		RestoreTimeout:         30 * time.Second,
@@ -279,6 +291,9 @@ func Load(getenv Getenv) (Config, error) {
 		return Config{}, err
 	}
 	if err := applyIntOverrides(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
+	if err := applyFloatOverrides(getenv, &cfg); err != nil {
 		return Config{}, err
 	}
 	if err := applyBoolOverrides(getenv, &cfg); err != nil {
@@ -368,6 +383,15 @@ func (c Config) Validate() error {
 	if c.MemTotal < 0 {
 		errs = append(errs, fmt.Errorf("%w: MemTotal must not be negative", ErrInvalidEnv))
 	}
+	if c.DefaultContainerMem <= 0 {
+		errs = append(errs, fmt.Errorf("%w: DefaultContainerMem must be positive", ErrInvalidEnv))
+	}
+	if c.MemGrowthFactor <= 1 {
+		errs = append(errs, fmt.Errorf("%w: MemGrowthFactor must exceed 1", ErrInvalidEnv))
+	}
+	if c.MemGrowthThreshold <= 0 || c.MemGrowthThreshold > 1 {
+		errs = append(errs, fmt.Errorf("%w: MemGrowthThreshold must be in (0, 1]", ErrInvalidEnv))
+	}
 	if c.MaxExecutors < 0 {
 		errs = append(errs, fmt.Errorf("%w: MaxExecutors must not be negative", ErrInvalidEnv))
 	}
@@ -426,6 +450,32 @@ func applyIntOverrides(getenv Getenv, cfg *Config) error {
 			return fmt.Errorf("%w: WORKER_MAX_EXECUTORS=%q is not an integer: %w", ErrInvalidEnv, raw, err)
 		}
 		cfg.MaxExecutors = int32(n)
+	}
+	if raw := strings.TrimSpace(getenv("DEFAULT_CONTAINER_MEM")); raw != "" {
+		bytes, err := parseBytes(raw)
+		if err != nil {
+			return fmt.Errorf("%w: DEFAULT_CONTAINER_MEM=%q: %w", ErrInvalidEnv, raw, err)
+		}
+		cfg.DefaultContainerMem = bytes
+	}
+	return nil
+}
+
+func applyFloatOverrides(getenv Getenv, cfg *Config) error {
+	overrides := map[string]*float64{
+		"MEM_GROWTH_THRESHOLD": &cfg.MemGrowthThreshold,
+		"MEM_GROWTH_FACTOR":    &cfg.MemGrowthFactor,
+	}
+	for name, target := range overrides {
+		raw := strings.TrimSpace(getenv(name))
+		if raw == "" {
+			continue
+		}
+		f, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return fmt.Errorf("%w: %s=%q is not a number: %w", ErrInvalidEnv, name, raw, err)
+		}
+		*target = f
 	}
 	return nil
 }

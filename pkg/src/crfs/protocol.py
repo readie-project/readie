@@ -4,7 +4,8 @@ Neither touches gRPC, a channel, a socket or an event loop -- they turn a call
 into messages and messages back into a result. That is what lets every protocol
 bug below be a unit test with no server running:
 
-* the header must be sent first and exactly once, carrying the estimate;
+* the header must be sent first and exactly once, carrying the config
+  (import hints and resource budgets);
 * every message must repeat ``request_id`` and ``session_id``, because the
   router leases on the first and binds affinity on the second;
 * ``success`` must be honoured rather than ignored;
@@ -18,11 +19,11 @@ from __future__ import annotations
 import io
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
-from crfs._proto import proxy_pb2
+from crfs._proto import proxy_pb2, resources_pb2
+from crfs.budget import Budget
 from crfs.errors import EmptyResultError, RemoteExecutionError
-from crfs.resources import EMPTY_ESTIMATE, Estimate
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,18 +34,22 @@ class CallRef:
     session_id: str
 
 
-def to_proto(estimate: Estimate) -> proxy_pb2.ResourceEstimation:
-    """Convert an estimator's output into the wire message.
-
-    Kept here so ``ResourceEstimator`` implementations -- including the model in
-    the other repository -- never have to import protobuf.
-    """
-    return proxy_pb2.ResourceEstimation(
-        code=estimate.code,
-        imports=[proxy_pb2.Imports(id=i.id, name=i.name) for i in estimate.imports],
-        variables=[
-            proxy_pb2.Variables(id=v.id, value=v.value, type=v.type, shape=v.shape, ctx=v.ctx)
-            for v in estimate.variables
+def to_config(
+    imports: tuple[str, ...],
+    budgets: tuple[Budget, ...],
+) -> proxy_pb2.ExecutionConfig:
+    """Build the per-call config message: import hints plus resource budgets."""
+    return proxy_pb2.ExecutionConfig(
+        imports=list(imports),
+        budgets=[
+            resources_pb2.ResourceBudget(
+                # Our IntEnum and the proto enum agree by value (a guard test
+                # pins that); the cast is only for the type checker.
+                kind=cast("resources_pb2.ResourceKind", b.kind.value),
+                alloc=b.alloc,
+                max=b.max,
+            )
+            for b in budgets
         ],
     )
 
@@ -52,10 +57,9 @@ def to_proto(estimate: Estimate) -> proxy_pb2.ResourceEstimation:
 class RequestEncoder:
     """Turns a payload into the request stream the router expects.
 
-    The header is a separate message carrying the ``resources`` arm of the
-    oneof; payload messages carry the ``payload`` arm. Both arms cannot be set
-    on one message, which is why the estimate cannot simply ride on the first
-    chunk.
+    The header is a separate message carrying the ``config`` arm of the oneof;
+    payload messages carry the ``payload`` arm. Both arms cannot be set on one
+    message, which is why the config cannot simply ride on the first chunk.
     """
 
     def __init__(self, *, chunk_size: int) -> None:
@@ -68,7 +72,8 @@ class RequestEncoder:
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate = EMPTY_ESTIMATE,
+        imports: tuple[str, ...] = (),
+        budgets: tuple[Budget, ...] = (),
     ) -> Iterator[proxy_pb2.ClientExecutionRequest]:
         """Yield the header followed by the payload in chunks.
 
@@ -79,7 +84,7 @@ class RequestEncoder:
         yield proxy_pb2.ClientExecutionRequest(
             request_id=ref.request_id,
             session_id=ref.session_id,
-            resources=to_proto(estimate),
+            config=to_config(imports, budgets),
         )
 
         buffer = io.BytesIO(payload)

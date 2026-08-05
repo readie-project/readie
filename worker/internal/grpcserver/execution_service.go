@@ -68,7 +68,7 @@ func (s *ExecutionService) RequestExecution(stream executionStream) error {
 	log.Info("execution requested",
 		logging.KeyContainerID, req.ContainerID,
 		logging.KeyCheckpoint, req.CheckpointID,
-		"cpu_alloc", req.Alloc.CPUAlloc)
+		"mem_alloc", req.Alloc.Memory().Alloc)
 
 	// SerialSink is belt-and-braces around the runner's single-owner contract:
 	// concurrent sends on a gRPC stream corrupt frames rather than failing.

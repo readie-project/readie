@@ -30,11 +30,13 @@ type WorkerExecutionRequest struct {
 	ContainerId  *string                `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3,oneof" json:"container_id,omitempty"`
 	CheckpointId string                 `protobuf:"bytes,5,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
 	Payload      []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
-	CpuAlloc     int64                  `protobuf:"varint,7,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc     int64                  `protobuf:"varint,8,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	// Import and artefact hints from the client's static analysis, forwarded
 	// by the router so a worker can pick a checkpoint that already has them.
-	Resources     []string `protobuf:"bytes,9,rep,name=resources,proto3" json:"resources,omitempty"`
+	Resources []string `protobuf:"bytes,9,rep,name=resources,proto3" json:"resources,omitempty"`
+	// The resource budgets (memory, GPU memory, ...) the router placed this
+	// request on. The worker sets each at container create and auto-expands up to
+	// the budget's max where the runtime can enforce it.
+	Budgets       []*ResourceBudget `protobuf:"bytes,11,rep,name=budgets,proto3" json:"budgets,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,23 +113,16 @@ func (x *WorkerExecutionRequest) GetPayload() []byte {
 	return nil
 }
 
-func (x *WorkerExecutionRequest) GetCpuAlloc() int64 {
-	if x != nil {
-		return x.CpuAlloc
-	}
-	return 0
-}
-
-func (x *WorkerExecutionRequest) GetGpuAlloc() int64 {
-	if x != nil {
-		return x.GpuAlloc
-	}
-	return 0
-}
-
 func (x *WorkerExecutionRequest) GetResources() []string {
 	if x != nil {
 		return x.Resources
+	}
+	return nil
+}
+
+func (x *WorkerExecutionRequest) GetBudgets() []*ResourceBudget {
+	if x != nil {
+		return x.Budgets
 	}
 	return nil
 }
@@ -140,14 +135,14 @@ type WorkerExecutionResponse struct {
 	WorkerId     string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 	ContainerId  string                 `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	CheckpointId string                 `protobuf:"bytes,5,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
-	CpuAlloc     int64                  `protobuf:"varint,6,opt,name=cpu_alloc,json=cpuAlloc,proto3" json:"cpu_alloc,omitempty"`
-	GpuAlloc     int64                  `protobuf:"varint,7,opt,name=gpu_alloc,json=gpuAlloc,proto3" json:"gpu_alloc,omitempty"`
 	Success      bool                   `protobuf:"varint,8,opt,name=success,proto3" json:"success,omitempty"`
 	// Types that are valid to be assigned to Data:
 	//
 	//	*WorkerExecutionResponse_Logs
 	//	*WorkerExecutionResponse_Payload
-	Data          isWorkerExecutionResponse_Data `protobuf_oneof:"data"`
+	Data isWorkerExecutionResponse_Data `protobuf_oneof:"data"`
+	// The budgets the container actually ran with (post auto-expand).
+	Budgets       []*ResourceBudget `protobuf:"bytes,11,rep,name=budgets,proto3" json:"budgets,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -217,20 +212,6 @@ func (x *WorkerExecutionResponse) GetCheckpointId() string {
 	return ""
 }
 
-func (x *WorkerExecutionResponse) GetCpuAlloc() int64 {
-	if x != nil {
-		return x.CpuAlloc
-	}
-	return 0
-}
-
-func (x *WorkerExecutionResponse) GetGpuAlloc() int64 {
-	if x != nil {
-		return x.GpuAlloc
-	}
-	return 0
-}
-
 func (x *WorkerExecutionResponse) GetSuccess() bool {
 	if x != nil {
 		return x.Success
@@ -263,6 +244,13 @@ func (x *WorkerExecutionResponse) GetPayload() []byte {
 	return nil
 }
 
+func (x *WorkerExecutionResponse) GetBudgets() []*ResourceBudget {
+	if x != nil {
+		return x.Budgets
+	}
+	return nil
+}
+
 type isWorkerExecutionResponse_Data interface {
 	isWorkerExecutionResponse_Data()
 }
@@ -283,7 +271,7 @@ var File_execution_proto protoreflect.FileDescriptor
 
 const file_execution_proto_rawDesc = "" +
 	"\n" +
-	"\x0fexecution.proto\"\xc3\x02\n" +
+	"\x0fexecution.proto\x1a\x0fresources.proto\"\xc0\x02\n" +
 	"\x16WorkerExecutionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -292,11 +280,10 @@ const file_execution_proto_rawDesc = "" +
 	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x12&\n" +
 	"\fcontainer_id\x18\x04 \x01(\tH\x00R\vcontainerId\x88\x01\x01\x12#\n" +
 	"\rcheckpoint_id\x18\x05 \x01(\tR\fcheckpointId\x12\x18\n" +
-	"\apayload\x18\x06 \x01(\fR\apayload\x12\x1b\n" +
-	"\tcpu_alloc\x18\a \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\b \x01(\x03R\bgpuAlloc\x12\x1c\n" +
-	"\tresources\x18\t \x03(\tR\tresourcesB\x0f\n" +
-	"\r_container_id\"\xca\x02\n" +
+	"\apayload\x18\x06 \x01(\fR\apayload\x12\x1c\n" +
+	"\tresources\x18\t \x03(\tR\tresources\x12)\n" +
+	"\abudgets\x18\v \x03(\v2\x0f.ResourceBudgetR\abudgetsB\x0f\n" +
+	"\r_container_idJ\x04\b\a\x10\bJ\x04\b\b\x10\t\"\xc7\x02\n" +
 	"\x17WorkerExecutionResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -304,14 +291,13 @@ const file_execution_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x12!\n" +
 	"\fcontainer_id\x18\x04 \x01(\tR\vcontainerId\x12#\n" +
-	"\rcheckpoint_id\x18\x05 \x01(\tR\fcheckpointId\x12\x1b\n" +
-	"\tcpu_alloc\x18\x06 \x01(\x03R\bcpuAlloc\x12\x1b\n" +
-	"\tgpu_alloc\x18\a \x01(\x03R\bgpuAlloc\x12\x18\n" +
+	"\rcheckpoint_id\x18\x05 \x01(\tR\fcheckpointId\x12\x18\n" +
 	"\asuccess\x18\b \x01(\bR\asuccess\x12\x14\n" +
 	"\x04logs\x18\t \x01(\tH\x00R\x04logs\x12\x1a\n" +
 	"\apayload\x18\n" +
-	" \x01(\fH\x00R\apayloadB\x06\n" +
-	"\x04data2]\n" +
+	" \x01(\fH\x00R\apayload\x12)\n" +
+	"\abudgets\x18\v \x03(\v2\x0f.ResourceBudgetR\abudgetsB\x06\n" +
+	"\x04dataJ\x04\b\x06\x10\aJ\x04\b\a\x10\b2]\n" +
 	"\x10ExecutionService\x12I\n" +
 	"\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x010\x01BHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
 
@@ -331,15 +317,18 @@ var file_execution_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_execution_proto_goTypes = []any{
 	(*WorkerExecutionRequest)(nil),  // 0: WorkerExecutionRequest
 	(*WorkerExecutionResponse)(nil), // 1: WorkerExecutionResponse
+	(*ResourceBudget)(nil),          // 2: ResourceBudget
 }
 var file_execution_proto_depIdxs = []int32{
-	0, // 0: ExecutionService.RequestExecution:input_type -> WorkerExecutionRequest
-	1, // 1: ExecutionService.RequestExecution:output_type -> WorkerExecutionResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: WorkerExecutionRequest.budgets:type_name -> ResourceBudget
+	2, // 1: WorkerExecutionResponse.budgets:type_name -> ResourceBudget
+	0, // 2: ExecutionService.RequestExecution:input_type -> WorkerExecutionRequest
+	1, // 3: ExecutionService.RequestExecution:output_type -> WorkerExecutionResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_execution_proto_init() }
@@ -347,6 +336,7 @@ func file_execution_proto_init() {
 	if File_execution_proto != nil {
 		return
 	}
+	file_resources_proto_init()
 	file_execution_proto_msgTypes[0].OneofWrappers = []any{}
 	file_execution_proto_msgTypes[1].OneofWrappers = []any{
 		(*WorkerExecutionResponse_Logs)(nil),

@@ -203,6 +203,13 @@ Built and tested:
   measured packages, maximising import time saved per megabyte.
 - Capture and restore through gVisor, with the sandbox spec generated from the
   worker's own code on both sides so the two cannot drift by hand.
+- Per-function resource budgets set on the decorator
+  (`@remote(memory="2Gi", max_memory="8Gi", gpu_memory=…)`), defaulted when
+  unset, forwarded through the router as an extensible `ResourceBudget` set. The
+  worker enforces the memory budget and auto-expands it — a live `memory.max`
+  raise before an OOM, plus a one-shot retry with a larger container when a hard
+  OOM slips through. GPU memory rides the same seam; it is not cgroup-enforceable
+  through runsc, so for GPU auto-expand is the retry alone.
 - Graceful shutdown on both sides: the router drains in-flight calls, the worker
   deregisters before draining and reclaims its sandboxes.
 
@@ -225,11 +232,10 @@ Not built. Each of these is a real gap, not an oversight:
   downgrades to a cold start, and the worker reports READY while serving nothing
   but cold starts. The fix is to compute the fingerprint at startup and refuse the
   checkpoints loudly; the redeploy loop above makes it easy to trigger until then.
-- **Resource estimation.** The client AST-walks the function and the router
-  forwards its imports, but nothing reads them: `WorkerExecutionRequest.resources`
-  is write-only. Every request gets the same 512 MiB. The prediction model lives
-  in [a separate repository](https://github.com/illinoisdata/python-execution-memory-prediction)
-  and is not wired in; `ResourceEstimator` is the seam it would slot into.
+- **GPU-memory placement.** The client can set a `gpu_memory` budget and the
+  worker honours it, but the router does not place on it: workers report no
+  GPU-memory capacity yet, so `ResourceHeadroomFilter` is wired only for system
+  memory. Adding it is one filter plus a capacity field on `WorkerUtilization`.
 - **Swapping checkpoints without a new image.** Artifacts are baked in and read
   once at startup, so new checkpoints mean a new base image and a new container.
   That is the trade taken deliberately — one deployable, nothing mounted — but it

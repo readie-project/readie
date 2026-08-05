@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
+
+// A resource whose budget a caller can set per function. Kept deliberately
+// generic: a new dimension is one enum value here, one capacity source in the
+// router, and (where the runtime can enforce it) one grower in the worker.
+enum ResourceKind {
+  RESOURCE_KIND_UNKNOWN = 0;
+  RESOURCE_KIND_MEMORY = 1; // system RAM, in bytes
+  RESOURCE_KIND_GPU_MEMORY = 2; // GPU device memory, in bytes
+}
+
+// A single resource budget: what to start with and how far it may grow.
+//
+// Both are byte counts. `alloc` is the initial reservation the router places on
+// and the worker sets at container create; `0` means "unset, apply the default".
+// `max` is the auto-expand ceiling; `0` means "bounded only by worker capacity".
+message ResourceBudget {
+  ResourceKind kind = 1;
+  int64 alloc = 2;
+  int64 max = 3;
+}

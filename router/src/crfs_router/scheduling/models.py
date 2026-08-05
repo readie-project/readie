@@ -25,6 +25,12 @@ STATUS_BUSY = 3
 STATUS_ERROR = 4
 STATUS_REMOVED = 5
 
+# Resource kinds, mirroring ResourceKind in protos/resources.proto. Redeclared
+# rather than imported so the domain does not depend on generated code; a test
+# asserts the mapping.
+RESOURCE_MEMORY = 1
+RESOURCE_GPU_MEMORY = 2
+
 
 class Outcome(enum.Enum):
     """How an execution finished, as far as placement is concerned."""
@@ -34,16 +40,36 @@ class Outcome(enum.Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class Demand:
-    """What a request needs.
+class Budget:
+    """One resource budget in bytes: the initial reservation and its ceiling.
 
-    ``cpu_alloc`` is a byte count despite the name: the worker maps it onto a
-    container memory limit. The name is fixed by the wire protocol.
+    ``kind`` is a ``RESOURCE_*`` value. ``max`` of 0 means the worker may expand
+    the budget up to its own capacity.
     """
 
-    cpu_alloc: int
-    gpu_alloc: int
+    kind: int
+    alloc: int
+    max: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class Demand:
+    """What a request needs: a budget per resource kind, plus import hints.
+
+    Memory is a byte count that the worker maps onto a container memory limit;
+    GPU memory is device memory. The import hints (``resources``) are forwarded
+    to the worker for checkpoint selection, not used for placement.
+    """
+
+    budgets: tuple[Budget, ...] = ()
     resources: tuple[str, ...] = ()
+
+    def alloc_of(self, kind: int) -> int:
+        """Return the initial byte budget for ``kind``, or 0 if none is set."""
+        for budget in self.budgets:
+            if budget.kind == kind:
+                return budget.alloc
+        return 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,11 +177,17 @@ class Placement:
     worker_uri: str
     container_id: str
     checkpoint_id: str
-    cpu_alloc: int
-    gpu_alloc: int
+    budgets: tuple[Budget, ...]
     resources: tuple[str, ...]
     warm: bool
     opened_at: float
+
+    def alloc_of(self, kind: int) -> int:
+        """Return the initial byte budget for ``kind``, or 0 if none is set."""
+        for budget in self.budgets:
+            if budget.kind == kind:
+                return budget.alloc
+        return 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,3 +224,15 @@ class WorkerView:
             cpu_util=worker.cpu_util,
             cpu_total=worker.cpu_total,
         )
+
+    def capacity(self, kind: int) -> tuple[int, int]:
+        """Return ``(used, total)`` bytes for a resource kind.
+
+        Memory folds in the reservation held for placements that have not
+        reported back yet. Other kinds report ``(0, 0)`` -- a zero total makes
+        the headroom filter inert -- until the cluster reports their capacity;
+        that is the seam a new resource dimension plugs into.
+        """
+        if kind == RESOURCE_MEMORY:
+            return (self.mem_used + self.reserved_bytes, self.mem_total)
+        return (0, 0)

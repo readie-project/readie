@@ -16,9 +16,10 @@ import pytest
 
 import crfs
 from crfs import protocol
+from crfs._proto import resources_pb2
+from crfs.budget import ResourceKind
 from crfs.client import Client
 from crfs.codec import CloudpickleCodec, ResultCodec
-from crfs.resources import AstEstimator, NullEstimator, ResourceEstimator
 from crfs.transport import AsyncGrpcTransport, AsyncTransport, GrpcTransport, Transport
 
 PACKAGE = "crfs"
@@ -75,19 +76,24 @@ def test_protocol_never_imports_grpc() -> None:
 
 
 def test_resources_never_imports_protobuf() -> None:
-    # The real estimator lives in another repository; it must be able to satisfy
-    # ResourceEstimator without depending on our generated stubs.
+    # Import extraction is pure source analysis; keeping protobuf out of it is
+    # what lets its tests run with no generated stubs and no wire types.
     from crfs import resources
 
     assert "_proto" not in inspect.getsource(resources)
+
+
+def test_resource_kind_matches_the_proto_enum() -> None:
+    # Budget.kind is sent to the wire by value, so the client enum and the proto
+    # enum must agree number-for-number or a memory budget arrives as GPU memory.
+    assert int(ResourceKind.MEMORY) == int(resources_pb2.RESOURCE_KIND_MEMORY)
+    assert int(ResourceKind.GPU_MEMORY) == int(resources_pb2.RESOURCE_KIND_GPU_MEMORY)
 
 
 @pytest.mark.parametrize(
     ("implementation", "seam"),
     [
         (CloudpickleCodec, ResultCodec),
-        (AstEstimator, ResourceEstimator),
-        (NullEstimator, ResourceEstimator),
         (GrpcTransport, Transport),
         (AsyncGrpcTransport, AsyncTransport),
     ],

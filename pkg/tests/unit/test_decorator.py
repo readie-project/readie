@@ -9,10 +9,10 @@ from dataclasses import dataclass
 import pytest
 
 import crfs
+from crfs.budget import ResourceKind
 from crfs.client import Client
 from crfs.config import Settings
 from crfs.decorator import RemoteFunction, remote
-from crfs.resources import NullEstimator
 from tests.fakes.transport import AsyncRecordingTransport, RecordingTransport
 
 
@@ -31,7 +31,6 @@ def build(result: object = "remote-result", uri: str = "127.0.0.1:1") -> Rig:
             Settings(router_uri=uri),
             transport=sent,
             async_transport=AsyncRecordingTransport(result),
-            estimator=NullEstimator(),
         ),
         sent,
     )
@@ -129,7 +128,7 @@ def test_bind_can_override_the_timeout_and_client(rig: Rig) -> None:
 
     other = build(result="other", uri="h:2")
     assert f.bind(client=other.client, timeout=9.0)() == "other"
-    assert other.sent.last[3] == 9.0
+    assert other.sent.last[4] == 9.0
 
 
 def test_a_decorator_timeout_is_applied(rig: Rig) -> None:
@@ -138,7 +137,44 @@ def test_a_decorator_timeout_is_applied(rig: Rig) -> None:
         return None
 
     f()
-    assert rig.sent.last[3] == 4.0
+    assert rig.sent.last[4] == 4.0
+
+
+def test_decorator_budgets_reach_the_transport(rig: Rig) -> None:
+    @remote(client=rig.client, memory="256Mi", max_memory="1Gi", gpu_memory="2Gi")
+    def f():
+        return None
+
+    f()
+    budgets = {b.kind: b for b in rig.sent.last[3]}
+    assert budgets[ResourceKind.MEMORY].alloc == 256 * 1024 * 1024
+    assert budgets[ResourceKind.MEMORY].max == 1024 * 1024 * 1024
+    assert budgets[ResourceKind.GPU_MEMORY].alloc == 2 * 1024 * 1024 * 1024
+
+
+def test_bind_preserves_the_budgets(rig: Rig) -> None:
+    @remote(client=rig.client, memory="128Mi")
+    def f():
+        return None
+
+    f.bind(crfs.Session("s"))()
+    assert rig.sent.last[3][0].alloc == 128 * 1024 * 1024
+
+
+def test_a_bad_memory_size_is_rejected_at_decoration() -> None:
+    with pytest.raises(crfs.ConfigurationError):
+
+        @remote(memory="banana")
+        def f():
+            return None
+
+
+def test_a_ceiling_below_the_initial_budget_is_rejected() -> None:
+    with pytest.raises(crfs.ConfigurationError, match="at least"):
+
+        @remote(memory="1Gi", max_memory="256Mi")
+        def f():
+            return None
 
 
 def test_decorating_a_method_still_receives_self(rig: Rig) -> None:

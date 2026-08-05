@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import cast
 
 import grpc
 import structlog
@@ -29,9 +30,8 @@ from crfs_router.logging import (
     KEY_SESSION_ID,
     KEY_WORKER_ID,
 )
-from crfs_router.proto import execution_pb2, proxy_pb2, proxy_pb2_grpc
-from crfs_router.scheduling.estimator import Estimate
-from crfs_router.scheduling.models import Outcome, Placement
+from crfs_router.proto import execution_pb2, proxy_pb2, proxy_pb2_grpc, resources_pb2
+from crfs_router.scheduling.models import RESOURCE_MEMORY, Budget, Demand, Outcome, Placement
 from crfs_router.scheduling.scheduler import ProvisionRequest, Scheduler
 from crfs_router.workers.ports import ExecutionClient, ExecutionStream
 
@@ -55,11 +55,13 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         gate: SessionGate,
         *,
         execution_timeout: float,
+        default_memory: int,
     ) -> None:
         self._scheduler = scheduler
         self._executions = executions
         self._gate = gate
         self._execution_timeout = execution_timeout
+        self._default_memory = default_memory
         self._log = structlog.get_logger("grpcserver.proxy")
 
     async def RequestExecution(  # noqa: N802 - the generated interface names it
@@ -105,7 +107,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         """Consume and validate the first message.
 
         The previous implementation returned an empty, successful stream when
-        the first message was not a resource estimate, so a client that got the
+        the first message was not a config header, so a client that got the
         protocol wrong saw an empty result rather than an error.
         """
         try:
@@ -114,8 +116,8 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             msg = "the request stream closed before sending anything"
             raise InvalidRequestError(msg) from exc
 
-        if header.WhichOneof("data") != "resources":
-            msg = "the first message must carry a resource estimate"
+        if header.WhichOneof("data") != "config":
+            msg = "the first message must carry the execution config"
             raise InvalidRequestError(msg)
         if not header.request_id or not header.session_id:
             msg = "request_id and session_id are required"
@@ -134,7 +136,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             ProvisionRequest(
                 request_id=header.request_id,
                 session_id=header.session_id,
-                estimate=_to_estimate(header.resources),
+                demand=self._to_demand(header.config),
             )
         )
         log = log.bind(
@@ -194,19 +196,19 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
     ) -> None:
         """Forward the client's payload chunks to the worker.
 
-        The first message the worker sees carries the placement and the
-        resource estimate. The worker reads its provisioning fields off the
-        first message only and treats the rest as payload, and it tolerates an
-        empty first chunk, so sending an explicit header keeps the mapping from
-        client messages to worker messages one-to-one.
+        The first message the worker sees carries the placement and the resource
+        budgets. The worker reads its provisioning fields off the first message
+        only and treats the rest as payload, and it tolerates an empty first
+        chunk, so sending an explicit header keeps the mapping from client
+        messages to worker messages one-to-one.
         """
         await stream.write(_worker_header(placement))
 
         async for message in request_iterator:
             if message.WhichOneof("data") != "payload":
-                # A second estimate mid-stream is not part of the protocol.
-                # Skip it rather than forwarding an empty payload frame, which
-                # is what the previous implementation did.
+                # A second config mid-stream is not part of the protocol. Skip
+                # it rather than forwarding an empty payload frame, which is what
+                # the previous implementation did.
                 continue
             await stream.write(_worker_chunk(placement, message.payload))
 
@@ -247,6 +249,28 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
 
             await context.write(_client_response(placement, response))
 
+    def _to_demand(self, config: proxy_pb2.ExecutionConfig) -> Demand:
+        """Turn the client's config into a demand, applying per-kind defaults.
+
+        A memory budget the client omits or leaves at 0 gets the cluster
+        default; other kinds are forwarded as sent. Import hints are deduped and
+        sorted for a stable worker-facing order.
+        """
+        budgets: list[Budget] = []
+        has_memory = False
+        for wire in config.budgets:
+            alloc = wire.alloc
+            if wire.kind == RESOURCE_MEMORY:
+                has_memory = True
+                if alloc <= 0:
+                    alloc = self._default_memory
+            budgets.append(Budget(kind=wire.kind, alloc=alloc, max=wire.max))
+        if not has_memory:
+            budgets.append(Budget(kind=RESOURCE_MEMORY, alloc=self._default_memory, max=0))
+
+        imports = tuple(sorted({name for name in config.imports if name}))
+        return Demand(budgets=tuple(budgets), resources=imports)
+
 
 def _representative(group: BaseExceptionGroup) -> BaseException:
     """Pick the most informative leaf of a (possibly nested) exception group.
@@ -275,21 +299,25 @@ def _representative(group: BaseExceptionGroup) -> BaseException:
     return leaves[0] if leaves else group
 
 
-def _to_estimate(resources: proxy_pb2.ResourceEstimation) -> Estimate:
-    """Convert the client's estimate into the domain's own value type."""
-    return Estimate(
-        code=resources.code,
-        imports=tuple(sorted({imp.name for imp in resources.imports if imp.name})),
-        variables=tuple(var.id for var in resources.variables if var.id),
-    )
+def _worker_budgets(placement: Placement) -> list[resources_pb2.ResourceBudget]:
+    """The placement's budgets as wire messages, for the worker."""
+    return [
+        resources_pb2.ResourceBudget(
+            # kind is a RESOURCE_* int; the proto enum agrees by value.
+            kind=cast("resources_pb2.ResourceKind", b.kind),
+            alloc=b.alloc,
+            max=b.max,
+        )
+        for b in placement.budgets
+    ]
 
 
 def _worker_header(placement: Placement) -> execution_pb2.WorkerExecutionRequest:
     """Build the first message sent to the worker.
 
-    ``resources`` is populated here for the first time: the previous router
-    consumed the client's estimate and never forwarded it, so the field the
-    architecture is built around was always empty.
+    ``resources`` (import hints) and ``budgets`` are populated here: the worker
+    reads its provisioning fields off this first message and uses the imports
+    for checkpoint selection.
     """
     return execution_pb2.WorkerExecutionRequest(
         request_id=placement.request_id,
@@ -297,8 +325,7 @@ def _worker_header(placement: Placement) -> execution_pb2.WorkerExecutionRequest
         worker_id=placement.worker_id,
         container_id=placement.container_id,
         checkpoint_id=placement.checkpoint_id,
-        cpu_alloc=placement.cpu_alloc,
-        gpu_alloc=placement.gpu_alloc,
+        budgets=_worker_budgets(placement),
         resources=list(placement.resources),
         payload=b"",
     )
@@ -312,8 +339,7 @@ def _worker_chunk(placement: Placement, payload: bytes) -> execution_pb2.WorkerE
         worker_id=placement.worker_id,
         container_id=placement.container_id,
         checkpoint_id=placement.checkpoint_id,
-        cpu_alloc=placement.cpu_alloc,
-        gpu_alloc=placement.gpu_alloc,
+        budgets=_worker_budgets(placement),
         payload=payload,
     )
 

@@ -135,10 +135,12 @@ func (r *Runner) pumpLogs(ctx context.Context, containerID string, events chan<-
 	}
 }
 
-// pumpStats samples container resource usage and reports it to the router.
+// pumpStats samples container resource usage, drives proactive memory
+// auto-expand, and reports load to the router.
 //
+// memMax is the request's memory ceiling (0 for "bounded by worker capacity").
 // Like logs, this is best-effort and never fails an execution.
-func (r *Runner) pumpStats(ctx context.Context, containerID string, log *slog.Logger) {
+func (r *Runner) pumpStats(ctx context.Context, containerID string, memMax int64, log *slog.Logger) {
 	stream, err := r.containers.Stats(ctx, containerID)
 	if err != nil {
 		logSideChannelFailure(ctx, log, "container stats", err)
@@ -168,6 +170,11 @@ func (r *Runner) pumpStats(ctx context.Context, containerID string, log *slog.Lo
 			return
 		}
 
+		// Grow before the container OOMs. The live limit comes off the sample,
+		// so this tracks whatever the container is actually running with, and
+		// the larger limit the next sample reports is what debounces it.
+		r.maybeGrow(ctx, containerID, sample.MemoryUsage, sample.MemoryLimit, memMax, log)
+
 		// The daemon emits a sample per second by default; throttling here
 		// keeps a chatty stream from flooding the router.
 		now := time.Now()
@@ -186,6 +193,49 @@ func (r *Runner) pumpStats(ctx context.Context, containerID string, log *slog.Lo
 			log.Debug("could not report executor utilization", logging.KeyError, err)
 		}
 	}
+}
+
+// maybeGrow raises a container's memory limit when its use approaches the
+// limit, up to the ceiling. It is a no-op when no ceiling is known or the
+// container is not yet near its limit.
+//
+// The live cgroup write behind Grow is best-effort: where cgroup delegation is
+// unavailable (e.g. Docker Desktop with SANDBOX_IGNORE_CGROUPS), it takes
+// effect only on the container's next acquisition, and a hard OOM is caught by
+// the reactive retry instead.
+func (r *Runner) maybeGrow(ctx context.Context, containerID string, usage, limit, memMax int64, log *slog.Logger) {
+	if limit <= 0 || usage < int64(float64(limit)*r.cfg.MemGrowthThreshold) {
+		return
+	}
+	ceiling := r.growthCeiling(memMax)
+	if ceiling <= limit {
+		return // no room to grow, or no ceiling known
+	}
+	target := int64(float64(limit) * r.cfg.MemGrowthFactor)
+	if target > ceiling {
+		target = ceiling
+	}
+	if target <= limit {
+		return
+	}
+	if err := r.containers.Grow(ctx, containerID, target); err != nil {
+		log.Debug("could not grow container memory", "from", limit, "to", target, logging.KeyError, err)
+		return
+	}
+	log.Info("grew container memory", "from", limit, "to", target)
+}
+
+// growthCeiling is the largest memory limit auto-expand may reach: the
+// request's own max, or the worker's capacity share when the request set none.
+// Returns 0 when neither is known, which disables growth.
+func (r *Runner) growthCeiling(memMax int64) int64 {
+	if memMax > 0 {
+		return memMax
+	}
+	if r.cfg.WorkerMemTotal > 0 {
+		return int64(float64(r.cfg.WorkerMemTotal) * r.cfg.MemoryHeadroom)
+	}
+	return 0
 }
 
 // logSideChannelFailure reports a best-effort stream that could not be opened.

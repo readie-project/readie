@@ -106,9 +106,9 @@ no module holds mutable state. Both Python services have guard tests that walk
 the package and fail if that stops being true.
 
 **Seams are `typing.Protocol`**, not ABCs, so a consumer declares the interface
-it needs and an implementation satisfies it structurally — which matters when the
-implementation lives in another repository, as the resource-estimation model
-does.
+it needs and an implementation satisfies it structurally — which matters when an
+implementation lives in another process, as the worker client's transport and
+codec seams do, and lets a deployment swap one without subclassing anything.
 
 ## Commits and pull requests
 

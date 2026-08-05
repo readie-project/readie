@@ -37,6 +37,8 @@ type ContainerService interface {
 	Release(ctx context.Context, ref registry.ExecutionRef, h container.Handle, outcome container.Outcome) error
 	Logs(ctx context.Context, id string) (io.ReadCloser, error)
 	Stats(ctx context.Context, id string) (sandbox.StatsStream, error)
+	// Grow raises a live container's memory limit, for proactive auto-expand.
+	Grow(ctx context.Context, id string, memBytes int64) error
 }
 
 // PayloadSource yields request-body chunks after the first message.
@@ -56,8 +58,7 @@ type ProvisionInfo struct {
 	WorkerID     string
 	ContainerID  string
 	CheckpointID string
-	CPUAlloc     int64
-	GPUAlloc     int64
+	Budgets      []container.Budget
 }
 
 // Sink receives an execution's output.

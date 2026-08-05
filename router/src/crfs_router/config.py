@@ -50,11 +50,10 @@ class Settings(BaseSettings):
     #: Fraction of a worker's memory the router is willing to commit.
     memory_headroom: float = Field(default=0.9, gt=0.0, le=1.0)
 
-    #: Allocation handed to a request until the prediction model lands. A byte
-    #: count: the worker maps it onto a container memory limit, despite the
-    #: field on the wire being called ``cpu_alloc``.
-    default_cpu_alloc: int = Field(default=512 * 1024 * 1024, gt=0)
-    default_gpu_alloc: int = Field(default=0, ge=0)
+    #: Memory budget, in bytes, given to a request that does not set one on its
+    #: ``@remote`` decorator. The worker maps it onto a container memory limit
+    #: and auto-expands from there when the container needs more.
+    default_memory: int = Field(default=512 * 1024 * 1024, gt=0)
 
     # -- Session serialisation -------------------------------------------
     #: How long a request will wait for its session's turn.

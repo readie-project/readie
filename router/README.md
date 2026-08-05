@@ -45,11 +45,10 @@ event loop at all, and a guard test enforces it.
 collaborator takes its dependencies through `__init__`, and a guard test walks
 the package asserting no module global holds a `ClusterState`, `Scheduler` or
 channel pool. Seams are `typing.Protocol` rather than ABC, so the consumer
-declares the interface structurally — which matters most for `ResourceEstimator`
-(the real prediction model lives in [a separate
-repository](https://github.com/illinoisdata/python-execution-memory-prediction)
-and must not import `crfs_router`) and for `ExecutionClient` (satisfied by an
-adapter over a generated stub we do not control).
+declares the interface structurally — which matters most for `WorkerSelector`
+and its filters (a deployment can compose a different placement policy without
+subclassing) and for `ExecutionClient` (satisfied by an adapter over a generated
+stub we do not control).
 
 **Concurrency.** `ClusterState` and `Scheduler` contain no `async def` and never
 await, so on a single-threaded loop every method is atomic by construction. A
@@ -97,8 +96,11 @@ reflection still advertises them.
 REMOVED=5`). A unit test asserts it, because renumbering to close the gap would
 silently reinterpret every status already on the wire.
 
-**`cpu_alloc` is a byte count**, despite the name — the worker maps it to a
-memory limit. It is treated as memory throughout the scheduler.
+**Requests carry resource `budgets`**, a `ResourceBudget` per kind (memory, GPU
+memory) in bytes. The scheduler reserves and filters on the memory budget — the
+only resource the cluster reports capacity for — and forwards every budget to
+the worker. `ResourceHeadroomFilter` is generic over kind, so adding GPU-memory
+placement is one filter plus a capacity field.
 
 **Health starts NOT_SERVING** and flips only once the router can genuinely
 serve, so an orchestrator never routes to a half-initialised process. On the way
@@ -117,7 +119,7 @@ Read from the environment by pydantic-settings, under the field names below
 | `BIND_HOST`, `PORT` | what the server binds |
 | `SERVICE_NAME` | what the router advertises to workers |
 | `MAX_CONCURRENT_RPCS`, `MAX_MESSAGE_BYTES` | inbound gRPC limits |
-| `DEFAULT_CPU_ALLOC`, `DEFAULT_GPU_ALLOC`, `MEMORY_HEADROOM` | placement |
+| `DEFAULT_MEMORY`, `MEMORY_HEADROOM` | placement — the memory budget for a request that sets none, and the fraction of a worker's memory the router will commit |
 | `SESSION_WAIT_TIMEOUT`, `EXECUTION_TIMEOUT` | per-request bounds |
 | `PROBE_INTERVAL`, `PROBE_TIMEOUT`, `PROBE_FAILURE_THRESHOLD` | liveness |
 | `REAPER_INTERVAL`, `WORKER_TTL`, `EXECUTOR_TTL`, `EXECUTOR_ERROR_TTL`, `SESSION_TTL` | eviction |

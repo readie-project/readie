@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from crfs._proto import proxy_pb2
+from crfs.budget import Budget, ResourceKind
 from crfs.errors import EmptyResultError, RemoteExecutionError
 from crfs.protocol import (
     Attribution,
@@ -12,36 +13,40 @@ from crfs.protocol import (
     Outcome,
     RequestEncoder,
     ResponseAssembler,
-    to_proto,
+    to_config,
     unwrap_envelope,
 )
-from crfs.resources import Estimate, Import, Variable
 
 REF = CallRef(request_id="req-1", session_id="sess-1")
 
 
 def encode(
-    payload: bytes, *, chunk_size: int = 4, estimate: Estimate | None = None
+    payload: bytes,
+    *,
+    chunk_size: int = 4,
+    imports: tuple[str, ...] = (),
+    budgets: tuple[Budget, ...] = (),
 ) -> list[proxy_pb2.ClientExecutionRequest]:
     encoder = RequestEncoder(chunk_size=chunk_size)
-    return list(encoder.encode(REF, payload, estimate or Estimate()))
+    return list(encoder.encode(REF, payload, imports, budgets))
 
 
-def test_the_header_comes_first_and_carries_the_estimate() -> None:
-    estimate = Estimate(code="x = 1", imports=(Import(id="torch", name="torch"),))
-    messages = encode(b"abcd", estimate=estimate)
+def test_the_header_comes_first_and_carries_the_config() -> None:
+    budget = Budget(ResourceKind.MEMORY, alloc=1 << 20, max=1 << 21)
+    messages = encode(b"abcd", imports=("torch",), budgets=(budget,))
 
-    assert messages[0].WhichOneof("data") == "resources"
-    assert [i.name for i in messages[0].resources.imports] == ["torch"]
-    assert messages[0].resources.code == "x = 1"
+    assert messages[0].WhichOneof("data") == "config"
+    assert list(messages[0].config.imports) == ["torch"]
+    assert messages[0].config.budgets[0].kind == int(ResourceKind.MEMORY)
+    assert messages[0].config.budgets[0].alloc == 1 << 20
+    assert messages[0].config.budgets[0].max == 1 << 21
 
 
 def test_exactly_one_header_is_sent() -> None:
-    # The old encoder guarded with a `sent_resources` flag it set unconditionally
-    # before ever reading it, so the flag did nothing. Only the loop structure
-    # kept it correct; this pins the behaviour rather than the flag.
+    # The header is the config arm of the oneof; payload chunks are the other.
+    # Exactly one config message must lead the stream.
     messages = encode(b"a" * 100, chunk_size=4)
-    headers = [m for m in messages if m.WhichOneof("data") == "resources"]
+    headers = [m for m in messages if m.WhichOneof("data") == "config"]
     assert len(headers) == 1
 
 
@@ -66,7 +71,7 @@ def test_the_payload_chunks_and_reassembles_exactly() -> None:
 def test_an_empty_payload_still_sends_a_header() -> None:
     messages = encode(b"")
     assert len(messages) == 1
-    assert messages[0].WhichOneof("data") == "resources"
+    assert messages[0].WhichOneof("data") == "config"
 
 
 def test_a_nonpositive_chunk_size_is_rejected_at_construction() -> None:
@@ -74,16 +79,16 @@ def test_a_nonpositive_chunk_size_is_rejected_at_construction() -> None:
         RequestEncoder(chunk_size=0)
 
 
-def test_the_estimate_converts_without_the_estimator_importing_protobuf() -> None:
-    estimate = Estimate(
-        code="c",
-        imports=(Import(id="a", name="a"),),
-        variables=(Variable(id="v", type="int", shape="()"),),
+def test_the_config_is_built_from_imports_and_budgets() -> None:
+    message = to_config(
+        ("a", "b"),
+        (Budget(ResourceKind.GPU_MEMORY, alloc=4 << 30, max=8 << 30),),
     )
-    message = to_proto(estimate)
 
-    assert isinstance(message, proxy_pb2.ResourceEstimation)
-    assert message.variables[0].type == "int"
+    assert isinstance(message, proxy_pb2.ExecutionConfig)
+    assert list(message.imports) == ["a", "b"]
+    assert message.budgets[0].kind == int(ResourceKind.GPU_MEMORY)
+    assert message.budgets[0].max == 8 << 30
 
 
 # ---------------------------------------------------------------------------

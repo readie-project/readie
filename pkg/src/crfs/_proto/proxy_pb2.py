@@ -22,9 +22,10 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from crfs._proto import resources_pb2 as crfs_dot___proto_dot_resources__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17\x63rfs/_proto/proxy.proto\"]\n\tVariables\x12\n\n\x02id\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x10\n\x03\x63tx\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\r\n\x05shape\x18\x05 \x01(\tB\x06\n\x04_ctx\"#\n\x07Imports\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\\\n\x12ResourceEstimation\x12\x0c\n\x04\x63ode\x18\x01 \x01(\t\x12\x1d\n\tvariables\x18\x02 \x03(\x0b\x32\n.Variables\x12\x19\n\x07imports\x18\x03 \x03(\x0b\x32\x08.Imports\"\x85\x01\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12(\n\tresources\x18\x03 \x01(\x0b\x32\x13.ResourceEstimationH\x00\x12\x11\n\x07payload\x18\x04 \x01(\x0cH\x00\x42\x06\n\x04\x64\x61ta\"\xa6\x01\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x04logs\x18\x04 \x01(\tH\x00\x12\x11\n\x07payload\x18\x05 \x01(\x0cH\x00\x12\x11\n\tworker_id\x18\x06 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x07 \x01(\tB\x06\n\x04\x64\x61ta2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17\x63rfs/_proto/proxy.proto\x1a\x1b\x63rfs/_proto/resources.proto\"D\n\x0f\x45xecutionConfig\x12\x0f\n\x07imports\x18\x01 \x03(\t\x12 \n\x07\x62udgets\x18\x02 \x03(\x0b\x32\x0f.ResourceBudget\"\x85\x01\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x11\n\x07payload\x18\x04 \x01(\x0cH\x00\x12\"\n\x06\x63onfig\x18\x05 \x01(\x0b\x32\x10.ExecutionConfigH\x00\x42\x06\n\x04\x64\x61taJ\x04\x08\x03\x10\x04\"\xa6\x01\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x04logs\x18\x04 \x01(\tH\x00\x12\x11\n\x07payload\x18\x05 \x01(\x0cH\x00\x12\x11\n\tworker_id\x18\x06 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x07 \x01(\tB\x06\n\x04\x64\x61ta2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,16 +33,12 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'crfs._proto.proxy_pb2', _gl
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
-  _globals['_VARIABLES']._serialized_start=27
-  _globals['_VARIABLES']._serialized_end=120
-  _globals['_IMPORTS']._serialized_start=122
-  _globals['_IMPORTS']._serialized_end=157
-  _globals['_RESOURCEESTIMATION']._serialized_start=159
-  _globals['_RESOURCEESTIMATION']._serialized_end=251
-  _globals['_CLIENTEXECUTIONREQUEST']._serialized_start=254
-  _globals['_CLIENTEXECUTIONREQUEST']._serialized_end=387
-  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_start=390
-  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_end=556
-  _globals['_PROXYSERVICE']._serialized_start=558
-  _globals['_PROXYSERVICE']._serialized_end=647
+  _globals['_EXECUTIONCONFIG']._serialized_start=56
+  _globals['_EXECUTIONCONFIG']._serialized_end=124
+  _globals['_CLIENTEXECUTIONREQUEST']._serialized_start=127
+  _globals['_CLIENTEXECUTIONREQUEST']._serialized_end=260
+  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_start=263
+  _globals['_CLIENTEXECUTIONRESPONSE']._serialized_end=429
+  _globals['_PROXYSERVICE']._serialized_start=431
+  _globals['_PROXYSERVICE']._serialized_end=520
 # @@protoc_insertion_point(module_scope)

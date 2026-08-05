@@ -14,7 +14,7 @@ from types import ModuleType
 import pytest
 
 import crfs_router
-from crfs_router.proto import registry_pb2
+from crfs_router.proto import registry_pb2, resources_pb2
 from crfs_router.scheduling import models
 from crfs_router.scheduling.scheduler import Scheduler
 from crfs_router.scheduling.state import ClusterState
@@ -87,3 +87,13 @@ def test_status_constants_match_the_wire_enum() -> None:
         "STATUS_REMOVED": models.STATUS_REMOVED,
     }
     assert 1 not in wire.values(), "the wire enum's gap at 1 is part of the contract"
+
+
+def test_resource_kind_constants_match_the_wire_enum() -> None:
+    """Resource kinds are redeclared and must track the wire enum by value.
+
+    A placement forwards them to the worker by number, so a mismatch would send
+    a memory budget as GPU memory.
+    """
+    assert models.RESOURCE_MEMORY == resources_pb2.RESOURCE_KIND_MEMORY
+    assert models.RESOURCE_GPU_MEMORY == resources_pb2.RESOURCE_KIND_GPU_MEMORY

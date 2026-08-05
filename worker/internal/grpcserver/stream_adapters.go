@@ -31,12 +31,42 @@ func toExecutionRequest(msg *pb.WorkerExecutionRequest) (execution.Request, erro
 		},
 		ContainerID:  msg.GetContainerId(),
 		CheckpointID: msg.GetCheckpointId(),
-		Alloc: container.Allocation{
-			CPUAlloc: msg.GetCpuAlloc(),
-			GPUAlloc: msg.GetGpuAlloc(),
-		},
+		Alloc:        container.Allocation{Budgets: budgetsFromProto(msg.GetBudgets())},
+
 		InitialPayload: msg.GetPayload(),
 	}, nil
+}
+
+// budgetsFromProto converts the wire budgets to the container package's own.
+func budgetsFromProto(wire []*pb.ResourceBudget) []container.Budget {
+	if len(wire) == 0 {
+		return nil
+	}
+	budgets := make([]container.Budget, 0, len(wire))
+	for _, b := range wire {
+		budgets = append(budgets, container.Budget{
+			Kind:  int32(b.GetKind()),
+			Alloc: b.GetAlloc(),
+			Max:   b.GetMax(),
+		})
+	}
+	return budgets
+}
+
+// budgetsToProto converts the container package's budgets back to the wire.
+func budgetsToProto(budgets []container.Budget) []*pb.ResourceBudget {
+	if len(budgets) == 0 {
+		return nil
+	}
+	wire := make([]*pb.ResourceBudget, 0, len(budgets))
+	for _, b := range budgets {
+		wire = append(wire, &pb.ResourceBudget{
+			Kind:  pb.ResourceKind(b.Kind),
+			Alloc: b.Alloc,
+			Max:   b.Max,
+		})
+	}
+	return wire
 }
 
 // streamSource adapts the inbound half of the stream to a PayloadSource.
@@ -114,8 +144,7 @@ func (s *streamSink) newMessage() *pb.WorkerExecutionResponse {
 		WorkerId:     s.info.WorkerID,
 		ContainerId:  s.info.ContainerID,
 		CheckpointId: s.info.CheckpointID,
-		CpuAlloc:     s.info.CPUAlloc,
-		GpuAlloc:     s.info.GPUAlloc,
+		Budgets:      budgetsToProto(s.info.Budgets),
 		Success:      true,
 	}
 }

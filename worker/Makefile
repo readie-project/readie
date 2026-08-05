@@ -1,7 +1,7 @@
 MODULE     := github.com/illinoisdata/checkpoint-restore-for-serverless/worker
 BINARY     := go-server
 PROTO_DIR  := ../protos
-PROTOS     := $(PROTO_DIR)/execution.proto $(PROTO_DIR)/registry.proto
+PROTOS     := $(PROTO_DIR)/execution.proto $(PROTO_DIR)/registry.proto $(PROTO_DIR)/resources.proto
 
 # Pinned to the versions recorded in the committed proto/*.pb.go headers.
 PROTOC_GEN_GO      := google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11

@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "resources.proto";
+
 option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
 
 // Message used for code execution requests to workers
@@ -10,11 +12,14 @@ message WorkerExecutionRequest {
   optional string container_id = 4;
   string checkpoint_id = 5;
   bytes payload = 6;
-  int64 cpu_alloc = 7;
-  int64 gpu_alloc = 8;
+  reserved 7, 8; // were cpu_alloc, gpu_alloc; replaced by budgets below
   // Import and artefact hints from the client's static analysis, forwarded
   // by the router so a worker can pick a checkpoint that already has them.
   repeated string resources = 9;
+  // The resource budgets (memory, GPU memory, ...) the router placed this
+  // request on. The worker sets each at container create and auto-expands up to
+  // the budget's max where the runtime can enforce it.
+  repeated ResourceBudget budgets = 11;
 }
 
 // Message used for code execution responses from workers
@@ -24,13 +29,14 @@ message WorkerExecutionResponse {
   string worker_id = 3;
   string container_id = 4;
   string checkpoint_id = 5;
-  int64 cpu_alloc = 6;
-  int64 gpu_alloc = 7;
+  reserved 6, 7; // were cpu_alloc, gpu_alloc; replaced by budgets below
   bool success = 8;
   oneof data {
     string logs = 9;
     bytes payload = 10;
   }
+  // The budgets the container actually ran with (post auto-expand).
+  repeated ResourceBudget budgets = 11;
 }
 
 // Service on the workers to handle execution requests

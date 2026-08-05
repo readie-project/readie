@@ -67,7 +67,7 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
                 self.request_ids.append(message.request_id)
                 self.session_ids.append(message.session_id)
                 arm = message.WhichOneof("data")
-                if arm == "resources":
+                if arm == "config":
                     self.headers.append(message)
                 elif arm == "payload":
                     self.payload_messages.append(message)

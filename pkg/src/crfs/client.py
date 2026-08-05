@@ -9,12 +9,13 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import Any
 
+from crfs.budget import Budget
 from crfs.codec import CloudpickleCodec, ResultCodec
 from crfs.config import Settings
 from crfs.errors import BlockingCallInEventLoopError, ClientClosedError
 from crfs.identity import new_request_id, new_session_id
 from crfs.protocol import CallRef, Outcome, unwrap_envelope
-from crfs.resources import AstEstimator, ResourceEstimator
+from crfs.resources import extract_imports
 from crfs.transport import AsyncGrpcTransport, AsyncTransport, GrpcTransport, Transport
 
 
@@ -78,7 +79,7 @@ class Client:
 
     Every collaborator is injected and defaulted, so a test supplies a fake
     transport and exercises the real client, and a deployment supplies its own
-    estimator or codec without subclassing anything.
+    codec without subclassing anything.
     """
 
     def __init__(
@@ -86,14 +87,12 @@ class Client:
         settings: Settings | None = None,
         *,
         codec: ResultCodec | None = None,
-        estimator: ResourceEstimator | None = None,
         transport: Transport | None = None,
         async_transport: AsyncTransport | None = None,
         log_sink: Callable[[str], None] | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self._codec = codec or CloudpickleCodec()
-        self._estimator = estimator or AstEstimator()
         self._log_sink = log_sink if log_sink is not None else _default_log_sink
         self._closed = False
 
@@ -128,6 +127,7 @@ class Client:
         *,
         session: Session | None = None,
         timeout: float | None = None,
+        budgets: tuple[Budget, ...] = (),
     ) -> Any:
         """Execute ``func`` remotely and return its result.
 
@@ -135,11 +135,12 @@ class Client:
         loop, where blocking would stall the loop the response must arrive on.
         """
         _reject_running_loop()
-        ref, payload, estimate = self._prepare(func, args, kwargs, session)
+        ref, payload, imports = self._prepare(func, args, kwargs, session)
         outcome = self._transport.execute(
             ref,
             payload,
-            estimate,
+            imports,
+            budgets,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -153,13 +154,15 @@ class Client:
         *,
         session: Session | None = None,
         timeout: float | None = None,  # noqa: ASYNC109 - the deadline is the gRPC call's, not a wrapper's
+        budgets: tuple[Budget, ...] = (),
     ) -> Any:
         """Execute ``func`` remotely and return its result, without blocking."""
-        ref, payload, estimate = self._prepare(func, args, kwargs, session)
+        ref, payload, imports = self._prepare(func, args, kwargs, session)
         outcome = await self._async_transport.execute(
             ref,
             payload,
-            estimate,
+            imports,
+            budgets,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -214,7 +217,7 @@ class Client:
         args: Sequence[Any],
         kwargs: Mapping[str, Any] | None,
         session: Session | None,
-    ) -> tuple[CallRef, bytes, Any]:
+    ) -> tuple[CallRef, bytes, tuple[str, ...]]:
         self._check_open()
         if session is not None:
             session._check()
@@ -224,8 +227,8 @@ class Client:
         session_id = session.id if session is not None else new_session_id()
         ref = CallRef(request_id=new_request_id(), session_id=session_id)
         payload = self._codec.encode_call(func, args, kwargs or {})
-        estimate = self._estimator.estimate(func)
-        return ref, payload, estimate
+        imports = extract_imports(func)
+        return ref, payload, imports
 
     def _finish(self, outcome: Outcome) -> Any:
         return unwrap_envelope(self._codec.decode_result(outcome.payload), outcome)

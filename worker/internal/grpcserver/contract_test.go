@@ -48,14 +48,14 @@ func TestToExecutionRequest_AbsentContainerIDMeansProvisionNew(t *testing.T) {
 	req, err := toExecutionRequest(&pb.WorkerExecutionRequest{
 		RequestId: "req-1",
 		SessionId: "sess-1",
-		CpuAlloc:  512 << 20,
+		Budgets:   []*pb.ResourceBudget{{Kind: pb.ResourceKind_RESOURCE_KIND_MEMORY, Alloc: 512 << 20}},
 	})
 	require.NoError(t, err)
 
 	assert.Empty(t, req.ContainerID)
 	assert.Equal(t, "req-1", req.Ref.RequestID)
 	assert.Equal(t, "sess-1", req.Ref.SessionID)
-	assert.Equal(t, int64(512<<20), req.Alloc.CPUAlloc)
+	assert.Equal(t, int64(512<<20), req.Alloc.Memory().Alloc)
 }
 
 func TestToExecutionRequest_CarriesEveryField(t *testing.T) {
@@ -66,15 +66,18 @@ func TestToExecutionRequest_CarriesEveryField(t *testing.T) {
 		ContainerId:  &containerID,
 		CheckpointId: "checkpoint_1",
 		Payload:      []byte("body"),
-		CpuAlloc:     1 << 20,
-		GpuAlloc:     2,
+		Budgets: []*pb.ResourceBudget{
+			{Kind: pb.ResourceKind_RESOURCE_KIND_MEMORY, Alloc: 1 << 20},
+			{Kind: pb.ResourceKind_RESOURCE_KIND_GPU_MEMORY, Alloc: 2},
+		},
 	})
 	require.NoError(t, err)
 
 	assert.Equal(t, containerID, req.ContainerID)
 	assert.Equal(t, "checkpoint_1", req.CheckpointID)
 	assert.Equal(t, []byte("body"), req.InitialPayload)
-	assert.Equal(t, int64(2), req.Alloc.GPUAlloc)
+	assert.Equal(t, int64(1<<20), req.Alloc.Memory().Alloc)
+	assert.Equal(t, int64(2), req.Alloc.GPU().Alloc)
 }
 
 func TestToExecutionRequest_RejectsNil(t *testing.T) {
@@ -95,8 +98,10 @@ func TestStreamSink_StampsProvisioningOntoEveryMessage(t *testing.T) {
 		WorkerID:     "worker-1",
 		ContainerID:  "exec_container-abc",
 		CheckpointID: "checkpoint_1",
-		CPUAlloc:     512 << 20,
-		GPUAlloc:     1,
+		Budgets: []container.Budget{
+			{Kind: container.KindMemory, Alloc: 512 << 20},
+			{Kind: container.KindGPUMemory, Alloc: 1},
+		},
 	}))
 	assert.Empty(t, stream.sent, "Provision must not emit a frame of its own")
 
@@ -110,8 +115,8 @@ func TestStreamSink_StampsProvisioningOntoEveryMessage(t *testing.T) {
 		assert.Equal(t, "worker-1", msg.GetWorkerId())
 		assert.Equal(t, "exec_container-abc", msg.GetContainerId())
 		assert.Equal(t, "checkpoint_1", msg.GetCheckpointId())
-		assert.Equal(t, int64(512<<20), msg.GetCpuAlloc())
-		assert.Equal(t, int64(1), msg.GetGpuAlloc())
+		assert.Equal(t, int64(512<<20), budgetAlloc(msg.GetBudgets(), pb.ResourceKind_RESOURCE_KIND_MEMORY))
+		assert.Equal(t, int64(1), budgetAlloc(msg.GetBudgets(), pb.ResourceKind_RESOURCE_KIND_GPU_MEMORY))
 		assert.True(t, msg.GetSuccess())
 	}
 
@@ -175,6 +180,16 @@ func TestToStatus_DoesNotLeakInternalDetail(t *testing.T) {
 func TestToStatus_PreservesAnExistingStatusCode(t *testing.T) {
 	err := toStatus(status.Error(codes.PermissionDenied, "nope"))
 	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+// budgetAlloc returns the alloc of a budget of the given kind, or 0.
+func budgetAlloc(budgets []*pb.ResourceBudget, kind pb.ResourceKind) int64 {
+	for _, b := range budgets {
+		if b.GetKind() == kind {
+			return b.GetAlloc()
+		}
+	}
+	return 0
 }
 
 // recordingStream captures what the sink sends.

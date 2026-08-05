@@ -243,13 +243,17 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	}, deps.Clock, log)
 
 	runner := execution.NewRunner(manager, dialer, reporter, execution.RunnerConfig{
-		WorkerID:         cfg.WorkerID,
-		ExecutionTimeout: cfg.ExecutionTimeout,
-		ReleaseTimeout:   cfg.ReleaseTimeout,
-		StatusTimeout:    cfg.StatusTimeout,
-		StreamLogs:       cfg.StreamLogs,
-		StreamStats:      cfg.StreamStats,
-		StatsInterval:    cfg.StatsInterval,
+		WorkerID:           cfg.WorkerID,
+		ExecutionTimeout:   cfg.ExecutionTimeout,
+		ReleaseTimeout:     cfg.ReleaseTimeout,
+		StatusTimeout:      cfg.StatusTimeout,
+		StreamLogs:         cfg.StreamLogs,
+		StreamStats:        cfg.StreamStats,
+		StatsInterval:      cfg.StatsInterval,
+		MemGrowthThreshold: cfg.MemGrowthThreshold,
+		MemGrowthFactor:    cfg.MemGrowthFactor,
+		WorkerMemTotal:     cfg.MemTotal,
+		MemoryHeadroom:     0.9,
 		SessionOptions: executor.SessionOptions{
 			ChunkSize:        cfg.ChunkSize,
 			WriteTimeout:     cfg.SocketWriteTimeout,

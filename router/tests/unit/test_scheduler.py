@@ -10,12 +10,14 @@ import pytest
 
 from crfs_router.clock import FakeClock
 from crfs_router.errors import NoCapacityError, NoWorkersRegisteredError
-from crfs_router.scheduling.estimator import Estimate, StaticEstimator
 from crfs_router.scheduling.models import (
+    RESOURCE_MEMORY,
     STATUS_BUSY,
     STATUS_ERROR,
     STATUS_READY,
     STATUS_REMOVED,
+    Budget,
+    Demand,
     Outcome,
     Placement,
 )
@@ -41,7 +43,6 @@ def scheduler(state: ClusterState, clock: FakeClock) -> Scheduler:
     return Scheduler(
         state=state,
         selector=default_selector(),
-        estimator=StaticEstimator(cpu_alloc=ALLOC),
         clock=clock,
     )
 
@@ -51,10 +52,15 @@ def register(state: ClusterState, worker_id: str, *, now: float = 0.0, **kwargs:
     state.apply_worker_status(worker_id, f"{worker_id}:50052", STATUS_READY, now, **kwargs)
 
 
+def demand(memory: int = ALLOC) -> Demand:
+    """A demand carrying a single memory budget."""
+    return Demand(budgets=(Budget(kind=RESOURCE_MEMORY, alloc=memory),))
+
+
 def provision(scheduler: Scheduler, request_id: str, session_id: str) -> Placement:
-    """Place a request carrying an empty estimate."""
+    """Place a request carrying the default memory budget."""
     return scheduler.provision(
-        ProvisionRequest(request_id=request_id, session_id=session_id, estimate=Estimate())
+        ProvisionRequest(request_id=request_id, session_id=session_id, demand=demand())
     )
 
 

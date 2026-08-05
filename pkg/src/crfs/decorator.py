@@ -6,8 +6,8 @@ import functools
 from collections.abc import Callable
 from typing import Any, Generic, ParamSpec, TypeVar, overload
 
+from crfs.budget import Budget, build_budgets
 from crfs.client import Client, Session
-from crfs.resources import ResourceEstimator
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -24,7 +24,7 @@ class RemoteFunction(Generic[P, R]):
     or a thread will fail at encode time with ``SerializationError``.
     """
 
-    __slots__ = ("__dict__", "_client", "_estimator", "_func", "_session", "_timeout")
+    __slots__ = ("__dict__", "_budgets", "_client", "_func", "_session", "_timeout")
 
     # Written by functools.update_wrapper below; declared so the decorated
     # object type-checks as the drop-in replacement it is at runtime.
@@ -37,13 +37,13 @@ class RemoteFunction(Generic[P, R]):
         func: Callable[P, R],
         *,
         client: Client | None = None,
-        estimator: ResourceEstimator | None = None,
+        budgets: tuple[Budget, ...] = (),
         timeout: float | None = None,
         session: Session | None = None,
     ) -> None:
         self._func = func
         self._client = client
-        self._estimator = estimator
+        self._budgets = budgets
         self._timeout = timeout
         self._session = session
         # Carries __name__, __doc__, __module__ and __wrapped__ across, so the
@@ -59,14 +59,24 @@ class RemoteFunction(Generic[P, R]):
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         """Run remotely and block for the result."""
         result: R = self._resolve().call(
-            self._func, args, kwargs, session=self._session, timeout=self._timeout
+            self._func,
+            args,
+            kwargs,
+            session=self._session,
+            timeout=self._timeout,
+            budgets=self._budgets,
         )
         return result
 
     async def aio(self, *args: P.args, **kwargs: P.kwargs) -> R:
         """Run remotely and await the result."""
         result: R = await self._resolve().acall(
-            self._func, args, kwargs, session=self._session, timeout=self._timeout
+            self._func,
+            args,
+            kwargs,
+            session=self._session,
+            timeout=self._timeout,
+            budgets=self._budgets,
         )
         return result
 
@@ -90,7 +100,7 @@ class RemoteFunction(Generic[P, R]):
         return RemoteFunction(
             self._func,
             client=client if client is not None else self._client,
-            estimator=self._estimator,
+            budgets=self._budgets,
             timeout=timeout if timeout is not None else self._timeout,
             session=session if session is not None else self._session,
         )
@@ -129,9 +139,12 @@ def remote(func: Callable[P, R], /) -> RemoteFunction[P, R]: ...
 def remote(
     *,
     client: Client | None = ...,
-    estimator: ResourceEstimator | None = ...,
     timeout: float | None = ...,
     session: Session | None = ...,
+    memory: str | int | None = ...,
+    max_memory: str | int | None = ...,
+    gpu_memory: str | int | None = ...,
+    max_gpu_memory: str | int | None = ...,
 ) -> Callable[[Callable[P, R]], RemoteFunction[P, R]]: ...
 
 
@@ -140,9 +153,12 @@ def remote(
     /,
     *,
     client: Client | None = None,
-    estimator: ResourceEstimator | None = None,
     timeout: float | None = None,
     session: Session | None = None,
+    memory: str | int | None = None,
+    max_memory: str | int | None = None,
+    gpu_memory: str | int | None = None,
+    max_gpu_memory: str | int | None = None,
 ) -> RemoteFunction[P, R] | Callable[[Callable[P, R]], RemoteFunction[P, R]]:
     """Mark a function for remote execution.
 
@@ -151,16 +167,26 @@ def remote(
         @remote
         def f(x): ...
 
-        @remote(timeout=300.0)
+        @remote(timeout=300.0, memory="2Gi", max_memory="8Gi")
         def g(x): ...
 
-    Decoration itself does no work and opens no connection, so a module of
-    ``@remote`` definitions imports as fast as one without them.
+    ``memory``/``gpu_memory`` set the container's initial budget and
+    ``max_memory``/``max_gpu_memory`` the ceiling the worker may auto-expand to;
+    each accepts a byte count or a size string (``"512Mi"``, ``"4Gi"``). An unset
+    budget falls back to the cluster default. Decoration itself does no work and
+    opens no connection, so a module of ``@remote`` definitions imports as fast
+    as one without them.
     """
+    budgets = build_budgets(
+        memory=memory,
+        max_memory=max_memory,
+        gpu_memory=gpu_memory,
+        max_gpu_memory=max_gpu_memory,
+    )
 
     def decorate(target: Callable[P, R]) -> RemoteFunction[P, R]:
         return RemoteFunction(
-            target, client=client, estimator=estimator, timeout=timeout, session=session
+            target, client=client, budgets=budgets, timeout=timeout, session=session
         )
 
     if func is not None:

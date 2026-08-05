@@ -6,8 +6,11 @@ from collections.abc import Callable
 
 import cloudpickle
 
+from crfs.budget import Budget
 from crfs.protocol import Attribution, CallRef, Outcome
-from crfs.resources import Estimate
+
+# What the client handed the transport: ref, payload, imports, budgets, timeout.
+Recorded = tuple[CallRef, bytes, tuple[str, ...], tuple[Budget, ...], float | None]
 
 
 class RecordingTransport:
@@ -19,18 +22,20 @@ class RecordingTransport:
         """Set to override the envelope entirely, e.g. to return a failure."""
         self.logs = logs
         self.error: BaseException | None = None
-        self.calls: list[tuple[CallRef, bytes, Estimate, float | None]] = []
+        self.calls: list[Recorded] = []
         self.closed = False
 
     def _run(
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate,
+        imports: tuple[str, ...],
+        budgets: tuple[Budget, ...],
+        *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
     ) -> Outcome:
-        self.calls.append((ref, payload, estimate, timeout))
+        self.calls.append((ref, payload, imports, budgets, timeout))
         if self.error is not None:
             raise self.error
         for line in self.logs:
@@ -51,18 +56,19 @@ class RecordingTransport:
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate,
+        imports: tuple[str, ...],
+        budgets: tuple[Budget, ...],
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
     ) -> Outcome:
-        return self._run(ref, payload, estimate, timeout, on_log)
+        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log)
 
     def close(self) -> None:
         self.closed = True
 
     @property
-    def last(self) -> tuple[CallRef, bytes, Estimate, float | None]:
+    def last(self) -> Recorded:
         return self.calls[-1]
 
 
@@ -73,12 +79,13 @@ class AsyncRecordingTransport(RecordingTransport):
         self,
         ref: CallRef,
         payload: bytes,
-        estimate: Estimate,
+        imports: tuple[str, ...],
+        budgets: tuple[Budget, ...],
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
     ) -> Outcome:
-        return self._run(ref, payload, estimate, timeout, on_log)
+        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log)
 
     async def aclose(self) -> None:
         self.closed = True
