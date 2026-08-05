@@ -25,13 +25,24 @@ make test      # unit + in-process gRPC integration tests
 make lint type # ruff + mypy --strict
 ```
 
-Configure with `CRFS_ROUTER_URI` (default `localhost:50051`), or explicitly:
+Configure explicitly, which takes precedence over the environment:
 
 ```python
 import crfs
 
 crfs.configure(router_uri="router:50051", timeout=120.0)
 ```
+
+Or from the environment, read by `Settings.from_env` when a client is built
+without arguments:
+
+| | |
+|---|---|
+| `CRFS_ROUTER_URI` | `host:port` of the router (default `localhost:50051`). `ROUTER_URI` is accepted as a fallback |
+| `CRFS_TIMEOUT` | deadline for a whole call, in seconds; unset means no deadline |
+| `CRFS_CHUNK_SIZE` | payload bytes per stream message (default 1 MiB) |
+| `CRFS_MAX_MESSAGE_BYTES` | gRPC message cap (default 16 MiB); must exceed `CRFS_CHUNK_SIZE` |
+| `CRFS_STREAM_LOGS` | print executor output as it arrives, not only on failure (default on) |
 
 ## When a remote function raises
 

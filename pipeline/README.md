@@ -160,7 +160,10 @@ a second name for the same build, free to disagree.
 | `CRFS_PLANNER` | `greedy` or `fixed` |
 | `CRFS_MAX_CHECKPOINTS`, `CRFS_SIZE_BUDGET_MB` | planner bounds |
 | `CRFS_DATA_DIR` | overrides the committed corpus location |
+| `RUNSC_BINARY`, `OCISPEC_BINARY` | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
+| `CRFS_READY_TIMEOUT` | how long a sandbox may take to print `READY_FOR_CHECKPOINT` before `build` gives up (default `300`) |
 | `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME` | `corpus` only |
+| `AZURE_API_VERSION` | `corpus` only; default `2025-03-01-preview` |
 
 ## Known gaps
 
