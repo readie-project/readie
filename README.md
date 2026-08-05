@@ -210,16 +210,29 @@ Built and tested:
   raise before an OOM, plus a one-shot retry with a larger container when a hard
   OOM slips through. GPU memory rides the same seam; it is not cgroup-enforceable
   through runsc, so for GPU auto-expand is the retry alone.
+- **A heterogeneous CPU/GPU fleet.** A worker is `cpu` or `gpu` (`WORKER_FLAVOR`,
+  advertised on every status). A GPU request — `@remote(gpu=True)` or any
+  `gpu_memory` budget — routes only to gpu workers; a cpu request prefers cpu
+  workers and spills to gpu only when none are free. GPU workers run an
+  independently-generated image (Kaggle GPU rootfs, `runsc --nvproxy`) whose
+  checkpoints are fingerprint-incompatible with cpu ones. Placement respects both
+  system- and GPU-memory headroom. `make generation FLAVOR=cpu|gpu` builds each
+  without touching the other.
+- **Request-time checkpoint selection.** The pipeline emits a per-flavor
+  `catalogue.json`; the router loads it and, for each cold start, picks the
+  checkpoint minimising `alpha·size + Σ load_time(required items not in it)`
+  against a cold-start baseline (the dual of the planner's objective, sharing one
+  `alpha`). Datasets, models and tokenizers price in alongside packages.
 - Graceful shutdown on both sides: the router drains in-flight calls, the worker
   deregisters before draining and reclaims its sandboxes.
 
 Not built. Each of these is a real gap, not an oversight:
 
-- **Checkpoint selection at request time.** The pipeline emits a plan and each
-  checkpoint records its imports, but the router has no catalogue to choose
-  from — it only reuses the checkpoint already attached to a warm container. So
-  every genuinely cold start is uncheckpointed today, which is the one gap that
-  blunts the whole idea. It is the next piece of work.
+- **Measured metadata for datasets, models and tokenizers.** The cost model and
+  catalogue treat them exactly like packages, but nothing measures their size and
+  load time yet — `metadata.json` is packages-only, so today they price as free.
+  The measurement (a `from_pretrained` / `load_dataset` profiler, per the
+  `ResourceType` scaffolding) needs a network and, for GPU models, a GPU host.
 - **Any check that the baked checkpoints match the worker restoring them.** The
   manifest records `runsc_version` and `spec_fingerprint`, and the worker validates
   only that they are non-empty (`worker/internal/artifact/artifact.go`,
@@ -232,10 +245,6 @@ Not built. Each of these is a real gap, not an oversight:
   downgrades to a cold start, and the worker reports READY while serving nothing
   but cold starts. The fix is to compute the fingerprint at startup and refuse the
   checkpoints loudly; the redeploy loop above makes it easy to trigger until then.
-- **GPU-memory placement.** The client can set a `gpu_memory` budget and the
-  worker honours it, but the router does not place on it: workers report no
-  GPU-memory capacity yet, so `ResourceHeadroomFilter` is wired only for system
-  memory. Adding it is one filter plus a capacity field on `WorkerUtilization`.
 - **Swapping checkpoints without a new image.** Artifacts are baked in and read
   once at startup, so new checkpoints mean a new base image and a new container.
   That is the trade taken deliberately — one deployable, nothing mounted — but it

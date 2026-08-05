@@ -9,10 +9,12 @@ safe to call from a handler's ``finally`` without risk of deadlock.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from crfs_router.clock import Clock
 from crfs_router.errors import NoCapacityError, NoWorkersRegisteredError
+from crfs_router.scheduling.catalogue import Catalogue
 from crfs_router.scheduling.models import (
     RESOURCE_MEMORY,
     Demand,
@@ -42,10 +44,14 @@ class Scheduler:
         state: ClusterState,
         selector: WorkerSelector,
         clock: Clock,
+        catalogues: Mapping[str, Catalogue] | None = None,
     ) -> None:
         self._state = state
         self._selector = selector
         self._clock = clock
+        # Per-flavor checkpoint catalogues. Empty means no request-time
+        # selection, i.e. cold starts -- the behaviour before catalogues existed.
+        self._catalogues = catalogues or {}
 
     # -- Placement --------------------------------------------------------
     def provision(self, request: ProvisionRequest) -> Placement:
@@ -136,8 +142,23 @@ class Scheduler:
         if chosen is None:
             raise NoCapacityError(candidates=len(candidates))
 
+        # A cold start: pick the cheapest checkpoint from the chosen worker's
+        # flavor catalogue. A GPU worker serving a CPU request restores a GPU
+        # checkpoint, so selection follows the worker, not the request.
+        checkpoint_id = self._select_checkpoint(chosen, demand)
+
         # An empty container id is the worker's "provision a new one" sentinel.
-        return chosen, "", "", False
+        return chosen, "", checkpoint_id, False
+
+    def _select_checkpoint(self, worker_id: str, demand: Demand) -> str:
+        """Choose a checkpoint for a cold start on ``worker_id``, or ``""``."""
+        worker = self._state.worker(worker_id)
+        if worker is None:  # pragma: no cover - the caller just selected it
+            return ""
+        catalogue = self._catalogues.get(worker.flavor)
+        if catalogue is None:
+            return ""
+        return catalogue.select(demand.resources)
 
     # -- Reconciliation ---------------------------------------------------
     def bind(

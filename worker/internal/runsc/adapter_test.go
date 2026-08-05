@@ -283,14 +283,14 @@ func TestFingerprint_IgnoresWhatVariesPerRequest(t *testing.T) {
 
 	base, err := BuildSpec(testCreateSpec(f))
 	require.NoError(t, err)
-	want := Fingerprint(base, "root:memory", "none")
+	want := Fingerprint(base, "root:memory", "none", false)
 
 	t.Run("memory limit", func(t *testing.T) {
 		spec := testCreateSpec(f)
 		spec.MemoryBytes = 1 << 30
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
-		assert.Equal(t, want, Fingerprint(other, "root:memory", "none"),
+		assert.Equal(t, want, Fingerprint(other, "root:memory", "none", false),
 			"the allocation varies per request and must not invalidate checkpoints")
 	})
 
@@ -299,7 +299,7 @@ func TestFingerprint_IgnoresWhatVariesPerRequest(t *testing.T) {
 		spec.Mounts[0].Source = "/somewhere/else"
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
-		assert.Equal(t, want, Fingerprint(other, "root:memory", "none"),
+		assert.Equal(t, want, Fingerprint(other, "root:memory", "none", false),
 			"sources are resolved fresh at restore, which is what makes a checkpoint portable")
 	})
 
@@ -308,7 +308,7 @@ func TestFingerprint_IgnoresWhatVariesPerRequest(t *testing.T) {
 		spec.CgroupsPath = "/elsewhere"
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
-		assert.Equal(t, want, Fingerprint(other, "root:memory", "none"))
+		assert.Equal(t, want, Fingerprint(other, "root:memory", "none", false))
 	})
 
 	// Load-bearing, not incidental. The offline pipeline distinguishes one
@@ -322,7 +322,7 @@ func TestFingerprint_IgnoresWhatVariesPerRequest(t *testing.T) {
 		spec.Env = append(append([]string(nil), spec.Env...), "CRFS_PREIMPORT=pandas,numpy")
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
-		assert.Equal(t, want, Fingerprint(other, "root:memory", "none"),
+		assert.Equal(t, want, Fingerprint(other, "root:memory", "none", false),
 			"pre-imports travel in the environment and must not change the fingerprint")
 	})
 }
@@ -332,7 +332,7 @@ func TestFingerprint_ChangesForWhatBreaksARestore(t *testing.T) {
 
 	base, err := BuildSpec(testCreateSpec(f))
 	require.NoError(t, err)
-	want := Fingerprint(base, "root:memory", "none")
+	want := Fingerprint(base, "root:memory", "none", false)
 
 	t.Run("mount added", func(t *testing.T) {
 		spec := testCreateSpec(f)
@@ -341,7 +341,7 @@ func TestFingerprint_ChangesForWhatBreaksARestore(t *testing.T) {
 		})
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
-		assert.NotEqual(t, want, Fingerprint(other, "root:memory", "none"),
+		assert.NotEqual(t, want, Fingerprint(other, "root:memory", "none", false),
 			"the runtime reattaches one gofer per mount; a different count cannot be restored")
 	})
 
@@ -350,7 +350,7 @@ func TestFingerprint_ChangesForWhatBreaksARestore(t *testing.T) {
 		spec.Args = []string{"python", "-u", "/other.py"}
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
-		assert.NotEqual(t, want, Fingerprint(other, "root:memory", "none"))
+		assert.NotEqual(t, want, Fingerprint(other, "root:memory", "none", false))
 	})
 
 	t.Run("root readonly", func(t *testing.T) {
@@ -358,16 +358,44 @@ func TestFingerprint_ChangesForWhatBreaksARestore(t *testing.T) {
 		spec.RootReadonly = true
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
-		assert.NotEqual(t, want, Fingerprint(other, "root:memory", "none"))
+		assert.NotEqual(t, want, Fingerprint(other, "root:memory", "none", false))
 	})
 
 	t.Run("overlay mode", func(t *testing.T) {
-		assert.NotEqual(t, want, Fingerprint(base, "none", "none"))
+		assert.NotEqual(t, want, Fingerprint(base, "none", "none", false))
 	})
 
 	t.Run("network mode", func(t *testing.T) {
-		assert.NotEqual(t, want, Fingerprint(base, "root:memory", "host"))
+		assert.NotEqual(t, want, Fingerprint(base, "root:memory", "host", false))
 	})
+
+	t.Run("gpu mode", func(t *testing.T) {
+		// A GPU checkpoint must never restore into a CPU sandbox, so nvproxy
+		// changes the fingerprint even though it is a runtime flag, not a spec
+		// field.
+		assert.NotEqual(t, want, Fingerprint(base, "root:memory", "none", true))
+	})
+}
+
+func TestGlobalFlags_NVProxyIsAddedOnlyWhenEnabled(t *testing.T) {
+	off := newFixture(t)
+	assert.NotContains(t, off.adapter.global, "--nvproxy")
+
+	on := newFixture(t, func(o *Options) { o.NVProxy = true })
+	assert.Contains(t, on.adapter.global, "--nvproxy")
+	assert.Contains(t, on.adapter.global, "--nvproxy-docker")
+}
+
+func TestBuildSpec_GPUAddsTheNvidiaEnv(t *testing.T) {
+	f := newFixture(t)
+	spec := testCreateSpec(f)
+	spec.GPU = true
+
+	built, err := BuildSpec(spec)
+	require.NoError(t, err)
+
+	assert.Contains(t, built.Process.Env, "NVIDIA_VISIBLE_DEVICES=all")
+	assert.Contains(t, built.Process.Env, "NVIDIA_DRIVER_CAPABILITIES=compute,utility")
 }
 
 func TestFingerprint_IsStable(t *testing.T) {
@@ -375,8 +403,8 @@ func TestFingerprint_IsStable(t *testing.T) {
 	spec, err := BuildSpec(testCreateSpec(f))
 	require.NoError(t, err)
 
-	first := Fingerprint(spec, "root:memory", "none")
-	assert.Equal(t, first, Fingerprint(spec, "root:memory", "none"))
+	first := Fingerprint(spec, "root:memory", "none", false)
+	assert.Equal(t, first, Fingerprint(spec, "root:memory", "none", false))
 	assert.Contains(t, first, "sha256:")
 }
 

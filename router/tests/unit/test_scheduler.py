@@ -6,11 +6,15 @@ makes these tests fast and deterministic.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from crfs_router.clock import FakeClock
 from crfs_router.errors import NoCapacityError, NoWorkersRegisteredError
+from crfs_router.scheduling.catalogue import Catalogue
 from crfs_router.scheduling.models import (
+    RESOURCE_GPU_MEMORY,
     RESOURCE_MEMORY,
     STATUS_BUSY,
     STATUS_ERROR,
@@ -47,7 +51,7 @@ def scheduler(state: ClusterState, clock: FakeClock) -> Scheduler:
     )
 
 
-def register(state: ClusterState, worker_id: str, *, now: float = 0.0, **kwargs: int) -> None:
+def register(state: ClusterState, worker_id: str, *, now: float = 0.0, **kwargs: Any) -> None:
     """Register a healthy worker, as PostWorkerStatus(READY) would."""
     state.apply_worker_status(worker_id, f"{worker_id}:50052", STATUS_READY, now, **kwargs)
 
@@ -448,3 +452,136 @@ def test_a_failure_does_not_clear_a_newer_sessions_affinity(
     assert session is not None
     assert session.affinity is not None
     assert session.affinity.seq == new.lease_id
+
+
+# ---------------------------------------------------------------------------
+# Request-time checkpoint selection
+# ---------------------------------------------------------------------------
+def _catalogue(flavor: str) -> Catalogue:
+    return Catalogue.from_document(
+        {
+            "version": 1,
+            "flavor": flavor,
+            "items": {
+                "pandas": {"size_mb": 30.0, "load_time": 0.25},
+                "numpy": {"size_mb": 20.0, "load_time": 0.15},
+            },
+            "checkpoints": [{"id": "c-data", "items": ["pandas", "numpy"], "size_mb": 50.0}],
+        },
+        alpha=0.002,
+    )
+
+
+def _wants(*items: str) -> Demand:
+    return Demand(budgets=(Budget(kind=RESOURCE_MEMORY, alloc=ALLOC),), resources=items)
+
+
+def test_a_cold_start_selects_a_checkpoint_from_the_workers_flavor_catalogue(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    scheduler = Scheduler(
+        state=state,
+        selector=default_selector(),
+        clock=clock,
+        catalogues={"cpu": _catalogue("cpu")},
+    )
+    register(state, "w1")  # a cpu worker by default
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_wants("pandas", "numpy"))
+    )
+
+    assert placement.checkpoint_id == "c-data"
+
+
+def test_no_catalogue_for_a_workers_flavor_means_a_cold_uncheckpointed_start(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    # Only a gpu catalogue is loaded, but the worker is cpu: nothing to select.
+    scheduler = Scheduler(
+        state=state,
+        selector=default_selector(),
+        clock=clock,
+        catalogues={"gpu": _catalogue("gpu")},
+    )
+    register(state, "w1")
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_wants("pandas"))
+    )
+
+    assert placement.checkpoint_id == ""
+
+
+# ---------------------------------------------------------------------------
+# Flavor-aware placement
+# ---------------------------------------------------------------------------
+def _gpu_demand(gpu_bytes: int = 0) -> Demand:
+    budgets = [Budget(kind=RESOURCE_MEMORY, alloc=ALLOC)]
+    if gpu_bytes:
+        budgets.append(Budget(kind=RESOURCE_GPU_MEMORY, alloc=gpu_bytes))
+    return Demand(budgets=tuple(budgets), flavor="gpu")
+
+
+def test_a_gpu_request_only_lands_on_a_gpu_worker(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    register(state, "cpu1")  # cpu by default
+    register(state, "gpu1", flavor="gpu", gpu_mem_total=16 << 30)
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_gpu_demand())
+    )
+    assert placement.worker_id == "gpu1"
+
+
+def test_a_gpu_request_with_no_gpu_worker_is_rejected(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    register(state, "cpu1")
+
+    with pytest.raises(NoCapacityError):
+        scheduler.provision(
+            ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_gpu_demand())
+        )
+
+
+def test_a_cpu_request_prefers_a_cpu_worker_over_a_gpu_one(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    register(state, "gpu1", flavor="gpu", gpu_mem_total=16 << 30)
+    register(state, "cpu1")
+
+    # A plain (cpu) request: the cpu worker must win even though both are free.
+    assert provision(scheduler, "req-1", "sess-1").worker_id == "cpu1"
+
+
+def test_a_cpu_request_spills_to_a_gpu_worker_when_no_cpu_worker_is_free(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    register(state, "gpu1", flavor="gpu", gpu_mem_total=16 << 30)
+
+    assert provision(scheduler, "req-1", "sess-1").worker_id == "gpu1"
+
+
+def test_a_gpu_request_is_rejected_by_a_device_full_gpu_worker(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    register(state, "gpu1", flavor="gpu", gpu_mem_total=16 << 30)
+    state.apply_worker_utilization(
+        "gpu1",
+        0.0,
+        cpu_util=0,
+        cpu_total=0,
+        gpu_util=0,
+        gpu_total=0,
+        gpu_mem_used=16 << 30,
+        gpu_mem_total=16 << 30,
+    )
+
+    with pytest.raises(NoCapacityError):
+        scheduler.provision(
+            ProvisionRequest(
+                request_id="req-1", session_id="sess-1", demand=_gpu_demand(gpu_bytes=8 << 30)
+            )
+        )

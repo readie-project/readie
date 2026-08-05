@@ -159,6 +159,8 @@ a second name for the same build, free to disagree.
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's |
 | `CRFS_PLANNER` | `greedy` or `fixed` |
 | `CRFS_MAX_CHECKPOINTS`, `CRFS_SIZE_BUDGET_MB` | planner bounds |
+| `CRFS_ALPHA` | size-vs-time weight; must match the router's `ALPHA` |
+| `FLAVOR` | `cpu` or `gpu`; the generation this run produces |
 | `CRFS_DATA_DIR` | overrides the committed corpus location |
 | `RUNSC_BINARY`, `OCISPEC_BINARY` | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
 | `CRFS_READY_TIMEOUT` | how long a sandbox may take to print `READY_FOR_CHECKPOINT` before `build` gives up (default `300`) |

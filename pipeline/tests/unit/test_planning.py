@@ -158,6 +158,23 @@ def test_the_reported_saving_is_undiscounted_so_it_can_be_checked():
     assert plans[0].requests_served == 10
 
 
+def test_alpha_is_the_size_vs_time_threshold():
+    # One request needing a 10 MB package that saves 0.05 s: worth 0.005 s/MB.
+    # A low alpha admits it; an alpha above that rate rejects it. This is the
+    # knob the router shares to select the checkpoint that minimises the same
+    # alpha*size + residual cost.
+    corpus = Corpus.of([req("borderline")])
+    metadata = facts(borderline=(10, 0.05))
+    budget = Budget(max_checkpoints=1, size_mb=50)
+
+    lenient = GreedyPlanner(alpha=0.002).plan(corpus, metadata, budget)
+    strict = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)
+
+    assert lenient
+    assert lenient[0].imports == ("borderline",)
+    assert strict == [], "nothing clears the stricter weight"
+
+
 def test_imports_are_sorted_so_a_plan_diffs_cleanly():
     corpus = Corpus.of([req("zeta", "alpha")] * 50)
     metadata = facts(zeta=(10, 1.0), alpha=(10, 1.0))

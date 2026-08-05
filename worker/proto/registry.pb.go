@@ -85,8 +85,12 @@ type WorkerStatus struct {
 	// Capacity, stamped on every status so a router that restarts relearns it
 	// from the next report rather than scheduling blind until the worker
 	// happens to re-register.
-	MemTotal      int64 `protobuf:"varint,4,opt,name=mem_total,json=memTotal,proto3" json:"mem_total,omitempty"`             // bytes this worker will hand out to executors
-	MaxExecutors  int32 `protobuf:"varint,5,opt,name=max_executors,json=maxExecutors,proto3" json:"max_executors,omitempty"` // concurrent containers, 0 meaning unbounded
+	MemTotal     int64 `protobuf:"varint,4,opt,name=mem_total,json=memTotal,proto3" json:"mem_total,omitempty"`             // bytes this worker will hand out to executors
+	MaxExecutors int32 `protobuf:"varint,5,opt,name=max_executors,json=maxExecutors,proto3" json:"max_executors,omitempty"` // concurrent containers, 0 meaning unbounded
+	// "cpu" (CPU-only) or "gpu" (CPU + GPU). The router routes GPU requests only
+	// to gpu workers and prefers cpu workers for CPU requests.
+	Flavor        string `protobuf:"bytes,6,opt,name=flavor,proto3" json:"flavor,omitempty"`
+	GpuMemTotal   int64  `protobuf:"varint,7,opt,name=gpu_mem_total,json=gpuMemTotal,proto3" json:"gpu_mem_total,omitempty"` // GPU device memory, in bytes, this worker offers
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -152,6 +156,20 @@ func (x *WorkerStatus) GetMemTotal() int64 {
 func (x *WorkerStatus) GetMaxExecutors() int32 {
 	if x != nil {
 		return x.MaxExecutors
+	}
+	return 0
+}
+
+func (x *WorkerStatus) GetFlavor() string {
+	if x != nil {
+		return x.Flavor
+	}
+	return ""
+}
+
+func (x *WorkerStatus) GetGpuMemTotal() int64 {
+	if x != nil {
+		return x.GpuMemTotal
 	}
 	return 0
 }
@@ -247,6 +265,10 @@ type WorkerUtilization struct {
 	MemUsed       int64 `protobuf:"varint,6,opt,name=mem_used,json=memUsed,proto3" json:"mem_used,omitempty"`                   // bytes reserved by live executors
 	MemTotal      int64 `protobuf:"varint,7,opt,name=mem_total,json=memTotal,proto3" json:"mem_total,omitempty"`                // bytes available to executors
 	ExecutorCount int32 `protobuf:"varint,8,opt,name=executor_count,json=executorCount,proto3" json:"executor_count,omitempty"` // live containers right now
+	// GPU device memory, so the router can place GPU requests on headroom the
+	// same way it does system memory.
+	GpuMemUsed    int64 `protobuf:"varint,9,opt,name=gpu_mem_used,json=gpuMemUsed,proto3" json:"gpu_mem_used,omitempty"`
+	GpuMemTotal   int64 `protobuf:"varint,10,opt,name=gpu_mem_total,json=gpuMemTotal,proto3" json:"gpu_mem_total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -333,6 +355,20 @@ func (x *WorkerUtilization) GetMemTotal() int64 {
 func (x *WorkerUtilization) GetExecutorCount() int32 {
 	if x != nil {
 		return x.ExecutorCount
+	}
+	return 0
+}
+
+func (x *WorkerUtilization) GetGpuMemUsed() int64 {
+	if x != nil {
+		return x.GpuMemUsed
+	}
+	return 0
+}
+
+func (x *WorkerUtilization) GetGpuMemTotal() int64 {
+	if x != nil {
+		return x.GpuMemTotal
 	}
 	return 0
 }
@@ -470,14 +506,16 @@ var File_registry_proto protoreflect.FileDescriptor
 
 const file_registry_proto_rawDesc = "" +
 	"\n" +
-	"\x0eregistry.proto\"\xad\x01\n" +
+	"\x0eregistry.proto\"\xe9\x01\n" +
 	"\fWorkerStatus\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x1d\n" +
 	"\n" +
 	"worker_uri\x18\x02 \x01(\tR\tworkerUri\x12\x1f\n" +
 	"\x06status\x18\x03 \x01(\x0e2\a.StatusR\x06status\x12\x1b\n" +
 	"\tmem_total\x18\x04 \x01(\x03R\bmemTotal\x12#\n" +
-	"\rmax_executors\x18\x05 \x01(\x05R\fmaxExecutors\"\xaf\x01\n" +
+	"\rmax_executors\x18\x05 \x01(\x05R\fmaxExecutors\x12\x16\n" +
+	"\x06flavor\x18\x06 \x01(\tR\x06flavor\x12\"\n" +
+	"\rgpu_mem_total\x18\a \x01(\x03R\vgpuMemTotal\"\xaf\x01\n" +
 	"\x0eExecutorStatus\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x1d\n" +
@@ -485,7 +523,7 @@ const file_registry_proto_rawDesc = "" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x1f\n" +
-	"\x06status\x18\x05 \x01(\x0e2\a.StatusR\x06status\"\xff\x01\n" +
+	"\x06status\x18\x05 \x01(\x0e2\a.StatusR\x06status\"\xc5\x02\n" +
 	"\x11WorkerUtilization\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x19\n" +
 	"\bcpu_util\x18\x02 \x01(\x03R\acpuUtil\x12\x1b\n" +
@@ -494,7 +532,11 @@ const file_registry_proto_rawDesc = "" +
 	"\tgpu_total\x18\x05 \x01(\x03R\bgpuTotal\x12\x19\n" +
 	"\bmem_used\x18\x06 \x01(\x03R\amemUsed\x12\x1b\n" +
 	"\tmem_total\x18\a \x01(\x03R\bmemTotal\x12%\n" +
-	"\x0eexecutor_count\x18\b \x01(\x05R\rexecutorCount\"\xc5\x01\n" +
+	"\x0eexecutor_count\x18\b \x01(\x05R\rexecutorCount\x12 \n" +
+	"\fgpu_mem_used\x18\t \x01(\x03R\n" +
+	"gpuMemUsed\x12\"\n" +
+	"\rgpu_mem_total\x18\n" +
+	" \x01(\x03R\vgpuMemTotal\"\xc5\x01\n" +
 	"\x13ExecutorUtilization\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x19\n" +

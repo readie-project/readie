@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import TracebackType
 
 import structlog
@@ -21,6 +22,7 @@ from crfs_router.grpcserver.registry_service import RegistryService
 from crfs_router.grpcserver.server import RouterServer
 from crfs_router.grpcserver.session_gate import SessionGate
 from crfs_router.logging import KEY_ERROR
+from crfs_router.scheduling.catalogue import load_catalogues
 from crfs_router.scheduling.policy import default_selector
 from crfs_router.scheduling.reaper import Reaper, ReaperPolicy
 from crfs_router.scheduling.scheduler import Scheduler
@@ -53,10 +55,20 @@ class App:
         self._log = structlog.get_logger("app")
 
         self._state = ClusterState()
+        catalogues = load_catalogues(
+            Path(settings.catalogue_dir) if settings.catalogue_dir else None,
+            settings.alpha,
+            warn=lambda path, reason: self._log.warning(
+                "skipping checkpoint catalogue", path=path, reason=reason
+            ),
+        )
+        if catalogues:
+            self._log.info("loaded checkpoint catalogues", flavors=sorted(catalogues))
         self._scheduler = Scheduler(
             state=self._state,
             selector=default_selector(memory_headroom=settings.memory_headroom),
             clock=self._clock,
+            catalogues=catalogues,
         )
 
         self._pool = WorkerChannelPool(max_message_bytes=settings.max_message_bytes)

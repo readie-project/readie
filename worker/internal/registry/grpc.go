@@ -63,6 +63,8 @@ func (r *GRPCReporter) WorkerStatus(ctx context.Context, workerStatus pb.Status)
 		Status:       workerStatus,
 		MemTotal:     r.capacity.MemTotal,
 		MaxExecutors: r.capacity.MaxExecutors,
+		Flavor:       r.capacity.Flavor,
+		GpuMemTotal:  r.capacity.GPUTotal,
 	})
 	return r.check("worker status", err, res)
 }
@@ -102,6 +104,8 @@ func (r *GRPCReporter) WorkerUtilization(ctx context.Context, u Utilization) err
 		MemUsed:       u.MemUsed,
 		MemTotal:      u.MemTotal,
 		ExecutorCount: u.ExecutorCount,
+		GpuMemUsed:    u.GPUMemUsed,
+		GpuMemTotal:   u.GPUMemTotal,
 	})
 	return r.check("worker utilization", err, res)
 }

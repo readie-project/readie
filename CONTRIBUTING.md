@@ -91,6 +91,18 @@ If the framing changes, bump `executor_protocol` in the generation manifest. The
 worker refuses a generation whose protocol it does not implement, by name, rather
 than failing opaquely inside a restore.
 
+## The shared `alpha`
+
+`alpha` (seconds per MB) is the one knob that trades a checkpoint's disk size
+against the import time it saves, and **the pipeline and the router must use the
+same value**. The pipeline's greedy planner adds a package while it saves more
+than `alpha·size`; the router selects the checkpoint minimising `alpha·size +
+residual load time` — the same quantity. They are separate services, so the value
+lives in each config (`pipeline` `Settings.alpha` / `CRFS_ALPHA`, `router`
+`Settings.alpha` / `ALPHA`), defaulting to `0.002` on both, with a docstring on
+each pointing at the other. Changing one without the other makes the router
+select against a cost the checkpoints were not built for.
+
 ## Conventions
 
 **Tests.** Name the behaviour, not the function:

@@ -8,12 +8,14 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class ExecutionConfig(_message.Message):
-    __slots__ = ("imports", "budgets")
+    __slots__ = ("imports", "budgets", "gpu")
     IMPORTS_FIELD_NUMBER: _ClassVar[int]
     BUDGETS_FIELD_NUMBER: _ClassVar[int]
+    GPU_FIELD_NUMBER: _ClassVar[int]
     imports: _containers.RepeatedScalarFieldContainer[str]
     budgets: _containers.RepeatedCompositeFieldContainer[_resources_pb2.ResourceBudget]
-    def __init__(self, imports: _Optional[_Iterable[str]] = ..., budgets: _Optional[_Iterable[_Union[_resources_pb2.ResourceBudget, _Mapping]]] = ...) -> None: ...
+    gpu: bool
+    def __init__(self, imports: _Optional[_Iterable[str]] = ..., budgets: _Optional[_Iterable[_Union[_resources_pb2.ResourceBudget, _Mapping]]] = ..., gpu: _Optional[bool] = ...) -> None: ...
 
 class ClientExecutionRequest(_message.Message):
     __slots__ = ("request_id", "session_id", "payload", "config")

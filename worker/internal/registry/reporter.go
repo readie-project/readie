@@ -48,6 +48,12 @@ type Utilization struct {
 	MemUsed       int64
 	MemTotal      int64
 	ExecutorCount int32
+
+	// GPU device-memory capacity, worker-level only. GPUMemUsed is not measured
+	// yet (reported zero); GPUMemTotal lets the router place GPU requests on
+	// headroom the way it does system memory.
+	GPUMemUsed  int64
+	GPUMemTotal int64
 }
 
 // Capacity is what this worker will hand out, as opposed to what it is
@@ -57,6 +63,10 @@ type Utilization struct {
 type Capacity struct {
 	MemTotal     int64
 	MaxExecutors int32
+	// Flavor is "cpu" or "gpu"; GPUTotal is the GPU device memory this worker
+	// offers, in bytes (zero on a cpu worker).
+	Flavor   string
+	GPUTotal int64
 }
 
 // Reporter posts worker and executor state to the router.

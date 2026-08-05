@@ -137,6 +137,8 @@ type Spec struct {
 	// DefaultMemoryBytes is the memory limit for a request that carries no
 	// memory budget, so a budgetless container is bounded rather than unlimited.
 	DefaultMemoryBytes int64
+	// GPU requests NVIDIA passthrough for every sandbox this worker creates.
+	GPU bool
 }
 
 // SpecFromConfig derives the container spec from worker configuration.
@@ -151,6 +153,7 @@ func SpecFromConfig(cfg config.Config) Spec {
 		StopTimeout:        cfg.ContainerStopTimeout,
 		DirPerm:            0o777,
 		DefaultMemoryBytes: cfg.DefaultContainerMem,
+		GPU:                cfg.SandboxGPU,
 	}
 }
 
@@ -659,6 +662,7 @@ func (m *Manager) createSpec(name string, alloc Allocation, rootfs string) sandb
 		CPUPeriod:   m.spec.CPUPeriod,
 		PidsLimit:   m.spec.PidsLimit,
 		CgroupsPath: m.cgroupsPath(name),
+		GPU:         m.spec.GPU,
 	}
 }
 

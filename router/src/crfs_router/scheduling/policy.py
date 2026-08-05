@@ -11,7 +11,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from crfs_router.scheduling.models import RESOURCE_MEMORY, Demand, WorkerView
+from crfs_router.scheduling.models import (
+    RESOURCE_GPU_MEMORY,
+    RESOURCE_MEMORY,
+    Demand,
+    WorkerView,
+)
 
 
 class WorkerFilter(Protocol):
@@ -61,6 +66,23 @@ class ResourceHeadroomFilter:
 
 
 @dataclass(frozen=True, slots=True)
+class FlavorFilter:
+    """Rejects workers that cannot serve the demand's flavor.
+
+    A GPU demand may run only on a gpu worker. A CPU demand may run on either,
+    so this admits every worker for it -- the *preference* for cpu workers is a
+    scoring concern (see ``LeastLoadedScorer``), not an eligibility one, which is
+    what lets a CPU request spill onto a gpu worker when no cpu worker is free.
+    """
+
+    def admits(self, worker: WorkerView, demand: Demand) -> bool:
+        """Return whether this worker can serve the demand's flavor."""
+        if demand.flavor == "gpu":
+            return worker.flavor == "gpu"
+        return True
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutorCountFilter:
     """Rejects a worker already holding its maximum number of containers.
 
@@ -83,21 +105,27 @@ class LeastLoadedScorer:
     proxy; in-flight count is always available and is the only signal that
     exists before a worker reports capacity.
 
+    A leading flavor-preference term keeps a CPU request off a gpu worker unless
+    it has to spill there: for a cpu demand a gpu worker scores 1 and a cpu
+    worker 0, so a cpu worker always wins when one is eligible. For a gpu demand
+    every eligible worker is gpu, so the term is 0 for all and does nothing.
+
     Every term is present in the key so the later ones break ties, and the
     worker id is last so the result is deterministic — a single-worker or
     freshly started cluster produces reproducible output, and there is no
     randomness to make a test flaky.
     """
 
-    def score(self, worker: WorkerView, demand: Demand) -> tuple[float, ...]:  # noqa: ARG002
+    def score(self, worker: WorkerView, demand: Demand) -> tuple[float, ...]:
         """Return the sort key for a worker."""
+        flavor_penalty = 1.0 if demand.flavor != "gpu" and worker.flavor == "gpu" else 0.0
         memory_pressure = (
             (worker.mem_used + worker.reserved_bytes) / worker.mem_total
             if worker.mem_total > 0
             else 0.0
         )
         cpu_pressure = worker.cpu_util / worker.cpu_total if worker.cpu_total > 0 else 0.0
-        return (memory_pressure, cpu_pressure, float(worker.inflight))
+        return (flavor_penalty, memory_pressure, cpu_pressure, float(worker.inflight))
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,17 +147,21 @@ class CompositeSelector:
         return best.worker_id
 
 
-def default_selector(*, memory_headroom: float = 0.9) -> CompositeSelector:
+def default_selector(
+    *, memory_headroom: float = 0.9, gpu_memory_headroom: float = 0.9
+) -> CompositeSelector:
     """Build the selector the router uses.
 
-    Memory is the only resource the cluster reports capacity for today, so it is
-    the only headroom filter wired in. Adding GPU-memory placement is one more
-    ``ResourceHeadroomFilter(RESOURCE_GPU_MEMORY, ...)`` here, once workers
-    advertise GPU-memory capacity.
+    Flavor eligibility first, then memory and GPU-memory headroom, then executor
+    count. The GPU-memory filter is inert for a worker that reports no GPU
+    capacity (every cpu worker) and for a demand with no GPU budget, so it only
+    bites a gpu request on a gpu worker that is out of device memory.
     """
     return CompositeSelector(
         filters=(
+            FlavorFilter(),
             ResourceHeadroomFilter(kind=RESOURCE_MEMORY, headroom=memory_headroom),
+            ResourceHeadroomFilter(kind=RESOURCE_GPU_MEMORY, headroom=gpu_memory_headroom),
             ExecutorCountFilter(),
         ),
         scorer=LeastLoadedScorer(),

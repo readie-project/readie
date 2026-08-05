@@ -179,6 +179,8 @@ class ClusterState:
         *,
         mem_total: int = 0,
         max_executors: int = 0,
+        flavor: str = "",
+        gpu_mem_total: int = 0,
     ) -> None:
         """Record a worker's lifecycle state.
 
@@ -198,6 +200,10 @@ class ClusterState:
             worker.mem_total = mem_total
         if max_executors:
             worker.max_executors = max_executors
+        if flavor:
+            worker.flavor = flavor
+        if gpu_mem_total:
+            worker.gpu_mem_total = gpu_mem_total
 
     def apply_executor_status(
         self,
@@ -244,6 +250,8 @@ class ClusterState:
         mem_used: int = 0,
         mem_total: int = 0,
         executor_count: int = 0,
+        gpu_mem_used: int = 0,
+        gpu_mem_total: int = 0,
     ) -> None:
         """Record a worker's load.
 
@@ -260,6 +268,9 @@ class ClusterState:
             worker.mem_total = mem_total
         worker.mem_used = mem_used
         worker.executor_count = executor_count
+        worker.gpu_mem_used = gpu_mem_used
+        if gpu_mem_total:
+            worker.gpu_mem_total = gpu_mem_total
 
     def apply_executor_utilization(
         self,

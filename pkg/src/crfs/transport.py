@@ -41,6 +41,7 @@ class Transport(Protocol):
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
+        gpu: bool = False,
     ) -> Outcome:
         """Run one call to completion."""
         ...
@@ -63,6 +64,7 @@ class AsyncTransport(Protocol):
         *,
         timeout: float | None,  # noqa: ASYNC109 - the deadline is the gRPC call's, not a wrapper's
         on_log: Callable[[str], None] | None,
+        gpu: bool = False,
     ) -> Outcome:
         """Run one call to completion."""
         ...
@@ -89,11 +91,12 @@ class GrpcTransport:
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
+        gpu: bool = False,
     ) -> Outcome:
         """Stream the call to the router and assemble the response."""
         stub = proxy_pb2_grpc.ProxyServiceStub(self._channels.get())
         assembler = ResponseAssembler(on_log=on_log)
-        requests = self._encoder.encode(ref, payload, imports, budgets)
+        requests = self._encoder.encode(ref, payload, imports, budgets, gpu=gpu)
 
         call = stub.RequestExecution(requests, timeout=timeout)
         try:
@@ -135,6 +138,7 @@ class AsyncGrpcTransport:
         *,
         timeout: float | None,  # noqa: ASYNC109 - the deadline is the gRPC call's, not a wrapper's
         on_log: Callable[[str], None] | None,
+        gpu: bool = False,
     ) -> Outcome:
         """Stream the call to the router and assemble the response."""
         stub = proxy_pb2_grpc.ProxyServiceStub(self._channels.get())
@@ -143,7 +147,7 @@ class AsyncGrpcTransport:
         # The request iterator is synchronous and grpc.aio accepts that: chunking
         # an in-memory buffer never blocks, so an async generator would add a
         # scheduling hop per megabyte and buy nothing.
-        requests = self._encoder.encode(ref, payload, imports, budgets)
+        requests = self._encoder.encode(ref, payload, imports, budgets, gpu=gpu)
 
         call = stub.RequestExecution(requests, timeout=timeout)
         try:

@@ -128,6 +128,7 @@ class Client:
         session: Session | None = None,
         timeout: float | None = None,
         budgets: tuple[Budget, ...] = (),
+        gpu: bool = False,
     ) -> Any:
         """Execute ``func`` remotely and return its result.
 
@@ -141,6 +142,7 @@ class Client:
             payload,
             imports,
             budgets,
+            gpu=gpu,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -155,6 +157,7 @@ class Client:
         session: Session | None = None,
         timeout: float | None = None,  # noqa: ASYNC109 - the deadline is the gRPC call's, not a wrapper's
         budgets: tuple[Budget, ...] = (),
+        gpu: bool = False,
     ) -> Any:
         """Execute ``func`` remotely and return its result, without blocking."""
         ref, payload, imports = self._prepare(func, args, kwargs, session)
@@ -163,6 +166,7 @@ class Client:
             payload,
             imports,
             budgets,
+            gpu=gpu,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )

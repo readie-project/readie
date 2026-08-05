@@ -9,8 +9,8 @@ import cloudpickle
 from crfs.budget import Budget
 from crfs.protocol import Attribution, CallRef, Outcome
 
-# What the client handed the transport: ref, payload, imports, budgets, timeout.
-Recorded = tuple[CallRef, bytes, tuple[str, ...], tuple[Budget, ...], float | None]
+# What the client handed the transport: ref, payload, imports, budgets, timeout, gpu.
+Recorded = tuple[CallRef, bytes, tuple[str, ...], tuple[Budget, ...], float | None, bool]
 
 
 class RecordingTransport:
@@ -34,8 +34,9 @@ class RecordingTransport:
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
+        gpu: bool = False,
     ) -> Outcome:
-        self.calls.append((ref, payload, imports, budgets, timeout))
+        self.calls.append((ref, payload, imports, budgets, timeout, gpu))
         if self.error is not None:
             raise self.error
         for line in self.logs:
@@ -61,8 +62,9 @@ class RecordingTransport:
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
+        gpu: bool = False,
     ) -> Outcome:
-        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log)
+        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log, gpu=gpu)
 
     def close(self) -> None:
         self.closed = True
@@ -84,8 +86,9 @@ class AsyncRecordingTransport(RecordingTransport):
         *,
         timeout: float | None,
         on_log: Callable[[str], None] | None,
+        gpu: bool = False,
     ) -> Outcome:
-        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log)
+        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log, gpu=gpu)
 
     async def aclose(self) -> None:
         self.closed = True

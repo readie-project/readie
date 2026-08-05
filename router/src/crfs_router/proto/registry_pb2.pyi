@@ -19,18 +19,22 @@ STATUS_ERROR: Status
 STATUS_REMOVED: Status
 
 class WorkerStatus(_message.Message):
-    __slots__ = ("worker_id", "worker_uri", "status", "mem_total", "max_executors")
+    __slots__ = ("worker_id", "worker_uri", "status", "mem_total", "max_executors", "flavor", "gpu_mem_total")
     WORKER_ID_FIELD_NUMBER: _ClassVar[int]
     WORKER_URI_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     MEM_TOTAL_FIELD_NUMBER: _ClassVar[int]
     MAX_EXECUTORS_FIELD_NUMBER: _ClassVar[int]
+    FLAVOR_FIELD_NUMBER: _ClassVar[int]
+    GPU_MEM_TOTAL_FIELD_NUMBER: _ClassVar[int]
     worker_id: str
     worker_uri: str
     status: Status
     mem_total: int
     max_executors: int
-    def __init__(self, worker_id: _Optional[str] = ..., worker_uri: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ..., mem_total: _Optional[int] = ..., max_executors: _Optional[int] = ...) -> None: ...
+    flavor: str
+    gpu_mem_total: int
+    def __init__(self, worker_id: _Optional[str] = ..., worker_uri: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ..., mem_total: _Optional[int] = ..., max_executors: _Optional[int] = ..., flavor: _Optional[str] = ..., gpu_mem_total: _Optional[int] = ...) -> None: ...
 
 class ExecutorStatus(_message.Message):
     __slots__ = ("container_id", "worker_id", "request_id", "session_id", "status")
@@ -47,7 +51,7 @@ class ExecutorStatus(_message.Message):
     def __init__(self, container_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., status: _Optional[_Union[Status, str]] = ...) -> None: ...
 
 class WorkerUtilization(_message.Message):
-    __slots__ = ("worker_id", "cpu_util", "cpu_total", "gpu_util", "gpu_total", "mem_used", "mem_total", "executor_count")
+    __slots__ = ("worker_id", "cpu_util", "cpu_total", "gpu_util", "gpu_total", "mem_used", "mem_total", "executor_count", "gpu_mem_used", "gpu_mem_total")
     WORKER_ID_FIELD_NUMBER: _ClassVar[int]
     CPU_UTIL_FIELD_NUMBER: _ClassVar[int]
     CPU_TOTAL_FIELD_NUMBER: _ClassVar[int]
@@ -56,6 +60,8 @@ class WorkerUtilization(_message.Message):
     MEM_USED_FIELD_NUMBER: _ClassVar[int]
     MEM_TOTAL_FIELD_NUMBER: _ClassVar[int]
     EXECUTOR_COUNT_FIELD_NUMBER: _ClassVar[int]
+    GPU_MEM_USED_FIELD_NUMBER: _ClassVar[int]
+    GPU_MEM_TOTAL_FIELD_NUMBER: _ClassVar[int]
     worker_id: str
     cpu_util: int
     cpu_total: int
@@ -64,7 +70,9 @@ class WorkerUtilization(_message.Message):
     mem_used: int
     mem_total: int
     executor_count: int
-    def __init__(self, worker_id: _Optional[str] = ..., cpu_util: _Optional[int] = ..., cpu_total: _Optional[int] = ..., gpu_util: _Optional[int] = ..., gpu_total: _Optional[int] = ..., mem_used: _Optional[int] = ..., mem_total: _Optional[int] = ..., executor_count: _Optional[int] = ...) -> None: ...
+    gpu_mem_used: int
+    gpu_mem_total: int
+    def __init__(self, worker_id: _Optional[str] = ..., cpu_util: _Optional[int] = ..., cpu_total: _Optional[int] = ..., gpu_util: _Optional[int] = ..., gpu_total: _Optional[int] = ..., mem_used: _Optional[int] = ..., mem_total: _Optional[int] = ..., executor_count: _Optional[int] = ..., gpu_mem_used: _Optional[int] = ..., gpu_mem_total: _Optional[int] = ...) -> None: ...
 
 class ExecutorUtilization(_message.Message):
     __slots__ = ("container_id", "worker_id", "cpu_util", "cpu_total", "gpu_util", "gpu_total")

@@ -152,6 +152,25 @@ def test_decorator_budgets_reach_the_transport(rig: Rig) -> None:
     assert budgets[ResourceKind.GPU_MEMORY].alloc == 2 * 1024 * 1024 * 1024
 
 
+def test_the_gpu_flag_reaches_the_transport(rig: Rig) -> None:
+    @remote(client=rig.client, gpu=True)
+    def f():
+        return None
+
+    f()
+    # Recorded tuple: (ref, payload, imports, budgets, timeout, gpu).
+    assert rig.sent.last[5] is True
+
+
+def test_gpu_defaults_to_false(rig: Rig) -> None:
+    @remote(client=rig.client)
+    def f():
+        return None
+
+    f()
+    assert rig.sent.last[5] is False
+
+
 def test_bind_preserves_the_budgets(rig: Rig) -> None:
     @remote(client=rig.client, memory="128Mi")
     def f():

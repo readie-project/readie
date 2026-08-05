@@ -52,6 +52,8 @@ class RegistryService(registry_pb2_grpc.RegistryServiceServicer):
             now=self._clock.now(),
             mem_total=request.mem_total,
             max_executors=request.max_executors,
+            flavor=request.flavor,
+            gpu_mem_total=request.gpu_mem_total,
         )
         self._log.info(
             "worker status",
@@ -116,6 +118,8 @@ class RegistryService(registry_pb2_grpc.RegistryServiceServicer):
             mem_used=request.mem_used,
             mem_total=request.mem_total,
             executor_count=request.executor_count,
+            gpu_mem_used=request.gpu_mem_used,
+            gpu_mem_total=request.gpu_mem_total,
         )
         self._log.debug("worker utilization", **{KEY_WORKER_ID: request.worker_id})
         return registry_pb2.RegistryUpdateResponse(updated=True)

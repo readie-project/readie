@@ -281,6 +281,12 @@ Capacity: `WORKER_MEM_TOTAL` (bytes, or a suffixed size such as `8Gi`;
 default 4 GiB), `WORKER_MAX_EXECUTORS` (0 meaning unbounded),
 `WORKER_UTILIZATION_INTERVAL`.
 
+Flavor and GPU: `WORKER_FLAVOR` (`cpu` or `gpu`; default `cpu`), advertised to
+the router; `WORKER_GPU_TOTAL` (GPU device memory offered, bytes or a suffix like
+`16Gi`); `SANDBOX_GPU` (turns on nvproxy and the NVIDIA sandbox env; defaults to
+true when the flavor is `gpu`, and must match what the checkpoints were captured
+under — it is in the fingerprint).
+
 Memory auto-expand: `DEFAULT_CONTAINER_MEM` (the limit for a request that
 carries no memory budget; default 512 MiB), `MEM_GROWTH_THRESHOLD` (the fraction
 of a container's limit whose use triggers a raise; default 0.9) and

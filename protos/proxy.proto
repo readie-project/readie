@@ -14,6 +14,10 @@ message ExecutionConfig {
   // Resource budgets the user set on the decorator (memory, GPU memory, ...).
   // A budget with alloc == 0 asks the router to apply its default for that kind.
   repeated ResourceBudget budgets = 2;
+
+  // Whether the function needs a GPU. The router also treats any GPU-memory
+  // budget as a GPU request, so this covers a GPU function that names no size.
+  bool gpu = 3;
 }
 
 // Message used for code execution requests from clients

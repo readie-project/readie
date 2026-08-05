@@ -91,6 +91,11 @@ def test_the_config_is_built_from_imports_and_budgets() -> None:
     assert message.budgets[0].max == 8 << 30
 
 
+def test_the_config_carries_the_gpu_flag() -> None:
+    assert to_config(("a",), (), gpu=True).gpu is True
+    assert to_config(("a",), ()).gpu is False
+
+
 # ---------------------------------------------------------------------------
 # Assembling
 # ---------------------------------------------------------------------------

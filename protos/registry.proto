@@ -21,6 +21,11 @@ message WorkerStatus {
   // happens to re-register.
   int64 mem_total = 4; // bytes this worker will hand out to executors
   int32 max_executors = 5; // concurrent containers, 0 meaning unbounded
+
+  // "cpu" (CPU-only) or "gpu" (CPU + GPU). The router routes GPU requests only
+  // to gpu workers and prefers cpu workers for CPU requests.
+  string flavor = 6;
+  int64 gpu_mem_total = 7; // GPU device memory, in bytes, this worker offers
 }
 
 // Message used for posting executor status
@@ -46,6 +51,11 @@ message WorkerUtilization {
   int64 mem_used = 6; // bytes reserved by live executors
   int64 mem_total = 7; // bytes available to executors
   int32 executor_count = 8; // live containers right now
+
+  // GPU device memory, so the router can place GPU requests on headroom the
+  // same way it does system memory.
+  int64 gpu_mem_used = 9;
+  int64 gpu_mem_total = 10;
 }
 
 // Message used for posting executor utilization

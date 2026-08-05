@@ -5,6 +5,14 @@ services:
         ports:
             - "50051:50051"
         container_name: router
+        environment:
+            # Where the per-flavor <flavor>.json catalogues are mounted (below).
+            # Without them the router cold-starts every request, as before.
+            CRFS_CATALOGUE_DIR: /var/lib/crfs/catalogues
+        volumes:
+            # The catalogues `make generation` writes into ./catalogues, read
+            # only. Must match the generations the workers are running.
+            - ./catalogues:/var/lib/crfs/catalogues:ro
         healthcheck:
             test:
                 [
@@ -28,16 +36,18 @@ services:
             # through crfs-worker-base, so this build needs nothing outside the
             # worker's own source and takes seconds.
             context: ./worker
-            # `FROM crfs-worker-base:latest`, which the offline pipeline builds.
-            # It must be present locally (`make worker-base`) or pullable — unlike
-            # the router, this service cannot be built from a bare checkout.
+            # `FROM crfs-worker-base-cpu:latest`, which the offline pipeline
+            # builds. It must be present locally (`make worker-base FLAVOR=cpu`)
+            # or pullable — unlike the router, this cannot be built from a bare
+            # checkout.
             dockerfile: Dockerfile
-        # The same tag `make generation` writes, so `docker compose up` runs the
-        # image that was built on the base rather than a second, differently-named
-        # one. Rebuilding through compose replaces :latest with a worker built from
-        # the current source on the current base — the checkpoints come with the
-        # base either way, and the generation's :<timestamp> tag is untouched.
-        image: crfs-worker:latest
+            args:
+                BASE_IMAGE: crfs-worker-base-cpu:latest
+                WORKER_FLAVOR: cpu
+        # The tag `make generation FLAVOR=cpu` writes, so `docker compose up` runs
+        # the image built on the cpu base. The gpu worker below (profile: gpu)
+        # runs the independently-generated gpu image instead.
+        image: crfs-worker-cpu:latest
         # gVisor publishes amd64 and arm64 builds, but the executor rootfs is
         # amd64-only, and gVisor works by intercepting syscalls — which is
         # exactly what emulation sits in the middle of. This will not run on an
@@ -102,5 +112,54 @@ services:
             retries: 3
             start_period: 5s
 
+    # A GPU worker, opt-in with `docker compose --profile gpu up`. It runs the
+    # independently-generated gpu image (Kaggle GPU rootfs + GPU checkpoints) and
+    # attaches the host's GPUs. Needs the NVIDIA container toolkit on the host.
+    worker-gpu:
+        profiles: ["gpu"]
+        build:
+            context: ./worker
+            dockerfile: Dockerfile
+            args:
+                BASE_IMAGE: crfs-worker-base-gpu:latest
+                WORKER_FLAVOR: gpu
+        image: crfs-worker-gpu:latest
+        platform: linux/amd64
+        container_name: worker-gpu
+        environment:
+            SERVICE_NAME: worker-gpu
+            SANDBOX_IGNORE_CGROUPS: ${CRFS_IGNORE_CGROUPS:-true}
+            WORKER_MEM_TOTAL: ${CRFS_WORKER_MEM_TOTAL:-8Gi}
+            WORKER_MAX_EXECUTORS: ${CRFS_WORKER_MAX_EXECUTORS:-4}
+            # GPU device memory the router places GPU requests on.
+            WORKER_GPU_TOTAL: ${CRFS_WORKER_GPU_TOTAL:-16Gi}
+        depends_on:
+            router:
+                condition: service_healthy
+        privileged: true
+        security_opt:
+            - apparmor=unconfined
+            - seccomp=unconfined
+        init: true
+        # Hand the container the host's NVIDIA GPUs.
+        gpus: all
+        volumes:
+            - worker-gpu-shared:/shared
+        stop_grace_period: 30s
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "grpcurl",
+                    "-plaintext",
+                    "worker-gpu:50052",
+                    "grpc.health.v1.Health/Check",
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 5s
+
 volumes:
     worker-shared:
+    worker-gpu-shared:

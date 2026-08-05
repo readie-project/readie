@@ -31,7 +31,14 @@ from crfs_router.logging import (
     KEY_WORKER_ID,
 )
 from crfs_router.proto import execution_pb2, proxy_pb2, proxy_pb2_grpc, resources_pb2
-from crfs_router.scheduling.models import RESOURCE_MEMORY, Budget, Demand, Outcome, Placement
+from crfs_router.scheduling.models import (
+    RESOURCE_GPU_MEMORY,
+    RESOURCE_MEMORY,
+    Budget,
+    Demand,
+    Outcome,
+    Placement,
+)
 from crfs_router.scheduling.scheduler import ProvisionRequest, Scheduler
 from crfs_router.workers.ports import ExecutionClient, ExecutionStream
 
@@ -269,7 +276,13 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             budgets.append(Budget(kind=RESOURCE_MEMORY, alloc=self._default_memory, max=0))
 
         imports = tuple(sorted({name for name in config.imports if name}))
-        return Demand(budgets=tuple(budgets), resources=imports)
+        # A request is GPU if it says so or if it carries any GPU-memory budget.
+        gpu = config.gpu or any(b.kind == RESOURCE_GPU_MEMORY for b in budgets)
+        return Demand(
+            budgets=tuple(budgets),
+            resources=imports,
+            flavor="gpu" if gpu else "cpu",
+        )
 
 
 def _representative(group: BaseExceptionGroup) -> BaseException:

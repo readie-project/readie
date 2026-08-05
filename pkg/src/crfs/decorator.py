@@ -24,7 +24,7 @@ class RemoteFunction(Generic[P, R]):
     or a thread will fail at encode time with ``SerializationError``.
     """
 
-    __slots__ = ("__dict__", "_budgets", "_client", "_func", "_session", "_timeout")
+    __slots__ = ("__dict__", "_budgets", "_client", "_func", "_gpu", "_session", "_timeout")
 
     # Written by functools.update_wrapper below; declared so the decorated
     # object type-checks as the drop-in replacement it is at runtime.
@@ -38,12 +38,14 @@ class RemoteFunction(Generic[P, R]):
         *,
         client: Client | None = None,
         budgets: tuple[Budget, ...] = (),
+        gpu: bool = False,
         timeout: float | None = None,
         session: Session | None = None,
     ) -> None:
         self._func = func
         self._client = client
         self._budgets = budgets
+        self._gpu = gpu
         self._timeout = timeout
         self._session = session
         # Carries __name__, __doc__, __module__ and __wrapped__ across, so the
@@ -65,6 +67,7 @@ class RemoteFunction(Generic[P, R]):
             session=self._session,
             timeout=self._timeout,
             budgets=self._budgets,
+            gpu=self._gpu,
         )
         return result
 
@@ -77,6 +80,7 @@ class RemoteFunction(Generic[P, R]):
             session=self._session,
             timeout=self._timeout,
             budgets=self._budgets,
+            gpu=self._gpu,
         )
         return result
 
@@ -101,6 +105,7 @@ class RemoteFunction(Generic[P, R]):
             self._func,
             client=client if client is not None else self._client,
             budgets=self._budgets,
+            gpu=self._gpu,
             timeout=timeout if timeout is not None else self._timeout,
             session=session if session is not None else self._session,
         )
@@ -141,6 +146,7 @@ def remote(
     client: Client | None = ...,
     timeout: float | None = ...,
     session: Session | None = ...,
+    gpu: bool = ...,
     memory: str | int | None = ...,
     max_memory: str | int | None = ...,
     gpu_memory: str | int | None = ...,
@@ -155,6 +161,7 @@ def remote(
     client: Client | None = None,
     timeout: float | None = None,
     session: Session | None = None,
+    gpu: bool = False,
     memory: str | int | None = None,
     max_memory: str | int | None = None,
     gpu_memory: str | int | None = None,
@@ -167,10 +174,11 @@ def remote(
         @remote
         def f(x): ...
 
-        @remote(timeout=300.0, memory="2Gi", max_memory="8Gi")
+        @remote(gpu=True, memory="2Gi", max_memory="8Gi")
         def g(x): ...
 
-    ``memory``/``gpu_memory`` set the container's initial budget and
+    ``gpu=True`` routes the call to a GPU worker (a ``gpu_memory`` budget implies
+    it too). ``memory``/``gpu_memory`` set the container's initial budget and
     ``max_memory``/``max_gpu_memory`` the ceiling the worker may auto-expand to;
     each accepts a byte count or a size string (``"512Mi"``, ``"4Gi"``). An unset
     budget falls back to the cluster default. Decoration itself does no work and
@@ -186,7 +194,7 @@ def remote(
 
     def decorate(target: Callable[P, R]) -> RemoteFunction[P, R]:
         return RemoteFunction(
-            target, client=client, budgets=budgets, timeout=timeout, session=session
+            target, client=client, budgets=budgets, gpu=gpu, timeout=timeout, session=session
         )
 
     if func is not None:

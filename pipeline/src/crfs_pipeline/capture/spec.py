@@ -70,6 +70,9 @@ def build_config(settings: Settings, *, preimport: str = "") -> str:
         "pids_limit": 100,
         "overlay": settings.sandbox_overlay,
         "network": settings.sandbox_network,
+        # A gpu generation captures under nvproxy, which the worker must restore
+        # under. gpu is part of the fingerprint, so this keeps the two in step.
+        "gpu": settings.flavor == "gpu",
     }
 
     params_path = settings.bundle_dir / "ocispec-params.json"

@@ -65,6 +65,11 @@ type CreateSpec struct {
 	CPUPeriod   int64
 	PidsLimit   int64
 
+	// GPU requests NVIDIA passthrough. It makes BuildSpec add the
+	// NVIDIA_VISIBLE_DEVICES env nvproxy-docker reads, and must match the
+	// sandbox a checkpoint was captured under (it is in the fingerprint).
+	GPU bool
+
 	// CgroupsPath is the cgroup to place the sandbox in. Empty lets the
 	// runtime choose.
 	CgroupsPath string

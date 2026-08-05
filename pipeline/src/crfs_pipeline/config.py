@@ -68,9 +68,19 @@ class Settings:
     ready_timeout: float = 300.0
     """How long a sandbox may take to announce itself before the build gives up."""
 
+    #: Which generation this run produces: "cpu" or "gpu". Recorded in the
+    #: catalogue so the router knows which flavor of worker its checkpoints
+    #: belong to; also gates the GPU sandbox env at capture.
+    flavor: str = "cpu"
+
     planner: str = "greedy"
     max_checkpoints: int = 8
     checkpoint_size_budget_mb: float = 2048.0
+    #: Size-vs-time weight (seconds per MB) the greedy planner trades against.
+    #: Must match the router's ``Settings.alpha``: the router selects the
+    #: checkpoint minimising ``alpha*size + residual_load``, the same quantity
+    #: the planner maximises the reduction of when it adds a package.
+    alpha: float = 0.002
 
     @property
     def rootfs_path(self) -> Path:
@@ -96,6 +106,16 @@ class Settings:
     def manifest_path(self) -> Path:
         """The manifest the worker image bakes in beside the checkpoints."""
         return self.output_dir / "manifest.json"
+
+    @property
+    def catalogue_path(self) -> Path:
+        """The catalogue the router reads to select a checkpoint at request time.
+
+        Written beside the manifest so a generation is self-describing; the
+        deployment copies it to the router's ``CRFS_CATALOGUE_DIR`` as
+        ``<flavor>.json``.
+        """
+        return self.output_dir / "catalogue.json"
 
     @property
     def plan_path(self) -> Path:
@@ -145,6 +165,12 @@ class Settings:
         if self.ready_timeout <= 0:
             msg = f"ready_timeout must be positive, got {self.ready_timeout}"
             raise ConfigError(msg)
+        if self.alpha <= 0:
+            msg = f"alpha must be positive, got {self.alpha}"
+            raise ConfigError(msg)
+        if self.flavor not in ("cpu", "gpu"):
+            msg = f"flavor must be 'cpu' or 'gpu', got {self.flavor!r}"
+            raise ConfigError(msg)
         if self.sandbox_overlay.startswith("all:"):
             # Would keep the executor's socket in the overlay's upper layer,
             # where the worker cannot see it. Every execution would then fail at
@@ -183,9 +209,11 @@ class Settings:
             "ocispec_binary": source.get("OCISPEC_BINARY") or "/usr/local/bin/ocispec",
             "runsc_binary": source.get("RUNSC_BINARY") or "runsc",
             "ready_timeout": _float(source, "CRFS_READY_TIMEOUT", 300.0),
+            "flavor": source.get("FLAVOR") or source.get("CRFS_FLAVOR") or "cpu",
             "planner": source.get("CRFS_PLANNER") or "greedy",
             "max_checkpoints": _int(source, "CRFS_MAX_CHECKPOINTS", 8),
             "checkpoint_size_budget_mb": _float(source, "CRFS_SIZE_BUDGET_MB", 2048.0),
+            "alpha": _float(source, "CRFS_ALPHA", 0.002),
         }
         values.update({k: v for k, v in overrides.items() if v is not None})
         return cls(**values)  # type: ignore[arg-type]

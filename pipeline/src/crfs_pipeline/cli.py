@@ -25,6 +25,7 @@ from pathlib import Path
 
 from crfs_pipeline.capture.build import CaptureError, capture
 from crfs_pipeline.capture.spec import SpecError, build_config, runsc_version
+from crfs_pipeline.catalogue import build_catalogue, write_catalogue
 from crfs_pipeline.config import ConfigError, CorpusSettings, Settings
 from crfs_pipeline.corpus.models import Corpus, CorpusError
 from crfs_pipeline.manifest import CheckpointMeta, Manifest, write_plan
@@ -33,8 +34,11 @@ from crfs_pipeline.metadata.models import Metadata, MetadataError
 from crfs_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
 
 
-def build_planner(name: str) -> CheckpointPlanner:
-    """Resolve a planner by name."""
+def build_planner(name: str, alpha: float) -> CheckpointPlanner:
+    """Resolve a planner by name.
+
+    ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
+    """
     from crfs_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415 - avoids an import cycle
 
     if name == "fixed":
@@ -42,7 +46,7 @@ def build_planner(name: str) -> CheckpointPlanner:
     if name == "greedy":
         from crfs_pipeline.planning.greedy import GreedyPlanner  # noqa: PLC0415
 
-        return GreedyPlanner()
+        return GreedyPlanner(alpha=alpha)
 
     msg = f"unknown planner {name!r}; choose from fixed, greedy"
     raise ConfigError(msg)
@@ -97,7 +101,7 @@ def cmd_plan(settings: Settings, args: argparse.Namespace) -> int:
     for category, count in list(corpus.category_counts().items())[:5]:
         print(f"    {category}: {count}")
 
-    planner = build_planner(settings.planner)
+    planner = build_planner(settings.planner, settings.alpha)
     plans = planner.plan(
         corpus,
         metadata,
@@ -140,9 +144,11 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     plans = [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
+    metadata = Metadata.load(settings.metadata_path)
 
     print(f"[*] building {len(plans)} checkpoints with {version}")
 
+    entries: list[tuple[str, CheckpointPlan]] = []
     for index, plan in enumerate(plans, start=1):
         checkpoint_id = f"checkpoint_{index}"
         print(f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
@@ -160,7 +166,11 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
             runsc_version=version,
             spec_fingerprint=fingerprint,
             imports=plan.imports,
+            datasets=plan.datasets,
+            models=plan.models,
+            tokenizers=plan.tokenizers,
         ).write(destination)
+        entries.append((checkpoint_id, plan))
         print(f"    captured at {destination}")
 
     Manifest(
@@ -170,6 +180,18 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         overlay=settings.sandbox_overlay,
         network=settings.sandbox_network,
     ).write(settings.output_dir)
+
+    # The catalogue the router selects from: every measured item's cost plus each
+    # checkpoint's contents and precomputed size term.
+    write_catalogue(
+        settings.catalogue_path,
+        build_catalogue(
+            flavor=settings.flavor,
+            alpha=settings.alpha,
+            metadata=metadata,
+            entries=entries,
+        ),
+    )
 
     print(f"[*] captured {len(plans)} checkpoints into {settings.output_dir}")
     print("[*] `make generation` bakes these into a worker image alongside the rootfs")

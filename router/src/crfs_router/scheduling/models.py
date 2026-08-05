@@ -63,6 +63,9 @@ class Demand:
 
     budgets: tuple[Budget, ...] = ()
     resources: tuple[str, ...] = ()
+    #: "cpu" or "gpu". A gpu demand may run only on gpu workers; a cpu demand
+    #: prefers cpu workers but may spill to gpu workers when none are free.
+    flavor: str = "cpu"
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""
@@ -119,6 +122,9 @@ class WorkerRecord:
     worker_id: str
     worker_uri: str = ""
     status: int = STATUS_UNKNOWN
+    #: "cpu" or "gpu". Selects which generation's catalogue a checkpoint is
+    #: chosen from, and gates flavor-aware placement. Advertised by the worker.
+    flavor: str = "cpu"
     executors: dict[str, ExecutorRecord] = field(default_factory=dict)
 
     # Pushed by the worker.
@@ -128,6 +134,10 @@ class WorkerRecord:
     gpu_total: int = 0
     mem_used: int = 0
     mem_total: int = 0
+    #: GPU device-memory capacity, so GPU requests place on headroom the way
+    #: system memory does. Zero on a cpu worker.
+    gpu_mem_used: int = 0
+    gpu_mem_total: int = 0
     executor_count: int = 0
     max_executors: int = 0
 
@@ -200,9 +210,12 @@ class WorkerView:
 
     worker_id: str
     worker_uri: str
+    flavor: str
     mem_used: int
     mem_total: int
     reserved_bytes: int
+    gpu_mem_used: int
+    gpu_mem_total: int
     inflight: int
     executor_count: int
     max_executors: int
@@ -215,9 +228,12 @@ class WorkerView:
         return cls(
             worker_id=worker.worker_id,
             worker_uri=worker.worker_uri,
+            flavor=worker.flavor,
             mem_used=worker.mem_used,
             mem_total=worker.mem_total,
             reserved_bytes=worker.reserved_bytes,
+            gpu_mem_used=worker.gpu_mem_used,
+            gpu_mem_total=worker.gpu_mem_total,
             inflight=worker.inflight,
             executor_count=max(worker.executor_count, len(worker.executors)),
             max_executors=worker.max_executors,
@@ -229,10 +245,12 @@ class WorkerView:
         """Return ``(used, total)`` bytes for a resource kind.
 
         Memory folds in the reservation held for placements that have not
-        reported back yet. Other kinds report ``(0, 0)`` -- a zero total makes
-        the headroom filter inert -- until the cluster reports their capacity;
-        that is the seam a new resource dimension plugs into.
+        reported back yet. GPU memory is reported as the worker last measured
+        it. A kind with no capacity signal reports ``(0, 0)``, which makes the
+        headroom filter inert.
         """
         if kind == RESOURCE_MEMORY:
             return (self.mem_used + self.reserved_bytes, self.mem_total)
+        if kind == RESOURCE_GPU_MEMORY:
+            return (self.gpu_mem_used, self.gpu_mem_total)
         return (0, 0)

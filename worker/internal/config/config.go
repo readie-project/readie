@@ -151,6 +151,16 @@ type Config struct {
 	// than discovering the mismatch minutes into the attempt.
 	CheckpointStrictCompat bool
 
+	// WorkerFlavor is "cpu" (CPU-only) or "gpu" (CPU + GPU). It is advertised to
+	// the router, which routes GPU requests only to gpu workers and prefers cpu
+	// workers for CPU requests.
+	WorkerFlavor string
+	// SandboxGPU enables gVisor's nvproxy and the NVIDIA env in the sandbox
+	// spec. It defaults to true on a gpu worker and can be overridden with
+	// SANDBOX_GPU; it must match what a checkpoint was captured under, so it is
+	// folded into the spec fingerprint.
+	SandboxGPU bool
+
 	// Capacity, reported to the router so it can schedule on real limits
 	// rather than in-flight count alone.
 	//
@@ -159,6 +169,9 @@ type Config struct {
 	// itself usually containerised, where /proc/meminfo describes the host and
 	// not the cgroup the worker actually lives in.
 	MemTotal int64
+	// GPUTotal is the GPU device memory, in bytes, this worker offers. Like
+	// MemTotal it is configured, not measured; zero on a cpu worker.
+	GPUTotal int64
 	// MaxExecutors caps concurrent containers. Zero means unbounded.
 	MaxExecutors int32
 	// UtilizationInterval paces worker-level load reports.
@@ -237,6 +250,8 @@ func Load(getenv Getenv) (Config, error) {
 		SandboxPlatform:     getenv("SANDBOX_PLATFORM"),
 		SandboxDebugLogDir:  valueOr(getenv("SANDBOX_DEBUG_LOG_DIR"), "/var/log/runsc"),
 
+		WorkerFlavor: valueOr(getenv("WORKER_FLAVOR"), "cpu"),
+
 		ContainerNamePrefix:  ContainerNamePrefix,
 		CPUQuota:             50000,
 		CPUPeriod:            100000,
@@ -298,6 +313,11 @@ func Load(getenv Getenv) (Config, error) {
 	}
 	if err := applyBoolOverrides(getenv, &cfg); err != nil {
 		return Config{}, err
+	}
+	// A gpu worker runs the GPU sandbox by default; SANDBOX_GPU (handled above)
+	// overrides when set.
+	if strings.TrimSpace(getenv("SANDBOX_GPU")) == "" {
+		cfg.SandboxGPU = cfg.WorkerFlavor == "gpu"
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -363,6 +383,12 @@ func (c Config) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("%w: SandboxNetwork %q must be none, sandbox or host",
 			ErrInvalidEnv, c.SandboxNetwork))
+	}
+	switch c.WorkerFlavor {
+	case "cpu", "gpu":
+	default:
+		errs = append(errs, fmt.Errorf("%w: WorkerFlavor %q must be cpu or gpu",
+			ErrInvalidEnv, c.WorkerFlavor))
 	}
 
 	if c.ChunkSize <= 0 {
@@ -458,6 +484,13 @@ func applyIntOverrides(getenv Getenv, cfg *Config) error {
 		}
 		cfg.DefaultContainerMem = bytes
 	}
+	if raw := strings.TrimSpace(getenv("WORKER_GPU_TOTAL")); raw != "" {
+		bytes, err := parseBytes(raw)
+		if err != nil {
+			return fmt.Errorf("%w: WORKER_GPU_TOTAL=%q: %w", ErrInvalidEnv, raw, err)
+		}
+		cfg.GPUTotal = bytes
+	}
 	return nil
 }
 
@@ -510,6 +543,7 @@ func applyBoolOverrides(getenv Getenv, cfg *Config) error {
 		"STREAM_STATS":             &cfg.StreamStats,
 		"SANDBOX_IGNORE_CGROUPS":   &cfg.SandboxIgnoreCgroups,
 		"SANDBOX_DEBUG":            &cfg.SandboxDebug,
+		"SANDBOX_GPU":              &cfg.SandboxGPU,
 		"CHECKPOINT_STRICT_COMPAT": &cfg.CheckpointStrictCompat,
 	}
 	for name, target := range overrides {

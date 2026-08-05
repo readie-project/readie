@@ -48,6 +48,10 @@ type Options struct {
 	Overlay string
 	// Platform is the gVisor platform; empty takes the runtime default.
 	Platform string
+	// NVProxy enables gVisor's GPU passthrough (nvproxy). A GPU worker sets it;
+	// it must match the sandbox a checkpoint was captured under, so it is folded
+	// into the spec fingerprint.
+	NVProxy bool
 	// IgnoreCgroups disables cgroup enforcement, for environments where
 	// delegation is unavailable.
 	IgnoreCgroups bool
@@ -145,6 +149,11 @@ func (a *Adapter) globalFlags() []string {
 	}
 	if a.opts.Platform != "" {
 		flags = append(flags, "--platform="+a.opts.Platform)
+	}
+	if a.opts.NVProxy {
+		// nvproxy exposes the host's NVIDIA devices; nvproxy-docker reads the
+		// NVIDIA_VISIBLE_DEVICES the OCI spec carries to pick which ones.
+		flags = append(flags, "--nvproxy", "--nvproxy-docker")
 	}
 	if a.opts.IgnoreCgroups {
 		flags = append(flags, "--ignore-cgroups")

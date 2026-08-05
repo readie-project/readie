@@ -106,6 +106,9 @@ class CheckpointMeta:
     runsc_version: str
     spec_fingerprint: str
     imports: tuple[str, ...] = field(default_factory=tuple)
+    datasets: tuple[str, ...] = field(default_factory=tuple)
+    models: tuple[str, ...] = field(default_factory=tuple)
+    tokenizers: tuple[str, ...] = field(default_factory=tuple)
     producer: str = "pipeline"
     created_at: str = ""
 
@@ -117,6 +120,9 @@ class CheckpointMeta:
             "runsc_version": self.runsc_version,
             "spec_fingerprint": self.spec_fingerprint,
             "imports": list(self.imports),
+            "datasets": list(self.datasets),
+            "models": list(self.models),
+            "tokenizers": list(self.tokenizers),
             "created_at": self.created_at or utc_now(),
         }
 

@@ -85,6 +85,7 @@ func newRunscRuntime(
 		HostUDS:           cfg.SandboxHostUDS,
 		Overlay:           cfg.SandboxOverlay,
 		Platform:          cfg.SandboxPlatform,
+		NVProxy:           cfg.SandboxGPU,
 		IgnoreCgroups:     cfg.SandboxIgnoreCgroups,
 		Debug:             cfg.SandboxDebug,
 		DebugLogDir:       cfg.SandboxDebugLogDir,
@@ -216,7 +217,12 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	app.push("router connection", func(context.Context) error { return registryConn.Close() })
 
 	// 4. Object graph. Pure construction, no I/O.
-	capacity := registry.Capacity{MemTotal: cfg.MemTotal, MaxExecutors: cfg.MaxExecutors}
+	capacity := registry.Capacity{
+		MemTotal:     cfg.MemTotal,
+		MaxExecutors: cfg.MaxExecutors,
+		Flavor:       cfg.WorkerFlavor,
+		GPUTotal:     cfg.GPUTotal,
+	}
 	reporter := registry.NewGRPCReporter(
 		registryClient, cfg.WorkerID, cfg.WorkerURI, capacity, cfg.StatusTimeout, log)
 	app.reporter = reporter
@@ -374,6 +380,7 @@ func (a *App) utilizationLoop(ctx context.Context) {
 				MemUsed:       reserved,
 				MemTotal:      a.cfg.MemTotal,
 				ExecutorCount: count,
+				GPUMemTotal:   a.cfg.GPUTotal,
 			})
 			if err != nil && ctx.Err() == nil {
 				a.log.Warn("could not report worker utilization", logging.KeyError, err)

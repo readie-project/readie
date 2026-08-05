@@ -61,12 +61,18 @@ WORKDIR /app
 COPY --from=go-builder /app/go-server      /app/go-server
 COPY --from=grpcurl /usr/local/bin/grpcurl /usr/local/bin/grpcurl
 
+# "cpu" or "gpu"; the Makefile passes it to match the base image's generation.
+# A gpu worker advertises the flavor and turns on nvproxy (SANDBOX_GPU defaults
+# from it). It must match the checkpoints baked into BASE_IMAGE.
+ARG WORKER_FLAVOR=cpu
+
 ENV SERVICE_NAME=worker
 ENV PORT=50052
 ENV WORKER_DIR=/shared
 ENV ROUTER_URI=router:50051
 ENV RUNSC_BINARY=/usr/local/bin/runsc
 ENV RUNSC_ROOT=/run/crfs-runsc
+ENV WORKER_FLAVOR=${WORKER_FLAVOR}
 ENV APP_ENV=production
 ENV LOG_LEVEL=info
 ENV LOG_FORMAT=json

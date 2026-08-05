@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     #: and auto-expands from there when the container needs more.
     default_memory: int = Field(default=512 * 1024 * 1024, gt=0)
 
+    #: Size-vs-time weight (seconds per MB) for request-time checkpoint selection.
+    #: The router picks the checkpoint minimising ``alpha*size + residual_load``.
+    #: Must match the pipeline's ``Settings.alpha`` (the value the planner built
+    #: the checkpoints under); the default mirrors it.
+    alpha: float = Field(default=0.002, gt=0)
+
+    #: Directory of per-flavor ``<flavor>.json`` checkpoint catalogues (mounted
+    #: from the generations). Empty or absent means no request-time selection —
+    #: every cold start is uncheckpointed, the behaviour before catalogues.
+    catalogue_dir: str = ""
+
     # -- Session serialisation -------------------------------------------
     #: How long a request will wait for its session's turn.
     #:

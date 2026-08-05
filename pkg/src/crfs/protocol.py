@@ -37,10 +37,12 @@ class CallRef:
 def to_config(
     imports: tuple[str, ...],
     budgets: tuple[Budget, ...],
+    gpu: bool = False,
 ) -> proxy_pb2.ExecutionConfig:
-    """Build the per-call config message: import hints plus resource budgets."""
+    """Build the per-call config message: import hints, budgets and the GPU flag."""
     return proxy_pb2.ExecutionConfig(
         imports=list(imports),
+        gpu=gpu,
         budgets=[
             resources_pb2.ResourceBudget(
                 # Our IntEnum and the proto enum agree by value (a guard test
@@ -74,6 +76,8 @@ class RequestEncoder:
         payload: bytes,
         imports: tuple[str, ...] = (),
         budgets: tuple[Budget, ...] = (),
+        *,
+        gpu: bool = False,
     ) -> Iterator[proxy_pb2.ClientExecutionRequest]:
         """Yield the header followed by the payload in chunks.
 
@@ -84,7 +88,7 @@ class RequestEncoder:
         yield proxy_pb2.ClientExecutionRequest(
             request_id=ref.request_id,
             session_id=ref.session_id,
-            config=to_config(imports, budgets),
+            config=to_config(imports, budgets, gpu),
         )
 
         buffer = io.BytesIO(payload)

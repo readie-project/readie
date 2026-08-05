@@ -49,11 +49,12 @@ type params struct {
 	PidsLimit   int64  `json:"pids_limit,omitempty"`
 	CgroupsPath string `json:"cgroups_path,omitempty"`
 
-	// Overlay and Network are runtime modes rather than spec fields, but they
-	// are part of what a checkpoint is sensitive to, so they belong in the
+	// Overlay, Network and GPU are runtime modes rather than spec fields, but
+	// they are part of what a checkpoint is sensitive to, so they belong in the
 	// fingerprint.
 	Overlay string `json:"overlay,omitempty"`
 	Network string `json:"network,omitempty"`
+	GPU     bool   `json:"gpu,omitempty"`
 }
 
 func main() {
@@ -111,7 +112,7 @@ func run() error {
 	}
 
 	if *printFingerprint {
-		fmt.Println(runsc.Fingerprint(spec, p.Overlay, p.Network))
+		fmt.Println(runsc.Fingerprint(spec, p.Overlay, p.Network, p.GPU))
 	}
 	return nil
 }
@@ -141,5 +142,6 @@ func toCreateSpec(p params) sandbox.CreateSpec {
 		CPUPeriod:    p.CPUPeriod,
 		PidsLimit:    p.PidsLimit,
 		CgroupsPath:  p.CgroupsPath,
+		GPU:          p.GPU,
 	}
 }

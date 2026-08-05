@@ -18,17 +18,32 @@ CLIENT_PROTOS := proxy.proto resources.proto
 STAGE := .build/proto-stage
 
 # --- generation --------------------------------------------------------------
-# Where the pipeline writes its captured checkpoints, and where the worker-base
-# target copies them from.
-ARTIFACTS_DIR   := pipeline/out
+# A generation is per-flavor: `make generation FLAVOR=cpu` and `FLAVOR=gpu`
+# produce fully independent artifact dirs and images, so one never clobbers the
+# other's checkpoints. Everything below hangs off FLAVOR.
+FLAVOR          ?= cpu
+# Where this flavor's captured checkpoints and catalogue go, and where worker-base
+# copies them from. Per-flavor so the two generations coexist.
+ARTIFACTS_DIR   := pipeline/out-$(FLAVOR)
+# The per-flavor catalogues the router mounts (as <flavor>.json).
+CATALOGUE_DIR   := catalogues
 # The pipeline's Dockerfile defines the rootfs, the capture tool and the base a
 # worker runs on — everything a checkpoint's validity is bound to, in one file.
 # The worker's own image is worker/Dockerfile, built from ./worker.
 PIPELINE_DOCKERFILE := pipeline/Dockerfile
 WORKER_DOCKERFILE   := worker/Dockerfile
-PIPELINE_IMAGE  := crfs-pipeline:latest
-WORKER_BASE     := crfs-worker-base:latest
-WORKER_IMAGE    := crfs-worker
+PIPELINE_IMAGE  := crfs-pipeline-$(FLAVOR):latest
+WORKER_BASE     := crfs-worker-base-$(FLAVOR):latest
+WORKER_IMAGE    := crfs-worker-$(FLAVOR)
+# A gpu generation uses the Kaggle GPU rootfs and captures under nvproxy with the
+# host's GPUs attached; a cpu generation uses the plain image and no devices.
+ifeq ($(FLAVOR),gpu)
+ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python
+CAPTURE_GPU_FLAGS := --gpus all
+else
+ROOTFS_BASE_IMAGE := gcr.io/kaggle-images/python
+CAPTURE_GPU_FLAGS :=
+endif
 # Overridable so an experiment can be tagged something meaningful.
 TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
 
@@ -135,32 +150,41 @@ generation: ## Capture checkpoints, bake them into the base, build a worker
 	@echo "  run it: docker compose up -d"
 
 pipeline-image: ## Build the offline pipeline image
-	@echo "==> [1/3] pipeline image"
-	docker build --target pipeline -t $(PIPELINE_IMAGE) -f $(PIPELINE_DOCKERFILE) .
+	@echo "==> [1/3] pipeline image ($(FLAVOR))"
+	docker build --target pipeline -t $(PIPELINE_IMAGE) \
+		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
+		-f $(PIPELINE_DOCKERFILE) .
 
 # One run, not two: `capture` plans and captures in the same container because
 # the plan writes the bundle's config.json into the image's own filesystem, which
-# a second container would not see.
+# a second container would not see. FLAVOR reaches the pipeline as an env var so a
+# gpu capture runs under nvproxy and records the matching fingerprint.
 capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
-	@echo "==> [2/3] capturing checkpoints (privileged; needs amd64 gVisor)"
-	@rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints
+	@echo "==> [2/3] capturing $(FLAVOR) checkpoints (privileged; needs amd64 gVisor)"
+	@rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints $(ARTIFACTS_DIR)/catalogue.json
 	@mkdir -p $(ARTIFACTS_DIR)
 	docker run --rm \
 		--privileged \
+		$(CAPTURE_GPU_FLAGS) \
 		--security-opt apparmor=unconfined \
 		--security-opt seccomp=unconfined \
+		-e FLAVOR=$(FLAVOR) \
 		-v "$(CURDIR)/$(ARTIFACTS_DIR):/app/executor" \
 		$(PIPELINE_IMAGE) capture
 	@test -f $(ARTIFACTS_DIR)/manifest.json \
 		|| { echo "capture produced no manifest; refusing to build a checkpointless image" >&2; exit 1; }
+	@mkdir -p $(CATALOGUE_DIR)
+	@test -f $(ARTIFACTS_DIR)/catalogue.json && cp $(ARTIFACTS_DIR)/catalogue.json $(CATALOGUE_DIR)/$(FLAVOR).json || true
 	@echo "==> captured: $$(ls $(ARTIFACTS_DIR)/checkpoints | tr '\n' ' ')"
+	@echo "==> catalogue: $(CATALOGUE_DIR)/$(FLAVOR).json (mount this on the router)"
 
 # Says what it baked, because building this from an empty $(ARTIFACTS_DIR) yields
 # a base that works and serves nothing but cold starts — which otherwise looks
 # exactly like a normal build.
 worker-base: ## Build the base a worker runs on: runsc, rootfs, checkpoints
-	@echo "==> [3/3] worker base image: runsc, rootfs, and $$(ls $(ARTIFACTS_DIR)/checkpoints 2>/dev/null | wc -l | tr -d ' ') checkpoint(s)"
+	@echo "==> [3/3] worker base image ($(FLAVOR)): runsc, rootfs, and $$(ls $(ARTIFACTS_DIR)/checkpoints 2>/dev/null | wc -l | tr -d ' ') checkpoint(s)"
 	docker build --target worker-base -t $(WORKER_BASE) \
+		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
 		--build-arg ARTIFACTS_DIR=$(ARTIFACTS_DIR) \
 		-f $(PIPELINE_DOCKERFILE) .
 
@@ -175,6 +199,7 @@ worker-image: ## Build the worker image on top of $(WORKER_BASE)
 	docker build \
 		-t $(WORKER_IMAGE):$(TAG) -t $(WORKER_IMAGE):latest \
 		--build-arg BASE_IMAGE=$(WORKER_BASE) \
+		--build-arg WORKER_FLAVOR=$(FLAVOR) \
 		-f $(WORKER_DOCKERFILE) ./worker
 
 clean-artifacts: ## Discard captured checkpoints, keeping the placeholder

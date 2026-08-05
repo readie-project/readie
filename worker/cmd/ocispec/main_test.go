@@ -74,8 +74,8 @@ func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		runsc.Fingerprint(pipelineSpec, overlay, network),
-		runsc.Fingerprint(workerSpec, overlay, network),
+		runsc.Fingerprint(pipelineSpec, overlay, network, false),
+		runsc.Fingerprint(workerSpec, overlay, network, false),
 		"the pipeline and the worker must describe the same sandbox")
 }
 

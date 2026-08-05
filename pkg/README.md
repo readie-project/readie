@@ -26,14 +26,15 @@ byte count or a size string (`"512Mi"`, `"4Gi"`); an unset budget falls back to
 the cluster default.
 
 ```python
-@remote(memory="2Gi", max_memory="8Gi")
+@remote(gpu=True, memory="2Gi", max_memory="8Gi")
 def train(rows): ...
 ```
 
 `memory` is the container's initial limit and `max_memory` the ceiling the
 worker may auto-expand to when the function needs more; `gpu_memory` /
-`max_gpu_memory` are the same for GPU device memory. The client also statically
-extracts the function's imports and forwards them so the worker can pick a
+`max_gpu_memory` are the same for GPU device memory. `gpu=True` sends the call to
+a GPU worker (a `gpu_memory` budget implies it too). The client also statically
+extracts the function's imports and forwards them so the router can pick a
 checkpoint that already imported them — this is automatic and needs no
 configuration.
 

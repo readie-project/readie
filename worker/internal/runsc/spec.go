@@ -43,6 +43,11 @@ func BuildSpec(spec sandbox.CreateSpec) (*specs.Spec, error) {
 	}
 
 	env := append([]string{defaultPath, "TERM=xterm", "HOME=/root", "PYTHONUNBUFFERED=1"}, spec.Env...)
+	if spec.GPU {
+		// nvproxy-docker reads these to inject the host's NVIDIA devices. Env is
+		// excluded from the fingerprint, so GPU-ness is carried there separately.
+		env = append(env, "NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=compute,utility")
+	}
 
 	out := &specs.Spec{
 		Version: ociVersion,
@@ -223,7 +228,7 @@ func isAncestor(parent, child string) bool {
 // Excluded on purpose: every mount source (resolved fresh from the bundle at
 // restore time, which is what makes a checkpoint portable between workers),
 // the memory limit, the cgroups path, the hostname and the environment.
-func Fingerprint(spec *specs.Spec, overlay, network string) string {
+func Fingerprint(spec *specs.Spec, overlay, network string, gpu bool) string {
 	var b strings.Builder
 
 	if spec.Process != nil {
@@ -255,7 +260,10 @@ func Fingerprint(spec *specs.Spec, overlay, network string) string {
 		}
 	}
 
-	fmt.Fprintf(&b, "overlay=%s\nnetwork=%s\n", overlay, network)
+	// GPU is a runtime mode (nvproxy) rather than a spec field, like overlay and
+	// network. A GPU checkpoint must never restore into a CPU sandbox, so it is
+	// part of the fingerprint even though the spec proper does not carry it.
+	fmt.Fprintf(&b, "overlay=%s\nnetwork=%s\ngpu=%t\n", overlay, network, gpu)
 
 	sum := sha256.Sum256([]byte(b.String()))
 	return "sha256:" + hex.EncodeToString(sum[:])

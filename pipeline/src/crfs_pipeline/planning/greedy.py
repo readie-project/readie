@@ -85,11 +85,14 @@ UNMEASURED_IMPORT_TIME = 0.01
 #: reported as 0 MB cannot look free and be added without limit.
 MIN_SIZE_MB = 0.5
 
-#: Stop adding to a checkpoint once the next package would improve things by
-#: less than this many seconds per megabyte. Without it a checkpoint absorbs
-#: every package that fits, including ones that help nobody who is not already
-#: better served elsewhere.
-MIN_GAIN_PER_MB = 0.002
+#: The size-vs-time weight, in seconds per megabyte. It is the single knob that
+#: trades a checkpoint's disk footprint against the import time it saves, and it
+#: is **shared with the router**: the planner adds a package while its marginal
+#: saving exceeds ``alpha * size_mb`` (i.e. while doing so lowers
+#: ``alpha*size + residual_load``), and the router selects the checkpoint that
+#: minimises exactly that cost. The two must use the same value; the default is
+#: mirrored by the router's ``Settings.alpha`` and a comment there points back.
+DEFAULT_ALPHA = 0.002
 
 
 @dataclass(slots=True)
@@ -111,10 +114,10 @@ class GreedyPlanner:
         self,
         *,
         min_coverage: float = MIN_COVERAGE,
-        min_gain_per_mb: float = MIN_GAIN_PER_MB,
+        alpha: float = DEFAULT_ALPHA,
     ) -> None:
         self._min_coverage = min_coverage
-        self._min_gain_per_mb = min_gain_per_mb
+        self._alpha = alpha
 
     def plan(self, corpus: Corpus, metadata: Metadata, budget: Budget) -> Sequence[CheckpointPlan]:
         """Choose up to ``budget.max_checkpoints`` sets, best first."""
@@ -184,7 +187,9 @@ class GreedyPlanner:
 
         while True:
             winner: _Candidate | None = None
-            winning_rate = self._min_gain_per_mb
+            # A package is worth a slot only while its saving per MB clears
+            # alpha; equivalently, while adding it lowers alpha*size + residual.
+            winning_rate = self._alpha
 
             for candidate in candidates:
                 if candidate.name in chosen_names:

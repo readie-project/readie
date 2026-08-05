@@ -26,6 +26,10 @@
 # as an ARG rather than written into the FROM: BuildKit's linter rejects a
 # constant --platform, and this way an experiment can override it.
 ARG ROOTFS_PLATFORM=linux/amd64
+# The rootfs base image. A cpu generation uses the plain Kaggle image; a gpu
+# generation passes gcr.io/kaggle-gpu-images/python (CUDA + the GPU stack). The
+# Makefile selects it per FLAVOR.
+ARG ROOTFS_BASE_IMAGE=gcr.io/kaggle-images/python
 
 # ---------------------------------------------------------------------------
 # The executor, built as a wheel rather than copied as a loose file. A wheel
@@ -43,7 +47,7 @@ RUN python -m build --wheel --outdir /dist
 # every checkpoint is captured from. Consumed twice below — by the pipeline as
 # an OCI bundle root, and by the worker base at /var/lib/crfs/rootfs.
 # ---------------------------------------------------------------------------
-FROM --platform=${ROOTFS_PLATFORM} gcr.io/kaggle-images/python AS rootfs
+FROM --platform=${ROOTFS_PLATFORM} ${ROOTFS_BASE_IMAGE} AS rootfs
 
 # --no-deps: cloudpickle is already in the base image, and resolving
 # dependencies here would let pip upgrade a package the checkpoints were
