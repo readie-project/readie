@@ -44,6 +44,7 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
         self.payload_messages: list[proxy_pb2.ClientExecutionRequest] = []
         self.session_ids: list[str] = []
         self.request_ids: list[str] = []
+        self.metadata: list[tuple[str, str]] = []
         self.concurrent = 0
         self.max_concurrent = 0
 
@@ -55,6 +56,7 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
         """Collect the request stream, run it, and stream the result back."""
         self.concurrent += 1
         self.max_concurrent = max(self.max_concurrent, self.concurrent)
+        self.metadata = [(k, v) for k, v in context.invocation_metadata() or ()]
         try:
             if self.abort_with is not None:
                 code, details = self.abort_with

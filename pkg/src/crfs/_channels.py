@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import weakref
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import grpc
@@ -33,6 +34,18 @@ def channel_options(settings: Settings) -> list[tuple[str, int]]:
     ]
 
 
+def channel_credentials(settings: Settings) -> grpc.ChannelCredentials | None:
+    """TLS credentials for the router, or ``None`` for a plaintext channel.
+
+    A CA path verifies the router against that bundle; otherwise TLS uses the
+    system trust roots. Off by default (plaintext), matching the router.
+    """
+    if not settings.use_tls:
+        return None
+    roots = Path(settings.tls_ca).read_bytes() if settings.tls_ca else None
+    return grpc.ssl_channel_credentials(root_certificates=roots)
+
+
 class SyncChannelCache:
     """Holds one blocking channel, created on first use."""
 
@@ -45,8 +58,12 @@ class SyncChannelCache:
         """Return the channel, creating it if needed."""
         with self._lock:
             if self._channel is None:
-                self._channel = grpc.insecure_channel(
-                    self._settings.router_uri, options=channel_options(self._settings)
+                options = channel_options(self._settings)
+                credentials = channel_credentials(self._settings)
+                self._channel = (
+                    grpc.secure_channel(self._settings.router_uri, credentials, options=options)
+                    if credentials is not None
+                    else grpc.insecure_channel(self._settings.router_uri, options=options)
                 )
             return self._channel
 
@@ -82,8 +99,12 @@ class AsyncChannelCache:
         loop = asyncio.get_running_loop()
         channel = self._channels.get(loop)
         if channel is None:
-            channel = grpc.aio.insecure_channel(
-                self._settings.router_uri, options=channel_options(self._settings)
+            options = channel_options(self._settings)
+            credentials = channel_credentials(self._settings)
+            channel = (
+                grpc.aio.secure_channel(self._settings.router_uri, credentials, options=options)
+                if credentials is not None
+                else grpc.aio.insecure_channel(self._settings.router_uri, options=options)
             )
             self._channels[loop] = channel
         return channel

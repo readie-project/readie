@@ -70,13 +70,28 @@ does not.
 
 ## Deployment expectations
 
-The router and worker speak **plaintext gRPC with no authentication**. There is
-no TLS, no token, and no authorization check anywhere in the request path. Any
-process that can reach the router's port can run code on the cluster.
+By default the router and worker speak **plaintext gRPC with no authentication** —
+opt-in security keeps local runs, tests and the compose healthchecks working
+without certs. Configure both before exposing the router:
 
-Run them on a private network. Terminate TLS and authenticate at an ingress in
-front of the router. Do not expose port 50051 to anything you would not hand a
-shell to.
+- **Authorization (bearer token).** Set the router's `AUTH_TOKEN` and give the
+  same token to clients (`CRFS_AUTH_TOKEN`). The router
+  then requires it on **`ProxyService`** — the only path that runs code — so
+  reaching the port is no longer enough to execute on the cluster. The check is a
+  server interceptor over a pluggable `Authenticator` (`grpcserver/auth.py`), so a
+  deployment can swap the shared token for JWT or per-tenant validation. Health,
+  reflection and `RegistryService` (workers) stay exempt.
+- **Transport (TLS).** Set the router's `TLS_CERT_FILE`/`TLS_KEY_FILE` to serve
+  TLS; clients set `CRFS_TLS`/`CRFS_TLS_CA` and workers set `ROUTER_TLS_CA` to
+  verify it. A token over a plaintext channel is sniffable, so enable TLS whenever
+  the token leaves a trusted network.
+
+What is **not** secured, by design (the "external only" boundary): the
+router→worker call (`ExecutionService`) and the worker's own server stay
+plaintext with no auth. Run the router↔worker mesh on a private network, and do
+not expose the worker's port. Do not expose the router's port to anything you
+would not hand a shell to unless the token (and, off a trusted network, TLS) is
+configured.
 
 ## Non-vulnerabilities
 

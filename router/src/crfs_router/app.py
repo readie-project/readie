@@ -13,10 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
 
+import grpc
 import structlog
 
 from crfs_router.clock import Clock, MonotonicClock
 from crfs_router.config import Settings
+from crfs_router.grpcserver.auth import AuthInterceptor, SharedTokenAuthenticator
 from crfs_router.grpcserver.proxy_service import ProxyService
 from crfs_router.grpcserver.registry_service import RegistryService
 from crfs_router.grpcserver.server import RouterServer
@@ -109,6 +111,8 @@ class App:
             listen_addr=settings.listen_addr,
             max_concurrent_rpcs=settings.max_concurrent_rpcs,
             max_message_bytes=settings.max_message_bytes,
+            interceptors=_auth_interceptors(settings, self._log),
+            credentials=_server_credentials(settings, self._log),
         )
 
         self._background: list[asyncio.Task[None]] = []
@@ -214,3 +218,25 @@ class App:
     ) -> None:
         """Stop the router."""
         await self.stop()
+
+
+def _auth_interceptors(
+    settings: Settings, log: structlog.stdlib.BoundLogger
+) -> tuple[AuthInterceptor, ...]:
+    """The ProxyService token guard, or nothing when no token is configured."""
+    if not settings.auth_token:
+        return ()
+    log.info("ProxyService requires a bearer token")
+    return (AuthInterceptor(SharedTokenAuthenticator(settings.auth_token)),)
+
+
+def _server_credentials(
+    settings: Settings, log: structlog.stdlib.BoundLogger
+) -> grpc.ServerCredentials | None:
+    """TLS credentials from the configured cert/key, or None for plaintext."""
+    if not (settings.tls_cert_file and settings.tls_key_file):
+        return None
+    key = Path(settings.tls_key_file).read_bytes()
+    cert = Path(settings.tls_cert_file).read_bytes()
+    log.info("serving TLS", cert=settings.tls_cert_file)
+    return grpc.ssl_server_credentials([(key, cert)])

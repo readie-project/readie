@@ -61,6 +61,9 @@ type harness struct {
 	// ArtifactRoot is where this harness laid out its rootfs and checkpoints.
 	// The worker binary compiles the path in; a test injects one.
 	ArtifactRoot string
+	// Artifacts is the in-memory registry the worker loaded, so a test can
+	// observe a compatibility check dropping checkpoints in place.
+	Artifacts container.Artifacts
 
 	// executors is guarded because OnCreate fires from whichever goroutine is
 	// provisioning, and concurrent requests provision at the same time.
@@ -166,6 +169,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		Config:       cfg,
 		WorkerDir:    workerDir,
 		ArtifactRoot: artifactRoot,
+		Artifacts:    artifacts,
 		runErr:       make(chan error, 1),
 	}
 
@@ -192,7 +196,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		LoadArtifacts: func(config.Config, *slog.Logger) (container.Artifacts, error) {
 			return artifacts, nil
 		},
-		DialRegistry: func(context.Context, string) (pb.RegistryServiceClient, io.Closer, error) {
+		DialRegistry: func(context.Context, string, string) (pb.RegistryServiceClient, io.Closer, error) {
 			return routerClient, io.NopCloser(nil), nil
 		},
 		Clock: clock.NewSystem(),
@@ -362,7 +366,7 @@ func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakesandbox.Sandbo
 		LoadArtifacts: func(config.Config, *slog.Logger) (container.Artifacts, error) {
 			return artifacts, nil
 		},
-		DialRegistry: func(context.Context, string) (pb.RegistryServiceClient, io.Closer, error) {
+		DialRegistry: func(context.Context, string, string) (pb.RegistryServiceClient, io.Closer, error) {
 			return routerClient, io.NopCloser(nil), nil
 		},
 		Clock: clock.NewSystem(),

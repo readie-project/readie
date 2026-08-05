@@ -37,6 +37,21 @@ class Settings:
     stream_logs: bool = True
     """Print executor output as it arrives, instead of only on failure."""
 
+    auth_token: str = ""
+    """Bearer token sent to a router that requires one. Empty sends none."""
+
+    tls: bool = False
+    """Connect over TLS. Implied by ``tls_ca``. Off means plaintext."""
+
+    tls_ca: str = ""
+    """Path to a PEM CA bundle that verifies the router. Empty uses TLS with the
+    system roots (when ``tls`` is on)."""
+
+    @property
+    def use_tls(self) -> bool:
+        """Whether to open a TLS channel to the router."""
+        return self.tls or bool(self.tls_ca)
+
     def __post_init__(self) -> None:
         """Reject settings that would fail later, and more confusingly."""
         if not self.router_uri:
@@ -95,4 +110,7 @@ class Settings:
             chunk_size=_int("CRFS_CHUNK_SIZE", DEFAULT_CHUNK_SIZE),
             max_message_bytes=_int("CRFS_MAX_MESSAGE_BYTES", DEFAULT_MAX_MESSAGE_BYTES),
             stream_logs=_bool("CRFS_STREAM_LOGS", default=True),
+            auth_token=source.get("CRFS_AUTH_TOKEN") or "",
+            tls=_bool("CRFS_TLS", default=False),
+            tls_ca=source.get("CRFS_TLS_CA") or "",
         )

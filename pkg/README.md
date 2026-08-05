@@ -62,6 +62,8 @@ without arguments:
 | `CRFS_CHUNK_SIZE` | payload bytes per stream message (default 1 MiB) |
 | `CRFS_MAX_MESSAGE_BYTES` | gRPC message cap (default 16 MiB); must exceed `CRFS_CHUNK_SIZE` |
 | `CRFS_STREAM_LOGS` | print executor output as it arrives, not only on failure (default on) |
+| `CRFS_AUTH_TOKEN` | bearer token for a router that requires one; unset sends none |
+| `CRFS_TLS`, `CRFS_TLS_CA` | connect over TLS; a CA path verifies the router, else system roots |
 
 ## When a remote function raises
 

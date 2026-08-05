@@ -129,6 +129,27 @@ func TestResolveCheckpoint_InheritsCompatibilityFieldsFromTheManifest(t *testing
 	assert.Equal(t, r.Manifest().SpecFingerprint, checkpoint.SpecFingerprint)
 }
 
+// DropCheckpoints is how a worker refuses baked checkpoints it cannot restore:
+// the rootfs stays, but nothing is offered and every id stops resolving.
+func TestDropCheckpoints_LeavesTheWorkerColdOnly(t *testing.T) {
+	r := newBuilder(t).rootfs().manifest().
+		checkpoint("checkpoint_1").checkpoint("checkpoint_2").mustLoad()
+	require.NotEmpty(t, r.Checkpoints())
+
+	r.DropCheckpoints()
+
+	assert.Empty(t, r.Checkpoints())
+	_, err := r.ResolveCheckpoint("checkpoint_1")
+	assert.ErrorIs(t, err, artifact.ErrUnknownCheckpoint)
+
+	rootfs, rootfsErr := r.Rootfs() // the rootfs survives; only restores are refused
+	require.NoError(t, rootfsErr)
+	assert.DirExists(t, rootfs)
+
+	r.DropCheckpoints() // idempotent
+	assert.Empty(t, r.Checkpoints())
+}
+
 func TestResolveCheckpoint_ReportsOneThatIsNotInstalled(t *testing.T) {
 	r := newBuilder(t).rootfs().manifest().checkpoint("checkpoint_1").mustLoad()
 

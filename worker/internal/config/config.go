@@ -83,6 +83,10 @@ type Config struct {
 
 	// RouterURI is the router's gRPC endpoint (RegistryService).
 	RouterURI string
+	// RouterTLSCACert is a PEM CA bundle used to verify the router over TLS.
+	// Empty means a plaintext connection — the default, matching the router.
+	// Set it when the router serves TLS.
+	RouterTLSCACert string
 
 	// Filesystem.
 	//
@@ -146,9 +150,12 @@ type Config struct {
 	RuntimeCommandTimeout time.Duration
 	RestoreTimeout        time.Duration
 	CheckpointTimeout     time.Duration
-	// CheckpointStrictCompat rejects a restore whose recorded fingerprint,
-	// runtime version or rootfs disagrees with the sandbox being built, rather
-	// than discovering the mismatch minutes into the attempt.
+	// CheckpointStrictCompat controls what happens when, at startup, this
+	// worker's spec fingerprint or runsc version disagrees with the manifest the
+	// baked checkpoints were captured under. True (the default) drops the
+	// checkpoints so the worker serves cold starts only and logs the mismatch
+	// loudly; false keeps them and only warns, tolerating restores that fall back
+	// to cold starts. See verifyCheckpointCompat in internal/app.
 	CheckpointStrictCompat bool
 
 	// WorkerFlavor is "cpu" (CPU-only) or "gpu" (CPU + GPU). It is advertised to
@@ -230,10 +237,11 @@ func Load(getenv Getenv) (Config, error) {
 	}
 
 	cfg := Config{
-		WorkerID:   valueOr(getenv("WORKER_ID"), DefaultWorkerID),
-		WorkerURI:  fmt.Sprintf("%s:%s", serviceName, port),
-		ListenAddr: ":" + port,
-		RouterURI:  routerURI,
+		WorkerID:        valueOr(getenv("WORKER_ID"), DefaultWorkerID),
+		WorkerURI:       fmt.Sprintf("%s:%s", serviceName, port),
+		ListenAddr:      ":" + port,
+		RouterURI:       routerURI,
+		RouterTLSCACert: getenv("ROUTER_TLS_CA"),
 
 		WorkerDir: workerDir,
 

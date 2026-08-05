@@ -28,6 +28,17 @@ if TYPE_CHECKING:
     from crfs.config import Settings
 
 
+def _auth_metadata(settings: Settings) -> list[tuple[str, str]] | None:
+    """Bearer-token call metadata for a router that requires one, or ``None``.
+
+    Sent as ordinary metadata, not gRPC call credentials, so it works over a
+    plaintext channel too (gRPC forbids call credentials on an insecure channel).
+    """
+    if not settings.auth_token:
+        return None
+    return [("authorization", f"Bearer {settings.auth_token}")]
+
+
 @runtime_checkable
 class Transport(Protocol):
     """Executes a call and blocks until it finishes."""
@@ -81,6 +92,7 @@ class GrpcTransport:
         self._settings = settings
         self._channels = SyncChannelCache(settings)
         self._encoder = RequestEncoder(chunk_size=settings.chunk_size)
+        self._metadata = _auth_metadata(settings)
 
     def execute(
         self,
@@ -98,7 +110,7 @@ class GrpcTransport:
         assembler = ResponseAssembler(on_log=on_log)
         requests = self._encoder.encode(ref, payload, imports, budgets, gpu=gpu)
 
-        call = stub.RequestExecution(requests, timeout=timeout)
+        call = stub.RequestExecution(requests, timeout=timeout, metadata=self._metadata)
         try:
             for response in call:
                 assembler.accept(response)
@@ -128,6 +140,7 @@ class AsyncGrpcTransport:
         self._settings = settings
         self._channels = AsyncChannelCache(settings)
         self._encoder = RequestEncoder(chunk_size=settings.chunk_size)
+        self._metadata = _auth_metadata(settings)
 
     async def execute(
         self,
@@ -149,7 +162,7 @@ class AsyncGrpcTransport:
         # scheduling hop per megabyte and buy nothing.
         requests = self._encoder.encode(ref, payload, imports, budgets, gpu=gpu)
 
-        call = stub.RequestExecution(requests, timeout=timeout)
+        call = stub.RequestExecution(requests, timeout=timeout, metadata=self._metadata)
         try:
             async for response in call:
                 assembler.accept(response)

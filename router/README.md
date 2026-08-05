@@ -122,6 +122,8 @@ Read from the environment by pydantic-settings, under the field names below
 | `DEFAULT_MEMORY`, `MEMORY_HEADROOM` | placement — the memory budget for a request that sets none, and the fraction of a worker's memory the router will commit |
 | `ALPHA` | size-vs-time weight for checkpoint selection; must match the pipeline's |
 | `CRFS_CATALOGUE_DIR` | directory of per-flavor `<flavor>.json` catalogues; absent means cold starts |
+| `AUTH_TOKEN` | bearer token required on ProxyService; unset means no auth |
+| `TLS_CERT_FILE`, `TLS_KEY_FILE` | serve TLS on the port; unset means plaintext |
 | `SESSION_WAIT_TIMEOUT`, `EXECUTION_TIMEOUT` | per-request bounds |
 | `PROBE_INTERVAL`, `PROBE_TIMEOUT`, `PROBE_FAILURE_THRESHOLD` | liveness |
 | `REAPER_INTERVAL`, `WORKER_TTL`, `EXECUTOR_TTL`, `EXECUTOR_ERROR_TTL`, `SESSION_TTL` | eviction |

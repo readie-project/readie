@@ -18,6 +18,7 @@ import (
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/runsc"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakesandbox"
@@ -683,6 +684,28 @@ func activeRootfs(t *testing.T, f *fixture) string {
 	rootfs, err := f.artifacts.Rootfs()
 	require.NoError(t, err)
 	return rootfs
+}
+
+// CanonicalSpec is what the worker fingerprints itself against at startup. It
+// must hash identically to a real container's spec, or a healthy worker would
+// wrongly refuse its own checkpoints. Reusing createSpec is what guarantees it,
+// and this proves the guarantee through the real Fingerprint.
+func TestCanonicalSpec_FingerprintsIdenticallyToAContainer(t *testing.T) {
+	f := newFixture(t)
+	acquireNew(t, f)
+	real := f.runtime.CreateSpecs()[0]
+
+	canonical := f.manager.CanonicalSpec(activeRootfs(t, f))
+
+	realSpec, err := runsc.BuildSpec(real)
+	require.NoError(t, err)
+	canonicalSpec, err := runsc.BuildSpec(canonical)
+	require.NoError(t, err)
+
+	const overlay, network, gpu = "root:memory", "none", false
+	assert.Equal(t,
+		runsc.Fingerprint(realSpec, overlay, network, gpu),
+		runsc.Fingerprint(canonicalSpec, overlay, network, gpu))
 }
 
 // A worker can now start with no root filesystem. It cannot create a container,

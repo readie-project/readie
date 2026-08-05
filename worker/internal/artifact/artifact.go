@@ -384,6 +384,16 @@ func (r *Registry) Checkpoints() []string {
 	return ids
 }
 
+// DropCheckpoints discards every installed checkpoint so the worker serves cold
+// starts only. It is how a worker refuses baked checkpoints it has found to be
+// incompatible with its own sandbox: the rootfs and manifest stay, but no
+// restore is offered, so ResolveCheckpoint fails for every id. Startup-only —
+// called before the gRPC server accepts a request — so it needs no locking.
+// Idempotent.
+func (r *Registry) DropCheckpoints() {
+	r.checkpoints = map[string]Checkpoint{}
+}
+
 // WriteManifest writes manifest.json into dir.
 func WriteManifest(dir string, manifest Manifest) error {
 	return writeJSON(filepath.Join(dir, ManifestFileName), manifest)

@@ -634,6 +634,20 @@ func (m *Manager) CleanupOrphans(ctx context.Context) error {
 // Note there is no site-packages mount: the root filesystem already carries the
 // Python environment, so PYTHONPATH points inside the rootfs and the sandbox
 // needs exactly one bind.
+// fingerprintProbeName is the sandbox id used only to build the canonical spec
+// the worker fingerprints itself against at startup. No container ever runs
+// under it; the name is excluded from the fingerprint anyway.
+const fingerprintProbeName = "fingerprint-probe"
+
+// CanonicalSpec is the sandbox spec a baked checkpoint must have been captured
+// under. The worker fingerprints it at startup and compares to the manifest, so
+// it reuses createSpec: the fingerprinted shape can never drift from a real
+// container's. Memory, the id and the cgroup path vary per request but are all
+// excluded from the fingerprint, so a zero allocation and probe name are fine.
+func (m *Manager) CanonicalSpec(rootfs string) sandbox.CreateSpec {
+	return m.createSpec(fingerprintProbeName, Allocation{}, rootfs)
+}
+
 func (m *Manager) createSpec(name string, alloc Allocation, rootfs string) sandbox.CreateSpec {
 	manifest := m.artifacts.Manifest()
 

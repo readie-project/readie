@@ -91,6 +91,17 @@ class Settings(BaseSettings):
     session_ttl: float = Field(default=1800.0, gt=0)
     max_sessions: int = Field(default=10_000, gt=0)
 
+    # -- Security ---------------------------------------------------------
+    # All opt-in: unset means plaintext with no auth, the documented default.
+    #: When set, ProxyService (the only path that runs code) requires this
+    #: bearer token in the ``authorization`` metadata; workers, health and
+    #: reflection stay exempt. See SECURITY.md.
+    auth_token: str = ""
+    #: PEM cert and key for serving TLS on the router's port. Both must be set to
+    #: enable TLS; clients and workers then connect over TLS.
+    tls_cert_file: str = ""
+    tls_key_file: str = ""
+
     # -- Lifecycle --------------------------------------------------------
     shutdown_grace: float = Field(default=25.0, gt=0)
 

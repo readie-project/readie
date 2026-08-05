@@ -269,7 +269,9 @@ That is the point of baking them in.
 
 ## Configuration
 
-Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`.
+Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`. `ROUTER_TLS_CA`
+(a PEM CA bundle) verifies the router over TLS when it serves TLS; unset means a
+plaintext connection. The router↔worker mesh carries no token — run it privately.
 
 The artifact root is **not** configurable: it is a compiled-in constant
 (`config.ArtifactRoot`, `/var/lib/crfs`) because there is one place a worker
@@ -313,6 +315,24 @@ the rootfs directory every sandbox shares.
 `SANDBOX_HOST_UDS` governs whether a socket bound inside the sandbox is visible
 on the host. The executor is a socket server, so a value that forbids it breaks
 every execution.
+
+## Checkpoint compatibility
+
+A baked checkpoint restores only into the exact sandbox it was captured under. At
+startup, once the runtime and container manager are built, the worker computes
+its own spec fingerprint (`container.CanonicalSpec` → `runsc.Fingerprint`, the
+same code a real container is fingerprinted through) and reads its live
+`runsc --version`, then compares both to the manifest the checkpoints were
+captured under. This closes the gap where a drifted overlay, GPU mode, resource
+limit, or runsc upgrade would make every restore silently fall back to a cold
+start while the worker still advertised the checkpoints.
+
+`CHECKPOINT_STRICT_COMPAT` (default true) chooses what a mismatch does. A strict
+worker refuses the checkpoints — it drops them so no doomed restore is attempted,
+logs an ERROR naming the divergence, and serves cold starts only. A tolerant
+worker (`CHECKPOINT_STRICT_COMPAT=false`) logs a WARN and keeps them, accepting
+that restores may degrade to cold starts. Either way the rootfs and manifest
+stay, so the worker keeps running; only the offer of checkpoints changes.
 
 ## Testing
 

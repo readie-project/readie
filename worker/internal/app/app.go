@@ -15,9 +15,11 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
@@ -45,8 +47,9 @@ type Deps struct {
 	// LoadArtifacts discovers the generations this worker can run.
 	LoadArtifacts func(cfg config.Config, log *slog.Logger) (container.Artifacts, error)
 	// DialRegistry connects to the router, returning a client and the closer
-	// for the underlying connection.
-	DialRegistry func(ctx context.Context, target string) (pb.RegistryServiceClient, io.Closer, error)
+	// for the underlying connection. caFile is a PEM CA bundle to verify the
+	// router over TLS, or empty for a plaintext connection.
+	DialRegistry func(ctx context.Context, target, caFile string) (pb.RegistryServiceClient, io.Closer, error)
 	// Clock drives retry loops.
 	Clock clock.Clock
 }
@@ -107,10 +110,21 @@ func loadArtifacts(_ config.Config, log *slog.Logger) (container.Artifacts, erro
 	return artifact.Load(artifact.Options{Root: config.ArtifactRoot, Log: log})
 }
 
-func dialRegistry(_ context.Context, target string) (pb.RegistryServiceClient, io.Closer, error) {
+func dialRegistry(_ context.Context, target, caFile string) (pb.RegistryServiceClient, io.Closer, error) {
+	// Plaintext by default, matching the router; TLS when a CA is configured.
+	// The router↔worker mesh is trusted, so there is no client certificate —
+	// this only encrypts and verifies the router.
+	creds := insecure.NewCredentials()
+	if caFile != "" {
+		tlsCreds, err := credentials.NewClientTLSFromFile(caFile, "")
+		if err != nil {
+			return nil, nil, fmt.Errorf("load router CA %s: %w", caFile, err)
+		}
+		creds = tlsCreds
+	}
 	// grpc.NewClient is lazy: no connection is attempted until the first RPC,
 	// which is why worker registration is where router reachability is proven.
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, nil, fmt.Errorf("create router client: %w", err)
 	}
@@ -140,6 +154,113 @@ type App struct {
 	// shutdown is unwound in reverse, so each step runs only if the step that
 	// established it succeeded.
 	shutdown []closer
+}
+
+// checkpointStore is the slice of the artifact registry the compatibility check
+// needs: the installed checkpoint ids, and a way to discard them all when they
+// cannot be restored into this worker. *artifact.Registry satisfies it.
+type checkpointStore interface {
+	Checkpoints() []string
+	DropCheckpoints()
+}
+
+// versioner reports a sandbox runtime's own version. The real *runsc.Adapter
+// has it; a runtime that cannot report one simply skips that half of the check.
+type versioner interface {
+	Version(ctx context.Context) (string, error)
+}
+
+// verifyCheckpointCompat refuses baked checkpoints this worker could never
+// restore. A checkpoint is bound to the exact sandbox spec and runsc build it
+// was captured under; if either has drifted — a different overlay, GPU mode,
+// resource limit, or runsc version — every restore silently degrades to a cold
+// start while the worker keeps advertising the checkpoints. When strict (the
+// default) it drops them so the worker serves cold-only and the mismatch is
+// loud; otherwise it warns and honours the operator's choice to tolerate it.
+func verifyCheckpointCompat(
+	ctx context.Context,
+	cfg config.Config,
+	artifacts container.Artifacts,
+	manager *container.Manager,
+	runtime sandbox.Port,
+	log *slog.Logger,
+) {
+	store, ok := artifacts.(checkpointStore)
+	if !ok {
+		return
+	}
+	installed := store.Checkpoints()
+	if len(installed) == 0 {
+		return // already cold-only; nothing a mismatch could invalidate
+	}
+
+	rootfs, err := artifacts.Rootfs()
+	if err != nil {
+		return // degraded: no rootfs means no restore can run regardless
+	}
+
+	spec, err := runsc.BuildSpec(manager.CanonicalSpec(rootfs))
+	if err != nil {
+		// We cannot compute our own fingerprint, so we cannot prove a mismatch.
+		// Leaving the checkpoints in place preserves today's tolerant behaviour.
+		log.Error("cannot fingerprint this worker's sandbox; leaving baked checkpoints in place",
+			logging.KeyError, err)
+		return
+	}
+	fingerprint := runsc.Fingerprint(spec, cfg.SandboxOverlay, cfg.SandboxNetwork, cfg.SandboxGPU)
+
+	var version string
+	if v, ok := runtime.(versioner); ok {
+		if got, verr := v.Version(ctx); verr != nil {
+			log.Warn("cannot read the sandbox runtime version; skipping the runsc half of the compatibility check",
+				logging.KeyError, verr)
+		} else {
+			version = got
+		}
+	}
+
+	reasons := checkpointCompatReasons(artifacts.Manifest(), fingerprint, version)
+	if len(reasons) == 0 {
+		return
+	}
+	applyCheckpointCompat(cfg.CheckpointStrictCompat, len(installed), reasons, store, log)
+}
+
+// checkpointCompatReasons lists why baked checkpoints cannot restore into a
+// worker whose spec fingerprint is workerFingerprint and runsc version is
+// workerVersion. Empty means compatible. Each half is skipped when the manifest
+// did not record it or the worker could not compute it, so a missing value is
+// never reported as a mismatch.
+func checkpointCompatReasons(manifest artifact.Manifest, workerFingerprint, workerVersion string) []string {
+	var reasons []string
+	if manifest.SpecFingerprint != "" && workerFingerprint != "" &&
+		manifest.SpecFingerprint != workerFingerprint {
+		reasons = append(reasons, fmt.Sprintf(
+			"captured under spec fingerprint %s but this worker builds %s",
+			manifest.SpecFingerprint, workerFingerprint))
+	}
+	if manifest.RunscVersion != "" && workerVersion != "" &&
+		manifest.RunscVersion != workerVersion {
+		reasons = append(reasons, fmt.Sprintf(
+			"captured under runsc %q but this worker runs %q",
+			manifest.RunscVersion, workerVersion))
+	}
+	return reasons
+}
+
+// applyCheckpointCompat acts on an incompatibility: drop the checkpoints when
+// strict, otherwise warn and keep them. Returns whether it dropped them.
+func applyCheckpointCompat(strict bool, count int, reasons []string, store checkpointStore, log *slog.Logger) bool {
+	joined := strings.Join(reasons, "; ")
+	if strict {
+		log.Error("baked checkpoints are incompatible with this worker; refusing them and serving cold starts only",
+			"checkpoints", count, "reasons", joined)
+		store.DropCheckpoints()
+		return true
+	}
+	log.Warn("baked checkpoints look incompatible with this worker; restores will fall back to cold starts",
+		"checkpoints", count, "reasons", joined)
+	return false
 }
 
 // New builds the worker and everything it depends on.
@@ -210,7 +331,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	}
 
 	// 3. Router client. Lazy, so this cannot fail for connectivity reasons.
-	registryClient, registryConn, err := deps.DialRegistry(ctx, cfg.RouterURI)
+	registryClient, registryConn, err := deps.DialRegistry(ctx, cfg.RouterURI, cfg.RouterTLSCACert)
 	if err != nil {
 		return fail(fmt.Errorf("connect to the router: %w", err))
 	}
@@ -241,6 +362,12 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		return fail(fmt.Errorf("build container manager: %w", err))
 	}
 	app.manager = manager
+
+	// A baked checkpoint restores only into the exact sandbox it was captured
+	// under. If this worker's spec or runsc build has drifted, every restore
+	// would silently fall back to a cold start while the worker still advertised
+	// the checkpoints — so validate before serving.
+	verifyCheckpointCompat(ctx, cfg, artifacts, manager, runtimePort, log)
 
 	dialer := executor.NewUnixDialer(layout, executor.RetryPolicy{
 		Total:          cfg.DialTotalTimeout,

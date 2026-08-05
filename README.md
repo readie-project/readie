@@ -233,18 +233,19 @@ Not built. Each of these is a real gap, not an oversight:
   load time yet — `metadata.json` is packages-only, so today they price as free.
   The measurement (a `from_pretrained` / `load_dataset` profiler, per the
   `ResourceType` scaffolding) needs a network and, for GPU models, a GPU host.
-- **Any check that the baked checkpoints match the worker restoring them.** The
-  manifest records `runsc_version` and `spec_fingerprint`, and the worker validates
-  only that they are non-empty (`worker/internal/artifact/artifact.go`,
-  `Manifest.Validate`). `runsc.Fingerprint` has one non-test caller,
-  `worker/cmd/ocispec`, which only the pipeline runs — so the worker never
-  computes its own fingerprint to compare. A worker change touching
-  `internal/runsc/spec.go` or `container.createSpec`, or a deployment changing
-  `SANDBOX_OVERLAY` / `SANDBOX_NETWORK` / the CPU or pids limits, therefore
-  invalidates every checkpoint silently: each restore fails, `Manager.start`
-  downgrades to a cold start, and the worker reports READY while serving nothing
-  but cold starts. The fix is to compute the fingerprint at startup and refuse the
-  checkpoints loudly; the redeploy loop above makes it easy to trigger until then.
+- **Checkpoint/worker compatibility is checked at startup, but coarsely.** A
+  baked checkpoint restores only into the exact sandbox it was captured under, so
+  the worker now computes its own `spec_fingerprint` (from `container.CanonicalSpec`
+  through `runsc.Fingerprint`) and reads its live `runsc --version`, and compares
+  both to the manifest (`verifyCheckpointCompat` in `worker/internal/app/app.go`).
+  On a mismatch — a worker change touching `internal/runsc/spec.go` or
+  `container.createSpec`, or a deployment changing `SANDBOX_OVERLAY` /
+  `SANDBOX_NETWORK` / the CPU or pids limits, or an upgraded runsc — a strict
+  worker (`CHECKPOINT_STRICT_COMPAT`, the default) drops every checkpoint and
+  serves cold starts only, logging the reasons loudly; a tolerant one just warns.
+  What is still missing is *granularity*: it is all-or-nothing per worker, not
+  per-checkpoint, and it cannot catch a rootfs whose contents drifted without the
+  spec changing.
 - **Swapping checkpoints without a new image.** Artifacts are baked in and read
   once at startup, so new checkpoints mean a new base image and a new container.
   That is the trade taken deliberately — one deployable, nothing mounted — but it
@@ -253,10 +254,13 @@ Not built. Each of these is a real gap, not an oversight:
 - **Persistence.** Router state is in memory. A restart loses sessions — their
   containers are then reclaimed by the workers' own TTLs — and workers
   re-register on their next status report.
-- **Authentication and transport security.** The router and worker speak
-  plaintext gRPC with no authorization anywhere in the request path. Anything
-  that can reach port 50051 can run code on the cluster. See
-  [SECURITY.md](SECURITY.md).
+- **Authentication and transport security are opt-in, and off by default.** The
+  router can require a bearer token on `ProxyService` (the only path that runs
+  code) and serve TLS — set `AUTH_TOKEN` / `TLS_CERT_FILE` on the router and the
+  matching `CRFS_AUTH_TOKEN` / `CRFS_TLS` on the client. Unset, everything is
+  plaintext with no auth, so anything that can reach port 50051 can run code. The
+  router↔worker mesh and the worker's own server stay plaintext by design and
+  must run on a private network. See [SECURITY.md](SECURITY.md).
 - **Datasets, models and tokenizers.** Carried through the corpus schema and the
   plan, but only packages are pre-imported. Loading a model into the captured
   process changes what a checkpoint costs to store.
