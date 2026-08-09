@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 
 dependencies = [
-    "packaging>=24.0",
+    "packaging>=26.3",
 ]
 
 [project.optional-dependencies]
@@ -15,7 +15,7 @@ dependencies = [
 # building checkpoints, so it stays out of the default install and out of the
 # pipeline image.
 corpus = [
-    "openai>=1.50",
+    "openai>=2.53.0",
     "python-dotenv>=1.0",
 ]
 
@@ -27,7 +27,7 @@ dev = [
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-cov>=6.0",
-    "ruff>=0.8",
+    "ruff>=0.16.1",
 ]
 
 [build-system]
