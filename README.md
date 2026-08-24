@@ -28,21 +28,7 @@ image. See [`pkg/`](pkg/) for sessions, error handling and the async surface.
 
 ## How a request flows
 
-```
-crfs-client ──ProxyService.RequestExecution──▶ router
-                                                 │  place: affinity, then
-                                                 │  memory headroom and load
-                                                 ▼
-                              ExecutionService.RequestExecution ──▶ worker
-                                                                      │
-                                             Manager.Acquire: restore a
-                                             checkpoint, or start cold
-                                                                      ▼
-                                              $EXECUTOR_DIR/executor.sock
-                                                                      │
-                                                                      ▼
-                                                    executor, in the sandbox
-```
+<img width="1093" height="386" alt="image" src="https://github.com/user-attachments/assets/32480429-caee-49c0-a9c9-30da6d77dec6" />
 
 The client cloudpickles `{func, args, kwargs}` and streams it to the router,
 which decides where it runs and relays it to a worker. The worker acquires a
