@@ -21,8 +21,6 @@ class Budget:
 
     max_checkpoints: int = 8
     size_mb: float = 2048.0
-    """Per checkpoint, not in total: each is captured separately and restored
-    on its own, so the cost that matters is one sandbox's resident set."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -24,6 +24,7 @@ from crfs_router.errors import InvalidRequestError, RouterError
 from crfs_router.grpcserver.session_gate import SessionGate
 from crfs_router.grpcserver.status import to_status
 from crfs_router.logging import (
+    KEY_CHECKPOINT_ID,
     KEY_CONTAINER_ID,
     KEY_ERROR,
     KEY_REQUEST_ID,
@@ -147,7 +148,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             )
         )
         log = log.bind(
-            **{KEY_WORKER_ID: placement.worker_id, KEY_CONTAINER_ID: placement.container_id},
+            **{KEY_WORKER_ID: placement.worker_id, KEY_CHECKPOINT_ID: placement.checkpoint_id, KEY_CONTAINER_ID: placement.container_id},
             warm=placement.warm,
         )
         log.info("execution placed")

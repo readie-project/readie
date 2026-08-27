@@ -55,8 +55,8 @@ TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
 # greedy (weighted set cover, the default) | fixed (a configured package set)
 CRFS_PLANNER := greedy
 # Upper bound on how many checkpoints a plan may emit.
-CRFS_MAX_CHECKPOINTS := 8
-# Per-checkpoint size budget, in MB.
+CRFS_MAX_CHECKPOINTS := 15
+# Total size budget, in MB.
 CRFS_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
 # more than alpha*size. MUST match the router's ALPHA. Default 0.002.
