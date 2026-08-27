@@ -206,6 +206,16 @@ class Outcome:
     attribution: Attribution = field(default_factory=Attribution)
 
 
+def function_output(envelope: Any) -> tuple[str, ...]:
+    """Extract stdout/stderr explicitly captured while the function ran."""
+    if not isinstance(envelope, dict):
+        return ()
+    raw = envelope.get("output", ())
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        return ()
+    return tuple(raw)
+
+
 def unwrap_envelope(envelope: Any, outcome: Outcome) -> Any:
     """Turn a decoded result envelope into a value, or raise.
 
@@ -214,6 +224,12 @@ def unwrap_envelope(envelope: Any, outcome: Outcome) -> Any:
     the sandbox ran, the interpreter is healthy, the container is still warm --
     it is the user's own exception carried back as data.
     """
+    output = function_output(envelope)
+    outcome = Outcome(
+        payload=outcome.payload,
+        logs=outcome.logs + output,
+        attribution=outcome.attribution,
+    )
     where = {
         "worker_id": outcome.attribution.worker_id,
         "container_id": outcome.attribution.container_id,

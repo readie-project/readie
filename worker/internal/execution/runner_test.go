@@ -692,8 +692,9 @@ func TestRun_RoutineSideChannelCancellationIsNotWarned(t *testing.T) {
 	assert.Contains(t, logs.String(), "the execution finished first")
 }
 
-// A genuine failure to open a side channel is still worth a warning.
-func TestRun_RealSideChannelFailureIsWarned(t *testing.T) {
+// Function output now arrives over the executor socket, so a sandbox-log
+// reader is never opened just to serve a client request.
+func TestRun_DoesNotOpenSandboxLogsForClientOutput(t *testing.T) {
 	var logs bytes.Buffer
 	handler := slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})
 
@@ -712,6 +713,5 @@ func TestRun_RealSideChannelFailureIsWarned(t *testing.T) {
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
 	require.NoError(t, err)
 
-	assert.Contains(t, logs.String(), "level=WARN")
-	assert.Contains(t, logs.String(), "no log driver")
+	assert.NotContains(t, logs.String(), "no log driver")
 }

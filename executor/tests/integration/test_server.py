@@ -69,6 +69,17 @@ def test_a_call_round_trips():
     assert value_of(exchange(call(add, 2, 40))) == 42
 
 
+def test_function_output_is_returned_with_the_result():
+    def speaks() -> str:
+        print("Inside remote function")
+        return "done"
+
+    envelope = exchange(call(speaks))
+
+    assert value_of(envelope) == "done"
+    assert envelope["output"] == ["Inside remote function", "\n"]
+
+
 def test_a_large_argument_survives_the_socket():
     blob = bytes(range(256)) * 4096  # 1 MiB, several chunks
 

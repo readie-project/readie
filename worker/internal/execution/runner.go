@@ -254,9 +254,6 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 	defer cancelSide()
 	var side errgroup.Group
 
-	if r.cfg.StreamLogs {
-		side.Go(func() error { r.pumpLogs(sideCtx, handle.ID, events, log); return nil })
-	}
 	if r.cfg.StreamStats {
 		memMax := handle.Alloc.Memory().Max
 		side.Go(func() error { r.pumpStats(sideCtx, handle.ID, memMax, log); return nil })

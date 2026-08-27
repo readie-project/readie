@@ -14,7 +14,7 @@ from crfs.codec import CloudpickleCodec, ResultCodec
 from crfs.config import Settings
 from crfs.errors import BlockingCallInEventLoopError, ClientClosedError
 from crfs.identity import new_request_id, new_session_id
-from crfs.protocol import CallRef, Outcome, unwrap_envelope
+from crfs.protocol import CallRef, Outcome, function_output, unwrap_envelope
 from crfs.resources import extract_imports
 from crfs.transport import AsyncGrpcTransport, AsyncTransport, GrpcTransport, Transport
 
@@ -235,7 +235,11 @@ class Client:
         return ref, payload, imports
 
     def _finish(self, outcome: Outcome) -> Any:
-        return unwrap_envelope(self._codec.decode_result(outcome.payload), outcome)
+        envelope = self._codec.decode_result(outcome.payload)
+        if self.settings.stream_logs:
+            for text in function_output(envelope):
+                self._log_sink(text)
+        return unwrap_envelope(envelope, outcome)
 
     def _deadline(self, timeout: float | None) -> float | None:
         return timeout if timeout is not None else self.settings.timeout

@@ -61,7 +61,7 @@ without arguments:
 | `CRFS_TIMEOUT` | deadline for a whole call, in seconds; unset means no deadline |
 | `CRFS_CHUNK_SIZE` | payload bytes per stream message (default 1 MiB) |
 | `CRFS_MAX_MESSAGE_BYTES` | gRPC message cap (default 16 MiB); must exceed `CRFS_CHUNK_SIZE` |
-| `CRFS_STREAM_LOGS` | print output and errors from the remote function as they arrive (default on) |
+| `CRFS_STREAM_LOGS` | print stdout and stderr from the remote function when it completes (default on) |
 | `CRFS_AUTH_TOKEN` | bearer token for a router that requires one; unset sends none |
 | `CRFS_TLS`, `CRFS_TLS_CA` | connect over TLS; a CA path verifies the router, else system roots |
 

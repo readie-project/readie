@@ -133,6 +133,15 @@ def test_logs_reach_the_sink_when_streaming_is_on() -> None:
     assert seen == ["a", "b"]
 
 
+def test_function_output_in_the_result_reaches_the_sink() -> None:
+    seen: list[str] = []
+    client, sync, _ = build(log_sink=seen.append)
+    sync.envelope = {"ok": True, "value": 1, "output": ["Inside add function", "\n"]}
+
+    assert client.call(add) == 1
+    assert seen == ["Inside add function", "\n"]
+
+
 def test_streaming_can_be_turned_off() -> None:
     seen: list[str] = []
     sync = RecordingTransport(1, logs=("a",))

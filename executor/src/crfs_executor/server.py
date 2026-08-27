@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import socket
 import sys
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 from crfs_executor import protocol
 from crfs_executor.codec import DecodeError, decode_call, encode_result
@@ -28,6 +29,23 @@ MAX_SOCKET_PATH_BYTES = 104
 #: router knows this and serialises a session's calls. A deeper backlog here
 #: would accept work this process cannot start.
 LISTEN_BACKLOG = 1
+
+
+class _OutputTee(io.TextIOBase):
+    """Write function output to the sandbox log and retain it for the client."""
+
+    def __init__(self, target: TextIO, output: list[str]) -> None:
+        self._target = target
+        self._output = output
+
+    def write(self, text: str) -> int:
+        written = self._target.write(text)
+        self._target.flush()
+        self._output.append(text)
+        return written
+
+    def flush(self) -> None:
+        self._target.flush()
 
 
 class ExecutorServer:
@@ -126,7 +144,8 @@ class ExecutorServer:
             print(f"[executor] malformed request: {exc}", file=sys.stderr, flush=True)
             return
 
-        envelope = self._run(raw)
+        envelope, output = self._run(raw)
+        envelope["output"] = output
 
         try:
             payload = encode_result(envelope)
@@ -144,7 +163,7 @@ class ExecutorServer:
             # cancelled. Not this process's problem, and not worth a traceback.
             print(f"[executor] could not send response: {exc}", file=sys.stderr, flush=True)
 
-    def _run(self, raw: bytes) -> dict[str, Any]:
+    def _run(self, raw: bytes) -> tuple[dict[str, Any], list[str]]:
         """Decode and invoke, turning any failure into a response.
 
         Every path returns an envelope. Version 1 returned nothing when the
@@ -155,22 +174,28 @@ class ExecutorServer:
             call = decode_call(raw)
         except DecodeError as exc:
             print(f"[executor] {exc}", file=sys.stderr, flush=True)
-            return protocol.failure_envelope(exc, traceback.format_exc())
+            return protocol.failure_envelope(exc, traceback.format_exc()), []
 
+        output: list[str] = []
         try:
-            value = call.invoke()
-            print(f"[executor] call invoked", flush=True)
-        except BaseException as exc:  # noqa: BLE001 - user code may raise anything
-            # Including SystemExit and KeyboardInterrupt: a called function
-            # raising either is still a failed call, not a reason to take the
-            # executor down and strand a container the worker means to reuse.
-            text = traceback.format_exc()
-            # Still printed, so it lands in the worker's captured logs where an
-            # operator debugging the *worker* will look for it.
-            print(text, file=sys.stderr, flush=True)
-            return protocol.failure_envelope(exc, text)
+            with (
+                contextlib.redirect_stdout(_OutputTee(sys.stdout, output)),
+                contextlib.redirect_stderr(_OutputTee(sys.stderr, output)),
+            ):
+                try:
+                    value = call.invoke()
+                    print(f"[executor] call invoked", flush=True)
+                except BaseException as exc:  # noqa: BLE001 - user code may raise anything
+                    # Including SystemExit and KeyboardInterrupt: a called function
+                    # raising either is still a failed call, not a reason to take the
+                    # executor down and strand a container the worker means to reuse.
+                    text = traceback.format_exc()
+                    print(text, file=sys.stderr, flush=True)
+                    return protocol.failure_envelope(exc, text), output
+        except Exception as exc:  # noqa: BLE001 - preserve an executor failure as a response
+            return protocol.failure_envelope(exc, traceback.format_exc()), output
 
-        return protocol.success_envelope(value)
+        return protocol.success_envelope(value), output
 
     def close(self) -> None:
         """Stop listening and remove the socket.
