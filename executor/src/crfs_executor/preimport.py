@@ -45,6 +45,8 @@ def preimport(modules: tuple[str, ...]) -> PreimportReport:
             # unsupported platform, and that must not take the executor with it.
             report.failed[name] = f"{type(exc).__name__}: {exc}"
             print(f"[preimport] {name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            # Raise so that it propogates to the pipeline
+            raise
         else:
             report.loaded.append(name)
 

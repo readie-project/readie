@@ -178,7 +178,7 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 	@echo "==> [2/3] capturing $(FLAVOR) checkpoints (privileged; needs amd64 gVisor)"
 	@rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints $(ARTIFACTS_DIR)/catalogue.json
 	@mkdir -p $(ARTIFACTS_DIR)
-	docker run --rm \
+	docker run --rm -it \
 		--privileged \
 		$(CAPTURE_GPU_FLAGS) \
 		--security-opt apparmor=unconfined \
