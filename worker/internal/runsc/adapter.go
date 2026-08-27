@@ -255,12 +255,17 @@ func (a *Adapter) Start(ctx context.Context, id string, spec sandbox.StartSpec) 
 	if spec.CheckpointID != "" {
 		return a.restore(ctx, id, spec)
 	}
-	return a.coldStart(ctx, id)
+
+	// go is essential: run otherwise blocks in the foreground for
+	// the sandbox's entire lifetime (--detch does not work as expected with `run`). 
+	// The timeout is belt and braces so a hang surfaces as a downgrade rather than a wedged execution.
+	go a.coldStart(ctx, id)
+	return nil
 }
 
-// coldStart creates then starts the sandbox.
+// coldStart creates and starts the sandbox in the same command.
 //
-// Both steps clean up on failure so the caller may retry with the same id.
+// The steps clean up on failure so the caller may retry with the same id.
 func (a *Adapter) coldStart(ctx context.Context, id string) error {
 	stdio, closeStdio, err := a.openStdio(id)
 	if err != nil {
@@ -270,19 +275,11 @@ func (a *Adapter) coldStart(ctx context.Context, id string) error {
 
 	createCtx, cancel := context.WithTimeout(ctx, a.opts.CommandTimeout)
 	_, err = a.runner.Spawn(createCtx, stdio, a.args(
-		"create",
+		"run",
 		"--bundle="+a.BundleDir(id),
 		"--pid-file="+filepath.Join(a.BundleDir(id), pidFileName),
 		id,
 	)...)
-	cancel()
-	if err != nil {
-		a.forceDelete(ctx, id)
-		return sandbox.Wrap("start", id, a.classify(id, err), err)
-	}
-
-	startCtx, cancel := context.WithTimeout(ctx, a.opts.CommandTimeout)
-	_, err = a.runner.Output(startCtx, a.args("start", id)...)
 	cancel()
 	if err != nil {
 		a.forceDelete(ctx, id)
