@@ -155,6 +155,17 @@ ENV CRFS_DATA_DIR="/app/data"
 # /var/lib/crfs beside the manifest.
 ENV CRFS_PLAN_DIR="/app/plan"
 
+# Planner knobs
+# greedy (weighted set cover, the default) | fixed (a configured package set)
+ENV CRFS_PLANNER="greedy"
+# Upper bound on how many checkpoints a plan may emit.
+ENV CRFS_MAX_CHECKPOINTS="8"
+# Per-checkpoint size budget, in MB.
+ENV CRFS_SIZE_BUDGET_MB="2048.0"
+# Size-vs-time weight (seconds per MB): the planner adds a package while it saves
+# more than alpha*size. MUST match the router's ALPHA. Default 0.002.
+ENV CRFS_ALPHA="0.002"
+
 # Must correspond to the rootfs stage above.
 ENV ROOTFS_PYTHONPATH="/lib/python3.12/dist-packages"
 
@@ -163,6 +174,11 @@ ENV ROOTFS_PYTHONPATH="/lib/python3.12/dist-packages"
 ENV SANDBOX_NETWORK="none"
 ENV SANDBOX_HOST_UDS="create"
 ENV SANDBOX_OVERLAY="root:memory"
+
+# How long a sandbox may take to print READY_FOR_CHECKPOINT before capture fails.
+ENV CRFS_READY_TIMEOUT="300.0"
+ENV OCISPEC_BINARY="/usr/local/bin/ocispec"
+ENV RUNSC_BINARY="runsc"
 
 # `capture` plans and then captures in one process. Planning cannot run at build
 # time: it writes the bundle's config.json under BASE_DIR, and a `docker run`

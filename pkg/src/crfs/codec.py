@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
+import sys
 import cloudpickle
 
 from crfs.errors import SerializationError
@@ -55,6 +56,12 @@ class CloudpickleCodec:
         kwargs: Mapping[str, Any],
     ) -> bytes:
         """Pickle the function object together with its arguments."""
+
+        # Print the Python interpreter version
+        print(f"Python version: {sys.version}")
+        # Print the cloudpickle package version
+        print(f"cloudpickle version: {cloudpickle.__version__}")
+
         try:
             return bytes(
                 cloudpickle.dumps({"func": func, "args": tuple(args), "kwargs": dict(kwargs)})

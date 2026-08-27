@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+import sys
 import cloudpickle
 
 
@@ -48,6 +49,12 @@ def decode_call(raw: bytes) -> Call:
     body that unpickled to anything else raised ``KeyError`` or ``TypeError``
     inside the *user's* error path and was reported as the user's fault.
     """
+
+    # Print the Python interpreter version
+    print(f"[executor] Python version: {sys.version}")
+    # Print the cloudpickle package version
+    print(f"[executor] cloudpickle version: {cloudpickle.__version__}")
+
     try:
         payload = cloudpickle.loads(raw)
     except Exception as exc:
@@ -68,7 +75,9 @@ def decode_call(raw: bytes) -> Call:
         msg = f"request 'func' is not callable, it is {type(func).__name__}"
         raise DecodeError(msg)
 
-    return Call(func=func, args=tuple(payload["args"]), kwargs=dict(payload["kwargs"]))
+    args, kwargs = payload["args"], payload["kwargs"]
+    print(f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}", flush=True)
+    return Call(func=func, args=tuple(args), kwargs=dict(kwargs))
 
 
 def encode_result(value: Any) -> bytes:

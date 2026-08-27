@@ -96,6 +96,7 @@ class ExecutorServer:
         while True:
             try:
                 conn, _ = listener.accept()
+                print(f"[executor] listening for request", flush=True)
             except (KeyboardInterrupt, SystemExit):
                 raise
             except OSError as exc:
@@ -117,6 +118,7 @@ class ExecutorServer:
         lives in is meant to be reused.
         """
         try:
+            print(f"[executor] received request", flush=True)
             raw = protocol.read_message(conn, chunk_size=self._settings.chunk_size)
         except protocol.ProtocolError as exc:
             # A framing failure means the peer is not speaking this protocol, so
@@ -157,6 +159,7 @@ class ExecutorServer:
 
         try:
             value = call.invoke()
+            print(f"[executor] call invoked", flush=True)
         except BaseException as exc:  # noqa: BLE001 - user code may raise anything
             # Including SystemExit and KeyboardInterrupt: a called function
             # raising either is still a failed call, not a reason to take the
