@@ -35,6 +35,10 @@ WORKER_DOCKERFILE   := worker/Dockerfile
 PIPELINE_IMAGE  := crfs-pipeline-$(FLAVOR):latest
 WORKER_BASE     := crfs-worker-base-$(FLAVOR):latest
 WORKER_IMAGE    := crfs-worker-$(FLAVOR)
+
+# The rootfs base image. A cpu generation uses the plain Kaggle image; a gpu
+# generation passes gcr.io/kaggle-gpu-images/python (CUDA + the GPU stack). The
+# Makefile selects it per FLAVOR.
 # A gpu generation uses the Kaggle GPU rootfs and captures under nvproxy with the
 # host's GPUs attached; a cpu generation uses the plain image and no devices.
 ifeq ($(FLAVOR),gpu)

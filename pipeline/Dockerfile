@@ -26,10 +26,8 @@
 # as an ARG rather than written into the FROM: BuildKit's linter rejects a
 # constant --platform, and this way an experiment can override it.
 ARG ROOTFS_PLATFORM=linux/amd64
-# The rootfs base image. A cpu generation uses the plain Kaggle image; a gpu
-# generation passes gcr.io/kaggle-gpu-images/python (CUDA + the GPU stack). The
-# Makefile selects it per FLAVOR.
-ARG ROOTFS_BASE_IMAGE=gcr.io/kaggle-images/python
+# The rootfs base image. The Makefile selects it per FLAVOR.
+ARG ROOTFS_BASE_IMAGE=python:3.12-slim
 
 # ---------------------------------------------------------------------------
 # The executor, built as a wheel rather than copied as a loose file. A wheel
@@ -49,11 +47,26 @@ RUN python -m build --wheel --outdir /dist
 # ---------------------------------------------------------------------------
 FROM --platform=${ROOTFS_PLATFORM} ${ROOTFS_BASE_IMAGE} AS rootfs
 
-# --no-deps: cloudpickle is already in the base image, and resolving
-# dependencies here would let pip upgrade a package the checkpoints were
-# captured with. The rootfs must be reproducible from the base image alone.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY executor/pyproject.toml executor/uv.lock /tmp/build/
+WORKDIR /tmp/build
+
+# Export the locked environment (excluding the project itself) as a
+# requirements file and install it into system Python.
+# --frozen guarantees build fails if uv.lock doesn't match pyproject.toml
+# --no-emit-project ensures we only get third-party dependencies, not crfs-executor.
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt > requirements.txt \
+    && uv pip install --system --no-cache-dir -r requirements.txt
+
+# Install the pre-built executor wheel without touching dependencies again
+# --no-deps: resolving dependencies here would let pip upgrade a package the
+# checkpoints were captured with. The rootfs must be reproducible from the base image alone.
+WORKDIR /
 RUN --mount=from=executor-wheel,source=/dist,target=/dist \
-    pip install --no-cache-dir --no-deps /dist/*.whl
+    uv pip install --system --no-cache-dir --no-deps /dist/*.whl
+
+# Clean up temporary files and the uv binary to keep rootfs minimal
+RUN rm -rf /tmp/build /bin/uv
 
 # Fail the build rather than the first restore if the entry point is not
 # importable. A rootfs whose executor cannot start produces checkpoints that

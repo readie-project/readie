@@ -184,7 +184,6 @@ class ExecutorServer:
             ):
                 try:
                     value = call.invoke()
-                    print(f"[executor] call invoked", flush=True)
                 except BaseException as exc:  # noqa: BLE001 - user code may raise anything
                     # Including SystemExit and KeyboardInterrupt: a called function
                     # raising either is still a failed call, not a reason to take the
