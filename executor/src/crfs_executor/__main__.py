@@ -25,9 +25,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[executor] {exc}", file=sys.stderr, flush=True)
         return 2
 
-    report = preimport(settings.preimport)
-    announce_ready(report)
-    await_checkpoint(settings.checkpoint_sleep)
+    # Ordinary worker sandboxes stream their merged stdout/stderr to the
+    # client. Keep capture progress out of that stream; a restored checkpoint
+    # resumes after this branch.
+    if settings.capture_mode:
+        report = preimport(settings.preimport)
+        announce_ready(report)
+        await_checkpoint(settings.checkpoint_sleep)
 
     server = ExecutorServer(settings)
     try:

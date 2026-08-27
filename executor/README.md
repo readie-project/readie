@@ -17,12 +17,17 @@ make help      # list every target
 The order is the design, not a detail:
 
 ```
-preimport CRFS_PREIMPORT   →  the reason a checkpoint is worth taking
-print READY_FOR_CHECKPOINT →  the pipeline greps for exactly this
-sleep CRFS_CHECKPOINT_SLEEP →  the capture window
+capture mode only:
+  preimport CRFS_PREIMPORT   →  the reason a checkpoint is worth taking
+  print READY_FOR_CHECKPOINT →  the pipeline greps for exactly this
+  sleep CRFS_CHECKPOINT_SLEEP →  the capture window
+
 bind $EXECUTOR_DIR/executor.sock
 accept, serve, repeat
 ```
+
+An ordinary worker does not enable capture mode, so its terminal stream contains
+only output from the called function and errors.
 
 Binding happens *after* the sleep on purpose. A socket bound earlier would have
 its inode captured in the checkpoint image, and a restored sandbox would come
@@ -88,6 +93,7 @@ will never send a terminator it recognises.
 | | |
 |---|---|
 | `EXECUTOR_DIR` | **Required.** Directory to bind the socket in; set by the sandbox spec |
+| `CRFS_CAPTURE_MODE` | Enables the offline pre-import, ready signal, and capture window; unset in ordinary workers |
 | `CRFS_PREIMPORT` | Comma-separated modules to import before the checkpoint |
 | `CRFS_CHECKPOINT_SLEEP` | Capture window in seconds; `0` skips it |
 | `EXECUTOR_CHUNK_SIZE` | Read/write granularity, default 1 MiB |

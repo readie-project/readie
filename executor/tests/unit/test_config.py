@@ -31,6 +31,7 @@ def test_defaults():
     assert settings.chunk_size == DEFAULT_CHUNK_SIZE
     assert settings.checkpoint_sleep == DEFAULT_CHECKPOINT_SLEEP
     assert settings.preimport == ()
+    assert settings.capture_mode is False
 
 
 def test_overrides():
@@ -41,12 +42,14 @@ def test_overrides():
             "EXECUTOR_CHUNK_SIZE": "4096",
             "CRFS_CHECKPOINT_SLEEP": "0",
             "CRFS_PREIMPORT": "pandas,numpy",
+            "CRFS_CAPTURE_MODE": "yes",
         }
     )
     assert settings.socket_path == "/run/other.sock"
     assert settings.chunk_size == 4096
     assert settings.checkpoint_sleep == 0
     assert settings.preimport == ("pandas", "numpy")
+    assert settings.capture_mode is True
 
 
 def test_settings_are_immutable():

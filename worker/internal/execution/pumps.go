@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
@@ -125,7 +126,11 @@ func (r *Runner) pumpLogs(ctx context.Context, containerID string, events chan<-
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
-		if !emit(ctx, events, event{logs: scanner.Text() + "\n", isLog: true}) {
+		line := scanner.Text()
+		if !clientVisibleLog(line) {
+			continue
+		}
+		if !emit(ctx, events, event{logs: line + "\n", isLog: true}) {
 			return
 		}
 	}
@@ -133,6 +138,18 @@ func (r *Runner) pumpLogs(ctx context.Context, containerID string, events chan<-
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
 		log.Warn("container log stream ended with an error", logging.KeyError, err)
 	}
+}
+
+// clientVisibleLog keeps executor lifecycle records in the sandbox log while
+// excluding them from the client-facing stream. The runtime exposes one merged
+// stdout/stderr file, so this boundary is the only place that can preserve
+// diagnostics for operators without presenting startup noise as function output.
+// Executor failures deliberately remain visible: they are errors, not lifecycle
+// records.
+func clientVisibleLog(line string) bool {
+	return line != "READY_FOR_CHECKPOINT" &&
+		!strings.HasPrefix(line, "[preimport] ") &&
+		!strings.HasPrefix(line, "[executor] ")
 }
 
 // pumpStats samples container resource usage, drives proactive memory

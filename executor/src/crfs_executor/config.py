@@ -52,6 +52,9 @@ class Settings:
     checkpoint_sleep: float = DEFAULT_CHECKPOINT_SLEEP
     """Seconds to wait after the sentinel. Zero skips the wait entirely."""
 
+    capture_mode: bool = False
+    """Whether this process is being started for offline checkpoint capture."""
+
     @property
     def socket_path(self) -> str:
         """Full path of the unix socket the worker dials."""
@@ -82,6 +85,7 @@ class Settings:
             chunk_size=_int(source, "EXECUTOR_CHUNK_SIZE", DEFAULT_CHUNK_SIZE),
             preimport=parse_preimport(source.get("CRFS_PREIMPORT", "")),
             checkpoint_sleep=_float(source, "CRFS_CHECKPOINT_SLEEP", DEFAULT_CHECKPOINT_SLEEP),
+            capture_mode=_bool(source, "CRFS_CAPTURE_MODE", default=False),
         )
 
 
@@ -128,3 +132,10 @@ def _float(source: Mapping[str, str], name: str, default: float) -> float:
         msg = f"{name} must not be negative, got {value}"
         raise ConfigError(msg)
     return value
+
+
+def _bool(source: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = (source.get(name) or "").strip()
+    if not raw:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}

@@ -163,12 +163,13 @@ def test_a_socket_path_over_the_kernel_limit_says_so(tmp_path: Path):
         server.bind()
 
 
-def test_the_server_binds_and_removes_its_socket(sockdir: Path):
+def test_the_server_logs_its_bind_and_removes_its_socket(sockdir: Path, capsys):
     settings = Settings(socket_dir=str(sockdir))
     server = ExecutorServer(settings)
 
     server.bind()
     assert Path(settings.socket_path).exists()
+    assert "[executor] listening on" in capsys.readouterr().out
 
     server.close()
     assert not Path(settings.socket_path).exists()
