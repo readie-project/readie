@@ -467,8 +467,8 @@ def _catalogue(flavor: str) -> Catalogue:
                 "numpy": {"size_mb": 20.0, "load_time": 0.15},
             },
             "checkpoints": [{"id": "c-data", "items": ["pandas", "numpy"], "size_mb": 50.0}],
+            "alpha": 0.002,
         },
-        alpha=0.002,
     )
 
 

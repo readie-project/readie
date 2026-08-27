@@ -59,7 +59,6 @@ class App:
         self._state = ClusterState()
         catalogues = load_catalogues(
             Path(settings.catalogue_dir) if settings.catalogue_dir else None,
-            settings.alpha,
             warn=lambda path, reason: self._log.warning(
                 "skipping checkpoint catalogue", path=path, reason=reason
             ),

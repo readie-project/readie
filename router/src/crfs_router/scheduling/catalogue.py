@@ -7,8 +7,8 @@ writes (one per generation). Selection picks the checkpoint minimising
 
 against a cold start (no checkpoint at all), so a checkpoint is chosen only when
 it saves more import time than its size costs. This is the dual of the planner's
-objective and uses the same ``alpha`` (applied here to the catalogue's raw
-sizes, so the trade can be retuned at the router).
+objective and uses the same ``alpha`` (applied from the catalogue's ``alpha``, 
+so the trade can be retuned at the router).
 
 Nothing here imports gRPC or awaits: it is pure domain, like the rest of
 ``scheduling/``. Absent or unreadable catalogues yield an empty mapping, which
@@ -62,9 +62,10 @@ class Catalogue:
         return best_id
 
     @classmethod
-    def from_document(cls, document: Mapping[str, object], alpha: float) -> Catalogue:
+    def from_document(cls, document: Mapping[str, object]) -> Catalogue:
         """Build a catalogue from a parsed ``catalogue.json`` document."""
         raw_items = document.get("items")
+        alpha = float(document.get("alpha", 0.002))
         items = raw_items if isinstance(raw_items, Mapping) else {}
         load_times = {
             str(key): float(entry.get("load_time", 0.0))
@@ -78,7 +79,6 @@ class Catalogue:
             _Checkpoint(
                 checkpoint_id=str(entry["id"]),
                 items=frozenset(entry.get("items", ())),
-                # The router applies its own alpha to the raw size here.
                 size=alpha * float(entry.get("size_mb", 0.0)),
             )
             for entry in entries
@@ -93,7 +93,6 @@ class Catalogue:
 
 def load_catalogues(
     directory: Path | None,
-    alpha: float,
     *,
     warn: Callable[[str, str], None] | None = None,
 ) -> dict[str, Catalogue]:
@@ -119,6 +118,6 @@ def load_catalogues(
                 version = document.get("version") if isinstance(document, dict) else "?"
                 warn(str(path), f"unsupported catalogue version {version}")
             continue
-        catalogue = Catalogue.from_document(document, alpha)
+        catalogue = Catalogue.from_document(document)
         catalogues[catalogue.flavor] = catalogue
     return catalogues
