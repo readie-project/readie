@@ -2,6 +2,10 @@ services:
     router:
         build:
             context: ./router
+            ulimits:
+                nofile:
+                    soft: 65536
+                    hard: 65536
         ports:
             - "50051:50051"
         container_name: router
@@ -57,6 +61,7 @@ services:
             - "50052:50052"
         container_name: worker
         environment:
+            LOG_LEVEL: debug
             # cgroup v2 delegation inside Docker Desktop refuses the subtree
             # write runsc needs, so every sandbox create fails with "device or
             # resource busy". Harmless on a host with proper delegation, and the
