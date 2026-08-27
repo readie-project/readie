@@ -155,17 +155,6 @@ ENV CRFS_DATA_DIR="/app/data"
 # /var/lib/crfs beside the manifest.
 ENV CRFS_PLAN_DIR="/app/plan"
 
-# Planner knobs
-# greedy (weighted set cover, the default) | fixed (a configured package set)
-ENV CRFS_PLANNER="greedy"
-# Upper bound on how many checkpoints a plan may emit.
-ENV CRFS_MAX_CHECKPOINTS="8"
-# Per-checkpoint size budget, in MB.
-ENV CRFS_SIZE_BUDGET_MB="2048.0"
-# Size-vs-time weight (seconds per MB): the planner adds a package while it saves
-# more than alpha*size. MUST match the router's ALPHA. Default 0.002.
-ENV CRFS_ALPHA="0.002"
-
 # Must correspond to the rootfs stage above.
 ENV ROOTFS_PYTHONPATH="/lib/python3.12/dist-packages"
 

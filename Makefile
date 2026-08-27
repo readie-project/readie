@@ -47,6 +47,17 @@ endif
 # Overridable so an experiment can be tagged something meaningful.
 TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
 
+# Planner knobs
+# greedy (weighted set cover, the default) | fixed (a configured package set)
+CRFS_PLANNER := greedy
+# Upper bound on how many checkpoints a plan may emit.
+CRFS_MAX_CHECKPOINTS := 8
+# Per-checkpoint size budget, in MB.
+CRFS_SIZE_BUDGET_MB := 2048.0
+# Size-vs-time weight (seconds per MB): the planner adds a package while it saves
+# more than alpha*size. MUST match the router's ALPHA. Default 0.002.
+CRFS_ALPHA := 0.002
+
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image capture worker-image generation clean-artifacts \
         router-% pkg-% executor-% pipeline-% worker-% lint type test help
@@ -169,6 +180,10 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 		--security-opt apparmor=unconfined \
 		--security-opt seccomp=unconfined \
 		-e FLAVOR=$(FLAVOR) \
+		-e CRFS_PLANNER=$(CRFS_PLANNER) \
+		-e CRFS_MAX_CHECKPOINTS=$(CRFS_MAX_CHECKPOINTS) \
+		-e CRFS_SIZE_BUDGET_MB=$(CRFS_SIZE_BUDGET_MB) \
+		-e CRFS_ALPHA=$(CRFS_ALPHA) \
 		-v "$(CURDIR)/$(ARTIFACTS_DIR):/app/executor" \
 		$(PIPELINE_IMAGE) capture
 	@test -f $(ARTIFACTS_DIR)/manifest.json \
