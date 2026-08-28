@@ -93,9 +93,9 @@ will never send a terminator it recognises.
 | | |
 |---|---|
 | `EXECUTOR_DIR` | **Required.** Directory to bind the socket in; set by the sandbox spec |
-| `CRFS_CAPTURE_MODE` | Enables the offline pre-import, ready signal, and capture window; unset in ordinary workers |
 | `CRFS_PREIMPORT` | Comma-separated modules to import before the checkpoint |
 | `CRFS_CHECKPOINT_SLEEP` | Capture window in seconds; `0` skips it |
+| `EXECUTOR_MODE` | If set to `capture`, enables the offline pre-import, ready signal, and capture window; unset or set to `sandbox` in ordinary workers, while setting to `baseline` to disables pre-imports and server and setting to `analyze` disables the server |
 | `EXECUTOR_CHUNK_SIZE` | Read/write granularity, default 1 MiB |
 | `EXECUTOR_SOCKET_NAME` | Default `executor.sock` |
 

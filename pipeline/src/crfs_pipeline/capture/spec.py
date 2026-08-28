@@ -54,8 +54,8 @@ def build_config(settings: Settings, *, preimport: str = "") -> str:
         "env": [
             f"EXECUTOR_DIR={SANDBOX_EXECUTOR_DIR}",
             f"PYTHONPATH={settings.rootfs_pythonpath}",
+            "EXECUTOR_MODE=capture",
             f"CRFS_PREIMPORT={preimport}",
-            "CRFS_CAPTURE_MODE=1",
         ],
         "cwd": "/",
         "mounts": [

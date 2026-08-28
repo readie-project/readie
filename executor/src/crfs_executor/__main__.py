@@ -25,10 +25,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[executor] {exc}", file=sys.stderr, flush=True)
         return 2
 
+    if settings.mode == "baseline":
+        return 0
+    elif settings.mode == "analyze":
+        preimport(settings.preimport)
+        return 0
     # Ordinary worker sandboxes stream their merged stdout/stderr to the
     # client. Keep capture progress out of that stream; a restored checkpoint
     # resumes after this branch.
-    if settings.capture_mode:
+    elif settings.mode == "capture":
         report = preimport(settings.preimport)
         announce_ready(report)
         await_checkpoint(settings.checkpoint_sleep)

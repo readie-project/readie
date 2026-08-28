@@ -12,9 +12,11 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 DEFAULT_CHUNK_SIZE = 1024 * 1024
 DEFAULT_SOCKET_NAME = "executor.sock"
+DEFAULT_MODE = "sandbox"
 
 # The capture window. The pipeline runs the sandbox, waits for the ready
 # sentinel, and checkpoints the process while it sits in this sleep. A restored
@@ -52,7 +54,7 @@ class Settings:
     checkpoint_sleep: float = DEFAULT_CHECKPOINT_SLEEP
     """Seconds to wait after the sentinel. Zero skips the wait entirely."""
 
-    capture_mode: bool = False
+    mode: Literal["baseline", "capture", "analyze", "sandbox"] = DEFAULT_MODE
     """Whether this process is being started for offline checkpoint capture."""
 
     @property
@@ -83,9 +85,9 @@ class Settings:
             socket_dir=socket_dir,
             socket_name=source.get("EXECUTOR_SOCKET_NAME") or DEFAULT_SOCKET_NAME,
             chunk_size=_int(source, "EXECUTOR_CHUNK_SIZE", DEFAULT_CHUNK_SIZE),
+            mode=source.get("EXECUTOR_MODE") or DEFAULT_MODE,
             preimport=parse_preimport(source.get("CRFS_PREIMPORT", "")),
             checkpoint_sleep=_float(source, "CRFS_CHECKPOINT_SLEEP", DEFAULT_CHECKPOINT_SLEEP),
-            capture_mode=_bool(source, "CRFS_CAPTURE_MODE", default=False),
         )
 
 
@@ -132,10 +134,3 @@ def _float(source: Mapping[str, str], name: str, default: float) -> float:
         msg = f"{name} must not be negative, got {value}"
         raise ConfigError(msg)
     return value
-
-
-def _bool(source: Mapping[str, str], name: str, default: bool) -> bool:
-    raw = (source.get(name) or "").strip()
-    if not raw:
-        return default
-    return raw.lower() in {"1", "true", "yes", "on"}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from crfs_executor.config import (
+    DEFAULT_MODE,
     DEFAULT_CHECKPOINT_SLEEP,
     DEFAULT_CHUNK_SIZE,
     ConfigError,
@@ -29,9 +30,9 @@ def test_defaults():
     settings = Settings.from_env({"EXECUTOR_DIR": "/tmp"})
     assert settings.socket_path == "/tmp/executor.sock"
     assert settings.chunk_size == DEFAULT_CHUNK_SIZE
+    assert settings.mode == DEFAULT_MODE
     assert settings.checkpoint_sleep == DEFAULT_CHECKPOINT_SLEEP
     assert settings.preimport == ()
-    assert settings.capture_mode is False
 
 
 def test_overrides():
@@ -40,16 +41,16 @@ def test_overrides():
             "EXECUTOR_DIR": "/run",
             "EXECUTOR_SOCKET_NAME": "other.sock",
             "EXECUTOR_CHUNK_SIZE": "4096",
+            "EXECUTOR_MODE": "capture",
             "CRFS_CHECKPOINT_SLEEP": "0",
             "CRFS_PREIMPORT": "pandas,numpy",
-            "CRFS_CAPTURE_MODE": "yes",
         }
     )
     assert settings.socket_path == "/run/other.sock"
     assert settings.chunk_size == 4096
+    assert settings.mode == "capture"
     assert settings.checkpoint_sleep == 0
     assert settings.preimport == ("pandas", "numpy")
-    assert settings.capture_mode is True
 
 
 def test_settings_are_immutable():
