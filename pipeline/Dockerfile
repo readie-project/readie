@@ -121,16 +121,30 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
+# Common host layer: the runtime and the guest root filesystem.
+# Both the pipeline and the worker-base inherit from this stage so that the
+# massive rootfs is copied exactly once, eliminating duplicate ~26 GB storage.
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS host-base
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=runsc /usr/local/bin/runsc /usr/local/bin/runsc
+
+# Fail the build rather than deployment if the runtime is unusable.
+RUN runsc --version
+
+# The one root filesystem every sandbox runs against.
+COPY --from=rootfs / /var/lib/crfs/rootfs
+
+# ---------------------------------------------------------------------------
 # The capture tool. It analyses the request corpus, decides which package sets
 # are worth pre-importing, and captures one gVisor checkpoint per set against
 # the rootfs above.
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS pipeline
-
-COPY --from=runsc /usr/local/bin/runsc /usr/local/bin/runsc
-
-# Fail the build rather than the first capture if the runtime is unusable.
-RUN runsc --version
+FROM host-base AS pipeline
 
 WORKDIR /app
 
@@ -148,9 +162,8 @@ COPY pipeline/src ./src
 COPY pipeline/data ./data
 RUN pip install --no-cache-dir .
 
-RUN mkdir -p executorfs/rootfs executor/checkpoints plan
+RUN mkdir -p executor/checkpoints plan
 
-COPY --from=rootfs / ./executorfs/rootfs
 COPY --from=ocispec-builder /ocispec /usr/local/bin/ocispec
 
 # BASE_DIR is the OCI bundle: config.json plus the rootfs.
@@ -158,7 +171,7 @@ COPY --from=ocispec-builder /ocispec /usr/local/bin/ocispec
 # from the sandbox's own EXECUTOR_DIR (/tmp, where the executor binds its
 # socket) — conflating the two previously sent the pre-imported executor source
 # to the wrong place, so every checkpoint captured a bare executor.
-ENV BASE_DIR="/app/executorfs"
+ENV BASE_DIR="/var/lib/crfs"
 ENV EXECUTOR_DIR="/app/executor"
 ENV CRFS_DATA_DIR="/app/data"
 
@@ -207,24 +220,12 @@ CMD ["capture"]
 #
 #   make worker-base
 # ---------------------------------------------------------------------------
-FROM debian:bookworm-slim AS worker-base
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=runsc /usr/local/bin/runsc /usr/local/bin/runsc
-
-# Fail the build rather than the deployment if the runtime is unusable.
-RUN runsc --version
+FROM host-base AS worker-base
 
 # /shared holds per-sandbox directories and OCI bundles, and is the one thing
 # still a volume: it is writable runtime scratch. /run/crfs-runsc is the
 # runtime's state directory, which the worker owns exclusively.
 RUN mkdir -p /shared /run/crfs-runsc /var/log/runsc
-
-# The one root filesystem every sandbox runs against.
-COPY --from=rootfs / /var/lib/crfs/rootfs
 
 # manifest.json and checkpoints/, produced by `crfs-pipeline capture`.
 #

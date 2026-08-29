@@ -74,11 +74,11 @@ sandbox — pinned by a test on the Go side.
 
 | Path | |
 |---|---|
-| `$BASE_DIR` (`/app/executorfs`) | the OCI bundle: `config.json` + `rootfs/` |
-| `$EXECUTOR_DIR` (`/app/executor`) | host-side outputs; mount this out |
+| `$BASE_DIR` | the OCI bundle: `config.json` + `rootfs/` |
+| `$EXECUTOR_DIR` | host-side outputs; mount this out |
 | `$EXECUTOR_DIR/checkpoints/<id>/` | one checkpoint image plus its `meta.json` |
 | `$EXECUTOR_DIR/manifest.json` | what those checkpoints can be restored into |
-| `$CRFS_PLAN_DIR` (`/app/plan`) | the plan and the spec fingerprint |
+| `$CRFS_PLAN_DIR` | the plan and the spec fingerprint |
 | `data/` | the committed corpus and package metadata |
 
 `$EXECUTOR_DIR` here is a *host* directory and is deliberately distinct from the
@@ -159,7 +159,7 @@ a second name for the same build, free to disagree.
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's |
 | `CRFS_PLANNER` | `greedy` or `fixed` |
 | `CRFS_MAX_CHECKPOINTS`, `CRFS_SIZE_BUDGET_MB` | planner bounds |
-| `CRFS_ALPHA` | size-vs-time weight; must match the router's `ALPHA` |
+| `CRFS_ALPHA` | size-vs-time weight |
 | `FLAVOR` | `cpu` or `gpu`; the generation this run produces |
 | `CRFS_DATA_DIR` | overrides the committed corpus location |
 | `RUNSC_BINARY`, `OCISPEC_BINARY` | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
