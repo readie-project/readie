@@ -44,8 +44,7 @@ ignore = [
     "PLR0913",
     # print() is the executor's only output channel, and deliberately so. Its
     # stdout and stderr are what the worker captures and streams to the client
-    # as logs, and READY_FOR_CHECKPOINT on stdout is a literal contract with the
-    # offline pipeline. A logging handler would add startup cost and a file
+    # as logs. A logging handler would add startup cost and a file
     # descriptor inside a process that is about to be checkpointed, for nothing.
     "T201",
 ]

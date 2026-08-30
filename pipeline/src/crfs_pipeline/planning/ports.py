@@ -32,7 +32,7 @@ class CheckpointPlan:
     imported before capture.
     """
 
-    imports: tuple[str, ...]
+    imports: tuple[str, ...] = field(default_factory=tuple)
     datasets: tuple[str, ...] = field(default_factory=tuple)
     models: tuple[str, ...] = field(default_factory=tuple)
     tokenizers: tuple[str, ...] = field(default_factory=tuple)

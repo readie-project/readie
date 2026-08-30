@@ -38,6 +38,10 @@ type CreateSpec struct {
 	// directory name, and the identifier in every downstream call and log line.
 	ID string
 
+	// gVisor annotations are key-value metadata pairs passed to gVisor's OCI runtime 
+	// (runsc) to configure advanced runtime behavior
+	Annotations map[string]string
+
 	// BundleDir holds the generated config.json and per-sandbox runtime state.
 	// It is not visible inside the sandbox.
 	BundleDir string

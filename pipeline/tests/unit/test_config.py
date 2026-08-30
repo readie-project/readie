@@ -63,7 +63,7 @@ def test_a_self_overlay_is_refused():
 
 @pytest.mark.parametrize(
     "override",
-    [{"max_checkpoints": 0}, {"checkpoint_size_budget_mb": 0}, {"ready_timeout": 0}],
+    [{"max_checkpoints": 0}, {"checkpoint_size_budget_mb": 0}, {"checkpoint_timeout": 0}],
 )
 def test_nonsensical_bounds_are_refused(override):
     with pytest.raises(ConfigError):

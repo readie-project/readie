@@ -190,8 +190,8 @@ ENV SANDBOX_NETWORK="none"
 ENV SANDBOX_HOST_UDS="create"
 ENV SANDBOX_OVERLAY="root:memory"
 
-# How long a sandbox may take to print READY_FOR_CHECKPOINT before capture fails.
-ENV CRFS_READY_TIMEOUT="300.0"
+# How long a sandbox may take checkpoint before capture fails.
+ENV CRFS_CHECKPOINT_TIMEOUT="300.0"
 ENV OCISPEC_BINARY="/usr/local/bin/ocispec"
 ENV RUNSC_BINARY="runsc"
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Literal
 
 from crfs_pipeline.config import (
     EXECUTOR_ARGV,
@@ -31,7 +32,10 @@ class SpecError(Exception):
     """The sandbox specification could not be produced."""
 
 
-def build_config(settings: Settings, *, preimport: str = "") -> str:
+type ExecutorMode = Literal["capture", "measure", "sandbox"]
+
+
+def build_config(settings: Settings, checkpoint_dir: Path | None = None, *, mode: ExecutorMode = "capture", preimport: str = "") -> str:
     """Write ``<bundle>/config.json`` and return the spec fingerprint.
 
     ``preimport`` is the only thing that varies between the checkpoints of one
@@ -54,7 +58,7 @@ def build_config(settings: Settings, *, preimport: str = "") -> str:
         "env": [
             f"EXECUTOR_DIR={SANDBOX_EXECUTOR_DIR}",
             f"PYTHONPATH={settings.rootfs_pythonpath}",
-            "EXECUTOR_MODE=capture",
+            f"EXECUTOR_MODE={mode}",
             f"CRFS_PREIMPORT={preimport}",
         ],
         "cwd": "/",
@@ -75,6 +79,12 @@ def build_config(settings: Settings, *, preimport: str = "") -> str:
         # under. gpu is part of the fingerprint, so this keeps the two in step.
         "gpu": settings.flavor == "gpu",
     }
+
+    if mode == "capture" and checkpoint_dir:
+        params["annotations"] = {
+            "dev.gvisor.internal.checkpoint.enable": "true",
+            "dev.gvisor.internal.checkpoint.path": str(checkpoint_dir)
+        }
 
     params_path = settings.bundle_dir / "ocispec-params.json"
     params_path.write_text(json.dumps(params, indent=2))

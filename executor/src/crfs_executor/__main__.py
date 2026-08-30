@@ -8,11 +8,28 @@ attached to a worker that no longer exists.
 
 from __future__ import annotations
 
+import os
 import sys
 
-from crfs_executor.config import ConfigError, Settings
-from crfs_executor.preimport import announce_ready, await_checkpoint, preimport
+from crfs_executor.config import ConfigError, Settings, get_current_mode
+from crfs_executor.preimport import trigger_checkpoint, preimport
 from crfs_executor.server import ExecutorServer
+
+
+def reload_gvisor_envs():
+    """Reads updated config.json envs injected by gVisor into spec_environ."""
+
+    spec_environ_path = "/proc/gvisor/spec_environ"
+    if os.path.exists(spec_environ_path):
+        print(f"[executor] Updating envs from {spec_environ_path}", flush=True)
+        with open(spec_environ_path, "r") as f:
+            # Lines are null-byte (\x00) separated in linux proc files
+            env_entries = f.read().split("\0")
+            print(f"Found gVisor envs: {env_entries}", flush=True)
+            for entry in env_entries:
+                if "=" in entry:
+                    key, val = entry.split("=", 1)
+                    os.environ[key] = val
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,18 +42,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[executor] {exc}", file=sys.stderr, flush=True)
         return 2
 
-    if settings.mode == "baseline":
-        return 0
-    elif settings.mode == "analyze":
-        preimport(settings.preimport)
-        return 0
+    status = ""
     # Ordinary worker sandboxes stream their merged stdout/stderr to the
     # client. Keep capture progress out of that stream; a restored checkpoint
     # resumes after this branch.
-    elif settings.mode == "capture":
+    if get_current_mode() == "capture":
         report = preimport(settings.preimport)
-        announce_ready(report)
-        await_checkpoint(settings.checkpoint_sleep)
+        status = trigger_checkpoint(report)
+
+    if status == "error":
+        print("[executor] Cannot restore sandbox")
+        return 1
+
+    if status == "restore":
+        reload_gvisor_envs()
+
+    if get_current_mode() == "measure":
+        return 0
 
     server = ExecutorServer(settings)
     try:

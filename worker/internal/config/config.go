@@ -276,9 +276,7 @@ func Load(getenv Getenv) (Config, error) {
 		CheckpointStrictCompat: true,
 
 		ChunkSize: DefaultChunkSize,
-		// The executor sleeps 30s awaiting a checkpoint before it binds its
-		// socket (see the executor's CRFS_CHECKPOINT_SLEEP). A budget below that
-		// succeed for a container started cold rather than restored.
+
 		DialTotalTimeout:    60 * time.Second,
 		DialRetryInterval:   100 * time.Millisecond,
 		DialAttemptTimeout:  time.Second,

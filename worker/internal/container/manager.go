@@ -651,7 +651,7 @@ func (m *Manager) CanonicalSpec(rootfs string) sandbox.CreateSpec {
 func (m *Manager) createSpec(name string, alloc Allocation, rootfs string) sandbox.CreateSpec {
 	manifest := m.artifacts.Manifest()
 
-	env := []string{"EXECUTOR_DIR=" + config.ExecutorMountPath}
+	env := []string{"EXECUTOR_DIR=" + config.ExecutorMountPath, "EXECUTOR_MODE=sandbox"}
 	if manifest.PythonPath != "" {
 		env = append(env, "PYTHONPATH="+manifest.PythonPath)
 	}

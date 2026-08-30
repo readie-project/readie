@@ -51,6 +51,7 @@ func BuildSpec(spec sandbox.CreateSpec) (*specs.Spec, error) {
 
 	out := &specs.Spec{
 		Version: ociVersion,
+		Annotations: spec.Annotations,
 		Process: &specs.Process{
 			// A pty would merge stdout and stderr onto a console socket and
 			// require --console-socket at create time. Passing plain

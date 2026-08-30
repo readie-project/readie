@@ -147,9 +147,7 @@ func (r *Runner) pumpLogs(ctx context.Context, containerID string, events chan<-
 // Executor failures deliberately remain visible: they are errors, not lifecycle
 // records.
 func clientVisibleLog(line string) bool {
-	return line != "READY_FOR_CHECKPOINT" &&
-		!strings.HasPrefix(line, "[preimport] ") &&
-		!strings.HasPrefix(line, "[executor] ")
+	return !strings.HasPrefix(line, "[preimport] ") && !strings.HasPrefix(line, "[checkpoint] ") && !strings.HasPrefix(line, "[executor] ")
 }
 
 // pumpStats samples container resource usage, drives proactive memory

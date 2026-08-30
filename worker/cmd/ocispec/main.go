@@ -31,6 +31,7 @@ import (
 // convenient to write from Python.
 type params struct {
 	ID           string   `json:"id"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
 	BundleDir    string   `json:"bundle_dir"`
 	RootfsPath   string   `json:"rootfs_path"`
 	RootReadonly bool     `json:"root_readonly"`
@@ -130,6 +131,7 @@ func toCreateSpec(p params) sandbox.CreateSpec {
 
 	return sandbox.CreateSpec{
 		ID:           p.ID,
+		Annotations:  p.Annotations,
 		BundleDir:    p.BundleDir,
 		RootfsPath:   p.RootfsPath,
 		RootReadonly: p.RootReadonly,

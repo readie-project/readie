@@ -80,16 +80,6 @@ func TestLoad_OverlayIsCopyOnWriteInMemory(t *testing.T) {
 	assert.False(t, cfg.SandboxRootReadonly, "an overlay needs a writable root")
 }
 
-// The executor sleeps 30s before binding its socket, so a dial budget at or
-// below that can never succeed against a cold sandbox.
-func TestLoad_DialBudgetExceedsExecutorCheckpointSleep(t *testing.T) {
-	cfg, err := load(t, validEnv())
-	require.NoError(t, err)
-
-	assert.Greater(t, cfg.DialTotalTimeout, 30*time.Second,
-		"the dial budget must exceed the executor's pre-bind sleep (CRFS_CHECKPOINT_SLEEP)")
-}
-
 func TestLoad_MissingRequiredEnv(t *testing.T) {
 	for _, key := range []string{"SERVICE_NAME", "PORT", "WORKER_DIR", "ROUTER_URI"} {
 		t.Run(key, func(t *testing.T) {

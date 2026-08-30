@@ -34,6 +34,7 @@ func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 	// What the pipeline's capture/spec.py sends.
 	pipelineSpec, err := runsc.BuildSpec(toCreateSpec(params{
 		ID:           "checkpoint-builder",
+		Annotations:  map[string]string{"dev.gvisor.internal.checkpoint.path": "/checkpoint", "dev.gvisor.internal.checkpoint.enable": "true"},
 		RootfsPath:   rootfs,
 		RootReadonly: false,
 		Args:         []string{"python", "-u", entrypoint},

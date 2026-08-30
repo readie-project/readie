@@ -59,8 +59,8 @@ the same shape, and two independent generators cannot be kept in agreement by
 review.
 
 `build` then, for each planned set, rewrites only the sandbox's `CRFS_PREIMPORT`
-environment variable, runs the sandbox, waits for the executor to print
-`READY_FOR_CHECKPOINT`, and captures the process mid-sleep.
+environment variable, runs the sandbox, and waits for the executor to checkpoint
+internally once all the preimports are completed and exit.
 
 Varying the environment rather than the executor's source is what makes this
 safe to interrupt. The previous implementation prepended `import` lines to the
@@ -163,7 +163,7 @@ a second name for the same build, free to disagree.
 | `FLAVOR` | `cpu` or `gpu`; the generation this run produces |
 | `CRFS_DATA_DIR` | overrides the committed corpus location |
 | `RUNSC_BINARY`, `OCISPEC_BINARY` | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
-| `CRFS_READY_TIMEOUT` | how long a sandbox may take to print `READY_FOR_CHECKPOINT` before `build` gives up (default `300`) |
+| `CRFS_CHECKPOINT_TIMEOUT` | how long a sandbox may take to checkpoint before `build` gives up (default `300`) |
 | `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME` | `corpus` only |
 | `AZURE_API_VERSION` | `corpus` only; default `2025-03-01-preview` |
 

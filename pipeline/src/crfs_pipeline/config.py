@@ -65,8 +65,8 @@ class Settings:
     ocispec_binary: str = "/usr/local/bin/ocispec"
     runsc_binary: str = "runsc"
 
-    ready_timeout: float = 300.0
-    """How long a sandbox may take to announce itself before the build gives up."""
+    checkpoint_timeout: float = 300.0
+    """How long a sandbox may take to complete checkpointing before the build gives up."""
 
     #: Which generation this run produces: "cpu" or "gpu". Recorded in the
     #: catalogue so the router knows which flavor of worker its checkpoints
@@ -162,8 +162,8 @@ class Settings:
                 f"checkpoint_size_budget_mb must be positive, got {self.checkpoint_size_budget_mb}"
             )
             raise ConfigError(msg)
-        if self.ready_timeout <= 0:
-            msg = f"ready_timeout must be positive, got {self.ready_timeout}"
+        if self.checkpoint_timeout <= 0:
+            msg = f"checkpoint_timeout must be positive, got {self.checkpoint_timeout}"
             raise ConfigError(msg)
         if self.alpha <= 0:
             msg = f"alpha must be positive, got {self.alpha}"
@@ -208,7 +208,7 @@ class Settings:
             "sandbox_overlay": source.get("SANDBOX_OVERLAY") or "root:memory",
             "ocispec_binary": source.get("OCISPEC_BINARY") or "/usr/local/bin/ocispec",
             "runsc_binary": source.get("RUNSC_BINARY") or "runsc",
-            "ready_timeout": _float(source, "CRFS_READY_TIMEOUT", 300.0),
+            "checkpoint_timeout": _float(source, "CRFS_CHECKPOINT_TIMEOUT", 300.0),
             "flavor": source.get("FLAVOR") or source.get("CRFS_FLAVOR") or "cpu",
             "planner": source.get("CRFS_PLANNER") or "greedy",
             "max_checkpoints": _int(source, "CRFS_MAX_CHECKPOINTS", 8),

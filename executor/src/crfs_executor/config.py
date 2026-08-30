@@ -18,15 +18,8 @@ DEFAULT_CHUNK_SIZE = 1024 * 1024
 DEFAULT_SOCKET_NAME = "executor.sock"
 DEFAULT_MODE = "sandbox"
 
-# The capture window. The pipeline runs the sandbox, waits for the ready
-# sentinel, and checkpoints the process while it sits in this sleep. A restored
-# sandbox therefore resumes mid-sleep and finishes the remainder before binding
-# its socket, which is why the worker's dial budget has to exceed it.
-DEFAULT_CHECKPOINT_SLEEP = 30.0
-
-# Printed once, on stdout, before the sleep. The pipeline greps for it and
-# nothing else, so it is a contract with scripts on the other side.
-READY_SENTINEL = "READY_FOR_CHECKPOINT"
+def get_current_mode() -> Literal["capture", "measure", "sandbox"]:
+    return os.getenv("EXECUTOR_MODE", "") or DEFAULT_MODE
 
 
 class ConfigError(Exception):
@@ -50,12 +43,6 @@ class Settings:
     these resident, so a restore skips the import cost that dominates a cold
     start.
     """
-
-    checkpoint_sleep: float = DEFAULT_CHECKPOINT_SLEEP
-    """Seconds to wait after the sentinel. Zero skips the wait entirely."""
-
-    mode: Literal["baseline", "capture", "analyze", "sandbox"] = DEFAULT_MODE
-    """Whether this process is being started for offline checkpoint capture."""
 
     @property
     def socket_path(self) -> str:
@@ -85,9 +72,7 @@ class Settings:
             socket_dir=socket_dir,
             socket_name=source.get("EXECUTOR_SOCKET_NAME") or DEFAULT_SOCKET_NAME,
             chunk_size=_int(source, "EXECUTOR_CHUNK_SIZE", DEFAULT_CHUNK_SIZE),
-            mode=source.get("EXECUTOR_MODE") or DEFAULT_MODE,
             preimport=parse_preimport(source.get("CRFS_PREIMPORT", "")),
-            checkpoint_sleep=_float(source, "CRFS_CHECKPOINT_SLEEP", DEFAULT_CHECKPOINT_SLEEP),
         )
 
 

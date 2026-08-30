@@ -19,8 +19,7 @@ The order is the design, not a detail:
 ```
 capture mode only:
   preimport CRFS_PREIMPORT   →  the reason a checkpoint is worth taking
-  print READY_FOR_CHECKPOINT →  the pipeline greps for exactly this
-  sleep CRFS_CHECKPOINT_SLEEP →  the capture window
+  write to /proc/gvisor/checkpoint →  trigger gVisor checkpoint internally
 
 bind $EXECUTOR_DIR/executor.sock
 accept, serve, repeat
@@ -28,14 +27,6 @@ accept, serve, repeat
 
 An ordinary worker does not enable capture mode, so its terminal stream contains
 only output from the called function and errors.
-
-Binding happens *after* the sleep on purpose. A socket bound earlier would have
-its inode captured in the checkpoint image, and a restored sandbox would come
-back holding a socket attached to a worker that no longer exists.
-
-The consequence, which surprises people: a restored sandbox resumes part-way
-through that sleep and finishes the remainder before it binds. That is why the
-worker's `DIAL_TOTAL_TIMEOUT` has to exceed `CRFS_CHECKPOINT_SLEEP`.
 
 ## The wire protocol
 
@@ -94,8 +85,7 @@ will never send a terminator it recognises.
 |---|---|
 | `EXECUTOR_DIR` | **Required.** Directory to bind the socket in; set by the sandbox spec |
 | `CRFS_PREIMPORT` | Comma-separated modules to import before the checkpoint |
-| `CRFS_CHECKPOINT_SLEEP` | Capture window in seconds; `0` skips it |
-| `EXECUTOR_MODE` | If set to `capture`, enables the offline pre-import, ready signal, and capture window; unset or set to `sandbox` in ordinary workers, while setting to `baseline` to disables pre-imports and server and setting to `analyze` disables the server |
+| `EXECUTOR_MODE` | If set to `capture`, enables the offline pre-import, ready signal, and capture window; unset or set to `sandbox` in ordinary workers, while setting to setting to `measure` disables the server |
 | `EXECUTOR_CHUNK_SIZE` | Read/write granularity, default 1 MiB |
 | `EXECUTOR_SOCKET_NAME` | Default `executor.sock` |
 

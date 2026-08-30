@@ -1,11 +1,10 @@
-"""Startup imports and the ready sentinel."""
+"""Startup imports."""
 
 from __future__ import annotations
 
 import sys
 
-from crfs_executor.config import READY_SENTINEL
-from crfs_executor.preimport import announce_ready, await_checkpoint, preimport
+from crfs_executor.preimport import preimport
 
 
 def test_real_modules_load():
@@ -30,21 +29,3 @@ def test_an_empty_set_is_fine():
     report = preimport(())
     assert report.loaded == []
     assert report.elapsed >= 0
-
-
-def test_the_sentinel_is_printed_verbatim(capsys):
-    # The pipeline greps for exactly this string; nothing else is a contract.
-    announce_ready()
-    assert READY_SENTINEL in capsys.readouterr().out
-
-
-def test_the_summary_precedes_the_sentinel(capsys):
-    announce_ready(preimport(("json",)))
-    lines = [line for line in capsys.readouterr().out.splitlines() if line]
-
-    assert lines[-1] == READY_SENTINEL
-    assert "1 loaded" in lines[0]
-
-
-def test_a_zero_sleep_returns_immediately():
-    await_checkpoint(0)

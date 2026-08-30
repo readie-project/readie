@@ -1,8 +1,8 @@
 """Startup imports, and the signal that the process is worth capturing.
 
 This is what a checkpoint is *for*. The pipeline runs a sandbox with a chosen
-set of modules named in ``CRFS_PREIMPORT``, waits for the ready sentinel, and
-captures the process while those modules are resident. A later restore skips the
+set of modules named in ``CRFS_PREIMPORT``, triggers gVisor's internal checkpointing, 
+and captures the process while those modules are resident. A later restore skips the
 import cost that dominates an otherwise cold start.
 """
 
@@ -11,9 +11,8 @@ from __future__ import annotations
 import importlib
 import sys
 import time
+import os
 from dataclasses import dataclass, field
-
-from crfs_executor.config import READY_SENTINEL
 
 
 @dataclass(slots=True)
@@ -54,27 +53,35 @@ def preimport(modules: tuple[str, ...]) -> PreimportReport:
     return report
 
 
-def announce_ready(report: PreimportReport | None = None) -> None:
-    """Print the sentinel the pipeline waits for.
-
-    Flushed explicitly. The pipeline reads this pipe line by line, and a
-    buffered sentinel is a capture that times out for no visible reason.
-    """
+def trigger_checkpoint(report: PreimportReport | None = None) -> str | None:
     if report is not None:
         print(
             f"[preimport] {len(report.loaded)} loaded, "
             f"{len(report.failed)} failed, {report.elapsed:.2f}s",
             flush=True,
         )
-    print(READY_SENTINEL, flush=True)
 
-
-def await_checkpoint(seconds: float) -> None:
-    """Sit still long enough to be captured.
-
-    The sleep *is* the capture window. A restored sandbox resumes part-way
-    through it and finishes the remainder before binding its socket, which is
-    why the worker's dial budget has to exceed this.
-    """
-    if seconds > 0:
-        time.sleep(seconds)
+    path = "/proc/gvisor/checkpoint"
+    try:
+        # Open the file descriptor for reading and writing
+        fd = os.open(path, os.O_RDWR)
+        
+        # Write '1' to trigger the checkpoint
+        os.write(fd, b"1")
+        
+        # Read blocks the thread until the checkpoint completes.
+        # It returns 'resume', 'restore', or 'error'.
+        result_bytes = os.read(fd, 1024)
+        result = result_bytes.decode('utf-8').strip()
+        
+        os.close(fd)
+        return result
+    except FileNotFoundError:
+        print(f"[checkpoint] '{path}' not found", file=sys.stderr)
+        return None
+    except PermissionError:
+        print(f"[checkpoint] Permission denied", file=sys.stderr)
+        return None
+    except OSError as exc:
+        print(f"[checkpoint] OS Error: {exc}", file=sys.stderr)
+        return None

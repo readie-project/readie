@@ -79,9 +79,7 @@ def build_catalogue(
             {
                 "id": checkpoint_id,
                 "items": keys,
-                # Raw total item size. The router applies its own alpha to this
-                # at selection, so the size-vs-time trade can be retuned at the
-                # router without rebuilding the generation.
+                # Raw total item size.
                 "size_mb": round(size_mb, 4),
             }
         )
