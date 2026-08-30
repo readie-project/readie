@@ -23,8 +23,10 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from crfs_pipeline.capture.build import CaptureError, capture
-from crfs_pipeline.capture.spec import SpecError, build_config, runsc_version
+import numpy as np
+
+from crfs_pipeline.capture.build import CaptureError, capture, measure_time
+from crfs_pipeline.capture.spec import SpecError, build_config, runsc_version, ExecutorMode
 from crfs_pipeline.catalogue import build_catalogue, write_catalogue
 from crfs_pipeline.config import ConfigError, CorpusSettings, Settings
 from crfs_pipeline.corpus.models import Corpus, CorpusError
@@ -141,7 +143,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         msg = f"no plan at {settings.plan_path}; run `crfs-pipeline plan` first"
         raise ConfigError(msg)
 
-    plans = [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
+    plans = [CheckpointPlan()] + [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
     metadata = Metadata.load(settings.metadata_path)
@@ -149,16 +151,18 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     print(f"[*] building {len(plans)} checkpoints with {version}")
 
     entries: list[tuple[str, CheckpointPlan]] = []
+    baseline_time = 0.0
+    computed_alphas: list[float] = []
     for index, plan in enumerate(plans, start=1):
         checkpoint_id = f"checkpoint_{index}"
         print(f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
 
-        def write_spec(preimport: str) -> None:
+        def write_spec(mode: ExecutorMode, checkpoint_dir: Path, preimport: str) -> None:
             # The fingerprint is discarded here on purpose: only process.env
             # differs between the checkpoints of one generation, and
             # runsc.Fingerprint excludes env, so it is the value already
             # recorded by `plan`.
-            build_config(settings, preimport=preimport)
+            build_config(settings, checkpoint_dir, mode=mode, preimport=preimport)
 
         destination = capture(settings, checkpoint_id, plan, write_spec=write_spec)
         CheckpointMeta(
@@ -173,6 +177,12 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         entries.append((checkpoint_id, plan))
         print(f"    captured at {destination}")
 
+        restore_time = measure_time(settings, checkpoint_id, write_spec=write_spec)
+        print(f"    restored in {restore_time}s")
+        if index == 0:
+            baseline_time = restore_time
+        computed_alphas.append((restore_time - baseline_time) / plan.size_mb if plan.size_mb else 0.0)
+
     Manifest(
         runsc_version=version,
         spec_fingerprint=fingerprint,
@@ -181,13 +191,15 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         network=settings.sandbox_network,
     ).write(settings.output_dir)
 
+    computed_alpha = np.mean(computed_alphas)
+    print(f"\n[*] planned alpha value: {settings.alpha}, computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}")
     # The catalogue the router selects from: every measured item's cost plus each
     # checkpoint's contents and precomputed size term.
     write_catalogue(
         settings.catalogue_path,
         build_catalogue(
             flavor=settings.flavor,
-            alpha=settings.alpha,
+            alpha=computed_alpha,
             metadata=metadata,
             entries=entries,
         ),

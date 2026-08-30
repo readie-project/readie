@@ -59,8 +59,8 @@ CRFS_MAX_CHECKPOINTS := 15
 # Total size budget, in MB.
 CRFS_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
-# more than alpha*size. MUST match the router's ALPHA. Default 0.002.
-CRFS_ALPHA := 0.002
+# more than alpha*size. Default 0.002.
+CRFS_ALPHA := 0.0075
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image capture worker-image generation clean-artifacts \
