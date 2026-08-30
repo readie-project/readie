@@ -120,7 +120,7 @@ Read from the environment by pydantic-settings, under the field names below
 | `SERVICE_NAME` | what the router advertises to workers |
 | `MAX_CONCURRENT_RPCS`, `MAX_MESSAGE_BYTES` | inbound gRPC limits |
 | `DEFAULT_MEMORY`, `MEMORY_HEADROOM` | placement — the memory budget for a request that sets none, and the fraction of a worker's memory the router will commit |
-| `CRFS_CATALOGUE_DIR` | directory of per-flavor `<flavor>.json` catalogues; absent means cold starts |
+| `CATALOGUE_DIR` | directory of per-flavor `<flavor>.json` catalogues; absent means cold starts |
 | `AUTH_TOKEN` | bearer token required on ProxyService; unset means no auth |
 | `TLS_CERT_FILE`, `TLS_KEY_FILE` | serve TLS on the port; unset means plaintext |
 | `SESSION_WAIT_TIMEOUT`, `EXECUTION_TIMEOUT` | per-request bounds |

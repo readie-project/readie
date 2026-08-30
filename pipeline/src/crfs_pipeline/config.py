@@ -112,7 +112,7 @@ class Settings:
         """The catalogue the router reads to select a checkpoint at request time.
 
         Written beside the manifest so a generation is self-describing; the
-        deployment copies it to the router's ``CRFS_CATALOGUE_DIR`` as
+        deployment copies it to the router's ``CATALOGUE_DIR`` as
         ``<flavor>.json``.
         """
         return self.output_dir / "catalogue.json"

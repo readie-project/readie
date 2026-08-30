@@ -12,10 +12,10 @@ services:
         environment:
             # Where the per-flavor <flavor>.json catalogues are mounted (below).
             # Without them the router cold-starts every request, as before.
-            CRFS_CATALOGUE_DIR: /var/lib/crfs/catalogues
+            CATALOGUE_DIR: /var/lib/crfs/catalogues
         volumes:
-            # The catalogues `make generation` writes into ./catalogues, read
-            # only. Must match the generations the workers are running.
+            # The catalogues `make generation` writes into ./catalogues, read only.
+            # Must match CATALOGUE_DIR above and the generations the workers are running.
             - ./catalogues:/var/lib/crfs/catalogues:ro
         healthcheck:
             test:

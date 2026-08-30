@@ -25,7 +25,6 @@ def reload_gvisor_envs():
         with open(spec_environ_path, "r") as f:
             # Lines are null-byte (\x00) separated in linux proc files
             env_entries = f.read().split("\0")
-            print(f"Found gVisor envs: {env_entries}", flush=True)
             for entry in env_entries:
                 if "=" in entry:
                     key, val = entry.split("=", 1)

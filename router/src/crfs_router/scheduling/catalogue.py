@@ -57,7 +57,7 @@ class Catalogue:
         for checkpoint in self.checkpoints:
             saved = sum(t for item, t in priced.items() if item in checkpoint.items)
             cost = checkpoint.size + (full_residual - saved)
-            if cost < best_cost:
+            if cost <= best_cost:
                 best_id, best_cost = checkpoint.checkpoint_id, cost
         return best_id
 
