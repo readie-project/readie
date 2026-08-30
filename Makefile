@@ -25,6 +25,8 @@ FLAVOR          ?= cpu
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
 ARTIFACTS_DIR   := pipeline/out-$(FLAVOR)
+# Bind mount for the ARTIFACTS_DIR on the executor
+EXECUTOR_DIR    := /app/executor
 # The per-flavor catalogues the router mounts (as <flavor>.json).
 CATALOGUE_DIR   := catalogues
 # The pipeline's Dockerfile defines the rootfs, the capture tool and the base a
@@ -176,7 +178,6 @@ pipeline-image: ## Build the offline pipeline image
 # gpu capture runs under nvproxy and records the matching fingerprint.
 capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 	@echo "==> [2/3] capturing $(FLAVOR) checkpoints (privileged; needs amd64 gVisor)"
-	@rm -rf $(ARTIFACTS_DIR)/manifest.json $(ARTIFACTS_DIR)/checkpoints $(ARTIFACTS_DIR)/catalogue.json
 	@mkdir -p $(ARTIFACTS_DIR)
 	docker run --rm -it \
 		--privileged \
@@ -188,7 +189,8 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 		-e CRFS_MAX_CHECKPOINTS=$(CRFS_MAX_CHECKPOINTS) \
 		-e CRFS_SIZE_BUDGET_MB=$(CRFS_SIZE_BUDGET_MB) \
 		-e CRFS_ALPHA=$(CRFS_ALPHA) \
-		-v "$(CURDIR)/$(ARTIFACTS_DIR):/app/executor" \
+		-e EXECUTOR_DIR=$(EXECUTOR_DIR) \
+		-v "$(CURDIR)/$(ARTIFACTS_DIR):$(EXECUTOR_DIR)" \
 		$(PIPELINE_IMAGE) capture
 	@test -f $(ARTIFACTS_DIR)/manifest.json \
 		|| { echo "capture produced no manifest; refusing to build a checkpointless image" >&2; exit 1; }

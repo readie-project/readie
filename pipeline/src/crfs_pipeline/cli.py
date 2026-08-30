@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -142,6 +143,13 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     if not settings.plan_path.exists():
         msg = f"no plan at {settings.plan_path}; run `crfs-pipeline plan` first"
         raise ConfigError(msg)
+
+    # Remove all contents but keep the top-level directory
+    for item in Path(settings.output_dir).iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
 
     plans = [CheckpointPlan()] + [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
     fingerprint = settings.fingerprint_path.read_text().strip()
