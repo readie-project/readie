@@ -251,14 +251,15 @@ func (a *Adapter) Create(_ context.Context, spec sandbox.CreateSpec) (string, er
 }
 
 // Start launches a created sandbox, restoring from a checkpoint when asked.
+// go is essential: run otherwise blocks in the foreground for
+// the sandbox's entire lifetime (--detch does not work as expected with `run` and `restore`).
+// The timeout is belt and braces so a hang surfaces as a downgrade rather than a wedged execution.
 func (a *Adapter) Start(ctx context.Context, id string, spec sandbox.StartSpec) error {
 	if spec.CheckpointID != "" {
-		return a.restore(ctx, id, spec)
+		go a.restore(ctx, id, spec)
+		return nil
 	}
 
-	// go is essential: run otherwise blocks in the foreground for
-	// the sandbox's entire lifetime (--detch does not work as expected with `run`). 
-	// The timeout is belt and braces so a hang surfaces as a downgrade rather than a wedged execution.
 	go a.coldStart(ctx, id)
 	return nil
 }
@@ -306,16 +307,12 @@ func (a *Adapter) restore(ctx context.Context, id string, spec sandbox.StartSpec
 	}
 	defer closeStdio()
 
-	// --detach is essential: restore otherwise blocks in the foreground for
-	// the sandbox's entire lifetime. The timeout is belt and braces so a hang
-	// surfaces as a downgrade rather than a wedged execution.
 	restoreCtx, cancel := context.WithTimeout(ctx, a.opts.RestoreTimeout)
 	_, err = a.runner.Spawn(restoreCtx, stdio, a.args(
 		"restore",
 		"--bundle="+a.BundleDir(id),
 		"--image-path="+spec.CheckpointDir,
 		"--pid-file="+filepath.Join(a.BundleDir(id), pidFileName),
-		"--detach",
 		id,
 	)...)
 	cancel()

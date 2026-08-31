@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import time
 from collections.abc import Callable
 from typing import Any, Generic, ParamSpec, TypeVar, overload
 
@@ -60,6 +61,7 @@ class RemoteFunction(Generic[P, R]):
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         """Run remotely and block for the result."""
+        start_time = time.perf_counter()
         result: R = self._resolve().call(
             self._func,
             args,
@@ -69,10 +71,13 @@ class RemoteFunction(Generic[P, R]):
             budgets=self._budgets,
             gpu=self._gpu,
         )
+        end_time = time.perf_counter()
+        print(f"Execution completed in {end_time - start_time}s")
         return result
 
     async def aio(self, *args: P.args, **kwargs: P.kwargs) -> R:
         """Run remotely and await the result."""
+        start_time = time.perf_counter()
         result: R = await self._resolve().acall(
             self._func,
             args,
@@ -82,6 +87,8 @@ class RemoteFunction(Generic[P, R]):
             budgets=self._budgets,
             gpu=self._gpu,
         )
+        end_time = time.perf_counter()
+        print(f"Execution completed in {end_time - start_time}s")
         return result
 
     def local(self, *args: P.args, **kwargs: P.kwargs) -> R:
