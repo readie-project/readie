@@ -29,7 +29,7 @@ import numpy as np
 from crfs_pipeline.capture.build import CaptureError, capture, measure_time
 from crfs_pipeline.capture.spec import SpecError, build_config, runsc_version, ExecutorMode
 from crfs_pipeline.catalogue import build_catalogue, write_catalogue
-from crfs_pipeline.config import ConfigError, CorpusSettings, Settings
+from crfs_pipeline.config import ConfigError, CorpusSettings, Settings, ALPHA_PRECISION
 from crfs_pipeline.corpus.models import Corpus, CorpusError
 from crfs_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from crfs_pipeline.metadata.analyze import analyze
@@ -199,7 +199,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         network=settings.sandbox_network,
     ).write(settings.output_dir)
 
-    computed_alpha = np.mean(computed_alphas)
+    computed_alpha = round(np.mean(computed_alphas), ALPHA_PRECISION)
     print(f"\n[*] planned alpha value: {settings.alpha}, computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}")
     # The catalogue the router selects from: every measured item's cost plus each
     # checkpoint's contents and precomputed size term.

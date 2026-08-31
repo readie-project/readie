@@ -43,9 +43,8 @@ venv.bak/
 # .gitkeep) because the worker-base image build COPYs it.
 pipeline/out/*
 !pipeline/out/.gitkeep
-# Per-flavor generation outputs and the catalogues the router mounts.
+# Per-flavor generation outputs.
 pipeline/out-*/
-catalogues/
 
 # Proto staging, created and removed by `make protos`.
 .build/

@@ -26,6 +26,9 @@ EXECUTOR_ARGV: tuple[str, ...] = ("python", "-u", "-m", "crfs_executor")
 #: crfs_executor.protocol.PROTOCOL_VERSION.
 EXECUTOR_PROTOCOL = 2
 
+# Support upto 6 decimal places for `alpha` value
+ALPHA_PRECISION = 6
+
 
 class ConfigError(Exception):
     """The pipeline was configured with something unusable."""
@@ -213,7 +216,7 @@ class Settings:
             "planner": source.get("CRFS_PLANNER") or "greedy",
             "max_checkpoints": _int(source, "CRFS_MAX_CHECKPOINTS", 8),
             "checkpoint_size_budget_mb": _float(source, "CRFS_SIZE_BUDGET_MB", 2048.0),
-            "alpha": _float(source, "CRFS_ALPHA", 0.002),
+            "alpha": _float(source, "CRFS_ALPHA", 0.002, ALPHA_PRECISION),
         }
         values.update({k: v for k, v in overrides.items() if v is not None})
         return cls(**values)  # type: ignore[arg-type]
@@ -235,11 +238,13 @@ def _int(source: Mapping[str, str], name: str, default: int) -> int:
         raise ConfigError(msg) from exc
 
 
-def _float(source: Mapping[str, str], name: str, default: float) -> float:
+def _float(source: Mapping[str, str], name: str, default: float, ndigits: int | None = None) -> float:
     raw = (source.get(name) or "").strip()
     if not raw:
         return default
     try:
+        if round is not None and round > 0:
+            return round(float(raw), ndigits)
         return float(raw)
     except ValueError as exc:
         msg = f"{name} must be a number, got {raw!r}"
