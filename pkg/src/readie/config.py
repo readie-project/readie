@@ -50,13 +50,12 @@ class Settings:
         "READIE_AUTH_TOKEN") or "", init=False)
     """Bearer token sent to a router that requires one. Empty sends none."""
 
-    tls: bool = field(default_factory=lambda: _bool(
-        "READIE_TLS", default=False), init=False)
-    """Connect over TLS. Implied by ``tls_ca``. Off means plaintext."""
+    tls: bool = True
+    """Connect over TLS. Implied by ``tls_ca``. Off means plaintext. Required for HTTPS."""
 
     tls_ca: str = field(default_factory=lambda: os.environ.get(
         "READIE_TLS_CA") or "", init=False)
-    """Path to a PEM CA bundle that verifies the router. Empty uses TLS with the
+    """Path to a PEM CA bundle that verifies the nginx server. Empty uses TLS with the
     system roots (when ``tls`` is on)."""
 
     @property
@@ -68,6 +67,12 @@ class Settings:
         """Reject settings that would fail later, and more confusingly."""
         if not self.router_uri:
             msg = "router_uri is required; set READIE_ROUTER_URI or pass it explicitly"
+            raise ConfigurationError(msg)
+        if self.router_uri.startswith("https://") and not self.use_tls:
+            msg = (
+                "TLS is required when router is on HTTPS; "
+                "set tls to True or add a READIE_TLS_CA to enable TLS"
+            )
             raise ConfigurationError(msg)
         if self.chunk_size <= 0:
             msg = f"chunk_size must be positive, got {self.chunk_size}"

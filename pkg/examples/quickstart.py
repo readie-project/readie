@@ -10,7 +10,7 @@ import asyncio
 import readie
 from readie import remote
 
-readie.configure(router_uri="localhost:50051")
+readie.configure(router_uri="localhost:50051", tls=False)  # no TLS for local
 
 @remote
 def add(a: int, b: int) -> int:

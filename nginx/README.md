@@ -210,8 +210,8 @@ Example Python setup:
 import os
 import grpc
 
-endpoint = os.getenv("READIE_GRPC_ENDPOINT", "localhost:50051")
-tls = os.getenv("READIE_GRPC_TLS", "false").lower() == "true"
+endpoint = os.getenv("READIE_ROUTER_URI", "localhost:50051")
+tls = os.getenv("READIE_TLS", "false").lower() == "true"
 
 if tls:
     channel = grpc.secure_channel(

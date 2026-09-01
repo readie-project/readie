@@ -49,7 +49,7 @@ Configuration options:
 ```python
 import readie
 
-readie.configure(router_uri="localhost:50051", timeout=120.0, stream_logs=True)
+readie.configure(router_uri="localhost:50051", timeout=120.0, stream_logs=True, tls=False)
 ```
 
 The following are configurable only from the environment:
@@ -57,7 +57,8 @@ The following are configurable only from the environment:
 | | |
 |---|---|
 | `READIE_AUTH_TOKEN` | bearer token for a router that requires one; unset sends none |
-| `READIE_TLS`, `READIE_TLS_CA` | connect over TLS; a CA path verifies the router, else system roots |
+| `READIE_TLS_CA` | connect over TLS; a CA path verifies the nginx server, 
+else system roots. TLS is required for HTTPS router URIs |
 
 ## When a remote function raises
 

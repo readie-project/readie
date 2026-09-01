@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import grpc
+import pytest
 
 from readie._channels import channel_credentials
 from readie.config import Settings
 from readie.transport import _auth_metadata
+from readie.errors import ConfigurationError
 
 
 def test_no_token_sends_no_metadata() -> None:
@@ -29,3 +31,7 @@ def test_tls_produces_channel_credentials() -> None:
 def test_a_ca_path_implies_tls() -> None:
     # tls_ca alone turns TLS on, without needing tls=True as well.
     assert Settings(tls_ca="/dev/null").use_tls
+
+def test_router_uri_with_https_has_tls_required() -> None:
+    with pytest.raises(ConfigurationError, match="TLS is required when router is on HTTPS"):
+        Settings(router_uri="https://example.com", tls=False)
