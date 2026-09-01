@@ -1,4 +1,11 @@
 services:
+    nginx:
+        image: nginx:alpine
+        container_name: nginx
+        depends_on:
+            router:
+                condition: service_healthy
+        restart: unless-stopped
     router:
         build:
             context: ./router
@@ -6,8 +13,6 @@ services:
                 nofile:
                     soft: 65536
                     hard: 65536
-        ports:
-            - "50051:50051"
         container_name: router
         environment:
             # Where the per-flavor <flavor>.json catalogues are mounted (below).
@@ -57,8 +62,6 @@ services:
         # exactly what emulation sits in the middle of. This will not run on an
         # Apple Silicon machine.
         platform: linux/amd64
-        ports:
-            - "50052:50052"
         container_name: worker
         environment:
             LOG_LEVEL: debug

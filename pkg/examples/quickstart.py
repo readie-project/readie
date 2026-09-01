@@ -1,14 +1,16 @@
 """Run a function on a worker.
 
-READIE_ROUTER_URI=localhost:50051 uv run python examples/quickstart.py
+uv run python examples/quickstart.py
 """
 
 from __future__ import annotations
 
 import asyncio
 
+import readie
 from readie import remote
 
+readie.configure(router_uri="localhost:50051")
 
 @remote
 def add(a: int, b: int) -> int:

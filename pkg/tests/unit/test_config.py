@@ -17,8 +17,6 @@ def test_defaults_are_usable() -> None:
 
 
 def test_an_empty_router_uri_fails_at_construction() -> None:
-    # The old client passed os.environ.get("ROUTER_URI") -- possibly None --
-    # straight into insecure_channel, so a missing variable surfaced far away.
     with pytest.raises(ConfigurationError, match="router_uri is required"):
         Settings(router_uri="")
 

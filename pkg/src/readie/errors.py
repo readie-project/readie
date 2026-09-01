@@ -16,10 +16,7 @@ class ReadieError(Exception):
 class ConfigurationError(ReadieError):
     """The client was configured with something unusable.
 
-    Raised at construction rather than at call time. The previous client passed
-    an unvalidated ``os.environ.get("ROUTER_URI")`` -- possibly ``None`` -- into
-    ``insecure_channel``, so a missing variable surfaced much later as an
-    unrelated-looking TypeError.
+    Raised at construction rather than at call time.
     """
 
 

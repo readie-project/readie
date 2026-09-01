@@ -46,7 +46,8 @@ the router serialises the calls within one.
 
 |                          | Language     |                                                                    |
 | ------------------------ | ------------ | ------------------------------------------------------------------ |
-| [`router/`](router/)     | Python 3.13  | Placement, the cluster registry, the client-facing proxy           |
+| [`nginx/`](nginx/)     | NGINX  | Client-facing proxy
+| [`router/`](router/)     | Python 3.13  | Placement, the cluster registry
 | [`worker/`](worker/)     | Go           | Sandbox lifecycle, checkpoint/restore, executor I/O                |
 | [`executor/`](executor/) | Python 3.11+ | Runs _inside_ every sandbox; unpickles and calls the function      |
 | [`pkg/`](pkg/)           | Python 3.11+ | `readie-client`, the `@remote` SDK users import                    |
@@ -90,16 +91,34 @@ build is the only way to put a rootfs and checkpoints together.
 ## Running it
 
 Docker Compose is the whole runtime story. No other tooling is needed to stand
-the system up.
+the system up. The router is always accessed through NGINX rather than being exposed directly.
+
+Local:
 
 ```sh
-docker compose up -d --build   # router on 50051, worker on 50052
+docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.local.yml \
+    up -d --build
 docker compose logs -f router
 docker compose down --remove-orphans
 ```
 
-Point a client at `localhost:50051` with `READIE_ROUTER_URI` and it will reach the
-router.
+Production:
+
+```sh
+docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    up -d --build
+docker compose logs -f router
+docker compose down --remove-orphans
+```
+
+See `nginx/README.md` for the NGINX configuration, TLS certificates, DNS setup, and troubleshooting.
+
+Point the client's `router_uri` at `localhost:50051` and it will reach 
+the router when running locally.
 
 One prerequisite the router does not have: the worker is built `FROM
 readie-worker-base:latest`, the image carrying runsc, the root filesystem and the

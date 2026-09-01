@@ -112,7 +112,6 @@ def test_importing_readie_opens_no_connection_and_needs_no_router(
 ) -> None:
     # A module of @remote definitions must import as fast as one without them.
     monkeypatch.delenv("READIE_ROUTER_URI", raising=False)
-    monkeypatch.delenv("ROUTER_URI", raising=False)
     module = importlib.reload(importlib.import_module("readie.decorator"))
     assert module._default is None
 

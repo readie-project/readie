@@ -7,7 +7,8 @@ Five, each with its own build, its own tests, and its own entry in CI. The root
 
 | | Language | What it is |
 |---|---|---|
-| [`router/`](router/) | Python 3.13 | Placement, the cluster registry, the client-facing proxy |
+| [`nginx/`](nginx/) | NGINX | Client-facing proxy |
+| [`router/`](router/) | Python 3.13 | Placement, the cluster registry |
 | [`worker/`](worker/) | Go | Sandbox lifecycle, checkpoint/restore, executor I/O |
 | [`executor/`](executor/) | Python 3.11+ | Runs *inside* every sandbox; unpickles and calls the function |
 | [`pkg/`](pkg/) | Python 3.11+ | `readie-client`, the `@remote` SDK users import |

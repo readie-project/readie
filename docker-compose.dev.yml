@@ -1,0 +1,6 @@
+services:
+    nginx:
+        ports:
+            - "50051:50051"
+        volumes:
+            - ./nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
