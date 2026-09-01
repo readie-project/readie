@@ -19,7 +19,7 @@ Python client ──→ localhost:50051
 
 
                   Production
-Python client ──→ readie.azurevm.io:443
+Python client ──→ <public_hostname>:443
                        │
                   TLS / HTTP2
                        │
@@ -127,13 +127,13 @@ Obtain a certificate:
 
 ```bash
 sudo certbot certonly --standalone \
-    -d readie.azurevm.io
+    -d <public_hostname>
 ```
 
 Certbot will create the certificate under:
 
 ```text
-/etc/letsencrypt/live/readie.azurevm.io/
+/etc/letsencrypt/live/<public_hostname>/
 ```
 
 The important files are:
@@ -251,9 +251,9 @@ docker compose logs router
 
 If the client cannot connect in production, verify:
 
-1. `readie.azurevm.io` resolves to the VM.
+1. `<public_hostname>` resolves to the VM.
 2. Azure allows inbound TCP `443`.
-3. The TLS certificate is valid for `readie.azurevm.io`.
+3. The TLS certificate is valid for `<public_hostname>`.
 4. NGINX is listening on port `443`.
 5. The router is healthy.
 6. NGINX can reach `router:50051`.
