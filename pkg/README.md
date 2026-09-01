@@ -44,24 +44,18 @@ make test      # unit + in-process gRPC integration tests
 make lint type # ruff + mypy --strict
 ```
 
-Configure explicitly, which takes precedence over the environment:
+Configuration options:
 
 ```python
 import readie
 
-readie.configure(router_uri="router:50051", timeout=120.0)
+readie.configure(router_uri="router:50051", timeout=120.0, stream_logs=True)
 ```
 
-Or from the environment, read by `Settings.from_env` when a client is built
-without arguments:
+The following are configurable only from the environment:
 
 | | |
 |---|---|
-| `READIE_ROUTER_URI` | `host:port` of the router (default `localhost:50051`). `ROUTER_URI` is accepted as a fallback |
-| `READIE_TIMEOUT` | deadline for a whole call, in seconds; unset means no deadline |
-| `READIE_CHUNK_SIZE` | payload bytes per stream message (default 1 MiB) |
-| `READIE_MAX_MESSAGE_BYTES` | gRPC message cap (default 16 MiB); must exceed `READIE_CHUNK_SIZE` |
-| `READIE_STREAM_LOGS` | print stdout and stderr from the remote function when it completes (default on) |
 | `READIE_AUTH_TOKEN` | bearer token for a router that requires one; unset sends none |
 | `READIE_TLS`, `READIE_TLS_CA` | connect over TLS; a CA path verifies the router, else system roots |
 

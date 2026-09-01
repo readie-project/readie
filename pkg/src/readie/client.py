@@ -91,7 +91,7 @@ class Client:
         async_transport: AsyncTransport | None = None,
         log_sink: Callable[[str], None] | None = None,
     ) -> None:
-        self.settings = settings or Settings.from_env()
+        self.settings = settings or Settings()
         self._codec = codec or CloudpickleCodec()
         self._log_sink = log_sink if log_sink is not None else _default_log_sink
         self._closed = False

@@ -8,14 +8,22 @@ dependency the user did not ask for. Validation is explicit in ``__post_init__``
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from readie.errors import ConfigurationError
 
 DEFAULT_ROUTER_URI = "localhost:50051"
-DEFAULT_CHUNK_SIZE = 1024 * 1024
-DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+DEFAULT_TIMEOUT = None
+DEFAULT_STREAM_LOGS = True
+CHUNK_SIZE = 1024 * 1024
+MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+
+
+def _bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,25 +33,28 @@ class Settings:
     router_uri: str = DEFAULT_ROUTER_URI
     """host:port of the router's ProxyService."""
 
-    timeout: float | None = None
+    timeout: float | None = DEFAULT_TIMEOUT
     """Deadline for a whole call, in seconds. ``None`` means no deadline."""
 
-    chunk_size: int = DEFAULT_CHUNK_SIZE
+    chunk_size: int = field(default=CHUNK_SIZE, init=False)
     """Payload bytes per stream message. Matches the executor's socket reads."""
 
-    max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES
+    max_message_bytes: int = field(default=MAX_MESSAGE_BYTES, init=False)
     """gRPC message cap. Must exceed ``chunk_size`` with room for the envelope."""
 
-    stream_logs: bool = True
+    stream_logs: bool = DEFAULT_STREAM_LOGS
     """Print executor output as it arrives, instead of only on failure."""
 
-    auth_token: str = ""
+    auth_token: str = field(default_factory=lambda: os.environ.get(
+        "READIE_AUTH_TOKEN") or "", init=False)
     """Bearer token sent to a router that requires one. Empty sends none."""
 
-    tls: bool = False
+    tls: bool = field(default_factory=lambda: _bool(
+        "READIE_TLS", default=False), init=False)
     """Connect over TLS. Implied by ``tls_ca``. Off means plaintext."""
 
-    tls_ca: str = ""
+    tls_ca: str = field(default_factory=lambda: os.environ.get(
+        "READIE_TLS_CA") or "", init=False)
     """Path to a PEM CA bundle that verifies the router. Empty uses TLS with the
     system roots (when ``tls`` is on)."""
 
@@ -69,48 +80,6 @@ class Settings:
         if self.timeout is not None and self.timeout <= 0:
             msg = f"timeout must be positive or None, got {self.timeout}"
             raise ConfigurationError(msg)
-
-    @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
-        """Build settings from ``READIE_*`` variables, falling back to defaults."""
-        source = os.environ if env is None else env
-
-        def _float(name: str, default: float | None) -> float | None:
-            raw = source.get(name)
-            if raw is None or not raw.strip():
-                return default
-            try:
-                return float(raw)
-            except ValueError as exc:
-                msg = f"{name} must be a number, got {raw!r}"
-                raise ConfigurationError(msg) from exc
-
-        def _int(name: str, default: int) -> int:
-            raw = source.get(name)
-            if raw is None or not raw.strip():
-                return default
-            try:
-                return int(raw)
-            except ValueError as exc:
-                msg = f"{name} must be an integer, got {raw!r}"
-                raise ConfigurationError(msg) from exc
-
-        def _bool(name: str, default: bool) -> bool:
-            raw = source.get(name)
-            if raw is None or not raw.strip():
-                return default
-            return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-        # ROUTER_URI without the prefix is what the old client read; accepting it
-        # keeps existing deployments working.
-        uri = source.get("READIE_ROUTER_URI") or source.get("ROUTER_URI") or DEFAULT_ROUTER_URI
-        return cls(
-            router_uri=uri,
-            timeout=_float("READIE_TIMEOUT", None),
-            chunk_size=_int("READIE_CHUNK_SIZE", DEFAULT_CHUNK_SIZE),
-            max_message_bytes=_int("READIE_MAX_MESSAGE_BYTES", DEFAULT_MAX_MESSAGE_BYTES),
-            stream_logs=_bool("READIE_STREAM_LOGS", default=True),
-            auth_token=source.get("READIE_AUTH_TOKEN") or "",
-            tls=_bool("READIE_TLS", default=False),
-            tls_ca=source.get("READIE_TLS_CA") or "",
-        )
+        if self.stream_logs is not None and not isinstance(self.stream_logs, bool):
+            msg = f"stream_logs must be a boolean, got {self.stream_logs}"
+            raise ConfigurationError(msg)
