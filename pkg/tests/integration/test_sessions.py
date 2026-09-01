@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from crfs.client import Client
-from crfs.transport import AsyncGrpcTransport
+from readie.client import Client
+from readie.transport import AsyncGrpcTransport
 from tests.fakes.router import RouterHarness
 
 

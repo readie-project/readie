@@ -7,11 +7,11 @@ PROTO_FILES := execution.proto proxy.proto registry.proto resources.proto
 
 # Router needs all of them (it bridges clients to workers); the client needs the
 # client-facing one plus resources.proto, which proxy.proto imports.
-ROUTER_PKG   := crfs_router.proto
+ROUTER_PKG   := readie_router.proto
 ROUTER_OUT   := router/src
 ROUTER_PROTOS := execution.proto proxy.proto registry.proto resources.proto
 
-CLIENT_PKG    := crfs._proto
+CLIENT_PKG    := readie._proto
 CLIENT_OUT    := pkg/src
 CLIENT_PROTOS := proxy.proto resources.proto
 
@@ -34,9 +34,9 @@ CATALOGUE_DIR   := catalogues
 # The worker's own image is worker/Dockerfile, built from ./worker.
 PIPELINE_DOCKERFILE := pipeline/Dockerfile
 WORKER_DOCKERFILE   := worker/Dockerfile
-PIPELINE_IMAGE  := crfs-pipeline-$(FLAVOR):latest
-WORKER_BASE     := crfs-worker-base-$(FLAVOR):latest
-WORKER_IMAGE    := crfs-worker-$(FLAVOR)
+PIPELINE_IMAGE  := readie-pipeline-$(FLAVOR):latest
+WORKER_BASE     := readie-worker-base-$(FLAVOR):latest
+WORKER_IMAGE    := readie-worker-$(FLAVOR)
 
 # The rootfs base image. A cpu generation uses the plain Kaggle image; a gpu
 # generation passes gcr.io/kaggle-gpu-images/python (CUDA + the GPU stack). The
@@ -55,14 +55,14 @@ TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
 
 # Planner knobs
 # greedy (weighted set cover, the default) | fixed (a configured package set)
-CRFS_PLANNER := greedy
+READIE_PLANNER := greedy
 # Upper bound on how many checkpoints a plan may emit.
-CRFS_MAX_CHECKPOINTS := 15
+READIE_MAX_CHECKPOINTS := 15
 # Total size budget, in MB.
-CRFS_SIZE_BUDGET_MB := 2048.0
+READIE_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
 # more than alpha*size. Default 0.002.
-CRFS_ALPHA := 0.0075
+READIE_ALPHA := 0.0075
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image capture worker-image generation clean-artifacts \
@@ -88,7 +88,7 @@ install: ## Sync every Python virtualenv from its lockfile
 # directly emits a bare `import proxy_pb2`, which only resolves if the package
 # directory happens to be on sys.path. Staging the file at
 # <pkg>/<path>/proxy.proto instead makes it emit
-# `from crfs_router.proto import proxy_pb2`, which resolves properly from an
+# `from readie_router.proto import proxy_pb2`, which resolves properly from an
 # installed package.
 # ---------------------------------------------------------------------------
 protos: protos-python protos-go ## Regenerate all gRPC stubs
@@ -135,8 +135,8 @@ protos-go: ## Regenerate the worker's Go stubs
 	@$(MAKE) --no-print-directory -C worker proto
 
 clean-protos: ## Remove generated Python stubs
-	rm -rf router/src/crfs_router/proto/*_pb2*.py router/src/crfs_router/proto/*.pyi
-	rm -rf pkg/src/crfs/_proto/*_pb2*.py pkg/src/crfs/_proto/*.pyi
+	rm -rf router/src/readie_router/proto/*_pb2*.py router/src/readie_router/proto/*.pyi
+	rm -rf pkg/src/readie/_proto/*_pb2*.py pkg/src/readie/_proto/*.pyi
 
 # ---------------------------------------------------------------------------
 # Generation: capture checkpoints, bake them into the base, put a worker on it.
@@ -185,10 +185,10 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 		--security-opt apparmor=unconfined \
 		--security-opt seccomp=unconfined \
 		-e FLAVOR=$(FLAVOR) \
-		-e CRFS_PLANNER=$(CRFS_PLANNER) \
-		-e CRFS_MAX_CHECKPOINTS=$(CRFS_MAX_CHECKPOINTS) \
-		-e CRFS_SIZE_BUDGET_MB=$(CRFS_SIZE_BUDGET_MB) \
-		-e CRFS_ALPHA=$(CRFS_ALPHA) \
+		-e READIE_PLANNER=$(READIE_PLANNER) \
+		-e READIE_MAX_CHECKPOINTS=$(READIE_MAX_CHECKPOINTS) \
+		-e READIE_SIZE_BUDGET_MB=$(READIE_SIZE_BUDGET_MB) \
+		-e READIE_ALPHA=$(READIE_ALPHA) \
 		-e EXECUTOR_DIR=$(EXECUTOR_DIR) \
 		-v "$(CURDIR)/$(ARTIFACTS_DIR):$(EXECUTOR_DIR)" \
 		$(PIPELINE_IMAGE) capture

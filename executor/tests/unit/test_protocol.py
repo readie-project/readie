@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from crfs_executor.protocol import (
+from readie_executor.protocol import (
     LENGTH_BYTES,
     PROTOCOL_VERSION,
     ProtocolError,

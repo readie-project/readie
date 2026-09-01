@@ -1,5 +1,5 @@
 // Package executor speaks the unix-socket protocol shared with the Python
-// executor in executor/src/crfs_executor/.
+// executor in executor/src/readie_executor/.
 //
 // # Protocol (version 2)
 //

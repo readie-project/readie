@@ -177,7 +177,7 @@ jobs:
         run: docker compose build router
 
       # The worker image is built here in full. It carries no rootfs -- that
-      # arrives through crfs-worker-base -- so with BASE_IMAGE pointed at a stub
+      # arrives through readie-worker-base -- so with BASE_IMAGE pointed at a stub
       # it fits a runner comfortably, and CI exercises the whole file rather than
       # linting it. A stub base has no runsc, which is why worker/Dockerfile
       # deliberately does not verify runsc at build time.
@@ -185,8 +185,8 @@ jobs:
         run: |
           docker build -f worker/Dockerfile ./worker \
             --build-arg BASE_IMAGE=debian:bookworm-slim \
-            --tag crfs-worker:ci
-          docker run --rm crfs-worker:ci sh -c 'test -x /app/go-server && grpcurl --version'
+            --tag readie-worker:ci
+          docker run --rm readie-worker:ci sh -c 'test -x /app/go-server && grpcurl --version'
 
       # pipeline/Dockerfile's targets both embed the ~35 GB executor root
       # filesystem, and a GitHub-hosted runner has about 14 GB of disk, so they
@@ -201,7 +201,7 @@ jobs:
       - name: Check the pipeline images still build
         run: |
           docker build --target ocispec-builder -f pipeline/Dockerfile . \
-            --tag crfs-ocispec:ci
+            --tag readie-ocispec:ci
           docker build --check --target pipeline -f pipeline/Dockerfile .
           docker build --check --target worker-base -f pipeline/Dockerfile .
 

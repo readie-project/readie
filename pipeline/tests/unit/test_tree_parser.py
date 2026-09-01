@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from crfs_pipeline.corpus.tree_parser import analyse, clean
+from readie_pipeline.corpus.tree_parser import analyse, clean
 
 
 def test_imports_are_extracted():

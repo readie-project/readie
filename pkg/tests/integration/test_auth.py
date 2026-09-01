@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from crfs.client import Client
-from crfs.config import Settings
+from readie.client import Client
+from readie.config import Settings
 from tests.fakes.router import RouterHarness
 
 

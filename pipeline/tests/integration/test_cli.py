@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from crfs_pipeline.cli import main
-from crfs_pipeline.corpus.models import Corpus, Request
+from readie_pipeline.cli import main
+from readie_pipeline.corpus.models import Corpus, Request
 
 DATA = Path(__file__).parents[2] / "data"
 
@@ -93,14 +93,14 @@ def test_a_missing_corpus_explains_itself(tmp_path: Path, capsys):
     code = run("--data-dir", str(tmp_path), "--output-dir", str(tmp_path), "plan", "--no-spec")
 
     assert code == 1
-    assert "crfs-pipeline corpus" in capsys.readouterr().err
+    assert "readie-pipeline corpus" in capsys.readouterr().err
 
 
 def test_build_without_a_plan_says_to_plan_first(workspace: Path, capsys):
     code = run("--data-dir", str(DATA), "--output-dir", str(workspace), "build")
 
     assert code == 1
-    assert "run `crfs-pipeline plan` first" in capsys.readouterr().err
+    assert "run `readie-pipeline plan` first" in capsys.readouterr().err
 
 
 def test_capture_plans_before_it_captures(workspace: Path, tmp_path: Path, capsys, monkeypatch):
@@ -126,7 +126,7 @@ def test_capture_plans_before_it_captures(workspace: Path, tmp_path: Path, capsy
     assert code == 1
     err = capsys.readouterr().err
     assert "no-such-ocispec" in err
-    assert "run `crfs-pipeline plan` first" not in err, "capture must plan, not demand a plan"
+    assert "run `readie-pipeline plan` first" not in err, "capture must plan, not demand a plan"
     assert (workspace / "checkpoints.json").is_file()
 
 

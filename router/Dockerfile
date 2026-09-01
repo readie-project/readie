@@ -54,4 +54,4 @@ ENV SERVICE_NAME=router \
 
 EXPOSE 50051
 
-CMD ["python", "-m", "crfs_router"]
+CMD ["python", "-m", "readie_router"]

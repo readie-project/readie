@@ -8,8 +8,8 @@ import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from grpc_reflection.v1alpha import reflection_pb2, reflection_pb2_grpc
 
-from crfs_router.app import App, Deps
-from crfs_router.config import Settings
+from readie_router.app import App, Deps
+from readie_router.config import Settings
 from tests.fakes.worker import FakeWorker
 from tests.integration.conftest import Harness
 

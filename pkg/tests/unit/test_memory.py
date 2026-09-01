@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from crfs._memory import parse_memory
-from crfs.errors import ConfigurationError
+from readie._memory import parse_memory
+from readie.errors import ConfigurationError
 
 
 @pytest.mark.parametrize(

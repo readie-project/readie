@@ -9,10 +9,10 @@ import grpc
 import pytest
 import pytest_asyncio
 
-from crfs_router.app import App, Deps
-from crfs_router.clock import FakeClock
-from crfs_router.config import Settings
-from crfs_router.proto import proxy_pb2_grpc, registry_pb2, registry_pb2_grpc
+from readie_router.app import App, Deps
+from readie_router.clock import FakeClock
+from readie_router.config import Settings
+from readie_router.proto import proxy_pb2_grpc, registry_pb2, registry_pb2_grpc
 from tests.fakes.worker import FakeWorker
 
 

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from crfs_pipeline.corpus.models import Corpus, CorpusError, Request
-from crfs_pipeline.metadata.models import Metadata, MetadataError, PackageFacts, ResourceType
+from readie_pipeline.corpus.models import Corpus, CorpusError, Request
+from readie_pipeline.metadata.models import Metadata, MetadataError, PackageFacts, ResourceType
 
 
 def request(**kwargs: object) -> Request:
@@ -83,7 +83,7 @@ def test_an_empty_corpus_has_no_resources():
 
 
 def test_a_missing_corpus_says_how_to_make_one(tmp_path: Path):
-    with pytest.raises(CorpusError, match="crfs-pipeline corpus"):
+    with pytest.raises(CorpusError, match="readie-pipeline corpus"):
         Corpus.load(tmp_path / "nope.json")
 
 
@@ -154,7 +154,7 @@ def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
 
 
 def test_a_missing_metadata_file_says_how_to_make_one(tmp_path: Path):
-    with pytest.raises(MetadataError, match="crfs-pipeline analyze"):
+    with pytest.raises(MetadataError, match="readie-pipeline analyze"):
         Metadata.load(tmp_path / "nope.json")
 
 

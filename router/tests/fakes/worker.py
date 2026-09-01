@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 
 import grpc
 
-from crfs_router.proto import execution_pb2
-from crfs_router.workers.ports import ExecutionStream
+from readie_router.proto import execution_pb2
+from readie_router.workers.ports import ExecutionStream
 
 
 @dataclass(slots=True)

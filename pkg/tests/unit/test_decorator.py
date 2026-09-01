@@ -8,11 +8,11 @@ from dataclasses import dataclass
 
 import pytest
 
-import crfs
-from crfs.budget import ResourceKind
-from crfs.client import Client
-from crfs.config import Settings
-from crfs.decorator import RemoteFunction, remote
+import readie
+from readie.budget import ResourceKind
+from readie.client import Client
+from readie.config import Settings
+from readie.decorator import RemoteFunction, remote
 from tests.fakes.transport import AsyncRecordingTransport, RecordingTransport
 
 
@@ -43,9 +43,9 @@ def rig() -> Rig:
 
 @pytest.fixture(autouse=True)
 def _no_leaked_default() -> Iterator[None]:
-    crfs.reset()
+    readie.reset()
     yield
-    crfs.reset()
+    readie.reset()
 
 
 def test_the_bare_form_produces_a_remote_function(rig: Rig) -> None:
@@ -100,7 +100,7 @@ async def test_calling_the_blocking_form_from_a_loop_raises_rather_than_hanging(
     def f():
         return None
 
-    with pytest.raises(crfs.BlockingCallInEventLoopError):
+    with pytest.raises(readie.BlockingCallInEventLoopError):
         f()
 
 
@@ -109,7 +109,7 @@ def test_bind_returns_a_copy_and_does_not_mutate_the_shared_decoration(rig: Rig)
     def f():
         return None
 
-    session = crfs.Session("sess-x")
+    session = readie.Session("sess-x")
     bound = f.bind(session)
 
     assert bound is not f
@@ -176,12 +176,12 @@ def test_bind_preserves_the_budgets(rig: Rig) -> None:
     def f():
         return None
 
-    f.bind(crfs.Session("s"))()
+    f.bind(readie.Session("s"))()
     assert rig.sent.last[3][0].alloc == 128 * 1024 * 1024
 
 
 def test_a_bad_memory_size_is_rejected_at_decoration() -> None:
-    with pytest.raises(crfs.ConfigurationError):
+    with pytest.raises(readie.ConfigurationError):
 
         @remote(memory="banana")
         def f():
@@ -189,7 +189,7 @@ def test_a_bad_memory_size_is_rejected_at_decoration() -> None:
 
 
 def test_a_ceiling_below_the_initial_budget_is_rejected() -> None:
-    with pytest.raises(crfs.ConfigurationError, match="at least"):
+    with pytest.raises(readie.ConfigurationError, match="at least"):
 
         @remote(memory="1Gi", max_memory="256Mi")
         def f():
@@ -219,34 +219,34 @@ def test_repr_names_the_function_and_any_session(rig: Rig) -> None:
         return None
 
     assert "f" in repr(f)
-    assert "sess-y" in repr(f.bind(crfs.Session("sess-y")))
+    assert "sess-y" in repr(f.bind(readie.Session("sess-y")))
 
 
 # ---------------------------------------------------------------------------
 # The process-wide default
 # ---------------------------------------------------------------------------
 def test_configure_installs_a_client_the_decorator_picks_up() -> None:
-    installed = crfs.configure(router_uri="somewhere:1234")
-    assert crfs.default_client() is installed
+    installed = readie.configure(router_uri="somewhere:1234")
+    assert readie.default_client() is installed
     assert installed.settings.router_uri == "somewhere:1234"
 
 
 def test_configure_rejects_a_client_and_settings_together(rig: Rig) -> None:
     with pytest.raises(TypeError, match="not both"):
-        crfs.configure(rig.client, router_uri="x:1")
+        readie.configure(rig.client, router_uri="x:1")
 
 
 def test_replacing_the_default_closes_the_previous_one() -> None:
-    first = crfs.configure(router_uri="a:1")
-    crfs.configure(router_uri="b:2")
+    first = readie.configure(router_uri="a:1")
+    readie.configure(router_uri="b:2")
     assert first._closed
 
 
 def test_the_default_is_created_lazily_and_never_at_import() -> None:
-    import crfs.decorator as module
+    import readie.decorator as module
 
     assert module._default is None
-    crfs.default_client()
+    readie.default_client()
     assert module._default is not None
 
 
@@ -256,12 +256,12 @@ def test_an_explicit_client_never_consults_the_default(rig: Rig) -> None:
         return None
 
     f()
-    import crfs.decorator as module
+    import readie.decorator as module
 
     assert module._default is None
 
 
 def test_reset_is_idempotent() -> None:
-    crfs.reset()
-    crfs.reset()
-    assert asyncio.iscoroutinefunction(crfs.Client.acall)
+    readie.reset()
+    readie.reset()
+    assert asyncio.iscoroutinefunction(readie.Client.acall)

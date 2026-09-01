@@ -1,9 +1,9 @@
-# crfs-client
+# readie-client
 
 Run a Python function on a remote checkpoint-restore worker by decorating it.
 
 ```python
-from crfs import remote
+from readie import remote
 
 
 @remote
@@ -47,9 +47,9 @@ make lint type # ruff + mypy --strict
 Configure explicitly, which takes precedence over the environment:
 
 ```python
-import crfs
+import readie
 
-crfs.configure(router_uri="router:50051", timeout=120.0)
+readie.configure(router_uri="router:50051", timeout=120.0)
 ```
 
 Or from the environment, read by `Settings.from_env` when a client is built
@@ -57,13 +57,13 @@ without arguments:
 
 | | |
 |---|---|
-| `CRFS_ROUTER_URI` | `host:port` of the router (default `localhost:50051`). `ROUTER_URI` is accepted as a fallback |
-| `CRFS_TIMEOUT` | deadline for a whole call, in seconds; unset means no deadline |
-| `CRFS_CHUNK_SIZE` | payload bytes per stream message (default 1 MiB) |
-| `CRFS_MAX_MESSAGE_BYTES` | gRPC message cap (default 16 MiB); must exceed `CRFS_CHUNK_SIZE` |
-| `CRFS_STREAM_LOGS` | print stdout and stderr from the remote function when it completes (default on) |
-| `CRFS_AUTH_TOKEN` | bearer token for a router that requires one; unset sends none |
-| `CRFS_TLS`, `CRFS_TLS_CA` | connect over TLS; a CA path verifies the router, else system roots |
+| `READIE_ROUTER_URI` | `host:port` of the router (default `localhost:50051`). `ROUTER_URI` is accepted as a fallback |
+| `READIE_TIMEOUT` | deadline for a whole call, in seconds; unset means no deadline |
+| `READIE_CHUNK_SIZE` | payload bytes per stream message (default 1 MiB) |
+| `READIE_MAX_MESSAGE_BYTES` | gRPC message cap (default 16 MiB); must exceed `READIE_CHUNK_SIZE` |
+| `READIE_STREAM_LOGS` | print stdout and stderr from the remote function when it completes (default on) |
+| `READIE_AUTH_TOKEN` | bearer token for a router that requires one; unset sends none |
+| `READIE_TLS`, `READIE_TLS_CA` | connect over TLS; a CA path verifies the router, else system roots |
 
 ## When a remote function raises
 
@@ -72,7 +72,7 @@ You get the real traceback, from the process that raised it:
 ```python
 try:
     train()
-except crfs.RemoteExecutionError as error:
+except readie.RemoteExecutionError as error:
     print(error.remote_type)  # "ValueError"
     print(error.remote_traceback)  # the frames inside the sandbox
     print(error.worker_id, error.container_id)
@@ -92,7 +92,7 @@ By default every call is independent and gets a fresh container. To reuse a warm
 container — and the Python state it holds — open a session:
 
 ```python
-with crfs.default_client().session() as s:
+with readie.default_client().session() as s:
     load_data.bind(s)()  # cold start
     train.bind(s)()  # resumes the same interpreter
 ```

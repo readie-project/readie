@@ -11,8 +11,8 @@ exclude: |
   (?x)^(
     .*/\.venv/.*|
     worker/proto/.*|
-    router/src/crfs_router/proto/.*|
-    pkg/src/crfs/_proto/.*|
+    router/src/readie_router/proto/.*|
+    pkg/src/readie/_proto/.*|
     pipeline/data/.*\.json|
     LICENSE
   )$

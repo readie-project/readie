@@ -22,12 +22,12 @@ import (
 // on a development Mac at all.
 
 const (
-	helperEnv       = "CRFS_RUNSC_HELPER"
-	helperArgvFile  = "CRFS_RUNSC_HELPER_ARGV"
-	helperStdout    = "CRFS_RUNSC_HELPER_STDOUT"
-	helperStderr    = "CRFS_RUNSC_HELPER_STDERR"
-	helperExit      = "CRFS_RUNSC_HELPER_EXIT"
-	helperOrphanOut = "CRFS_RUNSC_HELPER_ORPHAN"
+	helperEnv       = "READIE_RUNSC_HELPER"
+	helperArgvFile  = "READIE_RUNSC_HELPER_ARGV"
+	helperStdout    = "READIE_RUNSC_HELPER_STDOUT"
+	helperStderr    = "READIE_RUNSC_HELPER_STDERR"
+	helperExit      = "READIE_RUNSC_HELPER_EXIT"
+	helperOrphanOut = "READIE_RUNSC_HELPER_ORPHAN"
 )
 
 // TestHelperProcess is not a real test: it is the body of the stand-in

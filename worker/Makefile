@@ -66,7 +66,7 @@ tools: ## Install the pinned code-generation and lint tools
 	$(GO) install $(PROTOC_GEN_GO_GRPC)
 	$(GO) install $(GOLANGCI_LINT)
 
-# No `docker` target. `Dockerfile` here is `FROM crfs-worker-base`, so building it
+# No `docker` target. `Dockerfile` here is `FROM readie-worker-base`, so building it
 # means resolving that tag and applying the repository's tagging convention:
 # `make -C .. worker-image` owns both.
 

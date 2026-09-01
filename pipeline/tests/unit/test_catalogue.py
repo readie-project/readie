@@ -6,14 +6,14 @@ import json
 
 import pytest
 
-from crfs_pipeline.catalogue import (
+from readie_pipeline.catalogue import (
     CATALOGUE_VERSION,
     build_catalogue,
     item_key,
     write_catalogue,
 )
-from crfs_pipeline.metadata.models import Metadata, PackageFacts, ResourceType
-from crfs_pipeline.planning.ports import CheckpointPlan
+from readie_pipeline.metadata.models import Metadata, PackageFacts, ResourceType
+from readie_pipeline.planning.ports import CheckpointPlan
 
 
 def _metadata() -> Metadata:

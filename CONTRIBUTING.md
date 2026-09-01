@@ -10,7 +10,7 @@ Five, each with its own build, its own tests, and its own entry in CI. The root
 | [`router/`](router/) | Python 3.13 | Placement, the cluster registry, the client-facing proxy |
 | [`worker/`](worker/) | Go | Sandbox lifecycle, checkpoint/restore, executor I/O |
 | [`executor/`](executor/) | Python 3.11+ | Runs *inside* every sandbox; unpickles and calls the function |
-| [`pkg/`](pkg/) | Python 3.11+ | `crfs-client`, the `@remote` SDK users import |
+| [`pkg/`](pkg/) | Python 3.11+ | `readie-client`, the `@remote` SDK users import |
 | [`pipeline/`](pipeline/) | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
 
 `protos/` is the single source of truth for every wire contract, and
@@ -98,7 +98,7 @@ against the import time it saves, and **the pipeline and the router must use the
 same value**. The pipeline's greedy planner adds a package while it saves more
 than `alpha·size`; the router selects the checkpoint minimising `alpha·size +
 residual load time` — the same quantity. They are separate services, so the value
-lives in each config (`pipeline` `Settings.alpha` / `CRFS_ALPHA`, `router`
+lives in each config (`pipeline` `Settings.alpha` / `READIE_ALPHA`, `router`
 `Settings.alpha` / `ALPHA`), defaulting to `0.002` on both, with a docstring on
 each pointing at the other. Changing one without the other makes the router
 select against a cost the checkpoints were not built for.
@@ -144,7 +144,7 @@ Listed here so nobody "fixes" one by accident:
   placement decision.
 - **The rootfs is the full base image**, regardless of what the planner selects.
   Rebuilding a worker should not mean rebuilding tens of gigabytes, which is why
-  the rootfs lives in `crfs-worker-base` and `worker/Dockerfile` inherits that
+  the rootfs lives in `readie-worker-base` and `worker/Dockerfile` inherits that
   image by tag rather than copying a rootfs in.
 - **Artifacts are baked in, not mounted.** New checkpoints mean a new base image
   (`make generation`) and a new container. One deployable, nothing to mis-mount,

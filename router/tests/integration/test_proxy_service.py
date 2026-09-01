@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 import grpc
 import pytest
 
-from crfs_router.proto import execution_pb2, proxy_pb2, resources_pb2
+from readie_router.proto import execution_pb2, proxy_pb2, resources_pb2
 from tests.fakes.worker import FakeWorker
 from tests.integration.conftest import Harness
 

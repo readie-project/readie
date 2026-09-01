@@ -67,7 +67,7 @@ func testCreateSpec(f *fixture) sandbox.CreateSpec {
 		CPUQuota:    50000,
 		CPUPeriod:   100000,
 		PidsLimit:   100,
-		CgroupsPath: "/crfs/" + testID,
+		CgroupsPath: "/readie/" + testID,
 	}
 }
 
@@ -215,7 +215,7 @@ func TestCreate_WritesTheExecutorContract(t *testing.T) {
 	assert.Equal(t, uint64(100000), *spec.Linux.Resources.CPU.Period)
 	require.NotNil(t, spec.Linux.Resources.Pids)
 	assert.Equal(t, int64(100), *spec.Linux.Resources.Pids.Limit)
-	assert.Equal(t, "/crfs/"+testID, spec.Linux.CgroupsPath)
+	assert.Equal(t, "/readie/"+testID, spec.Linux.CgroupsPath)
 }
 
 func TestCreate_RejectsAnUnusableSpec(t *testing.T) {
@@ -312,14 +312,14 @@ func TestFingerprint_IgnoresWhatVariesPerRequest(t *testing.T) {
 	})
 
 	// Load-bearing, not incidental. The offline pipeline distinguishes one
-	// checkpoint from another purely by CRFS_PREIMPORT in the environment, so
+	// checkpoint from another purely by READIE_PREIMPORT in the environment, so
 	// every checkpoint in a generation has to share a fingerprint or the worker
 	// would refuse all but the one it happened to compute against. Adding env
 	// to the fingerprint would break every existing generation at once and no
 	// other test would notice.
 	t.Run("environment", func(t *testing.T) {
 		spec := testCreateSpec(f)
-		spec.Env = append(append([]string(nil), spec.Env...), "CRFS_PREIMPORT=pandas,numpy")
+		spec.Env = append(append([]string(nil), spec.Env...), "READIE_PREIMPORT=pandas,numpy")
 		other, err := BuildSpec(spec)
 		require.NoError(t, err)
 		assert.Equal(t, want, Fingerprint(other, "root:memory", "none", false),

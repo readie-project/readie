@@ -32,7 +32,7 @@ ARG ROOTFS_BASE_IMAGE=python:3.12-slim
 # ---------------------------------------------------------------------------
 # The executor, built as a wheel rather than copied as a loose file. A wheel
 # carries its own metadata and entry point, so the sandbox runs
-# `python -m crfs_executor` and the rootfs has no idea where the source lived.
+# `python -m readie_executor` and the rootfs has no idea where the source lived.
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim AS executor-wheel
 RUN pip install --no-cache-dir build
@@ -43,7 +43,7 @@ RUN python -m build --wheel --outdir /dist
 # ---------------------------------------------------------------------------
 # The executor root filesystem: the one tree every sandbox runs against and
 # every checkpoint is captured from. Consumed twice below — by the pipeline as
-# an OCI bundle root, and by the worker base at /var/lib/crfs/rootfs.
+# an OCI bundle root, and by the worker base at /var/lib/readie/rootfs.
 # ---------------------------------------------------------------------------
 FROM --platform=${ROOTFS_PLATFORM} ${ROOTFS_BASE_IMAGE} AS rootfs
 
@@ -54,7 +54,7 @@ WORKDIR /tmp/build
 # Export the locked environment (excluding the project itself) as a
 # requirements file and install it into system Python.
 # --frozen guarantees build fails if uv.lock doesn't match pyproject.toml
-# --no-emit-project ensures we only get third-party dependencies, not crfs-executor.
+# --no-emit-project ensures we only get third-party dependencies, not readie-executor.
 RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt > requirements.txt \
     && uv pip install --system --no-cache-dir -r requirements.txt
 
@@ -71,7 +71,7 @@ RUN rm -rf /tmp/build /bin/uv
 # Fail the build rather than the first restore if the entry point is not
 # importable. A rootfs whose executor cannot start produces checkpoints that
 # all fail identically, minutes into a request.
-RUN python -c "import crfs_executor; print('crfs-executor', crfs_executor.__version__)"
+RUN python -c "import readie_executor; print('readie-executor', readie_executor.__version__)"
 
 # ---------------------------------------------------------------------------
 # The OCI spec generator, built from the worker's own spec builder. Using the
@@ -137,7 +137,7 @@ COPY --from=runsc /usr/local/bin/runsc /usr/local/bin/runsc
 RUN runsc --version
 
 # The one root filesystem every sandbox runs against.
-COPY --from=rootfs / /var/lib/crfs/rootfs
+COPY --from=rootfs / /var/lib/readie/rootfs
 
 # ---------------------------------------------------------------------------
 # The capture tool. It analyses the request corpus, decides which package sets
@@ -148,8 +148,8 @@ FROM host-base AS pipeline
 
 WORKDIR /app
 
-# Installed as a package, so the stages are `crfs-pipeline plan` and
-# `crfs-pipeline build` rather than two scripts that execute on import.
+# Installed as a package, so the stages are `readie-pipeline plan` and
+# `readie-pipeline build` rather than two scripts that execute on import.
 # Without the `corpus` extra: generating snippets calls a hosted model and is an
 # authoring step, not part of building checkpoints.
 #
@@ -171,15 +171,15 @@ COPY --from=ocispec-builder /ocispec /usr/local/bin/ocispec
 # from the sandbox's own EXECUTOR_DIR (/tmp, where the executor binds its
 # socket) — conflating the two previously sent the pre-imported executor source
 # to the wrong place, so every checkpoint captured a bare executor.
-ENV BASE_DIR="/var/lib/crfs"
+ENV BASE_DIR="/var/lib/readie"
 ENV EXECUTOR_DIR="/app/executor"
-ENV CRFS_DATA_DIR="/app/data"
+ENV READIE_DATA_DIR="/app/data"
 
 # The plan and the spec fingerprint are inputs to a capture, not artifacts a
 # worker ships. EXECUTOR_DIR is mounted out and then copied into the base image
 # wholesale, so keeping these apart is what stops them being baked into
-# /var/lib/crfs beside the manifest.
-ENV CRFS_PLAN_DIR="/app/plan"
+# /var/lib/readie beside the manifest.
+ENV READIE_PLAN_DIR="/app/plan"
 
 # Must correspond to the rootfs stage above.
 ENV ROOTFS_PYTHONPATH="/lib/python3.12/dist-packages"
@@ -191,7 +191,7 @@ ENV SANDBOX_HOST_UDS="create"
 ENV SANDBOX_OVERLAY="root:memory"
 
 # How long a sandbox may take checkpoint before capture fails.
-ENV CRFS_CHECKPOINT_TIMEOUT="300.0"
+ENV READIE_CHECKPOINT_TIMEOUT="300.0"
 ENV OCISPEC_BINARY="/usr/local/bin/ocispec"
 ENV RUNSC_BINARY="runsc"
 
@@ -199,7 +199,7 @@ ENV RUNSC_BINARY="runsc"
 # time: it writes the bundle's config.json under BASE_DIR, and a `docker run`
 # that mounts EXECUTOR_DIR out is a different container with a different
 # BASE_DIR — so the two stages have to share one.
-ENTRYPOINT ["crfs-pipeline"]
+ENTRYPOINT ["readie-pipeline"]
 CMD ["capture"]
 
 # ---------------------------------------------------------------------------
@@ -223,14 +223,14 @@ CMD ["capture"]
 FROM host-base AS worker-base
 
 # /shared holds per-sandbox directories and OCI bundles, and is the one thing
-# still a volume: it is writable runtime scratch. /run/crfs-runsc is the
+# still a volume: it is writable runtime scratch. /run/readie-runsc is the
 # runtime's state directory, which the worker owns exclusively.
-RUN mkdir -p /shared /run/crfs-runsc /var/log/runsc
+RUN mkdir -p /shared /run/readie-runsc /var/log/runsc
 
-# manifest.json and checkpoints/, produced by `crfs-pipeline capture`.
+# manifest.json and checkpoints/, produced by `readie-pipeline capture`.
 #
 # Empty by default — pipeline/out/ holds only a .gitkeep — so this still yields a
 # working base: rootfs, no checkpoints, every start cold. `make generation`
 # captures first, then builds this.
 ARG ARTIFACTS_DIR=pipeline/out
-COPY ${ARTIFACTS_DIR}/ /var/lib/crfs/
+COPY ${ARTIFACTS_DIR}/ /var/lib/readie/

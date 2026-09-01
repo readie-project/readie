@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
-from crfs.budget import Budget, ResourceKind
-from crfs.client import Client, Session
-from crfs.codec import CloudpickleCodec
-from crfs.config import Settings
-from crfs.errors import (
+from readie.budget import Budget, ResourceKind
+from readie.client import Client, Session
+from readie.codec import CloudpickleCodec
+from readie.config import Settings
+from readie.errors import (
     BlockingCallInEventLoopError,
     ClientClosedError,
     ClusterUnavailableError,

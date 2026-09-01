@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from crfs._ast import analyse
-from crfs.resources import extract_imports
+from readie._ast import analyse
+from readie.resources import extract_imports
 
 
 def test_imports_are_extracted_from_the_function_body() -> None:

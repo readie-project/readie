@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from crfs_executor.protocol import PROTOCOL_VERSION, read_message, write_message
+from readie_executor.protocol import PROTOCOL_VERSION, read_message, write_message
 from tests.fakes import RecordingWriter, ScriptedReader
 
 FIXTURE = Path(__file__).parents[1] / "data" / "frames.golden.json"

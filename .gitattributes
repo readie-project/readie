@@ -5,8 +5,8 @@
 # collapses them by default in review, where a regenerated descriptor otherwise
 # buries the two lines that actually changed.
 worker/proto/*.pb.go              linguist-generated=true
-router/src/crfs_router/proto/*    linguist-generated=true
-pkg/src/crfs/_proto/*             linguist-generated=true
+router/src/readie_router/proto/*    linguist-generated=true
+pkg/src/readie/_proto/*             linguist-generated=true
 
 # Lockfiles are generated and reviewed for their diff summary, not line by line.
 uv.lock                           linguist-generated=true

@@ -8,9 +8,9 @@ import cloudpickle
 import grpc
 import pytest
 
-import crfs
-from crfs.client import Client
-from crfs.config import Settings
+import readie
+from readie.client import Client
+from readie.config import Settings
 from tests.fakes.router import RouterHarness
 
 
@@ -73,7 +73,7 @@ async def test_a_remote_exception_arrives_with_its_real_traceback(
 
     client = Client(Settings(router_uri=harness.uri, stream_logs=False))
     try:
-        with pytest.raises(crfs.RemoteExecutionError) as caught:
+        with pytest.raises(readie.RemoteExecutionError) as caught:
             await client.acall(explode)
     finally:
         await client.aclose()
@@ -95,7 +95,7 @@ async def test_a_worker_that_sends_nothing_at_all_is_an_empty_result(
     client = Client(Settings(router_uri=harness.uri, stream_logs=False))
 
     try:
-        with pytest.raises(crfs.EmptyResultError) as caught:
+        with pytest.raises(readie.EmptyResultError) as caught:
             await client.acall(add, (1, 2))
     finally:
         await client.aclose()
@@ -112,7 +112,7 @@ async def test_a_bare_value_instead_of_an_envelope_names_the_likely_cause(
     client = Client(Settings(router_uri=harness.uri, stream_logs=False))
 
     try:
-        with pytest.raises(crfs.EmptyResultError, match="older protocol"):
+        with pytest.raises(readie.EmptyResultError, match="older protocol"):
             await client.acall(add, (1, 2))
     finally:
         await client.aclose()
@@ -128,7 +128,7 @@ async def test_a_failure_names_the_worker_and_container_that_ran_it(
     client = Client(Settings(router_uri=harness.uri, stream_logs=False))
 
     try:
-        with pytest.raises(crfs.EmptyResultError) as caught:
+        with pytest.raises(readie.EmptyResultError) as caught:
             await client.acall(add, (1, 2))
     finally:
         await client.aclose()
@@ -142,7 +142,7 @@ async def test_success_false_surfaces_as_a_remote_execution_error(harness: Route
     client = Client(Settings(router_uri=harness.uri, stream_logs=False))
 
     try:
-        with pytest.raises(crfs.RemoteExecutionError):
+        with pytest.raises(readie.RemoteExecutionError):
             await client.acall(add, (1, 2))
     finally:
         await client.aclose()
@@ -151,17 +151,17 @@ async def test_success_false_surfaces_as_a_remote_execution_error(harness: Route
 @pytest.mark.parametrize(
     ("code", "expected"),
     [
-        (grpc.StatusCode.UNAVAILABLE, crfs.ClusterUnavailableError),
-        (grpc.StatusCode.INVALID_ARGUMENT, crfs.InvalidRequestError),
-        (grpc.StatusCode.RESOURCE_EXHAUSTED, crfs.ResourceExhaustedError),
-        (grpc.StatusCode.PERMISSION_DENIED, crfs.PermissionDeniedError),
-        (grpc.StatusCode.INTERNAL, crfs.TransportError),
+        (grpc.StatusCode.UNAVAILABLE, readie.ClusterUnavailableError),
+        (grpc.StatusCode.INVALID_ARGUMENT, readie.InvalidRequestError),
+        (grpc.StatusCode.RESOURCE_EXHAUSTED, readie.ResourceExhaustedError),
+        (grpc.StatusCode.PERMISSION_DENIED, readie.PermissionDeniedError),
+        (grpc.StatusCode.INTERNAL, readie.TransportError),
     ],
 )
 async def test_status_codes_map_onto_the_error_hierarchy(
     harness: RouterHarness,
     code: grpc.StatusCode,
-    expected: type[crfs.TransportError],
+    expected: type[readie.TransportError],
 ) -> None:
     harness.router.abort_with = (code, "refused")
     client = Client(Settings(router_uri=harness.uri, stream_logs=False))
@@ -182,7 +182,7 @@ async def test_an_empty_cluster_reads_as_unavailable_with_a_useful_message(
     client = Client(Settings(router_uri=harness.uri, stream_logs=False))
 
     try:
-        with pytest.raises(crfs.ClusterUnavailableError, match="no worker with capacity"):
+        with pytest.raises(readie.ClusterUnavailableError, match="no worker with capacity"):
             await client.acall(add, (1, 2))
     finally:
         await client.aclose()
@@ -191,7 +191,7 @@ async def test_an_empty_cluster_reads_as_unavailable_with_a_useful_message(
 async def test_an_unreachable_router_is_unavailable_not_a_raw_grpc_error() -> None:
     client = Client(Settings(router_uri="127.0.0.1:1", timeout=2.0, stream_logs=False))
     try:
-        with pytest.raises(crfs.ClusterUnavailableError):
+        with pytest.raises(readie.ClusterUnavailableError):
             await client.acall(add, (1, 2))
     finally:
         await client.aclose()
@@ -202,7 +202,7 @@ async def test_a_deadline_is_enforced_and_reported(harness: RouterHarness) -> No
     client = Client(Settings(router_uri=harness.uri, timeout=0.3, stream_logs=False))
 
     try:
-        with pytest.raises(crfs.RemoteTimeoutError):
+        with pytest.raises(readie.RemoteTimeoutError):
             await client.acall(add, (1, 2))
     finally:
         await client.aclose()

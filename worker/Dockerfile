@@ -1,7 +1,7 @@
 # The worker: a Go server that drives runsc, on a base that carries everything a
 # checkpoint's validity is bound to.
 #
-# The split is along that line. `crfs-worker-base` — built by
+# The split is along that line. `readie-worker-base` — built by
 # ../pipeline/Dockerfile — holds the pinned runsc, the root filesystem, and the
 # checkpoints captured against it. This file adds only what is independent of all
 # of that: the Go binary and grpcurl. So a worker code change rebuilds a Go binary
@@ -18,7 +18,7 @@
 # Declared before the first FROM so it can be used in one. Overridable so CI can
 # build this file against a stub base — it needs no rootfs to prove the image
 # assembles — and so a deployment can pull a published base by digest.
-ARG BASE_IMAGE=crfs-worker-base:latest
+ARG BASE_IMAGE=readie-worker-base:latest
 
 FROM golang:1.25-bookworm AS go-builder
 
@@ -71,7 +71,7 @@ ENV PORT=50052
 ENV WORKER_DIR=/shared
 ENV ROUTER_URI=router:50051
 ENV RUNSC_BINARY=/usr/local/bin/runsc
-ENV RUNSC_ROOT=/run/crfs-runsc
+ENV RUNSC_ROOT=/run/readie-runsc
 ENV WORKER_FLAVOR=${WORKER_FLAVOR}
 ENV APP_ENV=production
 ENV LOG_LEVEL=info

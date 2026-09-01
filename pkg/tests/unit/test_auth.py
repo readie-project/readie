@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import grpc
 
-from crfs._channels import channel_credentials
-from crfs.config import Settings
-from crfs.transport import _auth_metadata
+from readie._channels import channel_credentials
+from readie.config import Settings
+from readie.transport import _auth_metadata
 
 
 def test_no_token_sends_no_metadata() -> None:

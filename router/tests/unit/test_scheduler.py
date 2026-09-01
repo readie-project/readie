@@ -10,10 +10,10 @@ from typing import Any
 
 import pytest
 
-from crfs_router.clock import FakeClock
-from crfs_router.errors import NoCapacityError, NoWorkersRegisteredError
-from crfs_router.scheduling.catalogue import Catalogue
-from crfs_router.scheduling.models import (
+from readie_router.clock import FakeClock
+from readie_router.errors import NoCapacityError, NoWorkersRegisteredError
+from readie_router.scheduling.catalogue import Catalogue
+from readie_router.scheduling.models import (
     RESOURCE_GPU_MEMORY,
     RESOURCE_MEMORY,
     STATUS_BUSY,
@@ -25,9 +25,9 @@ from crfs_router.scheduling.models import (
     Outcome,
     Placement,
 )
-from crfs_router.scheduling.policy import default_selector
-from crfs_router.scheduling.scheduler import ProvisionRequest, Scheduler
-from crfs_router.scheduling.state import ClusterState
+from readie_router.scheduling.policy import default_selector
+from readie_router.scheduling.scheduler import ProvisionRequest, Scheduler
+from readie_router.scheduling.state import ClusterState
 
 ALLOC = 512 * 1024 * 1024
 

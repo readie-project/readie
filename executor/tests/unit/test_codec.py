@@ -5,7 +5,7 @@ from __future__ import annotations
 import cloudpickle
 import pytest
 
-from crfs_executor.codec import DecodeError, decode_call, encode_result
+from readie_executor.codec import DecodeError, decode_call, encode_result
 
 
 def add(a: int, b: int) -> int:
@@ -37,7 +37,7 @@ def test_a_closure_survives_the_round_trip():
 
 
 def test_the_exact_three_key_shape_is_the_contract():
-    # pkg/src/crfs/codec.py writes these three keys. If either side renames one
+    # pkg/src/readie/codec.py writes these three keys. If either side renames one
     # the system stops working and nothing else notices.
     loaded = cloudpickle.loads(encode({"func": add, "args": (1, 1), "kwargs": {}}))
     assert set(loaded) == {"func", "args", "kwargs"}

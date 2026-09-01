@@ -29,10 +29,10 @@ cover: ## Run tests with a coverage report
 	$(UV) run pytest --cov --cov-report=term-missing --cov-report=html
 
 run: ## Run the router from source
-	$(UV) run python -m crfs_router
+	$(UV) run python -m readie_router
 
 docker: ## Build the router image
-	docker build -t crfs-router:latest .
+	docker build -t readie-router:latest .
 
 clean: ## Remove build and test artefacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist

@@ -14,15 +14,15 @@ from types import ModuleType
 
 import pytest
 
-import crfs
-from crfs import protocol
-from crfs._proto import resources_pb2
-from crfs.budget import ResourceKind
-from crfs.client import Client
-from crfs.codec import CloudpickleCodec, ResultCodec
-from crfs.transport import AsyncGrpcTransport, AsyncTransport, GrpcTransport, Transport
+import readie
+from readie import protocol
+from readie._proto import resources_pb2
+from readie.budget import ResourceKind
+from readie.client import Client
+from readie.codec import CloudpickleCodec, ResultCodec
+from readie.transport import AsyncGrpcTransport, AsyncTransport, GrpcTransport, Transport
 
-PACKAGE = "crfs"
+PACKAGE = "readie"
 
 
 def modules() -> Iterator[ModuleType]:
@@ -35,24 +35,24 @@ def modules() -> Iterator[ModuleType]:
 
 
 def test_the_public_surface_is_exactly_what_all_declares() -> None:
-    # Submodule names bound by `from crfs.x import y` are not public surface,
+    # Submodule names bound by `from readie.x import y` are not public surface,
     # and neither is the `annotations` future import.
     hidden = {m.__name__.rsplit(".", 1)[1] for m in modules()} | {"annotations"}
-    exported = {name for name in dir(crfs) if not name.startswith("_") or name == "__version__"}
-    assert exported - hidden == set(crfs.__all__)
+    exported = {name for name in dir(readie) if not name.startswith("_") or name == "__version__"}
+    assert exported - hidden == set(readie.__all__)
 
 
 def test_everything_in_all_actually_exists() -> None:
-    for name in crfs.__all__:
-        assert hasattr(crfs, name), name
+    for name in readie.__all__:
+        assert hasattr(readie, name), name
 
 
 def test_all_is_sorted() -> None:
-    assert crfs.__all__ == sorted(crfs.__all__)
+    assert readie.__all__ == sorted(readie.__all__)
 
 
 def test_the_only_module_level_mutable_state_is_the_documented_default_client() -> None:
-    # `_default` in crfs.decorator is deliberate and documented. Anything else
+    # `_default` in readie.decorator is deliberate and documented. Anything else
     # holding a Client, a channel or a transport at module scope is a bug: it
     # makes the package's behaviour depend on import order.
     forbidden = (Client, GrpcTransport, AsyncGrpcTransport)
@@ -60,7 +60,7 @@ def test_the_only_module_level_mutable_state_is_the_documented_default_client() 
     for module in modules():
         for name, value in vars(module).items():
             if isinstance(value, forbidden) and (module.__name__, name) != (
-                "crfs.decorator",
+                "readie.decorator",
                 "_default",
             ):
                 offenders.append(f"{module.__name__}.{name}")
@@ -78,7 +78,7 @@ def test_protocol_never_imports_grpc() -> None:
 def test_resources_never_imports_protobuf() -> None:
     # Import extraction is pure source analysis; keeping protobuf out of it is
     # what lets its tests run with no generated stubs and no wire types.
-    from crfs import resources
+    from readie import resources
 
     assert "_proto" not in inspect.getsource(resources)
 
@@ -107,13 +107,13 @@ def test_the_async_transport_seam_is_actually_awaitable() -> None:
     assert not inspect.iscoroutinefunction(GrpcTransport.execute)
 
 
-def test_importing_crfs_opens_no_connection_and_needs_no_router(
+def test_importing_readie_opens_no_connection_and_needs_no_router(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A module of @remote definitions must import as fast as one without them.
-    monkeypatch.delenv("CRFS_ROUTER_URI", raising=False)
+    monkeypatch.delenv("READIE_ROUTER_URI", raising=False)
     monkeypatch.delenv("ROUTER_URI", raising=False)
-    module = importlib.reload(importlib.import_module("crfs.decorator"))
+    module = importlib.reload(importlib.import_module("readie.decorator"))
     assert module._default is None
 
 
@@ -123,7 +123,7 @@ def test_every_module_has_a_docstring() -> None:
 
 
 def test_every_public_error_descends_from_the_base() -> None:
-    for name in crfs.__all__:
-        value = getattr(crfs, name)
+    for name in readie.__all__:
+        value = getattr(readie, name)
         if isinstance(value, type) and issubclass(value, Exception):
-            assert issubclass(value, crfs.CrfsError), name
+            assert issubclass(value, readie.ReadieError), name

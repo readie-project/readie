@@ -10,7 +10,7 @@ process with gVisor, and restores that image to serve a request. The restored
 process is already past its imports.
 
 ```python
-from crfs import remote
+from readie import remote
 
 
 @remote
@@ -49,7 +49,7 @@ the router serialises the calls within one.
 | [`router/`](router/) | Python 3.13 | Placement, the cluster registry, the client-facing proxy |
 | [`worker/`](worker/) | Go | Sandbox lifecycle, checkpoint/restore, executor I/O |
 | [`executor/`](executor/) | Python 3.11+ | Runs *inside* every sandbox; unpickles and calls the function |
-| [`pkg/`](pkg/) | Python 3.11+ | `crfs-client`, the `@remote` SDK users import |
+| [`pkg/`](pkg/) | Python 3.11+ | `readie-client`, the `@remote` SDK users import |
 | [`pipeline/`](pipeline/) | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
 
 [`protos/`](protos/) is the single source of truth for every wire contract, and
@@ -98,16 +98,16 @@ docker compose logs -f router
 docker compose down --remove-orphans
 ```
 
-Point a client at `localhost:50051` with `CRFS_ROUTER_URI` and it will reach the
+Point a client at `localhost:50051` with `READIE_ROUTER_URI` and it will reach the
 router.
 
 One prerequisite the router does not have: the worker is built `FROM
-crfs-worker-base:latest`, the image carrying runsc, the root filesystem and the
+readie-worker-base:latest`, the image carrying runsc, the root filesystem and the
 checkpoints. It has to be present or pullable, so `make worker-base` must have run
 once on the machine — `make generation` does it for you. Whether a worker has
 checkpoints to restore is a property of that base, not of the worker image.
 
-Both compose and `make generation` tag `crfs-worker:latest`, which is what makes
+Both compose and `make generation` tag `readie-worker:latest`, which is what makes
 `docker compose up -d` run the image the generation just built.
 
 Only `router` and `worker` are services. `executor` runs *inside* a sandbox the
@@ -134,11 +134,11 @@ To redeploy a worker code change, without recapturing anything:
 
 ```sh
 make worker-image        # a Go build on top of the base; seconds
-docker compose up -d     # recreates the worker on the new crfs-worker:latest
+docker compose up -d     # recreates the worker on the new readie-worker:latest
 ```
 
 That is cheap because the worker image is only the Go server and grpcurl; the
-rootfs and the checkpoints are inherited from `crfs-worker-base` untouched. See
+rootfs and the checkpoints are inherited from `readie-worker-base` untouched. See
 [`worker/README.md`](worker/README.md#the-two-images).
 
 ## Building checkpoints
@@ -147,7 +147,7 @@ Offline, and separate from serving. One command captures checkpoints, bakes them
 into the base image beside the root filesystem, and puts a worker on top:
 
 ```sh
-make generation                     # tags crfs-worker:<timestamp> and :latest
+make generation                     # tags readie-worker:<timestamp> and :latest
 make generation TAG=my-experiment
 ```
 
@@ -243,7 +243,7 @@ Not built. Each of these is a real gap, not an oversight:
 - **Authentication and transport security are opt-in, and off by default.** The
   router can require a bearer token on `ProxyService` (the only path that runs
   code) and serve TLS — set `AUTH_TOKEN` / `TLS_CERT_FILE` on the router and the
-  matching `CRFS_AUTH_TOKEN` / `CRFS_TLS` on the client. Unset, everything is
+  matching `READIE_AUTH_TOKEN` / `READIE_TLS` on the client. Unset, everything is
   plaintext with no auth, so anything that can reach port 50051 can run code. The
   router↔worker mesh and the worker's own server stay plaintext by design and
   must run on a private network. See [SECURITY.md](SECURITY.md).

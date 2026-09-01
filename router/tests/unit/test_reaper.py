@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from crfs_router.clock import FakeClock
-from crfs_router.scheduling.models import (
+from readie_router.clock import FakeClock
+from readie_router.scheduling.models import (
     RESOURCE_MEMORY,
     STATUS_ERROR,
     STATUS_READY,
@@ -18,10 +18,10 @@ from crfs_router.scheduling.models import (
     Demand,
     Outcome,
 )
-from crfs_router.scheduling.policy import default_selector
-from crfs_router.scheduling.reaper import Reaper, ReaperPolicy
-from crfs_router.scheduling.scheduler import ProvisionRequest, Scheduler
-from crfs_router.scheduling.state import ClusterState
+from readie_router.scheduling.policy import default_selector
+from readie_router.scheduling.reaper import Reaper, ReaperPolicy
+from readie_router.scheduling.scheduler import ProvisionRequest, Scheduler
+from readie_router.scheduling.state import ClusterState
 
 DEMAND = Demand(budgets=(Budget(kind=RESOURCE_MEMORY, alloc=512 * 1024 * 1024),))
 

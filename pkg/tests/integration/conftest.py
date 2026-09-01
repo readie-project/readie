@@ -7,8 +7,8 @@ from collections.abc import AsyncIterator
 import pytest
 import pytest_asyncio
 
-from crfs.client import Client
-from crfs.config import Settings
+from readie.client import Client
+from readie.config import Settings
 from tests.fakes.router import RouterHarness
 
 

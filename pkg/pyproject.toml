@@ -1,5 +1,5 @@
 [project]
-name = "crfs-client"
+name = "readie-client"
 version = "0.1.0"
 description = "Client SDK for running Python functions on checkpoint-restore serverless workers"
 readme = "README.md"
@@ -28,13 +28,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/crfs"]
+packages = ["src/readie"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
-extend-exclude = ["src/crfs/_proto"]
+extend-exclude = ["src/readie/_proto"]
 
 [tool.ruff.lint]
 select = ["F","E","W","I","N","UP","B","A","C4","DTZ","T20","PT","RET","SIM","ARG","PTH","ERA","PL","RUF","ASYNC","S","TID","D"]
@@ -61,16 +61,16 @@ warn_unreachable = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "cloudpickle.*", "crfs._proto.*"]
+module = ["grpc.*", "cloudpickle.*", "readie._proto.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "crfs._proto.*"
+module = "readie._proto.*"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
 # grpcio-tools emits no type information for the generated service module.
-module = ["crfs.transport", "tests.fakes.*"]
+module = ["readie.transport", "tests.fakes.*"]
 disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]
@@ -90,5 +90,5 @@ addopts = "--strict-markers --strict-config -ra"
 filterwarnings = ["error"]
 
 [tool.coverage.run]
-source = ["src/crfs"]
-omit = ["src/crfs/_proto/*"]
+source = ["src/readie"]
+omit = ["src/readie/_proto/*"]

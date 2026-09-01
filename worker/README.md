@@ -68,7 +68,7 @@ The root filesystem and the checkpoints are **baked into the base image** this o
 is built on, at a compiled-in path. Nothing is mounted:
 
 ```
-/var/lib/crfs/
+/var/lib/readie/
 ├── rootfs/                 the one executor root filesystem
 ├── manifest.json           runsc_version, spec_fingerprint, executor_argv,
 │                           executor_protocol, python_path, overlay, network
@@ -89,18 +89,18 @@ a `gen-2026-06/checkpoint_1` reference to disambiguate.
 
 [`Dockerfile`](Dockerfile) here builds only the server. Everything a checkpoint's
 validity is bound to — the pinned runsc, the rootfs, the checkpoints themselves —
-comes from `crfs-worker-base`, which the offline pipeline builds
+comes from `readie-worker-base`, which the offline pipeline builds
 ([`../pipeline/Dockerfile`](../pipeline/Dockerfile)).
 
 ```
-crfs-worker-base            pipeline/Dockerfile --target worker-base
+readie-worker-base            pipeline/Dockerfile --target worker-base
   /usr/local/bin/runsc            pinned GVISOR_RELEASE, same as capture
-  /var/lib/crfs/rootfs
-  /var/lib/crfs/manifest.json
-  /var/lib/crfs/checkpoints/
+  /var/lib/readie/rootfs
+  /var/lib/readie/manifest.json
+  /var/lib/readie/checkpoints/
 
-crfs-worker                 worker/Dockerfile, context ./worker
-  FROM crfs-worker-base
+readie-worker                 worker/Dockerfile, context ./worker
+  FROM readie-worker-base
   /app/go-server
   /usr/local/bin/grpcurl          the compose healthcheck
 ```
@@ -112,22 +112,22 @@ change rebuilds only this image, and that build reaches nothing large:
 
 ```sh
 make worker-image        # a Go build and two small layers; seconds
-docker compose up -d     # recreates the worker on the new crfs-worker:latest
+docker compose up -d     # recreates the worker on the new readie-worker:latest
 ```
 
 No re-capture. The base already holds the rootfs and the checkpoints, and they are
 *inherited* rather than copied, so nothing here touches 26 GB. Two conditions:
-`crfs-worker-base:latest` has to be present (`make -C .. worker-base`) or
+`readie-worker-base:latest` has to be present (`make -C .. worker-base`) or
 pullable, and the worker comes up with whatever checkpoints that base was built
 with. If compose does not notice the new image, add `--force-recreate`.
 
 A whole generation, when the checkpoints themselves should change:
 
 ```sh
-make generation          # capture -> base -> worker; tags crfs-worker:<timestamp>
+make generation          # capture -> base -> worker; tags readie-worker:<timestamp>
 ```
 
-`FROM crfs-worker-base:latest` names a *tag*, and a tag rather than a copy is the
+`FROM readie-worker-base:latest` names a *tag*, and a tag rather than a copy is the
 whole point. `COPY --from=` produces a fresh layer every build: two
 otherwise-identical worker builds were observed to differ in the 25.9 GB rootfs
 layer's digest, so a rebuild would have re-uploaded all of it. A layer inherited
@@ -274,7 +274,7 @@ Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`. `ROUTER_TLS_CA`
 plaintext connection. The router↔worker mesh carries no token — run it privately.
 
 The artifact root is **not** configurable: it is a compiled-in constant
-(`config.ArtifactRoot`, `/var/lib/crfs`) because there is one place a worker
+(`config.ArtifactRoot`, `/var/lib/readie`) because there is one place a worker
 image puts its rootfs and checkpoints, and a settable path invited a deployment
 where the mount and the expectation disagreed. `artifact.Load` still takes a
 root as a parameter, which is how the tests build fixtures in temp directories.

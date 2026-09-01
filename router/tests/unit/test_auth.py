@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from crfs_router.grpcserver.auth import AuthInterceptor, SharedTokenAuthenticator
+from readie_router.grpcserver.auth import AuthInterceptor, SharedTokenAuthenticator
 
 
 def test_shared_token_accepts_the_configured_token() -> None:

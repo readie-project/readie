@@ -387,7 +387,7 @@ func buildTestArtifacts(t *testing.T) (string, container.Artifacts) {
 	require.NoError(t, artifact.WriteManifest(root, artifact.Manifest{
 		RunscVersion:     "runsc version test",
 		SpecFingerprint:  "sha256:test-spec",
-		ExecutorArgv:     []string{"python", "-u", "-m", "crfs_executor"},
+		ExecutorArgv:     []string{"python", "-u", "-m", "readie_executor"},
 		ExecutorProtocol: executor.ProtocolVersion,
 		PythonPath:       "/lib/python3.12/dist-packages",
 		CreatedAt:        time.Now().UTC(),

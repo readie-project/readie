@@ -5,13 +5,13 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-from crfs_executor.preimport import PreimportReport
-from crfs_executor.__main__ import main
+from readie_executor.preimport import PreimportReport
+from readie_executor.__main__ import main
 
 
-@patch("crfs_executor.__main__.preimport")
-@patch("crfs_executor.__main__.trigger_checkpoint")
-@patch("crfs_executor.__main__.ExecutorServer.serve_forever")
+@patch("readie_executor.__main__.preimport")
+@patch("readie_executor.__main__.trigger_checkpoint")
+@patch("readie_executor.__main__.ExecutorServer.serve_forever")
 def test_capture_mode(
     mock_serve, mock_trigger, mock_preimport, tmp_path
 ):
@@ -22,7 +22,7 @@ def test_capture_mode(
         # tmp_path ensures bind() creates a real socket safely
         "EXECUTOR_DIR": str(tmp_path),
         "EXECUTOR_MODE": "capture",
-        "CRFS_PREIMPORT": "math,random",
+        "READIE_PREIMPORT": "math,random",
     }
 
     with patch.dict(os.environ, env, clear=True):
@@ -34,16 +34,16 @@ def test_capture_mode(
     mock_serve.assert_called_once()
 
 
-@patch("crfs_executor.__main__.preimport")
-@patch("crfs_executor.__main__.trigger_checkpoint")
-@patch("crfs_executor.__main__.ExecutorServer.serve_forever")
+@patch("readie_executor.__main__.preimport")
+@patch("readie_executor.__main__.trigger_checkpoint")
+@patch("readie_executor.__main__.ExecutorServer.serve_forever")
 def test_measure_mode(
     mock_serve, mock_trigger, mock_preimport, tmp_path
 ):
     env = {
         "EXECUTOR_DIR": str(tmp_path),
         "EXECUTOR_MODE": "measure",
-        "CRFS_PREIMPORT": "math,random",
+        "READIE_PREIMPORT": "math,random",
     }
 
     with patch.dict(os.environ, env, clear=True):
@@ -57,8 +57,8 @@ def test_measure_mode(
     mock_serve.assert_not_called()
 
 
-@patch("crfs_executor.__main__.preimport")
-@patch("crfs_executor.__main__.ExecutorServer.serve_forever")
+@patch("readie_executor.__main__.preimport")
+@patch("readie_executor.__main__.ExecutorServer.serve_forever")
 def test_default_run_mode(mock_serve, mock_preimport, tmp_path):
     env = {
         "EXECUTOR_DIR": str(tmp_path),

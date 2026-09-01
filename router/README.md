@@ -19,7 +19,7 @@ make help      # list every target
 ## Layout
 
 ```
-src/crfs_router/
+src/readie_router/
 ├── main.py            entry: signals, config, logger, App
 ├── app.py             COMPOSITION ROOT — the only place concrete types are built
 ├── config.py          pydantic-settings

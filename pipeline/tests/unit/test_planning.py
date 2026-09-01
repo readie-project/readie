@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from crfs_pipeline.corpus.models import Corpus, Request
-from crfs_pipeline.metadata.models import Metadata, PackageFacts
-from crfs_pipeline.planning.fixed import FixedPlanner
-from crfs_pipeline.planning.greedy import GreedyPlanner
-from crfs_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
+from readie_pipeline.corpus.models import Corpus, Request
+from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.planning.fixed import FixedPlanner
+from readie_pipeline.planning.greedy import GreedyPlanner
+from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
 
 DATA = Path(__file__).parents[2] / "data"
 

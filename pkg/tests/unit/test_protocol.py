@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from crfs._proto import proxy_pb2
-from crfs.budget import Budget, ResourceKind
-from crfs.errors import EmptyResultError, RemoteExecutionError
-from crfs.protocol import (
+from readie._proto import proxy_pb2
+from readie.budget import Budget, ResourceKind
+from readie.errors import EmptyResultError, RemoteExecutionError
+from readie.protocol import (
     Attribution,
     CallRef,
     Outcome,

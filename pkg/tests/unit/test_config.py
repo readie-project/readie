@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from crfs.config import DEFAULT_ROUTER_URI, Settings
-from crfs.errors import ConfigurationError
+from readie.config import DEFAULT_ROUTER_URI, Settings
+from readie.errors import ConfigurationError
 
 
 def test_defaults_are_usable() -> None:
@@ -46,7 +46,7 @@ def test_settings_are_immutable() -> None:
 
 def test_from_env_reads_the_prefixed_names() -> None:
     settings = Settings.from_env(
-        {"CRFS_ROUTER_URI": "router:50051", "CRFS_TIMEOUT": "12.5", "CRFS_STREAM_LOGS": "no"}
+        {"READIE_ROUTER_URI": "router:50051", "READIE_TIMEOUT": "12.5", "READIE_STREAM_LOGS": "no"}
     )
     assert settings.router_uri == "router:50051"
     assert settings.timeout == 12.5
@@ -58,14 +58,14 @@ def test_from_env_still_accepts_the_old_unprefixed_name() -> None:
 
 
 def test_the_prefixed_name_wins_over_the_old_one() -> None:
-    env = {"ROUTER_URI": "old:1", "CRFS_ROUTER_URI": "new:2"}
+    env = {"ROUTER_URI": "old:1", "READIE_ROUTER_URI": "new:2"}
     assert Settings.from_env(env).router_uri == "new:2"
 
 
 def test_from_env_falls_back_when_a_variable_is_blank() -> None:
-    assert Settings.from_env({"CRFS_ROUTER_URI": "", "CRFS_TIMEOUT": "  "}).timeout is None
+    assert Settings.from_env({"READIE_ROUTER_URI": "", "READIE_TIMEOUT": "  "}).timeout is None
 
 
 def test_an_unparsable_number_is_a_configuration_error() -> None:
-    with pytest.raises(ConfigurationError, match="CRFS_TIMEOUT"):
-        Settings.from_env({"CRFS_TIMEOUT": "soon"})
+    with pytest.raises(ConfigurationError, match="READIE_TIMEOUT"):
+        Settings.from_env({"READIE_TIMEOUT": "soon"})

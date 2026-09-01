@@ -11,8 +11,8 @@ import asyncio
 
 import pytest
 
-from crfs_router.errors import SessionBusyError
-from crfs_router.grpcserver.session_gate import SessionGate
+from readie_router.errors import SessionBusyError
+from readie_router.grpcserver.session_gate import SessionGate
 
 
 async def test_one_session_admits_one_holder_at_a_time() -> None:

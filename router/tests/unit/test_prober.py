@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from crfs_router.clock import FakeClock
-from crfs_router.scheduling.models import STATUS_READY, Affinity
-from crfs_router.scheduling.state import ClusterState
-from crfs_router.workers.prober import WorkerProber
+from readie_router.clock import FakeClock
+from readie_router.scheduling.models import STATUS_READY, Affinity
+from readie_router.scheduling.state import ClusterState
+from readie_router.workers.prober import WorkerProber
 
 
 class ScriptedHealth:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from crfs_pipeline.config import ConfigError, CorpusSettings, Settings
+from readie_pipeline.config import ConfigError, CorpusSettings, Settings
 
 
 def settings(**overrides: object) -> Settings:
@@ -85,19 +85,19 @@ def test_from_env_reads_the_image_defaults():
 def test_explicit_overrides_beat_the_environment():
     # Overrides come from the command line, so they win over what the image
     # baked in.
-    s = Settings.from_env({"CRFS_PLANNER": "fixed"}, planner="greedy")
+    s = Settings.from_env({"READIE_PLANNER": "fixed"}, planner="greedy")
     assert s.planner == "greedy"
 
 
 def test_a_none_override_does_not_erase_an_environment_value():
     # argparse supplies None for every flag the user did not pass.
-    s = Settings.from_env({"CRFS_PLANNER": "fixed"}, planner=None)
+    s = Settings.from_env({"READIE_PLANNER": "fixed"}, planner=None)
     assert s.planner == "fixed"
 
 
 def test_an_unparsable_number_is_a_configuration_error():
-    with pytest.raises(ConfigError, match="CRFS_MAX_CHECKPOINTS"):
-        Settings.from_env({"CRFS_MAX_CHECKPOINTS": "lots"})
+    with pytest.raises(ConfigError, match="READIE_MAX_CHECKPOINTS"):
+        Settings.from_env({"READIE_MAX_CHECKPOINTS": "lots"})
 
 
 def test_corpus_credentials_are_all_required_and_named():

@@ -70,7 +70,7 @@ func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 		CPUQuota:    50000,
 		CPUPeriod:   100000,
 		PidsLimit:   100,
-		CgroupsPath: "/crfs/exec_container-abc",
+		CgroupsPath: "/readie/exec_container-abc",
 	})
 	require.NoError(t, err)
 

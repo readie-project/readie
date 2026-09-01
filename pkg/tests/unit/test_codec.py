@@ -6,8 +6,8 @@ import threading
 
 import pytest
 
-from crfs.codec import CloudpickleCodec
-from crfs.errors import SerializationError
+from readie.codec import CloudpickleCodec
+from readie.errors import SerializationError
 
 
 def add(a: int, b: int) -> int:

@@ -29,7 +29,7 @@ const (
 	pythonPath = "/lib/python3.12/dist-packages"
 )
 
-var executorArgv = []string{"python", "-u", "-m", "crfs_executor"}
+var executorArgv = []string{"python", "-u", "-m", "readie_executor"}
 
 // memAlloc is an allocation carrying a single memory budget of n bytes.
 func memAlloc(n int64) container.Allocation {
@@ -110,7 +110,7 @@ func newFixtureWith(t *testing.T, artifacts container.Artifacts) *fixture {
 			CPUQuota:     50000,
 			CPUPeriod:    100000,
 			PidsLimit:    100,
-			CgroupParent: "/crfs",
+			CgroupParent: "/readie",
 			DirPerm:      0o777,
 		},
 		Log: logging.Discard(),
@@ -166,7 +166,7 @@ func TestAcquire_LocksTheExecutorContract(t *testing.T) {
 	assert.Equal(t, int64(50000), spec.CPUQuota)
 	assert.Equal(t, int64(100000), spec.CPUPeriod)
 	assert.Equal(t, int64(100), spec.PidsLimit)
-	assert.Equal(t, "/crfs/"+h.ID, spec.CgroupsPath)
+	assert.Equal(t, "/readie/"+h.ID, spec.CgroupsPath)
 }
 
 // The bundle carries the sandbox's OCI spec and must not be reachable from
@@ -555,7 +555,7 @@ func TestSpecFromConfig_UsesAShortContainerStopTimeout(t *testing.T) {
 	cfg, err := config.Load(func(k string) string {
 		return map[string]string{
 			"SERVICE_NAME": "worker", "PORT": "50052", "WORKER_DIR": "/shared",
-			"ROUTER_URI": "router:50051", "ARTIFACT_ROOT": "/var/lib/crfs",
+			"ROUTER_URI": "router:50051", "ARTIFACT_ROOT": "/var/lib/readie",
 		}[k]
 	})
 	require.NoError(t, err)

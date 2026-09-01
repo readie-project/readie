@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from crfs_executor.preimport import preimport
+from readie_executor.preimport import preimport
 
 
 def test_real_modules_load():

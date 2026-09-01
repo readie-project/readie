@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from crfs_pipeline.config import EXECUTOR_PROTOCOL
-from crfs_pipeline.manifest import CheckpointMeta, Manifest, write_plan
+from readie_pipeline.config import EXECUTOR_PROTOCOL
+from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 
 
 def manifest(**overrides: Any) -> Manifest:
@@ -25,7 +25,7 @@ def test_the_manifest_records_argv_not_a_path():
     # The executor is an installed wheel, so there is no stable source file to
     # point at. The worker replays this verbatim rather than assembling its own.
     payload = manifest().to_json()
-    assert payload["executor_argv"] == ["python", "-u", "-m", "crfs_executor"]
+    assert payload["executor_argv"] == ["python", "-u", "-m", "readie_executor"]
     assert "executor_entrypoint" not in payload
 
 

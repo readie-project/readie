@@ -47,10 +47,10 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, "router:50051", cfg.RouterURI)
 	// The artifact root is a compiled-in constant rather than configuration:
 	// there is one place a worker image puts its rootfs and checkpoints.
-	assert.Equal(t, "/var/lib/crfs", config.ArtifactRoot)
+	assert.Equal(t, "/var/lib/readie", config.ArtifactRoot)
 
 	assert.Equal(t, "/usr/local/bin/runsc", cfg.RunscBinary)
-	assert.Equal(t, "/run/crfs-runsc", cfg.RunscRoot)
+	assert.Equal(t, "/run/readie-runsc", cfg.RunscRoot)
 	assert.Equal(t, "none", cfg.SandboxNetwork, "executors must not reach the network")
 	assert.Equal(t, "exec_container-", cfg.ContainerNamePrefix)
 	assert.Equal(t, int64(50000), cfg.CPUQuota)

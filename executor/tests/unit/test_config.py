@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from crfs_executor.config import (
+from readie_executor.config import (
     DEFAULT_CHUNK_SIZE,
     ConfigError,
     Settings,
@@ -38,7 +38,7 @@ def test_overrides():
             "EXECUTOR_SOCKET_NAME": "other.sock",
             "EXECUTOR_CHUNK_SIZE": "4096",
             "EXECUTOR_MODE": "capture",
-            "CRFS_PREIMPORT": "pandas,numpy",
+            "READIE_PREIMPORT": "pandas,numpy",
         }
     )
     assert settings.socket_path == "/run/other.sock"

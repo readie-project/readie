@@ -10,9 +10,9 @@ from pathlib import Path
 import cloudpickle
 import pytest
 
-from crfs_executor import protocol
-from crfs_executor.config import Settings
-from crfs_executor.server import ExecutorServer
+from readie_executor import protocol
+from readie_executor.config import Settings
+from readie_executor.server import ExecutorServer
 
 CHUNK = 4096
 
@@ -160,7 +160,7 @@ def sockdir():
     pytest's tmp_path lands under /private/var/folders/... on macOS, which alone
     is most of the 104-byte sun_path budget.
     """
-    with tempfile.TemporaryDirectory(prefix="crfs", dir="/tmp") as d:
+    with tempfile.TemporaryDirectory(prefix="readie", dir="/tmp") as d:
         yield Path(d)
 
 

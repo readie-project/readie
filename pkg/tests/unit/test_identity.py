@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from crfs.identity import new_request_id, new_session_id
+from readie.identity import new_request_id, new_session_id
 
 
 def test_request_ids_are_unique() -> None:

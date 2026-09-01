@@ -141,7 +141,7 @@ func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
 	require.Len(t, specs, 1)
 	spec := specs[0]
 
-	assert.Equal(t, []string{"python", "-u", "-m", "crfs_executor"}, spec.Args,
+	assert.Equal(t, []string{"python", "-u", "-m", "readie_executor"}, spec.Args,
 		"the manifest records argv and the worker replays it verbatim")
 	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/lib/python3.12/dist-packages"}, spec.Env)
 	assert.Equal(t, cpuAlloc, spec.MemoryBytes)

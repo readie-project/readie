@@ -6,8 +6,8 @@ from collections.abc import Callable
 
 import cloudpickle
 
-from crfs.budget import Budget
-from crfs.protocol import Attribution, CallRef, Outcome
+from readie.budget import Budget
+from readie.protocol import Attribution, CallRef, Outcome
 
 # What the client handed the transport: ref, payload, imports, budgets, timeout, gpu.
 Recorded = tuple[CallRef, bytes, tuple[str, ...], tuple[Budget, ...], float | None, bool]

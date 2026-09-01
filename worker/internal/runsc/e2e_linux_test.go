@@ -8,7 +8,7 @@
 //	make test-e2e
 //
 // It needs: Linux/amd64, runsc on PATH, root (or CAP_SYS_ADMIN), and an
-// executor rootfs. Point CRFS_E2E_ROOTFS at one; the suite skips without it.
+// executor rootfs. Point READIE_E2E_ROOTFS at one; the suite skips without it.
 //
 // Each test here settles one specific uncertainty listed in worker/README.md
 // under "Unverified against a real runtime". When one passes, delete the
@@ -33,9 +33,9 @@ import (
 func e2eRootfs(t *testing.T) string {
 	t.Helper()
 
-	rootfs := os.Getenv("CRFS_E2E_ROOTFS")
+	rootfs := os.Getenv("READIE_E2E_ROOTFS")
 	if rootfs == "" {
-		t.Skip("set CRFS_E2E_ROOTFS to an executor rootfs to run the real-runsc suite")
+		t.Skip("set READIE_E2E_ROOTFS to an executor rootfs to run the real-runsc suite")
 	}
 	return rootfs
 }

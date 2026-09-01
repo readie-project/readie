@@ -37,7 +37,7 @@ func validManifest() artifact.Manifest {
 	return artifact.Manifest{
 		RunscVersion:     "runsc version release-20260721.0",
 		SpecFingerprint:  "sha256:spec",
-		ExecutorArgv:     []string{"python", "-u", "-m", "crfs_executor"},
+		ExecutorArgv:     []string{"python", "-u", "-m", "readie_executor"},
 		ExecutorProtocol: executor.ProtocolVersion,
 		PythonPath:       "/lib/python3.12/dist-packages",
 		Overlay:          "root:memory",
@@ -340,13 +340,13 @@ func mustLoadErr(t *testing.T, b *builder) error {
 // assembling one — two generators cannot be kept in agreement by review, and a
 // disagreement restores a checkpoint into a sandbox running a different process.
 func TestArgv_ReturnsTheRecordedCommand(t *testing.T) {
-	m := artifact.Manifest{ExecutorArgv: []string{"python", "-u", "-m", "crfs_executor"}}
+	m := artifact.Manifest{ExecutorArgv: []string{"python", "-u", "-m", "readie_executor"}}
 
-	assert.Equal(t, []string{"python", "-u", "-m", "crfs_executor"}, m.Argv())
+	assert.Equal(t, []string{"python", "-u", "-m", "readie_executor"}, m.Argv())
 }
 
 func TestArgv_ReturnsACopySoACallerCannotMutateTheManifest(t *testing.T) {
-	m := artifact.Manifest{ExecutorArgv: []string{"python", "-m", "crfs_executor"}}
+	m := artifact.Manifest{ExecutorArgv: []string{"python", "-m", "readie_executor"}}
 
 	got := m.Argv()
 	got[0] = "sh"

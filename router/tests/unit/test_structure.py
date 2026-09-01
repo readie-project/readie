@@ -13,19 +13,19 @@ from types import ModuleType
 
 import pytest
 
-import crfs_router
-from crfs_router.proto import registry_pb2, resources_pb2
-from crfs_router.scheduling import models
-from crfs_router.scheduling.scheduler import Scheduler
-from crfs_router.scheduling.state import ClusterState
-from crfs_router.workers.channels import WorkerChannelPool
+import readie_router
+from readie_router.proto import registry_pb2, resources_pb2
+from readie_router.scheduling import models
+from readie_router.scheduling.scheduler import Scheduler
+from readie_router.scheduling.state import ClusterState
+from readie_router.workers.channels import WorkerChannelPool
 
 
 def _modules() -> list[ModuleType]:
     """Import every module in the package except the generated stubs."""
     found = []
-    for info in pkgutil.walk_packages(crfs_router.__path__, "crfs_router."):
-        if info.name.startswith("crfs_router.proto"):
+    for info in pkgutil.walk_packages(readie_router.__path__, "readie_router."):
+        if info.name.startswith("readie_router.proto"):
             continue
         found.append(importlib.import_module(info.name))
     return found
@@ -64,8 +64,8 @@ def test_the_domain_never_awaits(cls: type) -> None:
 
 def test_the_domain_does_not_import_grpc() -> None:
     """`scheduling/` must stay testable with no event loop and no transport."""
-    for info in pkgutil.walk_packages(crfs_router.__path__, "crfs_router."):
-        if not info.name.startswith("crfs_router.scheduling"):
+    for info in pkgutil.walk_packages(readie_router.__path__, "readie_router."):
+        if not info.name.startswith("readie_router.scheduling"):
             continue
         source = inspect.getsource(importlib.import_module(info.name))
         assert "import grpc" not in source, f"{info.name} imports grpc"

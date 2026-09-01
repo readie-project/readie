@@ -8,7 +8,7 @@ read [`CONTRIBUTING.md`](CONTRIBUTING.md) and each component's `README.md`.
 ## What this is
 
 A checkpoint/restore system for serverless Python. A user decorates a function
-with `@remote` (the `crfs` client in `pkg/`); the **router** places the call; a Go
+with `@remote` (the `readie` client in `pkg/`); the **router** places the call; a Go
 **worker** restores a gVisor (runsc) checkpoint and runs the function inside the
 sandbox via an in-sandbox **executor**. The **pipeline** builds those checkpoints
 offline. Everything talks gRPC over contracts in `protos/`.
@@ -20,7 +20,7 @@ offline. Everything talks gRPC over contracts in `protos/`.
 | `router/` | Python 3.13 | Placement, cluster registry, client-facing proxy |
 | `worker/` | Go 1.25 | Sandbox lifecycle, checkpoint/restore, executor I/O |
 | `executor/` | Python 3.11+ | Runs *inside* every sandbox; unpickles and calls the function |
-| `pkg/` | Python 3.11+ | `crfs-client`, the `@remote` SDK (imported as `crfs`) |
+| `pkg/` | Python 3.11+ | `readie-client`, the `@remote` SDK (imported as `readie`) |
 | `pipeline/` | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
 | `protos/` | protobuf | Wire contracts: `execution`, `proxy`, `registry`, `resources` |
 
@@ -57,7 +57,7 @@ Most tests use fakes and run anywhere (see gVisor note below).
   `make test-e2e` need a real amd64 gVisor host and won't run on Apple Silicon or
   in CI. Regular `make test` substitutes fakes and runs anywhere.
 - **The `alpha` cost constant (0.002) is shared** and must match between the
-  pipeline (`CRFS_ALPHA`) and the router (`ALPHA`).
+  pipeline (`READIE_ALPHA`) and the router (`ALPHA`).
 - **The executor wire protocol is dual-implemented** — Python (`executor/`) and Go
   (worker) — and locked by a cross-language golden fixture
   (`executor/tests/data/frames.golden.json`). Change both sides and regenerate the

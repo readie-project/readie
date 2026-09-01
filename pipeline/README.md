@@ -1,4 +1,4 @@
-# crfs-pipeline
+# readie-pipeline
 
 The offline half. It analyses the request corpus, decides which package sets are
 worth pre-importing, and captures one gVisor checkpoint per set. The output is a
@@ -18,11 +18,11 @@ make lint type # ruff + mypy --strict
 ## The stages
 
 ```sh
-crfs-pipeline corpus    # generate request snippets with a hosted model
-crfs-pipeline analyze   # measure package sizes and import times
-crfs-pipeline plan      # choose checkpoint contents, write the OCI spec
-crfs-pipeline build     # capture one gVisor checkpoint per planned set
-crfs-pipeline capture   # plan and then build, in one process
+readie-pipeline corpus    # generate request snippets with a hosted model
+readie-pipeline analyze   # measure package sizes and import times
+readie-pipeline plan      # choose checkpoint contents, write the OCI spec
+readie-pipeline build     # capture one gVisor checkpoint per planned set
+readie-pipeline capture   # plan and then build, in one process
 ```
 
 Each runs alone. `plan` needs only the committed data — no runsc, no network, no
@@ -47,7 +47,7 @@ other.
 
 One entry per checkpoint. `plan` chooses them from 9,773 corpus requests over 88
 top-level packages, weighted by 918 packages' measured import time and disk
-size. See [`planning/`](src/crfs_pipeline/planning/) for the algorithm and why
+size. See [`planning/`](src/readie_pipeline/planning/) for the algorithm and why
 it is greedy.
 
 ## How a checkpoint is captured
@@ -58,7 +58,7 @@ sandbox this pipeline captures and the one the worker restores into must have
 the same shape, and two independent generators cannot be kept in agreement by
 review.
 
-`build` then, for each planned set, rewrites only the sandbox's `CRFS_PREIMPORT`
+`build` then, for each planned set, rewrites only the sandbox's `READIE_PREIMPORT`
 environment variable, runs the sandbox, and waits for the executor to checkpoint
 internally once all the preimports are completed and exit.
 
@@ -78,14 +78,14 @@ sandbox — pinned by a test on the Go side.
 | `$EXECUTOR_DIR` | host-side outputs; mount this out |
 | `$EXECUTOR_DIR/checkpoints/<id>/` | one checkpoint image plus its `meta.json` |
 | `$EXECUTOR_DIR/manifest.json` | what those checkpoints can be restored into |
-| `$CRFS_PLAN_DIR` | the plan and the spec fingerprint |
+| `$READIE_PLAN_DIR` | the plan and the spec fingerprint |
 | `data/` | the committed corpus and package metadata |
 
 `$EXECUTOR_DIR` here is a *host* directory and is deliberately distinct from the
 sandbox's own `EXECUTOR_DIR`, which is `/tmp` — where the executor binds its
 socket.
 
-`$CRFS_PLAN_DIR` is separate from it because `$EXECUTOR_DIR` is copied into the
+`$READIE_PLAN_DIR` is separate from it because `$EXECUTOR_DIR` is copied into the
 base image wholesale. The plan and the fingerprint are inputs to a capture, not
 artifacts a worker ships beside its manifest. Unset, they go with the outputs,
 which is what a local `plan` run wants.
@@ -103,14 +103,14 @@ targets:
 A gVisor checkpoint only restores into the filesystem it was captured from,
 through the runsc release that captured it — so both live here, and the gVisor
 release is pinned once for the capture and the restore alike. The worker's own
-image is `worker/Dockerfile`, which is `FROM crfs-worker-base` and adds only the Go
+image is `worker/Dockerfile`, which is `FROM readie-worker-base` and adds only the Go
 server.
 
 From the repository root, one command captures checkpoints, bakes them into the
 base, and builds a worker on it:
 
 ```sh
-make generation                     # tags crfs-worker:<timestamp> and :latest
+make generation                     # tags readie-worker:<timestamp> and :latest
 make generation TAG=my-experiment
 ```
 
@@ -128,7 +128,7 @@ To iterate on planning alone — no gVisor, no network, no container:
 
 ```sh
 make -C pipeline test
-docker run --rm crfs-pipeline plan --no-spec --max-checkpoints 3
+docker run --rm readie-pipeline plan --no-spec --max-checkpoints 3
 ```
 
 ## What it writes
@@ -154,16 +154,16 @@ a second name for the same build, free to disagree.
 | | |
 |---|---|
 | `BASE_DIR`, `EXECUTOR_DIR` | the bundle and the output directory |
-| `CRFS_PLAN_DIR` | where the plan goes, if not with the outputs |
+| `READIE_PLAN_DIR` | where the plan goes, if not with the outputs |
 | `ROOTFS_PYTHONPATH` | must correspond to the rootfs stage |
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's |
-| `CRFS_PLANNER` | `greedy` or `fixed` |
-| `CRFS_MAX_CHECKPOINTS`, `CRFS_SIZE_BUDGET_MB` | planner bounds |
-| `CRFS_ALPHA` | size-vs-time weight |
+| `READIE_PLANNER` | `greedy` or `fixed` |
+| `READIE_MAX_CHECKPOINTS`, `READIE_SIZE_BUDGET_MB` | planner bounds |
+| `READIE_ALPHA` | size-vs-time weight |
 | `FLAVOR` | `cpu` or `gpu`; the generation this run produces |
-| `CRFS_DATA_DIR` | overrides the committed corpus location |
+| `READIE_DATA_DIR` | overrides the committed corpus location |
 | `RUNSC_BINARY`, `OCISPEC_BINARY` | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
-| `CRFS_CHECKPOINT_TIMEOUT` | how long a sandbox may take to checkpoint before `build` gives up (default `300`) |
+| `READIE_CHECKPOINT_TIMEOUT` | how long a sandbox may take to checkpoint before `build` gives up (default `300`) |
 | `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME` | `corpus` only |
 | `AZURE_API_VERSION` | `corpus` only; default `2025-03-01-preview` |
 

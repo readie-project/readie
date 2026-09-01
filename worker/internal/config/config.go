@@ -40,7 +40,7 @@ const (
 	DefaultChunkSize = 1024 * 1024
 
 	// ExecutorSocketName is the unix socket the Python executor binds inside its
-	// container. See executor/src/crfs_executor/server.py.
+	// container. See executor/src/readie_executor/server.py.
 	ExecutorSocketName = "executor.sock"
 
 	// ExecutorMountPath is where the per-container host directory is mounted
@@ -54,7 +54,7 @@ const (
 	// the mount and the expectation disagreed. The image build and this
 	// constant are the only two things that need to agree, and both live in
 	// this repository.
-	ArtifactRoot = "/var/lib/crfs"
+	ArtifactRoot = "/var/lib/readie"
 
 	// BundlesDirName is the sub-directory of WorkerDir holding OCI bundles.
 	// Bundles sit outside the per-container directories on purpose: those are
@@ -246,7 +246,7 @@ func Load(getenv Getenv) (Config, error) {
 		WorkerDir: workerDir,
 
 		RunscBinary:    valueOr(getenv("RUNSC_BINARY"), "/usr/local/bin/runsc"),
-		RunscRoot:      valueOr(getenv("RUNSC_ROOT"), "/run/crfs-runsc"),
+		RunscRoot:      valueOr(getenv("RUNSC_ROOT"), "/run/readie-runsc"),
 		SandboxNetwork: valueOr(getenv("SANDBOX_NETWORK"), "none"),
 		// The executor binds its socket inside the sandbox and the worker dials
 		// it from the host, which the runtime forbids by default.
@@ -264,7 +264,7 @@ func Load(getenv Getenv) (Config, error) {
 		CPUQuota:             50000,
 		CPUPeriod:            100000,
 		PidsLimit:            100,
-		CgroupParent:         valueOr(getenv("CGROUP_PARENT"), "/crfs"),
+		CgroupParent:         valueOr(getenv("CGROUP_PARENT"), "/readie"),
 		ContainerStopTimeout: 2 * time.Second,
 		DefaultContainerMem:  512 << 20,
 		MemGrowthThreshold:   0.9,

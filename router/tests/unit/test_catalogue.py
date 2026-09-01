@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from crfs_router.scheduling.catalogue import CATALOGUE_VERSION, Catalogue, load_catalogues
+from readie_router.scheduling.catalogue import CATALOGUE_VERSION, Catalogue, load_catalogues
 
 
 def _document(flavor: str = "cpu", **overrides: Any) -> dict[str, Any]:

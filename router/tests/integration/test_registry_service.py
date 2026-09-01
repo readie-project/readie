@@ -5,7 +5,7 @@ from __future__ import annotations
 import grpc
 import pytest
 
-from crfs_router.proto import registry_pb2
+from readie_router.proto import registry_pb2
 from tests.integration.conftest import Harness
 
 

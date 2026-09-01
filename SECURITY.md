@@ -19,7 +19,7 @@ helps; a working exploit is not required.
 ```
 user's process          router            worker              sandbox
 ┌────────────┐        ┌────────┐        ┌────────┐        ┌────────────┐
-│ crfs-client│──gRPC─▶│ router │──gRPC─▶│ worker │──uds──▶│  executor  │
+│ readie-client│──gRPC─▶│ router │──gRPC─▶│ worker │──uds──▶│  executor  │
 │            │◀───────│        │◀───────│        │◀───────│ user code  │
 └────────────┘        └────────┘        └────────┘        └────────────┘
       ▲                                                          │
@@ -29,14 +29,14 @@ user's process          router            worker              sandbox
 
 ### Boundary 1 — the client unpickles what the cluster sends it
 
-`crfs.CloudpickleCodec.decode_result` calls `cloudpickle.loads` on bytes that
+`readie.CloudpickleCodec.decode_result` calls `cloudpickle.loads` on bytes that
 arrived over the wire. Unpickling executes arbitrary code by design. A
 compromised router or worker can therefore run code **in the user's own
 process**, with that user's filesystem and credentials.
 
 This cannot be fixed by validating the payload — it is what shipping live Python
 objects means. It is confined rather than hidden: `ResultCodec`
-(`pkg/src/crfs/codec.py`) is a `Protocol`, so a deployment that cannot accept
+(`pkg/src/readie/codec.py`) is a `Protocol`, so a deployment that cannot accept
 this boundary can supply a codec restricted to a safe format and lose only the
 ability to return arbitrary objects.
 
@@ -60,7 +60,7 @@ kernel. Layered on top:
 
 The residual risk is a gVisor escape. `runsc` is pinned by release in one place,
 `pipeline/Dockerfile`'s `runsc` stage: the capture tool copies it from there, and
-the worker inherits it through `crfs-worker-base`. Floating that pin would also
+the worker inherits it through `readie-worker-base`. Floating that pin would also
 silently invalidate every checkpoint, since the save format is not stable across
 releases. Track
 [gVisor's advisories](https://github.com/google/gvisor/security/advisories) and
@@ -75,14 +75,14 @@ opt-in security keeps local runs, tests and the compose healthchecks working
 without certs. Configure both before exposing the router:
 
 - **Authorization (bearer token).** Set the router's `AUTH_TOKEN` and give the
-  same token to clients (`CRFS_AUTH_TOKEN`). The router
+  same token to clients (`READIE_AUTH_TOKEN`). The router
   then requires it on **`ProxyService`** — the only path that runs code — so
   reaching the port is no longer enough to execute on the cluster. The check is a
   server interceptor over a pluggable `Authenticator` (`grpcserver/auth.py`), so a
   deployment can swap the shared token for JWT or per-tenant validation. Health,
   reflection and `RegistryService` (workers) stay exempt.
 - **Transport (TLS).** Set the router's `TLS_CERT_FILE`/`TLS_KEY_FILE` to serve
-  TLS; clients set `CRFS_TLS`/`CRFS_TLS_CA` and workers set `ROUTER_TLS_CA` to
+  TLS; clients set `READIE_TLS`/`READIE_TLS_CA` and workers set `ROUTER_TLS_CA` to
   verify it. A token over a plaintext channel is sniffable, so enable TLS whenever
   the token leaves a trusted network.
 

@@ -14,7 +14,7 @@ import traceback
 import cloudpickle
 import grpc
 
-from crfs._proto import proxy_pb2, proxy_pb2_grpc
+from readie._proto import proxy_pb2, proxy_pb2_grpc
 
 
 class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):

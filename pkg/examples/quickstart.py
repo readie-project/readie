@@ -1,14 +1,13 @@
 """Run a function on a worker.
 
-CRFS_ROUTER_URI=localhost:50051 uv run python examples/quickstart.py
+READIE_ROUTER_URI=localhost:50051 uv run python examples/quickstart.py
 """
 
 from __future__ import annotations
 
 import asyncio
 
-import crfs
-from crfs import remote
+from readie import remote
 
 
 @remote
@@ -41,7 +40,7 @@ def warm_session() -> None:
     The trade is serialisation: a container is one interpreter behind one socket,
     so the router runs these one after another.
     """
-    client = crfs.default_client()
+    client = readie.default_client()
     with client.session() as session:
         warm = load_frame.bind(session)
         print("first (cold):", warm(10))
@@ -57,10 +56,10 @@ def handling_failure() -> None:
 
     try:
         explode()
-    except crfs.EmptyResultError as error:
+    except readie.EmptyResultError as error:
         print("caught:", type(error).__name__)
         print("remote output:", error.logs)
-    except crfs.ClusterUnavailableError:
+    except readie.ClusterUnavailableError:
         print("no router running; start the stack with `make up`")
 
 

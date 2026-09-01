@@ -1,4 +1,4 @@
-# crfs-executor
+# readie-executor
 
 The program that runs inside a checkpoint-restore sandbox. It pre-imports a
 planned set of modules, announces that it is worth checkpointing, and then
@@ -18,7 +18,7 @@ The order is the design, not a detail:
 
 ```
 capture mode only:
-  preimport CRFS_PREIMPORT   →  the reason a checkpoint is worth taking
+  preimport READIE_PREIMPORT   →  the reason a checkpoint is worth taking
   write to /proc/gvisor/checkpoint →  trigger gVisor checkpoint internally
 
 bind $EXECUTOR_DIR/executor.sock
@@ -84,7 +84,7 @@ will never send a terminator it recognises.
 | | |
 |---|---|
 | `EXECUTOR_DIR` | **Required.** Directory to bind the socket in; set by the sandbox spec |
-| `CRFS_PREIMPORT` | Comma-separated modules to import before the checkpoint |
+| `READIE_PREIMPORT` | Comma-separated modules to import before the checkpoint |
 | `EXECUTOR_MODE` | If set to `capture`, enables the offline pre-import, ready signal, and capture window; unset or set to `sandbox` in ordinary workers, while setting to setting to `measure` disables the server |
 | `EXECUTOR_CHUNK_SIZE` | Read/write granularity, default 1 MiB |
 | `EXECUTOR_SOCKET_NAME` | Default `executor.sock` |
