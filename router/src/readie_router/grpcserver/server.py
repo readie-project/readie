@@ -30,12 +30,9 @@ class RouterServer:
         max_concurrent_rpcs: int | None = None,
         max_message_bytes: int = 16 * 1024 * 1024,
         interceptors: Sequence[grpc.aio.ServerInterceptor] = (),
-        credentials: grpc.ServerCredentials | None = None,
     ) -> None:
         self._log = structlog.get_logger("grpcserver.server")
         self._listen_addr = listen_addr
-        # When set, the port serves TLS; otherwise plaintext (the default).
-        self._credentials = credentials
         self._server = grpc.aio.server(
             maximum_concurrent_rpcs=max_concurrent_rpcs,
             interceptors=list(interceptors),
@@ -78,10 +75,7 @@ class RouterServer:
 
     async def start(self) -> None:
         """Bind and begin serving, still reporting NOT_SERVING."""
-        if self._credentials is not None:
-            self._port = self._server.add_secure_port(self._listen_addr, self._credentials)
-        else:
-            self._port = self._server.add_insecure_port(self._listen_addr)
+        self._port = self._server.add_insecure_port(self._listen_addr)
         if self._port == 0:
             msg = f"could not bind {self._listen_addr}"
             raise RuntimeError(msg)
@@ -92,7 +86,6 @@ class RouterServer:
             "gRPC server listening",
             addr=self._listen_addr,
             port=self._port,
-            tls=self._credentials is not None,
         )
 
     def set_serving(self, *, serving: bool) -> None:

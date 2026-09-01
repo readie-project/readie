@@ -261,11 +261,10 @@ Not built. Each of these is a real gap, not an oversight:
   re-register on their next status report.
 - **Authentication and transport security are opt-in, and off by default.** The
   router can require a bearer token on `ProxyService` (the only path that runs
-  code) and serve TLS — set `AUTH_TOKEN` / `TLS_CERT_FILE` on the router and the
-  matching `READIE_AUTH_TOKEN` / `READIE_TLS` on the client. Unset, everything is
-  plaintext with no auth, so anything that can reach port 50051 can run code. The
-  router↔worker mesh and the worker's own server stay plaintext by design and
-  must run on a private network. See [SECURITY.md](SECURITY.md).
+  code) — set `AUTH_TOKEN` on the router and the matching `READIE_AUTH_TOKEN` on 
+  the client. Unset, everything is with no auth, so anything that can reach port 
+  50051 can run code. The router↔worker mesh and the worker's own server stay 
+  plaintext by design and must run on a private network. See [SECURITY.md](SECURITY.md).
 - **Datasets, models and tokenizers.** Carried through the corpus schema and the
   plan, but only packages are pre-imported. Loading a model into the captured
   process changes what a checkpoint costs to store.

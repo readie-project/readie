@@ -111,7 +111,6 @@ class App:
             max_concurrent_rpcs=settings.max_concurrent_rpcs,
             max_message_bytes=settings.max_message_bytes,
             interceptors=_auth_interceptors(settings, self._log),
-            credentials=_server_credentials(settings, self._log),
         )
 
         self._background: list[asyncio.Task[None]] = []
@@ -227,15 +226,3 @@ def _auth_interceptors(
         return ()
     log.info("ProxyService requires a bearer token")
     return (AuthInterceptor(SharedTokenAuthenticator(settings.auth_token)),)
-
-
-def _server_credentials(
-    settings: Settings, log: structlog.stdlib.BoundLogger
-) -> grpc.ServerCredentials | None:
-    """TLS credentials from the configured cert/key, or None for plaintext."""
-    if not (settings.tls_cert_file and settings.tls_key_file):
-        return None
-    key = Path(settings.tls_key_file).read_bytes()
-    cert = Path(settings.tls_cert_file).read_bytes()
-    log.info("serving TLS", cert=settings.tls_cert_file)
-    return grpc.ssl_server_credentials([(key, cert)])

@@ -91,10 +91,6 @@ class Settings(BaseSettings):
     #: bearer token in the ``authorization`` metadata; workers, health and
     #: reflection stay exempt. See SECURITY.md.
     auth_token: str = ""
-    #: PEM cert and key for serving TLS on the router's port. Both must be set to
-    #: enable TLS; clients and workers then connect over TLS.
-    tls_cert_file: str = ""
-    tls_key_file: str = ""
 
     # -- Lifecycle --------------------------------------------------------
     shutdown_grace: float = Field(default=25.0, gt=0)

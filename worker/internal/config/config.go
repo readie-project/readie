@@ -83,10 +83,6 @@ type Config struct {
 
 	// RouterURI is the router's gRPC endpoint (RegistryService).
 	RouterURI string
-	// RouterTLSCACert is a PEM CA bundle used to verify the router over TLS.
-	// Empty means a plaintext connection — the default, matching the router.
-	// Set it when the router serves TLS.
-	RouterTLSCACert string
 
 	// Filesystem.
 	//
@@ -241,7 +237,6 @@ func Load(getenv Getenv) (Config, error) {
 		WorkerURI:       fmt.Sprintf("%s:%s", serviceName, port),
 		ListenAddr:      ":" + port,
 		RouterURI:       routerURI,
-		RouterTLSCACert: getenv("ROUTER_TLS_CA"),
 
 		WorkerDir: workerDir,
 

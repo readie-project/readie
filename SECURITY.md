@@ -81,17 +81,13 @@ without certs. Configure both before exposing the router:
   server interceptor over a pluggable `Authenticator` (`grpcserver/auth.py`), so a
   deployment can swap the shared token for JWT or per-tenant validation. Health,
   reflection and `RegistryService` (workers) stay exempt.
-- **Transport (TLS).** Set the router's `TLS_CERT_FILE`/`TLS_KEY_FILE` to serve
-  TLS; clients set `READIE_TLS`/`READIE_TLS_CA` and workers set `ROUTER_TLS_CA` to
-  verify it. A token over a plaintext channel is sniffable, so enable TLS whenever
-  the token leaves a trusted network.
+- **Transport (TLS).** Handled by NGINX (see `nginx/README.md`).
 
 What is **not** secured, by design (the "external only" boundary): the
 router→worker call (`ExecutionService`) and the worker's own server stay
 plaintext with no auth. Run the router↔worker mesh on a private network, and do
 not expose the worker's port. Do not expose the router's port to anything you
-would not hand a shell to unless the token (and, off a trusted network, TLS) is
-configured.
+would not hand a shell to.
 
 ## Non-vulnerabilities
 

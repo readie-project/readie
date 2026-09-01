@@ -269,9 +269,7 @@ That is the point of baking them in.
 
 ## Configuration
 
-Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`. `ROUTER_TLS_CA`
-(a PEM CA bundle) verifies the router over TLS when it serves TLS; unset means a
-plaintext connection. The router↔worker mesh carries no token — run it privately.
+Required: `SERVICE_NAME`, `PORT`, `WORKER_DIR`, `ROUTER_URI`.
 
 The artifact root is **not** configurable: it is a compiled-in constant
 (`config.ArtifactRoot`, `/var/lib/readie`) because there is one place a worker

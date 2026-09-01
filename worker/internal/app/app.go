@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/illinoisdata/readie/worker/internal/artifact"
@@ -47,9 +46,8 @@ type Deps struct {
 	// LoadArtifacts discovers the generations this worker can run.
 	LoadArtifacts func(cfg config.Config, log *slog.Logger) (container.Artifacts, error)
 	// DialRegistry connects to the router, returning a client and the closer
-	// for the underlying connection. caFile is a PEM CA bundle to verify the
-	// router over TLS, or empty for a plaintext connection.
-	DialRegistry func(ctx context.Context, target, caFile string) (pb.RegistryServiceClient, io.Closer, error)
+	// for the underlying connection.
+	DialRegistry func(ctx context.Context, target string) (pb.RegistryServiceClient, io.Closer, error)
 	// Clock drives retry loops.
 	Clock clock.Clock
 }
@@ -110,18 +108,8 @@ func loadArtifacts(_ config.Config, log *slog.Logger) (container.Artifacts, erro
 	return artifact.Load(artifact.Options{Root: config.ArtifactRoot, Log: log})
 }
 
-func dialRegistry(_ context.Context, target, caFile string) (pb.RegistryServiceClient, io.Closer, error) {
-	// Plaintext by default, matching the router; TLS when a CA is configured.
-	// The router↔worker mesh is trusted, so there is no client certificate —
-	// this only encrypts and verifies the router.
+func dialRegistry(_ context.Context, target string) (pb.RegistryServiceClient, io.Closer, error) {
 	creds := insecure.NewCredentials()
-	if caFile != "" {
-		tlsCreds, err := credentials.NewClientTLSFromFile(caFile, "")
-		if err != nil {
-			return nil, nil, fmt.Errorf("load router CA %s: %w", caFile, err)
-		}
-		creds = tlsCreds
-	}
 	// grpc.NewClient is lazy: no connection is attempted until the first RPC,
 	// which is why worker registration is where router reachability is proven.
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(creds))
@@ -331,7 +319,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	}
 
 	// 3. Router client. Lazy, so this cannot fail for connectivity reasons.
-	registryClient, registryConn, err := deps.DialRegistry(ctx, cfg.RouterURI, cfg.RouterTLSCACert)
+	registryClient, registryConn, err := deps.DialRegistry(ctx, cfg.RouterURI)
 	if err != nil {
 		return fail(fmt.Errorf("connect to the router: %w", err))
 	}
