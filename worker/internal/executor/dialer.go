@@ -7,8 +7,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/clock"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/clock"
+	"github.com/illinoisdata/readie/worker/internal/logging"
 )
 
 // Dialer opens a connection to a container's executor.

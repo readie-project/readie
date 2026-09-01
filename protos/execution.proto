@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "resources.proto";
 
-option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
+option go_package = "github.com/illinoisdata/readie/worker/proto";
 
 // Message used for code execution requests to workers
 message WorkerExecutionRequest {

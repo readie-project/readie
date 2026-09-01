@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // Sentinel errors returned by a Reporter.

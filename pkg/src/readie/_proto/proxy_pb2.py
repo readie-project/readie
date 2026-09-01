@@ -25,14 +25,14 @@ _sym_db = _symbol_database.Default()
 from readie._proto import resources_pb2 as readie_dot___proto_dot_resources__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19readie/_proto/proxy.proto\x1a\x1dreadie/_proto/resources.proto\"Q\n\x0f\x45xecutionConfig\x12\x0f\n\x07imports\x18\x01 \x03(\t\x12 \n\x07\x62udgets\x18\x02 \x03(\x0b\x32\x0f.ResourceBudget\x12\x0b\n\x03gpu\x18\x03 \x01(\x08\"\x85\x01\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x11\n\x07payload\x18\x04 \x01(\x0cH\x00\x12\"\n\x06\x63onfig\x18\x05 \x01(\x0b\x32\x10.ExecutionConfigH\x00\x42\x06\n\x04\x64\x61taJ\x04\x08\x03\x10\x04\"\xa6\x01\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x04logs\x18\x04 \x01(\tH\x00\x12\x11\n\x07payload\x18\x05 \x01(\x0cH\x00\x12\x11\n\tworker_id\x18\x06 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x07 \x01(\tB\x06\n\x04\x64\x61ta2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19readie/_proto/proxy.proto\x1a\x1dreadie/_proto/resources.proto\"Q\n\x0f\x45xecutionConfig\x12\x0f\n\x07imports\x18\x01 \x03(\t\x12 \n\x07\x62udgets\x18\x02 \x03(\x0b\x32\x0f.ResourceBudget\x12\x0b\n\x03gpu\x18\x03 \x01(\x08\"\x85\x01\n\x16\x43lientExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x11\n\x07payload\x18\x04 \x01(\x0cH\x00\x12\"\n\x06\x63onfig\x18\x05 \x01(\x0b\x32\x10.ExecutionConfigH\x00\x42\x06\n\x04\x64\x61taJ\x04\x08\x03\x10\x04\"\xa6\x01\n\x17\x43lientExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\x12\x0e\n\x04logs\x18\x04 \x01(\tH\x00\x12\x11\n\x07payload\x18\x05 \x01(\x0cH\x00\x12\x11\n\tworker_id\x18\x06 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x07 \x01(\tB\x06\n\x04\x64\x61ta2Y\n\x0cProxyService\x12I\n\x10RequestExecution\x12\x17.ClientExecutionRequest\x1a\x18.ClientExecutionResponse(\x01\x30\x01\x42-Z+github.com/illinoisdata/readie/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'readie._proto.proxy_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
+  _globals['DESCRIPTOR']._serialized_options = b'Z+github.com/illinoisdata/readie/worker/proto'
   _globals['_EXECUTIONCONFIG']._serialized_start=60
   _globals['_EXECUTIONCONFIG']._serialized_end=141
   _globals['_CLIENTEXECUTIONREQUEST']._serialized_start=144

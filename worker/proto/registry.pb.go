@@ -556,7 +556,7 @@ const file_registry_proto_rawDesc = "" +
 	"\x10PostWorkerStatus\x12\r.WorkerStatus\x1a\x17.RegistryUpdateResponse\x12>\n" +
 	"\x12PostExecutorStatus\x12\x0f.ExecutorStatus\x1a\x17.RegistryUpdateResponse\x12D\n" +
 	"\x15PostWorkerUtilization\x12\x12.WorkerUtilization\x1a\x17.RegistryUpdateResponse\x12H\n" +
-	"\x17PostExecutorUtilization\x12\x14.ExecutorUtilization\x1a\x17.RegistryUpdateResponseBHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
+	"\x17PostExecutorUtilization\x12\x14.ExecutorUtilization\x1a\x17.RegistryUpdateResponseB-Z+github.com/illinoisdata/readie/worker/protob\x06proto3"
 
 var (
 	file_registry_proto_rawDescOnce sync.Once

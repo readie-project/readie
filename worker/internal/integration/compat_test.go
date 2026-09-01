@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
+	"github.com/illinoisdata/readie/worker/internal/config"
 )
 
 // checkpointLister is the read side of the artifact registry a test needs to

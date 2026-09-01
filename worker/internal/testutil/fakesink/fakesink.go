@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
+	"github.com/illinoisdata/readie/worker/internal/execution"
 )
 
 // Sink records everything an execution produces.

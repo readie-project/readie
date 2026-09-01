@@ -15,9 +15,9 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/app"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/app"
+	"github.com/illinoisdata/readie/worker/internal/config"
+	"github.com/illinoisdata/readie/worker/internal/logging"
 )
 
 func main() {

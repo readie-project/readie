@@ -12,9 +12,9 @@ import (
 	"errors"
 	"io"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
+	"github.com/illinoisdata/readie/worker/internal/container"
+	"github.com/illinoisdata/readie/worker/internal/registry"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
 )
 
 // Sentinel errors returned by a Runner.

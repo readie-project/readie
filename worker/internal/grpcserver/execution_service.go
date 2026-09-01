@@ -7,9 +7,9 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/execution"
+	"github.com/illinoisdata/readie/worker/internal/logging"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // Runner executes a request. *execution.Runner satisfies it.

@@ -299,7 +299,7 @@ const file_execution_proto_rawDesc = "" +
 	"\abudgets\x18\v \x03(\v2\x0f.ResourceBudgetR\abudgetsB\x06\n" +
 	"\x04dataJ\x04\b\x06\x10\aJ\x04\b\a\x10\b2]\n" +
 	"\x10ExecutionService\x12I\n" +
-	"\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x010\x01BHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
+	"\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x010\x01B-Z+github.com/illinoisdata/readie/worker/protob\x06proto3"
 
 var (
 	file_execution_proto_rawDescOnce sync.Once

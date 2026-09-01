@@ -14,12 +14,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeexecutor"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakesandbox"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/artifact"
+	"github.com/illinoisdata/readie/worker/internal/config"
+	"github.com/illinoisdata/readie/worker/internal/testutil/fakeexecutor"
+	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
+	"github.com/illinoisdata/readie/worker/internal/testutil/fakesandbox"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 const cpuAlloc = int64(512 << 20)

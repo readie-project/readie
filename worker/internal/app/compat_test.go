@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/artifact"
+	"github.com/illinoisdata/readie/worker/internal/logging"
 )
 
 const (

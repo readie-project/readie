@@ -6,10 +6,10 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/container"
+	"github.com/illinoisdata/readie/worker/internal/execution"
+	"github.com/illinoisdata/readie/worker/internal/registry"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // executionStream is the bidirectional stream this service serves.

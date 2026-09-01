@@ -10,7 +10,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
 )
 
 // ociVersion is the runtime-spec version written into every bundle.

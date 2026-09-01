@@ -12,12 +12,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
+	"github.com/illinoisdata/readie/worker/internal/artifact"
+	"github.com/illinoisdata/readie/worker/internal/container"
+	"github.com/illinoisdata/readie/worker/internal/execution"
+	"github.com/illinoisdata/readie/worker/internal/executor"
+	"github.com/illinoisdata/readie/worker/internal/registry"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
 )
 
 // ErrInvalidRequest indicates the caller sent something unusable.

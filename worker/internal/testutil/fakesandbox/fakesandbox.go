@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
 )
 
 // State is a fake sandbox's lifecycle position.

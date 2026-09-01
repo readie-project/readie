@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
+option go_package = "github.com/illinoisdata/readie/worker/proto";
 
 // A resource whose budget a caller can set per function. Kept deliberately
 // generic: a new dimension is one enum value here, one capacity source in the

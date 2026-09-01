@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/clock"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeexecutor"
+	"github.com/illinoisdata/readie/worker/internal/clock"
+	"github.com/illinoisdata/readie/worker/internal/executor"
+	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/testutil/fakeexecutor"
 )
 
 func newDialer(path string, retry executor.RetryPolicy) *executor.UnixDialer {

@@ -17,8 +17,8 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
+	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
 )
 
 // Bundle file names.

@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/artifact"
+	"github.com/illinoisdata/readie/worker/internal/executor"
+	"github.com/illinoisdata/readie/worker/internal/logging"
 )
 
 // builder lays out an artifact tree the way the worker image bakes one.

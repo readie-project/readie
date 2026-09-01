@@ -39,8 +39,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/executor"
+	"github.com/illinoisdata/readie/worker/internal/logging"
 )
 
 // Well-known names within the artifact tree.

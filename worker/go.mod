@@ -1,4 +1,4 @@
-module github.com/illinoisdata/checkpoint-restore-for-serverless/worker
+module github.com/illinoisdata/readie/worker
 
 go 1.25.0
 

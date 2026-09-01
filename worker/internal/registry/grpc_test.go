@@ -14,10 +14,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/testutil/fakeregistry"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/registry"
+	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // dialFake serves a fakeregistry.Server over bufconn and returns a client for it.

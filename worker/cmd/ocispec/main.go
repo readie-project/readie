@@ -23,8 +23,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/runsc"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
+	"github.com/illinoisdata/readie/worker/internal/runsc"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
 )
 
 // params is the input document, mirroring sandbox.CreateSpec in a form that is

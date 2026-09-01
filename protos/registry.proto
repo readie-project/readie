@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto";
+option go_package = "github.com/illinoisdata/readie/worker/proto";
 
 enum Status {
   STATUS_UNKNOWN = 0;

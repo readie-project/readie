@@ -1,4 +1,4 @@
-# checkpoint-restore-for-serverless
+# READIE: Rapid Execution via ADaptive checkpoInted Environments
 
 Run a Python function on a remote sandbox that has already imported the
 libraries it needs.
@@ -44,13 +44,13 @@ the router serialises the calls within one.
 
 ## Components
 
-| | Language | |
-|---|---|---|
-| [`router/`](router/) | Python 3.13 | Placement, the cluster registry, the client-facing proxy |
-| [`worker/`](worker/) | Go | Sandbox lifecycle, checkpoint/restore, executor I/O |
-| [`executor/`](executor/) | Python 3.11+ | Runs *inside* every sandbox; unpickles and calls the function |
-| [`pkg/`](pkg/) | Python 3.11+ | `readie-client`, the `@remote` SDK users import |
-| [`pipeline/`](pipeline/) | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
+|                          | Language     |                                                                    |
+| ------------------------ | ------------ | ------------------------------------------------------------------ |
+| [`router/`](router/)     | Python 3.13  | Placement, the cluster registry, the client-facing proxy           |
+| [`worker/`](worker/)     | Go           | Sandbox lifecycle, checkpoint/restore, executor I/O                |
+| [`executor/`](executor/) | Python 3.11+ | Runs _inside_ every sandbox; unpickles and calls the function      |
+| [`pkg/`](pkg/)           | Python 3.11+ | `readie-client`, the `@remote` SDK users import                    |
+| [`pipeline/`](pipeline/) | Python 3.12  | Offline: corpus, package analysis, checkpoint planning and capture |
 
 [`protos/`](protos/) is the single source of truth for every wire contract, and
 [`pipeline/Dockerfile`](pipeline/Dockerfile) for everything a checkpoint is bound
@@ -81,7 +81,7 @@ the Python side and decoded by the Go tests keeps them from drifting.
 **The generation manifest**, written by `pipeline/` and read by `worker/`. It
 records the runsc version, the OCI spec fingerprint and the executor protocol
 version. The protocol is the one field a worker checks against its own compiled-in
-truth, and it refuses the whole generation at *load* rather than failing opaquely
+truth, and it refuses the whole generation at _load_ rather than failing opaquely
 minutes into a request. The runsc version and the fingerprint are recorded but not
 compared — see the gap under [What works](#what-works-and-what-does-not). It
 records no rootfs identity, because there is nothing to compare: the base image
@@ -110,7 +110,7 @@ checkpoints to restore is a property of that base, not of the worker image.
 Both compose and `make generation` tag `readie-worker:latest`, which is what makes
 `docker compose up -d` run the image the generation just built.
 
-Only `router` and `worker` are services. `executor` runs *inside* a sandbox the
+Only `router` and `worker` are services. `executor` runs _inside_ a sandbox the
 worker creates, `pkg` is a library you install into your own program, and
 `pipeline` is an offline tool — none of them belong in Compose.
 
@@ -169,7 +169,7 @@ drift, and the gVisor release is pinned exactly once.
 [`worker/Dockerfile`](worker/Dockerfile) adds the Go server and grpcurl, and
 nothing else.
 
-The 26 GB root filesystem is therefore *inherited* by the worker image, never
+The 26 GB root filesystem is therefore _inherited_ by the worker image, never
 copied into it. `COPY --from=` produces a fresh layer every build — two identical
 worker builds were measured producing different digests for it — so inheriting is
 what lets a rebuilt worker share that layer instead of re-uploading it, and is why
@@ -229,14 +229,14 @@ Not built. Each of these is a real gap, not an oversight:
   `SANDBOX_NETWORK` / the CPU or pids limits, or an upgraded runsc — a strict
   worker (`CHECKPOINT_STRICT_COMPAT`, the default) drops every checkpoint and
   serves cold starts only, logging the reasons loudly; a tolerant one just warns.
-  What is still missing is *granularity*: it is all-or-nothing per worker, not
+  What is still missing is _granularity_: it is all-or-nothing per worker, not
   per-checkpoint, and it cannot catch a rootfs whose contents drifted without the
   spec changing.
 - **Swapping checkpoints without a new image.** Artifacts are baked in and read
   once at startup, so new checkpoints mean a new base image and a new container.
   That is the trade taken deliberately — one deployable, nothing mounted — but it
   does mean a ~40 GB base per capture, and rolling one out drains warm containers.
-  A worker *code* change is cheap; a checkpoint change is not.
+  A worker _code_ change is cheap; a checkpoint change is not.
 - **Persistence.** Router state is in memory. A restart loses sessions — their
   containers are then reclaimed by the workers' own TTLs — and workers
   re-register on their next status report.

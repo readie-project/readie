@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
+	"github.com/illinoisdata/readie/worker/internal/executor"
 )
 
 // Mode selects how the fake behaves once connected.

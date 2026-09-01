@@ -9,8 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/logging"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // GRPCReporter posts state to the router's RegistryService.

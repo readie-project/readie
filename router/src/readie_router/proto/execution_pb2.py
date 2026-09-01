@@ -25,14 +25,14 @@ _sym_db = _symbol_database.Default()
 from readie_router.proto import resources_pb2 as readie__router_dot_proto_dot_resources__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#readie_router/proto/execution.proto\x1a#readie_router/proto/resources.proto\"\xe8\x01\n\x16WorkerExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x11\n\tworker_id\x18\x03 \x01(\t\x12\x19\n\x0c\x63ontainer_id\x18\x04 \x01(\tH\x00\x88\x01\x01\x12\x15\n\rcheckpoint_id\x18\x05 \x01(\t\x12\x0f\n\x07payload\x18\x06 \x01(\x0c\x12\x11\n\tresources\x18\t \x03(\t\x12 \n\x07\x62udgets\x18\x0b \x03(\x0b\x32\x0f.ResourceBudgetB\x0f\n\r_container_idJ\x04\x08\x07\x10\x08J\x04\x08\x08\x10\t\"\xeb\x01\n\x17WorkerExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x11\n\tworker_id\x18\x03 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x04 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x05 \x01(\t\x12\x0f\n\x07success\x18\x08 \x01(\x08\x12\x0e\n\x04logs\x18\t \x01(\tH\x00\x12\x11\n\x07payload\x18\n \x01(\x0cH\x00\x12 \n\x07\x62udgets\x18\x0b \x03(\x0b\x32\x0f.ResourceBudgetB\x06\n\x04\x64\x61taJ\x04\x08\x06\x10\x07J\x04\x08\x07\x10\x08\x32]\n\x10\x45xecutionService\x12I\n\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x01\x30\x01\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#readie_router/proto/execution.proto\x1a#readie_router/proto/resources.proto\"\xe8\x01\n\x16WorkerExecutionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x11\n\tworker_id\x18\x03 \x01(\t\x12\x19\n\x0c\x63ontainer_id\x18\x04 \x01(\tH\x00\x88\x01\x01\x12\x15\n\rcheckpoint_id\x18\x05 \x01(\t\x12\x0f\n\x07payload\x18\x06 \x01(\x0c\x12\x11\n\tresources\x18\t \x03(\t\x12 \n\x07\x62udgets\x18\x0b \x03(\x0b\x32\x0f.ResourceBudgetB\x0f\n\r_container_idJ\x04\x08\x07\x10\x08J\x04\x08\x08\x10\t\"\xeb\x01\n\x17WorkerExecutionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x11\n\tworker_id\x18\x03 \x01(\t\x12\x14\n\x0c\x63ontainer_id\x18\x04 \x01(\t\x12\x15\n\rcheckpoint_id\x18\x05 \x01(\t\x12\x0f\n\x07success\x18\x08 \x01(\x08\x12\x0e\n\x04logs\x18\t \x01(\tH\x00\x12\x11\n\x07payload\x18\n \x01(\x0cH\x00\x12 \n\x07\x62udgets\x18\x0b \x03(\x0b\x32\x0f.ResourceBudgetB\x06\n\x04\x64\x61taJ\x04\x08\x06\x10\x07J\x04\x08\x07\x10\x08\x32]\n\x10\x45xecutionService\x12I\n\x10RequestExecution\x12\x17.WorkerExecutionRequest\x1a\x18.WorkerExecutionResponse(\x01\x30\x01\x42-Z+github.com/illinoisdata/readie/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'readie_router.proto.execution_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
+  _globals['DESCRIPTOR']._serialized_options = b'Z+github.com/illinoisdata/readie/worker/proto'
   _globals['_WORKEREXECUTIONREQUEST']._serialized_start=77
   _globals['_WORKEREXECUTIONREQUEST']._serialized_end=309
   _globals['_WORKEREXECUTIONRESPONSE']._serialized_start=312

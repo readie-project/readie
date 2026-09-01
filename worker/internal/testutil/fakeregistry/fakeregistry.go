@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/registry"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // Call is one recorded report.

@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/artifact"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/artifact"
+	"github.com/illinoisdata/readie/worker/internal/config"
+	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/registry"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // Sentinel errors returned by a Manager.

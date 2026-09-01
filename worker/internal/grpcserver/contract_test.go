@@ -10,12 +10,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/execution"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/sandbox"
-	pb "github.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto"
+	"github.com/illinoisdata/readie/worker/internal/container"
+	"github.com/illinoisdata/readie/worker/internal/execution"
+	"github.com/illinoisdata/readie/worker/internal/executor"
+	"github.com/illinoisdata/readie/worker/internal/registry"
+	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	pb "github.com/illinoisdata/readie/worker/proto"
 )
 
 // The protos deliberately declare no package, so the full method name is

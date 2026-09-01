@@ -150,7 +150,7 @@ const file_resources_proto_rawDesc = "" +
 	"\fResourceKind\x12\x19\n" +
 	"\x15RESOURCE_KIND_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14RESOURCE_KIND_MEMORY\x10\x01\x12\x1c\n" +
-	"\x18RESOURCE_KIND_GPU_MEMORY\x10\x02BHZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3"
+	"\x18RESOURCE_KIND_GPU_MEMORY\x10\x02B-Z+github.com/illinoisdata/readie/worker/protob\x06proto3"
 
 var (
 	file_resources_proto_rawDescOnce sync.Once

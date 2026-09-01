@@ -24,14 +24,14 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#readie_router/proto/resources.proto\"I\n\x0eResourceBudget\x12\x1b\n\x04kind\x18\x01 \x01(\x0e\x32\r.ResourceKind\x12\r\n\x05\x61lloc\x18\x02 \x01(\x03\x12\x0b\n\x03max\x18\x03 \x01(\x03*a\n\x0cResourceKind\x12\x19\n\x15RESOURCE_KIND_UNKNOWN\x10\x00\x12\x18\n\x14RESOURCE_KIND_MEMORY\x10\x01\x12\x1c\n\x18RESOURCE_KIND_GPU_MEMORY\x10\x02\x42HZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#readie_router/proto/resources.proto\"I\n\x0eResourceBudget\x12\x1b\n\x04kind\x18\x01 \x01(\x0e\x32\r.ResourceKind\x12\r\n\x05\x61lloc\x18\x02 \x01(\x03\x12\x0b\n\x03max\x18\x03 \x01(\x03*a\n\x0cResourceKind\x12\x19\n\x15RESOURCE_KIND_UNKNOWN\x10\x00\x12\x18\n\x14RESOURCE_KIND_MEMORY\x10\x01\x12\x1c\n\x18RESOURCE_KIND_GPU_MEMORY\x10\x02\x42-Z+github.com/illinoisdata/readie/worker/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'readie_router.proto.resources_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'ZFgithub.com/illinoisdata/checkpoint-restore-for-serverless/worker/proto'
+  _globals['DESCRIPTOR']._serialized_options = b'Z+github.com/illinoisdata/readie/worker/proto'
   _globals['_RESOURCEKIND']._serialized_start=114
   _globals['_RESOURCEKIND']._serialized_end=211
   _globals['_RESOURCEBUDGET']._serialized_start=39

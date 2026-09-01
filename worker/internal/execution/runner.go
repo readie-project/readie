@@ -9,10 +9,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/container"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/executor"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/logging"
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/registry"
+	"github.com/illinoisdata/readie/worker/internal/container"
+	"github.com/illinoisdata/readie/worker/internal/executor"
+	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/registry"
 )
 
 // RunnerConfig tunes execution behaviour.

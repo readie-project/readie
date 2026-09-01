@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/checkpoint-restore-for-serverless/worker/internal/config"
+	"github.com/illinoisdata/readie/worker/internal/config"
 )
 
 // validEnv mirrors the environment baked into worker/Dockerfile.
