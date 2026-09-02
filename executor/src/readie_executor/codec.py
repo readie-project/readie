@@ -8,8 +8,8 @@ call shape or nothing runs. That shape is three keys::
 # Trust
 
 ``decode_call`` unpickles bytes the worker handed it, and unpickling executes
-arbitrary code. That is the executor's whole job — it exists to run code
-somebody else wrote — so this is not a boundary to defend, it is the reason the
+arbitrary code. That is the executor's whole job - it exists to run code
+somebody else wrote - so this is not a boundary to defend, it is the reason the
 sandbox exists. Containment is gVisor, no network, and a read-only shared
 rootfs. See SECURITY.md.
 """
@@ -76,7 +76,8 @@ def decode_call(raw: bytes) -> Call:
         raise DecodeError(msg)
 
     args, kwargs = payload["args"], payload["kwargs"]
-    print(f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}", flush=True)
+    print(
+        f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}", flush=True)
     return Call(func=func, args=tuple(args), kwargs=dict(kwargs))
 
 

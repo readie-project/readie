@@ -2,7 +2,7 @@
 #
 # A gVisor checkpoint only restores into the filesystem it was captured from and
 # through the runsc release that captured it. Both of those, and the checkpoints
-# themselves, are defined here — one file, so the tree this captures against and
+# themselves, are defined here - one file, so the tree this captures against and
 # the tree the worker restores into cannot drift, and so the gVisor release is
 # pinned exactly once.
 #
@@ -13,7 +13,7 @@
 #   --target worker-base   what a worker runs on: runsc, the root filesystem, and
 #                          the captured checkpoints. ~26 GB and slow.
 #
-# The worker's own image is *not* here — see worker/Dockerfile, which is `FROM`
+# The worker's own image is *not* here - see worker/Dockerfile, which is `FROM`
 # the base and adds only the Go server and grpcurl. Everything version-sensitive
 # is in the base; everything that changes when worker code changes is in that
 # file. So a worker rebuild never touches 26 GB.
@@ -22,7 +22,7 @@
 # ocispec) and pipeline/, and the first two do not live under pipeline/.
 
 # The rootfs base image publishes no architecture but amd64, and gVisor works by
-# intercepting syscalls — exactly what emulation sits in the middle of. Declared
+# intercepting syscalls - exactly what emulation sits in the middle of. Declared
 # as an ARG rather than written into the FROM: BuildKit's linter rejects a
 # constant --platform, and this way an experiment can override it.
 ARG ROOTFS_PLATFORM=linux/amd64
@@ -42,7 +42,7 @@ RUN python -m build --wheel --outdir /dist
 
 # ---------------------------------------------------------------------------
 # The executor root filesystem: the one tree every sandbox runs against and
-# every checkpoint is captured from. Consumed twice below — by the pipeline as
+# every checkpoint is captured from. Consumed twice below - by the pipeline as
 # an OCI bundle root, and by the worker base at /var/lib/readie/rootfs.
 # ---------------------------------------------------------------------------
 FROM --platform=${ROOTFS_PLATFORM} ${ROOTFS_BASE_IMAGE} AS rootfs
@@ -96,7 +96,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /ocispec ./cmd/ocispec
 # gVisor, pinned by release, installed once for both the pipeline that captures
 # checkpoints and the worker that restores them. The checkpoint format is not
 # stable across releases, so those two versions disagreeing invalidates every
-# checkpoint — which is why this stage exists rather than an install in each.
+# checkpoint - which is why this stage exists rather than an install in each.
 #
 # The apt package is deliberately avoided: its postinst edits
 # /etc/docker/daemon.json, which is meaningless inside an image, and the
@@ -156,7 +156,7 @@ WORKDIR /app
 # Copied file by file rather than as `pipeline/`: that directory also holds out/,
 # which is where a capture writes multi-gigabyte checkpoint images, and a whole-
 # directory COPY would bake the previous generation's output into this image. A
-# .dockerignore cannot solve it — the worker-base target below has to COPY out/.
+# .dockerignore cannot solve it - the worker-base target below has to COPY out/.
 COPY pipeline/pyproject.toml pipeline/README.md ./
 COPY pipeline/src ./src
 COPY pipeline/data ./data
@@ -169,7 +169,7 @@ COPY --from=ocispec-builder /ocispec /usr/local/bin/ocispec
 # BASE_DIR is the OCI bundle: config.json plus the rootfs.
 # EXECUTOR_DIR is a host-side output directory. It is deliberately distinct
 # from the sandbox's own EXECUTOR_DIR (/tmp, where the executor binds its
-# socket) — conflating the two previously sent the pre-imported executor source
+# socket) - conflating the two previously sent the pre-imported executor source
 # to the wrong place, so every checkpoint captured a bare executor.
 ENV BASE_DIR="/var/lib/readie"
 ENV EXECUTOR_DIR="/app/executor"
@@ -198,18 +198,18 @@ ENV RUNSC_BINARY="runsc"
 # `capture` plans and then captures in one process. Planning cannot run at build
 # time: it writes the bundle's config.json under BASE_DIR, and a `docker run`
 # that mounts EXECUTOR_DIR out is a different container with a different
-# BASE_DIR — so the two stages have to share one.
+# BASE_DIR - so the two stages have to share one.
 ENTRYPOINT ["readie-pipeline"]
 CMD ["capture"]
 
 # ---------------------------------------------------------------------------
-# The worker's base layer: everything a checkpoint's validity is bound to — the
+# The worker's base layer: everything a checkpoint's validity is bound to - the
 # pinned runsc, the root filesystem, and the checkpoints captured against it.
 #
 # This is the whole of what the pipeline produces. worker/Dockerfile builds
 # `FROM` this image and adds only what is independent of it: the Go server and
 # grpcurl. That split is why a worker code change rebuilds in seconds without
-# touching 26 GB, and why the rootfs layer is *inherited* rather than copied — a
+# touching 26 GB, and why the rootfs layer is *inherited* rather than copied - a
 # layer inherited from a base image has the same digest by definition, whereas
 # `COPY --from=` emits a fresh one every build (two otherwise-identical builds
 # were observed differing in the 25.9 GB rootfs layer's digest).
@@ -229,7 +229,7 @@ RUN mkdir -p /shared /run/readie-runsc /var/log/runsc
 
 # manifest.json and checkpoints/, produced by `readie-pipeline capture`.
 #
-# Empty by default — pipeline/out/ holds only a .gitkeep — so this still yields a
+# Empty by default - pipeline/out/ holds only a .gitkeep - so this still yields a
 # working base: rootfs, no checkpoints, every start cold. `make generation`
 # captures first, then builds this.
 ARG ARTIFACTS_DIR=pipeline/out

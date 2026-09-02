@@ -114,8 +114,8 @@ func NewRunner(
 // The retry is the reactive half of auto-expand: where a live cgroup grow
 // cannot take effect the container is killed before the watcher can react, and
 // a fresh container created with a bigger limit is what saves the request. It
-// is strictly bounded — one retry, only on an OOM-shaped failure, only when
-// there is room to grow — because re-running is unsafe for a function with side
+// is strictly bounded - one retry, only on an OOM-shaped failure, only when
+// there is room to grow - because re-running is unsafe for a function with side
 // effects. The request body is buffered so it can be replayed on the retry.
 func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
 	rec := &recordingSource{inner: src}
@@ -139,8 +139,8 @@ func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink S
 }
 
 // looksLikeOOM reports whether a failure is consistent with the executor being
-// OOM-killed: it died without a complete response. This is a heuristic — the
-// runtime exposes no OOM signal today — so it only ever triggers a single,
+// OOM-killed: it died without a complete response. This is a heuristic - the
+// runtime exposes no OOM signal today - so it only ever triggers a single,
 // bounded retry.
 func looksLikeOOM(err error) bool {
 	return errors.Is(err, executor.ErrNoResponse) || errors.Is(err, executor.ErrTruncatedResponse)
@@ -191,7 +191,7 @@ func (r *Runner) grownRequest(req Request) (Request, bool) {
 //
 // Cleanup: the container is released through a deferred call reading an
 // outcome variable whose zero value destroys it. Success has to be recorded
-// explicitly on the final line, so every early return — including a timeout —
+// explicitly on the final line, so every early return - including a timeout -
 // fails safe.
 func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
 	log := r.log.With(

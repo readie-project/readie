@@ -281,7 +281,7 @@ func TestAcquire_RestoreUsesTheCheckpointsOwnGeneration(t *testing.T) {
 	require.NoError(t, err)
 
 	// There is one rootfs, so a restore and a cold start run against the same
-	// tree — which is what makes the pairing correct by construction.
+	// tree - which is what makes the pairing correct by construction.
 	specs := f.runtime.CreateSpecs()
 	require.Len(t, specs, 1)
 	assert.Equal(t, activeRootfs(t, f), specs[0].RootfsPath)
@@ -636,7 +636,7 @@ func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
 }
 
 // Release runs on the failure path too, and a pause that fails must not leave
-// the container reserved forever — that leaks capacity for the process's life.
+// the container reserved forever - that leaks capacity for the process's life.
 func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{

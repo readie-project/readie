@@ -1,8 +1,8 @@
 # The worker: a Go server that drives runsc, on a base that carries everything a
 # checkpoint's validity is bound to.
 #
-# The split is along that line. `readie-worker-base` — built by
-# ../pipeline/Dockerfile — holds the pinned runsc, the root filesystem, and the
+# The split is along that line. `readie-worker-base` - built by
+# ../pipeline/Dockerfile - holds the pinned runsc, the root filesystem, and the
 # checkpoints captured against it. This file adds only what is independent of all
 # of that: the Go binary and grpcurl. So a worker code change rebuilds a Go binary
 # and two small layers on top of an image it already has, rather than anything
@@ -16,8 +16,8 @@
 # worker builds share it and a push carries only the binary.
 #
 # Declared before the first FROM so it can be used in one. Overridable so CI can
-# build this file against a stub base — it needs no rootfs to prove the image
-# assembles — and so a deployment can pull a published base by digest.
+# build this file against a stub base - it needs no rootfs to prove the image
+# assembles - and so a deployment can pull a published base by digest.
 ARG BASE_IMAGE=readie-worker-base:latest
 
 FROM golang:1.25-bookworm AS go-builder

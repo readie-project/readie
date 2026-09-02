@@ -30,7 +30,7 @@ EXECUTOR_DIR    := /app/executor
 # The per-flavor catalogues the router mounts (as <flavor>.json).
 CATALOGUE_DIR   := catalogues
 # The pipeline's Dockerfile defines the rootfs, the capture tool and the base a
-# worker runs on — everything a checkpoint's validity is bound to, in one file.
+# worker runs on - everything a checkpoint's validity is bound to, in one file.
 # The worker's own image is worker/Dockerfile, built from ./worker.
 PIPELINE_DOCKERFILE := pipeline/Dockerfile
 WORKER_DOCKERFILE   := worker/Dockerfile
@@ -200,7 +200,7 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 	@echo "==> catalogue: $(CATALOGUE_DIR)/$(FLAVOR).json (mount this on the router)"
 
 # Says what it baked, because building this from an empty $(ARTIFACTS_DIR) yields
-# a base that works and serves nothing but cold starts — which otherwise looks
+# a base that works and serves nothing but cold starts - which otherwise looks
 # exactly like a normal build.
 worker-base: ## Build the base a worker runs on: runsc, rootfs, checkpoints
 	@echo "==> [3/3] worker base image ($(FLAVOR)): runsc, rootfs, and $$(ls $(ARTIFACTS_DIR)/checkpoints 2>/dev/null | wc -l | tr -d ' ') checkpoint(s)"
@@ -211,7 +211,7 @@ worker-base: ## Build the base a worker runs on: runsc, rootfs, checkpoints
 
 # worker/Dockerfile is `FROM $(WORKER_BASE)`, so the base has to exist as an image
 # rather than be built on the way. That is what makes the rootfs layer inherited
-# by digest instead of recopied; see worker/Dockerfile. The context is ./worker —
+# by digest instead of recopied; see worker/Dockerfile. The context is ./worker -
 # nothing outside it is needed, which is what makes this build seconds long.
 worker-image: ## Build the worker image on top of $(WORKER_BASE)
 	@docker image inspect $(WORKER_BASE) >/dev/null 2>&1 \

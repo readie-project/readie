@@ -32,7 +32,8 @@ def header(
     return proxy_pb2.ClientExecutionRequest(
         request_id=request_id,
         session_id=session_id,
-        config=proxy_pb2.ExecutionConfig(imports=list(imports), budgets=budgets),
+        config=proxy_pb2.ExecutionConfig(
+            imports=list(imports), budgets=budgets),
     )
 
 
@@ -84,7 +85,8 @@ async def test_a_request_reaches_the_worker_and_the_result_comes_back(
 
     responses = await execute(harness, header(), chunk(b"pickled-"), chunk(b"payload"))
 
-    assert b"".join(r.payload for r in responses if r.HasField("payload")) == b"result"
+    assert b"".join(r.payload for r in responses if r.HasField(
+        "payload")) == b"result"
     assert len(harness.worker.calls) == 1
     assert harness.worker.calls[0].payload == b"pickled-payload"
 
@@ -119,7 +121,8 @@ async def test_logs_and_payload_are_demultiplexed(harness: Harness) -> None:
         "first line\n",
         "second line\n",
     ]
-    assert [r.payload for r in responses if r.HasField("payload")] == [b"result"]
+    assert [r.payload for r in responses if r.HasField("payload")] == [
+        b"result"]
 
 
 # ---------------------------------------------------------------------------
@@ -130,14 +133,15 @@ async def test_logs_and_payload_are_demultiplexed(harness: Harness) -> None:
 async def test_the_import_hints_reach_the_worker(harness: Harness) -> None:
     """The previous router consumed them and forwarded nothing.
 
-    The worker's `resources` field — the thing checkpoint selection is meant to
-    be built on — was always empty.
+    The worker's `resources` field - the thing checkpoint selection is meant to
+    be built on - was always empty.
     """
     await harness.register_worker()
 
     await execute(harness, header(imports=("torch", "pandas")), chunk(b"x"))
 
-    assert list(harness.worker.calls[0].header.resources) == ["pandas", "torch"]
+    assert list(harness.worker.calls[0].header.resources) == [
+        "pandas", "torch"]
 
 
 async def test_the_placement_is_stamped_on_the_first_worker_message(

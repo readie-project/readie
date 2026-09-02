@@ -2,7 +2,7 @@
 //
 // Everything above the process boundaries is real: the gRPC server, the
 // execution runner, the container manager, the executor socket protocol. Only
-// the three boundaries app.Deps exposes are substituted — the listener becomes
+// the three boundaries app.Deps exposes are substituted - the listener becomes
 // a bufconn, the sandbox runtime becomes fakesandbox, and the router becomes a
 // fakeregistry server on a second bufconn.
 //

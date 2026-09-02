@@ -522,7 +522,7 @@ func TestUpdate_ReportsAnAbsentBundleAsNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // Enumerating bundles rather than asking the runtime is what finds sandboxes
-// whose runtime state was lost — exactly the orphans cleanup exists for, and
+// whose runtime state was lost - exactly the orphans cleanup exists for, and
 // which a runtime listing would not mention.
 func TestList_FindsBundlesWhoseRuntimeStateIsGone(t *testing.T) {
 	f := newFixture(t)
@@ -692,7 +692,7 @@ func TestLogs_AbsentLogIsNotFound(t *testing.T) {
 }
 
 // The sandbox holds the log file open for its whole life, so a follower must
-// wait for more rather than reporting EOF the instant it catches up — and
+// wait for more rather than reporting EOF the instant it catches up - and
 // Close must interrupt that wait, or the log pump leaks.
 func TestLogs_FollowWaitsForMoreAndCloseInterrupts(t *testing.T) {
 	f := newFixture(t)

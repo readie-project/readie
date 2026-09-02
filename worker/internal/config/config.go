@@ -233,10 +233,10 @@ func Load(getenv Getenv) (Config, error) {
 	}
 
 	cfg := Config{
-		WorkerID:        valueOr(getenv("WORKER_ID"), DefaultWorkerID),
-		WorkerURI:       fmt.Sprintf("%s:%s", serviceName, port),
-		ListenAddr:      ":" + port,
-		RouterURI:       routerURI,
+		WorkerID:   valueOr(getenv("WORKER_ID"), DefaultWorkerID),
+		WorkerURI:  fmt.Sprintf("%s:%s", serviceName, port),
+		ListenAddr: ":" + port,
+		RouterURI:  routerURI,
 
 		WorkerDir: workerDir,
 
@@ -365,7 +365,7 @@ func (c Config) Validate() error {
 	}
 
 	// An overlay covering every mount would keep the executor's socket in the
-	// overlay's upper layer, where the worker cannot see it — every execution
+	// overlay's upper layer, where the worker cannot see it - every execution
 	// would then fail at dial time looking exactly like a dead executor.
 	if strings.HasPrefix(c.SandboxOverlay, "all:") {
 		errs = append(errs, fmt.Errorf(

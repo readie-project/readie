@@ -3,7 +3,7 @@
 Dataclasses, not dicts. The previous implementation built these records as dict
 literals, and a single missing comma silently produced a key called
 ``checkpoint_idcpu_util`` while leaving both ``checkpoint_id`` and ``cpu_util``
-absent — a class of bug that cannot occur here.
+absent - a class of bug that cannot occur here.
 
 Nothing in this module imports gRPC. The scheduling layer is a pure state
 machine so it can be tested without an event loop.

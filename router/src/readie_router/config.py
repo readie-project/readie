@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     default_memory: int = Field(default=512 * 1024 * 1024, gt=0)
 
     #: Directory of per-flavor ``<flavor>.json`` checkpoint catalogues (mounted
-    #: from the generations). Empty or absent means no request-time selection —
+    #: from the generations). Empty or absent means no request-time selection -
     #: every cold start is uncheckpointed, the behaviour before catalogues.
     catalogue_dir: str = ""
 

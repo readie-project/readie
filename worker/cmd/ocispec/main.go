@@ -2,8 +2,8 @@
 //
 // It exists so the offline checkpoint pipeline and the worker generate their
 // sandbox specifications from the *same* code. A gVisor checkpoint only
-// restores into a sandbox whose shape matches the one it was captured from —
-// same ordered mount list, same terminal setting, same overlay mode — and two
+// restores into a sandbox whose shape matches the one it was captured from -
+// same ordered mount list, same terminal setting, same overlay mode - and two
 // independent generators cannot be kept in agreement by review alone. When
 // they drift, the failure is an opaque restore error minutes into a request.
 //
@@ -30,14 +30,14 @@ import (
 // params is the input document, mirroring sandbox.CreateSpec in a form that is
 // convenient to write from Python.
 type params struct {
-	ID           string   `json:"id"`
+	ID           string            `json:"id"`
 	Annotations  map[string]string `json:"annotations,omitempty"`
-	BundleDir    string   `json:"bundle_dir"`
-	RootfsPath   string   `json:"rootfs_path"`
-	RootReadonly bool     `json:"root_readonly"`
-	Args         []string `json:"args"`
-	Env          []string `json:"env"`
-	Cwd          string   `json:"cwd,omitempty"`
+	BundleDir    string            `json:"bundle_dir"`
+	RootfsPath   string            `json:"rootfs_path"`
+	RootReadonly bool              `json:"root_readonly"`
+	Args         []string          `json:"args"`
+	Env          []string          `json:"env"`
+	Cwd          string            `json:"cwd,omitempty"`
 	Mounts       []struct {
 		Source      string   `json:"source"`
 		Destination string   `json:"destination"`

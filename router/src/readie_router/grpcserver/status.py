@@ -20,9 +20,11 @@ from readie_router.errors import (
 _MAPPING: tuple[tuple[type[BaseException], grpc.StatusCode, str], ...] = (
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT, "invalid execution request"),
     (NoWorkersRegisteredError, grpc.StatusCode.UNAVAILABLE, "no workers are available"),
-    (NoCapacityError, grpc.StatusCode.RESOURCE_EXHAUSTED, "no worker can accept this request"),
+    (NoCapacityError, grpc.StatusCode.RESOURCE_EXHAUSTED,
+     "no worker can accept this request"),
     (SessionBusyError, grpc.StatusCode.RESOURCE_EXHAUSTED, "the session is busy"),
-    (WorkerUnavailableError, grpc.StatusCode.UNAVAILABLE, "the assigned worker is unreachable"),
+    (WorkerUnavailableError, grpc.StatusCode.UNAVAILABLE,
+     "the assigned worker is unreachable"),
     (TimeoutError, grpc.StatusCode.DEADLINE_EXCEEDED, "the execution timed out"),
 )
 
@@ -31,7 +33,7 @@ def to_status(exc: BaseException) -> tuple[grpc.StatusCode, str]:
     """Return the code and client-facing message for an error.
 
     Messages stay generic on purpose. The specifics belong in the log line
-    keyed by ``request_id``, not on a wire the router does not control — a
+    keyed by ``request_id``, not on a wire the router does not control - a
     client has no use for a worker's internal address, and leaking it invites
     it to be depended upon.
     """

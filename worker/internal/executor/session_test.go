@@ -183,8 +183,8 @@ func TestReadResponse_ReportsNoResponseWhenNothingArrives(t *testing.T) {
 }
 
 // Under version 1 an immediate close *was* the response: an empty one, which
-// is what a raising function produced. There is no longer any such thing —
-// every outcome, including a failure, is a message — so a peer that closes
+// is what a raising function produced. There is no longer any such thing -
+// every outcome, including a failure, is a message - so a peer that closes
 // without sending one has died.
 func TestReadResponse_AClosedConnectionWithNoMessageIsAnError(t *testing.T) {
 	conn, _ := dialFakeExecutor(t, fakeexecutor.Options{Mode: fakeexecutor.ModeCloseImmediately})

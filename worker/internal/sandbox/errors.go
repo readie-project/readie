@@ -15,7 +15,7 @@ var (
 	// for example unpausing one that is not paused or creating one twice.
 	ErrConflict = errors.New("sandbox state conflict")
 	// ErrRuntimeUnavailable indicates the sandbox runtime could not be used at
-	// all — a missing binary, an unusable state directory, a failed probe.
+	// all - a missing binary, an unusable state directory, a failed probe.
 	ErrRuntimeUnavailable = errors.New("sandbox runtime unavailable")
 	// ErrInvalidSpec indicates the requested configuration is unusable.
 	ErrInvalidSpec = errors.New("invalid sandbox spec")

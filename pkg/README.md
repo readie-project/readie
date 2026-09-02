@@ -35,7 +35,7 @@ worker may auto-expand to when the function needs more; `gpu_memory` /
 `max_gpu_memory` are the same for GPU device memory. `gpu=True` sends the call to
 a GPU worker (a `gpu_memory` budget implies it too). The client also statically
 extracts the function's imports and forwards them so the router can pick a
-checkpoint that already imported them — this is automatic and needs no
+checkpoint that already imported them - this is automatic and needs no
 configuration.
 
 ```sh
@@ -54,11 +54,11 @@ readie.configure(router_uri="localhost:50051", timeout=120.0, stream_logs=True, 
 
 The following are configurable only from the environment:
 
-| | |
-|---|---|
-| `READIE_AUTH_TOKEN` | bearer token for a router that requires one; unset sends none |
-| `READIE_TLS_CA` | connect over TLS; a CA path verifies the nginx server, 
-else system roots. TLS is required for HTTPS router URIs |
+|                                                          |                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| `READIE_AUTH_TOKEN`                                      | bearer token for a router that requires one; unset sends none |
+| `READIE_TLS_CA`                                          | connect over TLS; a CA path verifies the nginx server,        |
+| else system roots. TLS is required for HTTPS router URIs |
 
 ## When a remote function raises
 
@@ -73,7 +73,7 @@ except readie.RemoteExecutionError as error:
     print(error.worker_id, error.container_id)
 ```
 
-The exception *object* is not reconstructed. Unpickling it would need its class
+The exception _object_ is not reconstructed. Unpickling it would need its class
 importable here, and for a library that exists only in the worker image the
 resulting `ImportError` would replace the real error with a confusing one.
 
@@ -84,7 +84,7 @@ returns `None` returns a value and does not land there.
 ## Sessions
 
 By default every call is independent and gets a fresh container. To reuse a warm
-container — and the Python state it holds — open a session:
+container - and the Python state it holds - open a session:
 
 ```python
 with readie.default_client().session() as s:

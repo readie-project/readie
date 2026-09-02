@@ -35,7 +35,7 @@ def test_no_module_level_mutable_state() -> None:
     """A module-level singleton is how the old router could end up with two.
 
     `router/` had no `__init__.py`, so `scheduler` was importable under more
-    than one module name, each with its own `Scheduler()` — two registries,
+    than one module name, each with its own `Scheduler()` - two registries,
     each seeing half the cluster.
     """
     banned = (ClusterState, Scheduler, WorkerChannelPool)
@@ -58,8 +58,10 @@ def test_the_domain_never_awaits(cls: type) -> None:
     `provision`/`bind` were written to eliminate.
     """
     for name, member in inspect.getmembers(cls, inspect.isfunction):
-        assert not inspect.iscoroutinefunction(member), f"{cls.__name__}.{name} is async"
-        assert not inspect.isasyncgenfunction(member), f"{cls.__name__}.{name} is an async gen"
+        assert not inspect.iscoroutinefunction(
+            member), f"{cls.__name__}.{name} is async"
+        assert not inspect.isasyncgenfunction(
+            member), f"{cls.__name__}.{name} is an async gen"
 
 
 def test_the_domain_does_not_import_grpc() -> None:
@@ -78,7 +80,8 @@ def test_status_constants_match_the_wire_enum() -> None:
     Note the gap at 1: the wire enum has no value 1, and a "tidied" contiguous
     enum here would silently mis-map every status.
     """
-    wire = {v.name: v.number for v in registry_pb2.DESCRIPTOR.enum_types_by_name["Status"].values}
+    wire = {
+        v.name: v.number for v in registry_pb2.DESCRIPTOR.enum_types_by_name["Status"].values}
     assert wire == {
         "STATUS_UNKNOWN": models.STATUS_UNKNOWN,
         "STATUS_READY": models.STATUS_READY,

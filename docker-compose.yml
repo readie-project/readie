@@ -47,7 +47,7 @@ services:
             context: ./worker
             # `FROM readie-worker-base-cpu:latest`, which the offline pipeline
             # builds. It must be present locally (`make worker-base FLAVOR=cpu`)
-            # or pullable — unlike the router, this cannot be built from a bare
+            # or pullable - unlike the router, this cannot be built from a bare
             # checkout.
             dockerfile: Dockerfile
             args:
@@ -58,7 +58,7 @@ services:
         # runs the independently-generated gpu image instead.
         image: readie-worker-cpu:latest
         # gVisor publishes amd64 and arm64 builds, but the executor rootfs is
-        # amd64-only, and gVisor works by intercepting syscalls — which is
+        # amd64-only, and gVisor works by intercepting syscalls - which is
         # exactly what emulation sits in the middle of. This will not run on an
         # Apple Silicon machine.
         platform: linux/amd64
@@ -93,7 +93,7 @@ services:
         # per execution.
         init: true
         volumes:
-            # Per-sandbox directories and OCI bundles — writable runtime
+            # Per-sandbox directories and OCI bundles - writable runtime
             # scratch, and the only volume this worker needs. The rootfs and
             # checkpoints are baked into the image, so there is no artifact
             # mount to get wrong.

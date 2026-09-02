@@ -50,7 +50,7 @@ func BuildSpec(spec sandbox.CreateSpec) (*specs.Spec, error) {
 	}
 
 	out := &specs.Spec{
-		Version: ociVersion,
+		Version:     ociVersion,
 		Annotations: spec.Annotations,
 		Process: &specs.Process{
 			// A pty would merge stdout and stderr onto a console socket and
@@ -223,8 +223,8 @@ func isAncestor(parent, child string) bool {
 // It deliberately ignores the marshalled JSON: runtime-spec upgrades reorder
 // and add fields, and the memory limit varies per request. What must agree
 // between the sandbox a checkpoint was captured from and the one it is
-// restored into is the *shape* of the sandbox — the program, the mount table,
-// the namespaces, and the runtime modes — not the bytes.
+// restored into is the *shape* of the sandbox - the program, the mount table,
+// the namespaces, and the runtime modes - not the bytes.
 //
 // Excluded on purpose: every mount source (resolved fresh from the bundle at
 // restore time, which is what makes a checkpoint portable between workers),

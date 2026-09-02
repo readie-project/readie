@@ -18,7 +18,7 @@ import (
 // These tests exercise ExecRunner against a real process, using the standard
 // os/exec helper-process pattern: the test binary re-invokes itself as a stand
 // in for runsc. That needs no shell script and no build step, and behaves the
-// same on darwin and linux — which matters, because gVisor itself cannot run
+// same on darwin and linux - which matters, because gVisor itself cannot run
 // on a development Mac at all.
 
 const (
@@ -192,7 +192,7 @@ func TestExecRunner_ContextCancellationIsReported(t *testing.T) {
 // sandbox and exits, and the sandbox goes on writing to the inherited
 // descriptor for the rest of the execution. Passing an io.Writer instead of an
 // *os.File would make os/exec interpose a pipe that this process closes on
-// Wait, yielding an empty log and a SIGPIPE'd executor — and every unit test
+// Wait, yielding an empty log and a SIGPIPE'd executor - and every unit test
 // would still pass.
 func TestExecRunner_SpawnedDescriptorsOutliveTheChild(t *testing.T) {
 	dir := t.TempDir()

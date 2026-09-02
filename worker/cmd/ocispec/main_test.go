@@ -19,7 +19,7 @@ import (
 // checkpoints against a sandbox it describes through these params; the worker
 // describes the sandbox it restores into through container.Manager. If the two
 // descriptions disagree in any way a checkpoint is sensitive to, restores fail
-// opaquely minutes into a request — so agreement is asserted here, on the
+// opaquely minutes into a request - so agreement is asserted here, on the
 // fingerprint, rather than left to review.
 func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 	const (

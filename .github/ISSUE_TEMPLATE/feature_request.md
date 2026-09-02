@@ -6,7 +6,7 @@ labels: enhancement
 
 ## The problem
 
-<!-- What you are unable to do today. Not the solution — the situation. -->
+<!-- What you are unable to do today. Not the solution - the situation. -->
 
 ## Proposed change
 

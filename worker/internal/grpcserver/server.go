@@ -109,7 +109,7 @@ func (s *Server) SetServing(serving bool) {
 // Draining matters here beyond politeness: each in-flight RequestExecution
 // releases its container on the way out, so severing them would strand
 // containers that only the next startup sweep would reclaim. The previous
-// implementation never stopped the server at all — it simply returned and let
+// implementation never stopped the server at all - it simply returned and let
 // process exit sever everything.
 func (s *Server) GracefulStop(ctx context.Context) error {
 	s.health.Shutdown()

@@ -204,7 +204,7 @@ func TestShutdown_LeavesNoContainerDirectoriesBehind(t *testing.T) {
 	assert.Empty(t, entries, "every per-container directory must be reclaimed")
 }
 
-// A worker image built with no artifacts baked in — what `docker compose build`
+// A worker image built with no artifacts baked in - what `docker compose build`
 // produces before any checkpoint has been captured.
 //
 // It starts. A worker that exits before it logs is far harder to diagnose than

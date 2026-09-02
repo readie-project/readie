@@ -2,13 +2,13 @@
 
 By default the router speaks plaintext with no auth (see SECURITY.md). When an
 auth token is configured, a bearer token is **required on ``ProxyService`` calls**
-— the only path that runs code — so reaching the port is no longer enough to
+- the only path that runs code - so reaching the port is no longer enough to
 execute on the cluster. ``RegistryService`` (workers), health and reflection are
 exempt: the worker mesh is trusted, and the compose healthcheck must keep working
 without a token.
 
 ``Authenticator`` is a ``Protocol`` so a deployment can replace the shared-token
-check with JWT or per-tenant validation without touching the interceptor — the
+check with JWT or per-tenant validation without touching the interceptor - the
 same seam philosophy as ``ResultCodec`` on the client.
 """
 
@@ -58,12 +58,13 @@ class SharedTokenAuthenticator:
                 continue
             presented = value.decode() if isinstance(value, bytes) else value
             if presented.lower().startswith(_BEARER):
-                presented = presented[len(_BEARER) :]
+                presented = presented[len(_BEARER):]
             return hmac.compare_digest(presented, self._token)
         return False
 
 
-class AuthInterceptor(grpc.aio.ServerInterceptor):  # type: ignore[misc]  # grpc stub is Any
+# type: ignore[misc]  # grpc stub is Any
+class AuthInterceptor(grpc.aio.ServerInterceptor):
     """Rejects unauthorized ``ProxyService`` calls with UNAUTHENTICATED."""
 
     def __init__(self, authenticator: Authenticator) -> None:

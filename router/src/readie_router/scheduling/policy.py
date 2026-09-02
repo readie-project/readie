@@ -111,7 +111,7 @@ class LeastLoadedScorer:
     every eligible worker is gpu, so the term is 0 for all and does nothing.
 
     Every term is present in the key so the later ones break ties, and the
-    worker id is last so the result is deterministic — a single-worker or
+    worker id is last so the result is deterministic - a single-worker or
     freshly started cluster produces reproducible output, and there is no
     randomness to make a test flaky.
     """
@@ -143,7 +143,8 @@ class CompositeSelector:
         if not eligible:
             return None
 
-        best = min(eligible, key=lambda w: (*self.scorer.score(w, demand), w.worker_id))
+        best = min(eligible, key=lambda w: (
+            *self.scorer.score(w, demand), w.worker_id))
         return best.worker_id
 
 
@@ -160,8 +161,10 @@ def default_selector(
     return CompositeSelector(
         filters=(
             FlavorFilter(),
-            ResourceHeadroomFilter(kind=RESOURCE_MEMORY, headroom=memory_headroom),
-            ResourceHeadroomFilter(kind=RESOURCE_GPU_MEMORY, headroom=gpu_memory_headroom),
+            ResourceHeadroomFilter(kind=RESOURCE_MEMORY,
+                                   headroom=memory_headroom),
+            ResourceHeadroomFilter(
+                kind=RESOURCE_GPU_MEMORY, headroom=gpu_memory_headroom),
             ExecutorCountFilter(),
         ),
         scorer=LeastLoadedScorer(),

@@ -17,7 +17,7 @@ type checkpointLister interface {
 
 // The baked manifest records a placeholder spec fingerprint that no real worker
 // can reproduce. With strict compatibility on, the worker must refuse the
-// checkpoints at startup and serve cold starts only — rather than advertise
+// checkpoints at startup and serve cold starts only - rather than advertise
 // checkpoints every restore would silently fail to use.
 func TestStrictCompat_RefusesIncompatibleCheckpoints(t *testing.T) {
 	h := newHarness(t, withConfig(func(c *config.Config) {

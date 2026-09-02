@@ -18,7 +18,7 @@
 // Framed per chunk rather than once per message so a sender can stream without
 // knowing the total size. This side relays request bytes straight from a gRPC
 // stream and learns the length only when that stream ends; a single prefix
-// would force buffering an entire payload — possibly hundreds of megabytes —
+// would force buffering an entire payload - possibly hundreds of megabytes -
 // purely to count it.
 //
 // # The envelope
@@ -31,7 +31,7 @@
 //	{"ok": false, "exc_type": str, "message": str, "traceback": str}
 //
 // A false "ok" is *not* a worker failure. The sandbox ran, the interpreter is
-// healthy, and the container is still reusable — so the execution is reported
+// healthy, and the container is still reusable - so the execution is reported
 // as a success and the container is paused for reuse. Only the client turns
 // that envelope into an exception.
 //

@@ -17,7 +17,7 @@ type call struct {
 //
 // It exists to assert the exact command lines the adapter builds. runsc parses
 // flags with stdlib flag semantics, so a global flag placed after the
-// subcommand — or a bare `--flag value` instead of `--flag=value` — is
+// subcommand - or a bare `--flag value` instead of `--flag=value` - is
 // silently misread; only full-slice argv equality catches that.
 type fakeRunner struct {
 	mu    sync.Mutex

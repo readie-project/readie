@@ -20,8 +20,8 @@ type Runner interface {
 // ExecutionService serves the ExecutionService gRPC contract.
 //
 // It is deliberately thin: receive the first message, adapt the stream, and
-// hand off. Everything that used to make this handler untestable — the
-// goroutine choreography, the timeout handling, the container lifecycle —
+// hand off. Everything that used to make this handler untestable - the
+// goroutine choreography, the timeout handling, the container lifecycle -
 // lives in the execution package, behind interfaces.
 type ExecutionService struct {
 	pb.UnimplementedExecutionServiceServer

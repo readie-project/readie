@@ -3,7 +3,7 @@
 // It reproduces the real executor's socket behaviour: bind a unix socket,
 // accept one connection at a time, read a length-prefixed message, reply with
 // another, then close and accept again. The behavioural modes let tests
-// reproduce the executor's awkward edges — the 30-second pre-bind sleep, an
+// reproduce the executor's awkward edges - the 30-second pre-bind sleep, an
 // executor that stalls, and one that dies part-way through a reply.
 package fakeexecutor
 
@@ -37,7 +37,7 @@ const (
 	// ModeCloseImmediately closes as soon as the request arrives.
 	ModeCloseImmediately
 	// ModeTruncatedResponse writes a chunk header promising more than it
-	// sends, then closes — an executor killed mid-reply. Version 1 could not
+	// sends, then closes - an executor killed mid-reply. Version 1 could not
 	// distinguish this from a complete short response.
 	ModeTruncatedResponse
 )

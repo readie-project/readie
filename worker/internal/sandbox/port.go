@@ -18,7 +18,7 @@ import (
 // Destination, Type and Options are part of the checkpoint compatibility
 // contract: a checkpoint only restores into a sandbox whose ordered mount list
 // matches the one it was captured with. Source may differ, because it is
-// resolved fresh from the bundle at restore time — which is what lets a
+// resolved fresh from the bundle at restore time - which is what lets a
 // checkpoint move between workers.
 type Mount struct {
 	Source      string
@@ -38,7 +38,7 @@ type CreateSpec struct {
 	// directory name, and the identifier in every downstream call and log line.
 	ID string
 
-	// gVisor annotations are key-value metadata pairs passed to gVisor's OCI runtime 
+	// gVisor annotations are key-value metadata pairs passed to gVisor's OCI runtime
 	// (runsc) to configure advanced runtime behavior
 	Annotations map[string]string
 

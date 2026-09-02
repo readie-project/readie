@@ -2,7 +2,7 @@
 # pipeline/Dockerfile's `worker-base` target COPYs them from.
 #
 # Committed empty on purpose: that COPY has to find something, so a checkout with
-# no captured checkpoints still builds a base — a rootfs and no checkpoints, every
+# no captured checkpoints still builds a base - a rootfs and no checkpoints, every
 # start cold, which works.
 #
 # The contents are gitignored. They are gigabytes, and an artifact rather than a

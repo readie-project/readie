@@ -301,7 +301,7 @@ func TestLoad_RefusesAManifestMissingWhatARestoreNeeds(t *testing.T) {
 // Artifacts whose executor speaks a format this worker does not implement are
 // refused at load, not at restore. The failure otherwise happens inside a
 // request, as a dial that succeeds followed by a read that hangs to the
-// deadline — indistinguishable from a slow function.
+// deadline - indistinguishable from a slow function.
 func TestProtocol_DefaultsToOneWhenTheFieldIsAbsent(t *testing.T) {
 	assert.Equal(t, 1, artifact.Manifest{}.Protocol())
 }
@@ -337,7 +337,7 @@ func mustLoadErr(t *testing.T, b *builder) error {
 // ---------------------------------------------------------------------------
 
 // The pipeline records the command and the worker replays it, rather than each
-// assembling one — two generators cannot be kept in agreement by review, and a
+// assembling one - two generators cannot be kept in agreement by review, and a
 // disagreement restores a checkpoint into a sandbox running a different process.
 func TestArgv_ReturnsTheRecordedCommand(t *testing.T) {
 	m := artifact.Manifest{ExecutorArgv: []string{"python", "-u", "-m", "readie_executor"}}

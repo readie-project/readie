@@ -74,7 +74,7 @@ func (a Allocation) budget(kind int32) Budget {
 type Handle struct {
 	ID string
 	// CheckpointID is the checkpoint the container was restored from, or empty
-	// if it started cold — including when a requested restore failed and was
+	// if it started cold - including when a requested restore failed and was
 	// downgraded.
 	CheckpointID string
 	Alloc        Allocation
@@ -202,8 +202,8 @@ type Manager struct {
 	//
 	// The Manager was otherwise stateless with respect to handles: it created,
 	// paused and destroyed containers without remembering any of them, and the
-	// runtime is the only durable record. That is still true of correctness —
-	// nothing here is consulted to decide anything — but "how much of this
+	// runtime is the only durable record. That is still true of correctness -
+	// nothing here is consulted to decide anything - but "how much of this
 	// worker is spoken for" cannot be answered without it, and asking the
 	// runtime on every report would mean an exec per scheduling tick.
 	mu   sync.Mutex
@@ -316,7 +316,7 @@ func (m *Manager) Acquire(ctx context.Context, req AcquireRequest) (Handle, erro
 //
 // The generation is resolved first, because it decides which root filesystem
 // the sandbox runs against. A checkpoint can only be restored into the
-// filesystem it was captured from — which is guaranteed here by construction,
+// filesystem it was captured from - which is guaranteed here by construction,
 // because the rootfs and the checkpoints are baked into the worker image
 // together and there is only ever one of the former.
 func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error) {
@@ -327,7 +327,7 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 	if errors.Is(restoreErr, artifact.ErrNoArtifacts) {
 		// This one *is* fatal. An unresolvable checkpoint downgrades to a cold
 		// start, but a worker with no rootfs has nothing to start cold against
-		// — there is nothing to downgrade to. Failing here names the missing
+		// - there is nothing to downgrade to. Failing here names the missing
 		// artifact; carrying on would hand runsc an empty rootfs path and fail
 		// with an error naming neither.
 		return Handle{}, restoreErr

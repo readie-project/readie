@@ -11,7 +11,7 @@ labels: bug
 ## What happened
 
 <!-- Include the exact error, and the structured log lines around it. The
-     router and worker log JSON with request_id and container_id — those two
+     router and worker log JSON with request_id and container_id - those two
      fields are what let a report be traced across components. -->
 
 ## What you expected

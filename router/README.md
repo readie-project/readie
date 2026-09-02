@@ -21,7 +21,7 @@ make help      # list every target
 ```
 src/readie_router/
 ├── main.py            entry: signals, config, logger, App
-├── app.py             COMPOSITION ROOT — the only place concrete types are built
+├── app.py             COMPOSITION ROOT - the only place concrete types are built
 ├── config.py          pydantic-settings
 ├── logging.py  clock.py  errors.py
 ├── grpcserver/        server, proxy_service, registry_service, session_gate
@@ -31,8 +31,8 @@ src/readie_router/
 ```
 
 This deliberately mirrors the Go worker so both halves read the same way:
-`app.py` ↔ `internal/app`, `grpcserver/` ↔ `internal/grpcserver`, `scheduling/`
-↔ `internal/execution`, `workers/` ↔ `internal/registry`, `tests/fakes/` ↔
+`app.py` <-> `internal/app`, `grpcserver/` <-> `internal/grpcserver`, `scheduling/`
+<-> `internal/execution`, `workers/` <-> `internal/registry`, `tests/fakes/` <->
 `internal/testutil`.
 
 ## Design
@@ -45,7 +45,7 @@ event loop at all, and a guard test enforces it.
 collaborator takes its dependencies through `__init__`, and a guard test walks
 the package asserting no module global holds a `ClusterState`, `Scheduler` or
 channel pool. Seams are `typing.Protocol` rather than ABC, so the consumer
-declares the interface structurally — which matters most for `WorkerSelector`
+declares the interface structurally - which matters most for `WorkerSelector`
 and its filters (a deployment can compose a different placement policy without
 subclassing) and for `ExecutionClient` (satisfied by an adapter over a generated
 stub we do not control).
@@ -57,8 +57,8 @@ reintroduces a read-modify-write race. Locks live only outside the domain: the
 session gate, the channel pool's eviction path, and the reaper and prober, which
 re-validate after awaiting rather than writing back a stale read.
 
-**Placement** is affinity first — a warm container holds the session's Python
-state, and moving it silently loses that — then filters (READY, live, memory
+**Placement** is affinity first - a warm container holds the session's Python
+state, and moving it silently loses that - then filters (READY, live, memory
 headroom, executor cap) and a score that prefers memory pressure, falls back to
 CPU, then to in-flight count, with a lexicographic tiebreak on worker id. No
 randomness, so the same cluster state always yields the same decision.
@@ -66,9 +66,9 @@ randomness, so the same cluster state always yields the same decision.
 **The provision/reconcile hazard.** Two concurrent requests for one session would
 otherwise both see an empty affinity and both cold-start, with whichever response
 landed last winning. Three things fix it together: `provision` is one synchronous
-transaction that *decides and reserves*, so the next caller sees the load;
+transaction that _decides and reserves_, so the next caller sees the load;
 reconciliation is idempotent and keyed by `request_id`, accepting both the
-`PostExecutorStatus(BUSY)` path and the first-response path — necessary because a
+`PostExecutorStatus(BUSY)` path and the first-response path - necessary because a
 silent execution never sends a payload and so never reveals its container through
 the stream; and concurrent requests for one session are serialised by the gate.
 
@@ -97,14 +97,14 @@ REMOVED=5`). A unit test asserts it, because renumbering to close the gap would
 silently reinterpret every status already on the wire.
 
 **Requests carry resource `budgets`**, a `ResourceBudget` per kind (memory, GPU
-memory) in bytes. The scheduler reserves and filters on the memory budget — the
-only resource the cluster reports capacity for — and forwards every budget to
+memory) in bytes. The scheduler reserves and filters on the memory budget - the
+only resource the cluster reports capacity for - and forwards every budget to
 the worker. `ResourceHeadroomFilter` is generic over kind, so adding GPU-memory
 placement is one filter plus a capacity field.
 
 **Health starts NOT_SERVING** and flips only once the router can genuinely
 serve, so an orchestrator never routes to a half-initialised process. On the way
-down it goes NOT_SERVING *before* the drain, so a load balancer stops sending new
+down it goes NOT_SERVING _before_ the drain, so a load balancer stops sending new
 work while in-flight executions finish. That drain only happens because `main.py`
 installs SIGTERM and SIGINT handlers; without them `docker stop` SIGKILLs the
 process and the graceful stop never runs.
@@ -114,20 +114,20 @@ process and the graceful stop never runs.
 Read from the environment by pydantic-settings, under the field names below
 (uppercased). A `.env` file is honoured if present.
 
-| | |
-|---|---|
-| `BIND_HOST`, `PORT` | what the server binds |
-| `SERVICE_NAME` | what the router advertises to workers |
-| `MAX_CONCURRENT_RPCS`, `MAX_MESSAGE_BYTES` | inbound gRPC limits |
-| `DEFAULT_MEMORY`, `MEMORY_HEADROOM` | placement — the memory budget for a request that sets none, and the fraction of a worker's memory the router will commit |
-| `CATALOGUE_DIR` | directory of per-flavor `<flavor>.json` catalogues; absent means cold starts |
-| `AUTH_TOKEN` | bearer token required on ProxyService; unset means no auth |
-| `SESSION_WAIT_TIMEOUT`, `EXECUTION_TIMEOUT` | per-request bounds |
-| `PROBE_INTERVAL`, `PROBE_TIMEOUT`, `PROBE_FAILURE_THRESHOLD` | liveness |
-| `REAPER_INTERVAL`, `WORKER_TTL`, `EXECUTOR_TTL`, `EXECUTOR_ERROR_TTL`, `SESSION_TTL` | eviction |
-| `MAX_SESSIONS` | LRU cap, independent of the TTLs |
-| `SHUTDOWN_GRACE` | drain budget on SIGTERM |
-| `LOG_LEVEL`, `LOG_FORMAT` | `json` or `console` |
+|                                                                                      |                                                                                                                          |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `BIND_HOST`, `PORT`                                                                  | what the server binds                                                                                                    |
+| `SERVICE_NAME`                                                                       | what the router advertises to workers                                                                                    |
+| `MAX_CONCURRENT_RPCS`, `MAX_MESSAGE_BYTES`                                           | inbound gRPC limits                                                                                                      |
+| `DEFAULT_MEMORY`, `MEMORY_HEADROOM`                                                  | placement - the memory budget for a request that sets none, and the fraction of a worker's memory the router will commit |
+| `CATALOGUE_DIR`                                                                      | directory of per-flavor `<flavor>.json` catalogues; absent means cold starts                                             |
+| `AUTH_TOKEN`                                                                         | bearer token required on ProxyService; unset means no auth                                                               |
+| `SESSION_WAIT_TIMEOUT`, `EXECUTION_TIMEOUT`                                          | per-request bounds                                                                                                       |
+| `PROBE_INTERVAL`, `PROBE_TIMEOUT`, `PROBE_FAILURE_THRESHOLD`                         | liveness                                                                                                                 |
+| `REAPER_INTERVAL`, `WORKER_TTL`, `EXECUTOR_TTL`, `EXECUTOR_ERROR_TTL`, `SESSION_TTL` | eviction                                                                                                                 |
+| `MAX_SESSIONS`                                                                       | LRU cap, independent of the TTLs                                                                                         |
+| `SHUTDOWN_GRACE`                                                                     | drain budget on SIGTERM                                                                                                  |
+| `LOG_LEVEL`, `LOG_FORMAT`                                                            | `json` or `console`                                                                                                      |
 
 `BIND_HOST`/`PORT` and `SERVICE_NAME`/`PORT` are deliberately separate concerns:
 the previous implementation bound the hostname `router:50051` rather than an
@@ -135,7 +135,7 @@ interface, which works only where that name happens to resolve locally.
 
 ## Not persisted
 
-Cluster state is in memory. A restart loses sessions — their warm containers are
-then reclaimed by the workers' own TTLs — and workers re-register on their next
+Cluster state is in memory. A restart loses sessions - their warm containers are
+then reclaimed by the workers' own TTLs - and workers re-register on their next
 status report. That is an accepted trade, not an oversight: the alternative puts
 a datastore on the hot path of every placement decision.

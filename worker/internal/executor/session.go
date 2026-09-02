@@ -116,11 +116,11 @@ func (s *Session) write(p []byte, what string) error {
 //
 // Cancellation works by pushing the connection's read deadline into the past,
 // which interrupts a blocked Read. Polling ctx between reads could never fire
-// while a read was in progress — the only state that mattered.
+// while a read was in progress - the only state that mattered.
 func (s *Session) ReadResponse(ctx context.Context, sink func([]byte) error) error {
 	// cancelled is set before the hook expires the deadline, so the loop below
 	// can tell "the deadline fired because we were cancelled" from "the
-	// executor went quiet" without consulting ctx, and — critically — can
+	// executor went quiet" without consulting ctx, and - critically - can
 	// avoid pushing the deadline back out again after cancellation.
 	var cancelled atomic.Bool
 

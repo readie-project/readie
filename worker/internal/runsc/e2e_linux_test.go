@@ -129,7 +129,7 @@ time.sleep(30)`)
 }
 
 // Verifies that a descriptor handed to `runsc create` survives that command's
-// exit and is still written to by the daemonised sandbox — the assumption the
+// exit and is still written to by the daemonised sandbox - the assumption the
 // entire Logs implementation rests on.
 func TestE2E_SandboxOutputReachesTheLogFile(t *testing.T) {
 	rootfs := e2eRootfs(t)

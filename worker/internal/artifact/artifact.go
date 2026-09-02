@@ -17,7 +17,7 @@
 //	        └── …runsc image files…
 //
 // The pairing used to be enforced by a rootfs_id recorded in every generation
-// and every checkpoint. It was never actually compared — only logged — and with
+// and every checkpoint. It was never actually compared - only logged - and with
 // one rootfs per image there is nothing to compare it against, so it is gone.
 // The guarantee moved from a check at load time to being true by construction,
 // because the image build is the only way to produce a pair.
@@ -60,7 +60,7 @@ var (
 	// ErrNoArtifacts indicates the artifact root holds no root filesystem.
 	//
 	// Not fatal at startup: a worker with no rootfs cannot start a sandbox, but
-	// it can come up, serve health, register itself as unusable and say why —
+	// it can come up, serve health, register itself as unusable and say why -
 	// which is far easier to diagnose than a container that exits before it
 	// logs. Rootfs reports this, so the failure lands on the execution that
 	// needs a sandbox.
@@ -78,7 +78,7 @@ var (
 	//
 	// Refused at load rather than at restore. The failure otherwise happens
 	// inside a request, as a dial that succeeds followed by a read that hangs
-	// until the execution deadline — which looks like a slow function.
+	// until the execution deadline - which looks like a slow function.
 	ErrUnsupportedProtocol = errors.New("unsupported executor protocol")
 )
 
@@ -200,7 +200,7 @@ type Options struct {
 // A malformed checkpoint is logged and skipped rather than failing startup: one
 // bad image should not cost a worker every other checkpoint and its rootfs.
 //
-// Finding nothing is not an error either — see ErrNoArtifacts. Finding
+// Finding nothing is not an error either - see ErrNoArtifacts. Finding
 // checkpoints *without* a rootfs is, because that is a half-assembled artifact
 // rather than an absent one.
 func Load(opts Options) (*Registry, error) {
@@ -220,8 +220,8 @@ func Load(opts Options) (*Registry, error) {
 	case errors.Is(err, fs.ErrNotExist):
 		checkpointDirs = nil
 	case err != nil:
-		// A directory that exists but cannot be read is a real fault —
-		// permissions, a bad mount — and hiding it would strand a worker with
+		// A directory that exists but cannot be read is a real fault -
+		// permissions, a bad mount - and hiding it would strand a worker with
 		// artifacts it should have been able to see.
 		return nil, fmt.Errorf("reading %s: %w", filepath.Join(opts.Root, CheckpointsDirName), err)
 	}
@@ -387,8 +387,8 @@ func (r *Registry) Checkpoints() []string {
 // DropCheckpoints discards every installed checkpoint so the worker serves cold
 // starts only. It is how a worker refuses baked checkpoints it has found to be
 // incompatible with its own sandbox: the rootfs and manifest stay, but no
-// restore is offered, so ResolveCheckpoint fails for every id. Startup-only —
-// called before the gRPC server accepts a request — so it needs no locking.
+// restore is offered, so ResolveCheckpoint fails for every id. Startup-only -
+// called before the gRPC server accepts a request - so it needs no locking.
 // Idempotent.
 func (r *Registry) DropCheckpoints() {
 	r.checkpoints = map[string]Checkpoint{}

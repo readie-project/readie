@@ -96,7 +96,8 @@ class ClusterState:
         worker = self.ensure_worker(worker_id, now)
         executor = worker.executors.get(container_id)
         if executor is None:
-            executor = ExecutorRecord(container_id=container_id, worker_id=worker_id, last_seen=now)
+            executor = ExecutorRecord(
+                container_id=container_id, worker_id=worker_id, last_seen=now)
             worker.executors[container_id] = executor
         else:
             executor.last_seen = now
@@ -302,8 +303,8 @@ class ClusterState:
     ) -> None:
         """Record the container a placement actually landed on.
 
-        Idempotent and monotonic. Two sources race to call this — the worker's
-        ExecutorStatus(BUSY) and the first response on the proxy stream — so
+        Idempotent and monotonic. Two sources race to call this - the worker's
+        ExecutorStatus(BUSY) and the first response on the proxy stream - so
         whichever arrives first wins and the second is a no-op. A stale lease
         can never overwrite a newer session binding.
         """

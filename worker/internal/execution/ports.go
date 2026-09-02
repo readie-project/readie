@@ -3,8 +3,8 @@
 // response, logs and resource samples back.
 //
 // Nothing here depends on gRPC. The transport supplies a PayloadSource and a
-// Sink, which is what lets the whole choreography — including its concurrency
-// and timeout behaviour — be tested in-process under the race detector.
+// Sink, which is what lets the whole choreography - including its concurrency
+// and timeout behaviour - be tested in-process under the race detector.
 package execution
 
 import (
@@ -65,7 +65,7 @@ type ProvisionInfo struct {
 //
 // Contract: Provision is called exactly once, before any Payload or Logs call,
 // and every method is invoked from the single goroutine that called Run.
-// Implementations therefore need no locking — which is the point, since gRPC
+// Implementations therefore need no locking - which is the point, since gRPC
 // streams are not safe for concurrent sends.
 type Sink interface {
 	Provision(info ProvisionInfo) error

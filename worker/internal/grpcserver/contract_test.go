@@ -87,7 +87,7 @@ func TestToExecutionRequest_RejectsNil(t *testing.T) {
 }
 
 // The router reads the provisioning fields off the first response, so every
-// message must carry them — including request_id and session_id, which the
+// message must carry them - including request_id and session_id, which the
 // router copies straight through to its own client.
 func TestStreamSink_StampsProvisioningOntoEveryMessage(t *testing.T) {
 	stream := &recordingStream{}

@@ -30,7 +30,7 @@ def preimport(modules: tuple[str, ...]) -> PreimportReport:
     A failed import is reported and skipped rather than raised. The alternative
     is that one bad name in a planned set aborts the whole capture, and the
     operator sees a sandbox that exited instead of a checkpoint that is merely
-    missing one module — the pipeline can only tell those apart if we keep
+    missing one module - the pipeline can only tell those apart if we keep
     going and say so.
     """
     report = PreimportReport()
@@ -43,7 +43,8 @@ def preimport(modules: tuple[str, ...]) -> PreimportReport:
             # Including SystemExit: some scientific packages call sys.exit on an
             # unsupported platform, and that must not take the executor with it.
             report.failed[name] = f"{type(exc).__name__}: {exc}"
-            print(f"[preimport] {name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            print(
+                f"[preimport] {name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
             # Raise so that it propogates to the pipeline
             raise
         else:
@@ -65,15 +66,15 @@ def trigger_checkpoint(report: PreimportReport | None = None) -> str | None:
     try:
         # Open the file descriptor for reading and writing
         fd = os.open(path, os.O_RDWR)
-        
+
         # Write '1' to trigger the checkpoint
         os.write(fd, b"1")
-        
+
         # Read blocks the thread until the checkpoint completes.
         # It returns 'resume', 'restore', or 'error'.
         result_bytes = os.read(fd, 1024)
         result = result_bytes.decode('utf-8').strip()
-        
+
         os.close(fd)
         return result
     except FileNotFoundError:

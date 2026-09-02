@@ -19,8 +19,8 @@ A message is a sequence of length-prefixed chunks ending in a zero-length one::
 Framed per chunk rather than once per message so that a sender can stream
 without knowing the total size in advance. The worker relays request bytes from
 a gRPC stream as they arrive and learns the length only when that stream ends;
-a single prefix would force it to buffer an entire payload — possibly hundreds
-of megabytes — purely to count it.
+a single prefix would force it to buffer an entire payload - possibly hundreds
+of megabytes - purely to count it.
 
 The Go side is ``worker/internal/executor``. The two are separate
 implementations of one format, and ``tests/data/frames.golden`` is read by both
@@ -32,7 +32,7 @@ Version 1 terminated a request with the unframed literal bytes ``EOF`` and a
 response by closing the connection.
 
 * **A body could not contain its own terminator.** Pickle happens to always end
-  with the STOP opcode, so this never fired — luck, not design.
+  with the STOP opcode, so this never fired - luck, not design.
 * **A truncated response was indistinguishable from a short one.** The stream
   ended at connection close, so an executor killed mid-write read as success.
 * **A raising function sent nothing at all.** There was no way to say "it ran
@@ -44,7 +44,7 @@ third: failure becomes a value, and it carries the traceback from the process
 that actually produced it.
 
 Note what the envelope deliberately does *not* imply. ``ok: False`` is not a
-worker failure — the sandbox ran, the interpreter is healthy, and the container
+worker failure - the sandbox ran, the interpreter is healthy, and the container
 is still reusable. The worker keeps reporting success and pauses it for reuse;
 only the client turns the envelope into an exception.
 """
@@ -68,7 +68,7 @@ LENGTH_BYTES = struct.calcsize(LENGTH_FORMAT)
 
 #: Refuse to allocate for a single chunk larger than this. The prefix arrives
 #: from the peer, so an implausible one must be rejected before it is used as an
-#: allocation size — otherwise one corrupt prefix OOM-kills the sandbox, which
+#: allocation size - otherwise one corrupt prefix OOM-kills the sandbox, which
 #: reads as a mysterious disappearance rather than an error.
 MAX_CHUNK_BYTES = 64 * 1024 * 1024
 
@@ -115,7 +115,7 @@ def read_exactly(reader: Reader, n: int, *, chunk_size: int) -> bytes:
 
     "Or raise" is the whole point. A stream socket returns whatever has arrived,
     so a caller that treats a short read as the complete message cannot tell a
-    truncated response from a small one — which is precisely how version 1
+    truncated response from a small one - which is precisely how version 1
     reported an executor killed mid-write as a success.
     """
     if n == 0:
@@ -148,7 +148,8 @@ def read_message(
     total = 0
 
     while True:
-        length = decode_length(read_exactly(reader, LENGTH_BYTES, chunk_size=chunk_size))
+        length = decode_length(read_exactly(
+            reader, LENGTH_BYTES, chunk_size=chunk_size))
 
         if length == 0:
             return b"".join(parts)
@@ -173,7 +174,7 @@ def write_message(writer: Writer, payload: bytes, *, chunk_size: int) -> None:
     reason to wake the reader twice per chunk.
     """
     for start in range(0, len(payload), chunk_size):
-        piece = payload[start : start + chunk_size]
+        piece = payload[start: start + chunk_size]
         writer.sendall(encode_length(len(piece)) + piece)
 
     # A zero-length chunk is the terminator, and it is what an empty payload
@@ -194,7 +195,7 @@ def failure_envelope(exc: BaseException, traceback_text: str) -> dict[str, Any]:
 
     The exception object itself is deliberately not sent. Unpickling it on the
     client requires the class to be importable *there*, which for a library that
-    only exists in the worker image it is not — so a remote ImportError would
+    only exists in the worker image it is not - so a remote ImportError would
     replace the real error with a confusing one. The type name, message and
     formatted traceback are strings, and they always arrive.
     """

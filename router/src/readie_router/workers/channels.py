@@ -2,7 +2,7 @@
 
 The previous implementation opened a channel per request inside an
 ``async with``, so every execution paid a fresh TCP connect and HTTP/2
-handshake — and the code carried a ``# TODO: Use single channel per worker``
+handshake - and the code carried a ``# TODO: Use single channel per worker``
 saying as much.
 """
 
@@ -20,7 +20,7 @@ class WorkerChannelPool:
 
     Channel construction is synchronous and lazily connected, so ``get`` needs
     no lock. Closing is a coroutine, though, so eviction could otherwise
-    interleave with a lookup and hand out a channel that is being torn down —
+    interleave with a lookup and hand out a channel that is being torn down -
     hence the lock on the mutating paths and the ``_closed`` guard.
     """
 

@@ -36,7 +36,7 @@ func TestLoad_Defaults(t *testing.T) {
 
 	// Router contract: the router indexes the worker by whatever ID it
 	// registers with and dials this URI verbatim. Both are asserted here so a
-	// regression is loud. WORKER_ID is only a default — a fleet must give each
+	// regression is loud. WORKER_ID is only a default - a fleet must give each
 	// worker its own.
 	assert.Equal(t, "worker-1", cfg.WorkerID)
 	assert.Equal(t, "worker:50052", cfg.WorkerURI)
@@ -122,7 +122,7 @@ func TestLoad_InvalidValues(t *testing.T) {
 }
 
 // An overlay covering every mount keeps the executor's socket in the upper
-// layer, where the worker cannot see it — the execution then fails at dial
+// layer, where the worker cannot see it - the execution then fails at dial
 // time looking exactly like a dead executor, which is the wrong diagnosis.
 func TestLoad_RejectsAnOverlayThatWouldHideTheSocket(t *testing.T) {
 	env := validEnv()

@@ -3,10 +3,10 @@
 Written once per generation beside the manifest and read by the router at
 startup. It is the whole input to request-time checkpoint selection:
 
-* ``items`` — every measured item (package, dataset, model, tokenizer) with its
+* ``items`` - every measured item (package, dataset, model, tokenizer) with its
   disk size and load time, so the router can price the residual load of anything
   a request needs.
-* ``checkpoints`` — each checkpoint's item set and its raw total size (MB).
+* ``checkpoints`` - each checkpoint's item set and its raw total size (MB).
 
 The router picks the checkpoint minimising ``alpha * size + Σ load_time(required
 items not in it)``, applying its own ``alpha`` to the raw size. The ``alpha`` the

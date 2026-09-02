@@ -31,13 +31,13 @@ tested against fakes; see [Testing](#testing) and
 cmd/worker/            entry point: signals, config, logger, app.New, app.Run
 cmd/ocispec/           OCI bundle generator, shared with the offline pipeline
 internal/
-  app/                 composition root — the only place concrete types are built
+  app/                 composition root - the only place concrete types are built
   grpcserver/          gRPC transport: server, ExecutionService handler, status mapping
   execution/           orchestration of one request; depends on no transport types
   container/           container lifecycle: acquire, release, reclaim orphans
   executor/            the unix-socket protocol shared with ../executor/
   artifact/            the baked-in rootfs, manifest and checkpoints
-  sandbox/             the runtime seam — stdlib only, no runtime knowledge
+  sandbox/             the runtime seam - stdlib only, no runtime knowledge
   runsc/               the only package that knows gVisor exists
   registry/            reporting worker and executor state to the router
   config/ logging/ clock/
@@ -48,15 +48,15 @@ proto/                 generated stubs; regenerate with `make proto`
 
 Dependencies point inward and every I/O boundary is an interface:
 
-| Seam | Interface | Production | Test |
-|---|---|---|---|
-| Sandbox runtime | `sandbox.Port` | `runsc.Adapter` | `fakesandbox.Sandbox` |
-| Runtime processes | `runsc.Runner` | `runsc.ExecRunner` | `fakeRunner`, `os/exec` helper |
-| Artifacts | `container.Artifacts` | `artifact.Registry` | real registry over a temp tree |
-| Router | `registry.Reporter` | `registry.GRPCReporter` | `fakeregistry.Recorder` / `.Server` |
-| Executor socket | `executor.Dialer` / `.Conn` | `executor.UnixDialer` | `net.Pipe`, `fakeexecutor.Server` |
-| Response transport | `execution.Sink` | `grpcserver.streamSink` | `fakesink.Sink` |
-| Process boundaries | `app.Deps` | real listener, runsc, gRPC | bufconn + fakes |
+| Seam               | Interface                   | Production                 | Test                                |
+| ------------------ | --------------------------- | -------------------------- | ----------------------------------- |
+| Sandbox runtime    | `sandbox.Port`              | `runsc.Adapter`            | `fakesandbox.Sandbox`               |
+| Runtime processes  | `runsc.Runner`              | `runsc.ExecRunner`         | `fakeRunner`, `os/exec` helper      |
+| Artifacts          | `container.Artifacts`       | `artifact.Registry`        | real registry over a temp tree      |
+| Router             | `registry.Reporter`         | `registry.GRPCReporter`    | `fakeregistry.Recorder` / `.Server` |
+| Executor socket    | `executor.Dialer` / `.Conn` | `executor.UnixDialer`      | `net.Pipe`, `fakeexecutor.Server`   |
+| Response transport | `execution.Sink`            | `grpcserver.streamSink`    | `fakesink.Sink`                     |
+| Process boundaries | `app.Deps`                  | real listener, runsc, gRPC | bufconn + fakes                     |
 
 `internal/sandbox` stays stdlib-only so every consumer can depend on it for
 free; `internal/runsc` holds `os/exec`, the OCI spec, and process lifetimes.
@@ -78,7 +78,7 @@ is built on, at a compiled-in path. Nothing is mounted:
 **A gVisor checkpoint only restores into the filesystem it was captured from**,
 so the pairing has to be right. It is right by construction: there is one rootfs,
 and the base image build is the only way to put a rootfs and checkpoints together.
-That replaced a `rootfs_id` recorded in every artifact — which was never actually
+That replaced a `rootfs_id` recorded in every artifact - which was never actually
 compared, only logged.
 
 One rootfs also means checkpoint IDs are globally unique, so `checkpoint_1` is
@@ -88,7 +88,7 @@ a `gen-2026-06/checkpoint_1` reference to disambiguate.
 ## The two images
 
 [`Dockerfile`](Dockerfile) here builds only the server. Everything a checkpoint's
-validity is bound to — the pinned runsc, the rootfs, the checkpoints themselves —
+validity is bound to - the pinned runsc, the rootfs, the checkpoints themselves -
 comes from `readie-worker-base`, which the offline pipeline builds
 ([`../pipeline/Dockerfile`](../pipeline/Dockerfile)).
 
@@ -116,7 +116,7 @@ docker compose up -d     # recreates the worker on the new readie-worker:latest
 ```
 
 No re-capture. The base already holds the rootfs and the checkpoints, and they are
-*inherited* rather than copied, so nothing here touches 26 GB. Two conditions:
+_inherited_ rather than copied, so nothing here touches 26 GB. Two conditions:
 `readie-worker-base:latest` has to be present (`make -C .. worker-base`) or
 pullable, and the worker comes up with whatever checkpoints that base was built
 with. If compose does not notice the new image, add `--force-recreate`.
@@ -127,7 +127,7 @@ A whole generation, when the checkpoints themselves should change:
 make generation          # capture -> base -> worker; tags readie-worker:<timestamp>
 ```
 
-`FROM readie-worker-base:latest` names a *tag*, and a tag rather than a copy is the
+`FROM readie-worker-base:latest` names a _tag_, and a tag rather than a copy is the
 whole point. `COPY --from=` produces a fresh layer every build: two
 otherwise-identical worker builds were observed to differ in the 25.9 GB rootfs
 layer's digest, so a rebuild would have re-uploaded all of it. A layer inherited
@@ -138,12 +138,12 @@ worker uses, but only the pipeline ever runs it, so it ships in the pipeline ima
 instead.
 
 The build context is `./worker`, so [`.dockerignore`](.dockerignore) here is
-load-bearing — anything it lists is invisible to the build.
+load-bearing - anything it lists is invisible to the build.
 
 ## Request flow
 
-`execution.Runner.Run` owns one request. Several producers — the executor
-response reader, the log tailer, the stats sampler — publish to a single
+`execution.Runner.Run` owns one request. Several producers - the executor
+response reader, the log tailer, the stats sampler - publish to a single
 channel, and only the goroutine that called `Run` drains it into the `Sink`.
 gRPC streams are not safe for concurrent sends and corrupt frames rather than
 failing cleanly, so that single-owner rule is load-bearing.
@@ -171,22 +171,22 @@ exists" and a recoverable downgrade becomes a hard failure.
 Startup: load artifacts → build and probe the runtime → router client → object
 graph → **reclaim orphans** → listen → serve with health `NOT_SERVING` →
 register with the router → health `SERVING`. Shutdown unwinds in reverse,
-deregistering *before* draining so the router stops routing here while
+deregistering _before_ draining so the router stops routing here while
 in-flight work finishes.
 
 Orphan reclamation enumerates bundle directories rather than asking the
 runtime. That needs no listing flag and, more importantly, finds sandboxes
-whose runtime state was lost but whose bundle survives — exactly the case
+whose runtime state was lost but whose bundle survives - exactly the case
 cleanup exists for, and one a runtime listing would not mention.
 
 ## Contracts
 
-**Router** — the protos declare no `package`, so the method is
+**Router** - the protos declare no `package`, so the method is
 `/ExecutionService/RequestExecution`. The router indexes this worker by whatever
 `worker_id` it registers with and dials `worker_uri` verbatim, so a fleet must
 give each worker a distinct id; `WORKER_ID` defaults to `worker-1` only because
 a single-worker stack needs no configuration. (An earlier router hardcoded
-`worker-1` in `provision()` and that constraint was real — it no longer is.)
+`worker-1` in `provision()` and that constraint was real - it no longer is.)
 The first response carries `worker_id`, `container_id`, `checkpoint_id` and the
 resource `budgets` the container actually ran with.
 
@@ -199,7 +199,7 @@ failure is an OOM-killed sandbox mid-execution. The budget is configured rather
 than read from `/proc/meminfo` because the worker is usually containerised,
 where that file describes the host and not the cgroup the worker lives in.
 
-**Executor** (`../executor/`) — the executor is the socket
+**Executor** (`../executor/`) - the executor is the socket
 server, binding `$EXECUTOR_DIR/executor.sock`, which the worker sees at
 `$WORKER_DIR/<id>/executor.sock` through the sandbox's one bind mount.
 
@@ -210,21 +210,21 @@ envelope back. `internal/executor` implements this side; the Python side is in
 both test suites so the two cannot drift.
 
 Two properties matter. The executor sleeps 30 seconds awaiting a checkpoint
-*before* binding, so `DIAL_TOTAL_TIMEOUT` must exceed it. And a `{"ok": false}`
-envelope is *not* a worker failure — the sandbox ran and the interpreter is
-healthy — so the execution is reported as a success and the container is paused
+_before_ binding, so `DIAL_TOTAL_TIMEOUT` must exceed it. And a `{"ok": false}`
+envelope is _not_ a worker failure - the sandbox ran and the interpreter is
+healthy - so the execution is reported as a success and the container is paused
 for reuse. Only the client turns that envelope into an exception.
 
 The manifest records `executor_protocol`, and `internal/artifact` refuses
 artifacts whose version this worker does not implement, at load rather than at
 restore.
 
-**Spec compatibility** — the worker and the offline pipeline generate their
+**Spec compatibility** - the worker and the offline pipeline generate their
 bundles from the same `runsc.BuildSpec`, via `cmd/ocispec`. Two independent
 generators cannot be kept in agreement by review, and a mismatch fails a restore
 opaquely 30 seconds into a request. `Fingerprint` hashes what a checkpoint is
-sensitive to — args, `terminal`, cwd, `root.readonly`, the ordered mount list,
-namespaces, cpu/pids limits, overlay and network — and deliberately excludes
+sensitive to - args, `terminal`, cwd, `root.readonly`, the ordered mount list,
+namespaces, cpu/pids limits, overlay and network - and deliberately excludes
 mount sources, the memory limit and the cgroup path, so per-request variation
 and `runtime-spec` upgrades do not invalidate checkpoints.
 
@@ -236,7 +236,7 @@ budget names a larger max, raises it as the container fills up; other kinds
 ## Starting without artifacts
 
 A worker whose image was built with no root filesystem still starts. It listens,
-serves health as SERVING, and registers — but as `STATUS_ERROR` rather than
+serves health as SERVING, and registers - but as `STATUS_ERROR` rather than
 `STATUS_READY`, so the router keeps it visible and probed while never placing
 work on it (`is_selectable` requires READY). Any execution that reaches it
 anyway is refused with `FailedPrecondition` and a message naming the missing
@@ -257,11 +257,11 @@ absent artifact:
   restoring any of them is undefined. An empty tree is fine; a half-filled one
   is not.
 - **A malformed `manifest.json`**, or one missing what a restore needs.
-- **An artifact directory that exists but cannot be read** — a permissions or
+- **An artifact directory that exists but cannot be read** - a permissions or
   mount fault, where hiding it would strand a worker that should have seen its
   artifacts.
 
-A rootfs with no manifest is *not* fatal: that is what the image ships with
+A rootfs with no manifest is _not_ fatal: that is what the image ships with
 before any checkpoint has been captured, and it serves cold starts.
 
 The artifact tree is read once at startup, so a new image means a new container.
@@ -285,13 +285,13 @@ Flavor and GPU: `WORKER_FLAVOR` (`cpu` or `gpu`; default `cpu`), advertised to
 the router; `WORKER_GPU_TOTAL` (GPU device memory offered, bytes or a suffix like
 `16Gi`); `SANDBOX_GPU` (turns on nvproxy and the NVIDIA sandbox env; defaults to
 true when the flavor is `gpu`, and must match what the checkpoints were captured
-under — it is in the fingerprint).
+under - it is in the fingerprint).
 
 Memory auto-expand: `DEFAULT_CONTAINER_MEM` (the limit for a request that
 carries no memory budget; default 512 MiB), `MEM_GROWTH_THRESHOLD` (the fraction
 of a container's limit whose use triggers a raise; default 0.9) and
 `MEM_GROWTH_FACTOR` (how much the limit is multiplied by; default 2.0). The live
-`memory.max` raise is best-effort — where cgroup delegation is unavailable
+`memory.max` raise is best-effort - where cgroup delegation is unavailable
 (`SANDBOX_IGNORE_CGROUPS`), it applies on the container's next acquisition and a
 hard OOM is caught by a one-shot retry with a larger container instead.
 
@@ -306,8 +306,8 @@ Optional: `WORKER_ID`, `RUNSC_BINARY`, `RUNSC_ROOT`,
 
 Two settings are coupled and validated together: `SANDBOX_OVERLAY` must be a
 `root:` overlay. An `all:` overlay would keep the executor's socket in the
-overlay's upper layer where the worker cannot see it — every execution would
-fail at dial time looking exactly like a dead executor — and `:self` writes into
+overlay's upper layer where the worker cannot see it - every execution would
+fail at dial time looking exactly like a dead executor - and `:self` writes into
 the rootfs directory every sandbox shares.
 
 `SANDBOX_HOST_UDS` governs whether a socket bound inside the sandbox is visible
@@ -326,7 +326,7 @@ limit, or runsc upgrade would make every restore silently fall back to a cold
 start while the worker still advertised the checkpoints.
 
 `CHECKPOINT_STRICT_COMPAT` (default true) chooses what a mismatch does. A strict
-worker refuses the checkpoints — it drops them so no doomed restore is attempted,
+worker refuses the checkpoints - it drops them so no doomed restore is attempted,
 logs an ERROR naming the divergence, and serves cold starts only. A tolerant
 worker (`CHECKPOINT_STRICT_COMPAT=false`) logs a WARN and keeps them, accepting
 that restores may degrade to cold starts. Either way the rootfs and manifest
@@ -337,9 +337,9 @@ stay, so the worker keeps running; only the offer of checkpoints changes.
 Four tiers; three run on macOS.
 
 1. **`fakesandbox`** implements `sandbox.Port`. The whole integration suite substitutes at `app.Deps.NewRuntime`, above the adapter, so it never touches a process.
-2. **`fakeRunner`** records argv, asserted with full-slice equality — runsc parses flags with stdlib `flag` semantics, so a global flag on the wrong side of the subcommand is misread rather than rejected.
-3. **`os/exec` helper-process tests** for `ExecRunner`: exit codes, stderr, and a detached grandchild that writes to fd 1 *after* the helper exits. That last one proves descriptors survive the runner's child — the assumption the entire log implementation rests on, and one no fake can check.
-4. **`make test-e2e`** — real runsc, Linux/amd64, `//go:build linux && runsc_e2e`.
+2. **`fakeRunner`** records argv, asserted with full-slice equality - runsc parses flags with stdlib `flag` semantics, so a global flag on the wrong side of the subcommand is misread rather than rejected.
+3. **`os/exec` helper-process tests** for `ExecRunner`: exit codes, stderr, and a detached grandchild that writes to fd 1 _after_ the helper exits. That last one proves descriptors survive the runner's child - the assumption the entire log implementation rests on, and one no fake can check.
+4. **`make test-e2e`** - real runsc, Linux/amd64, `//go:build linux && runsc_e2e`.
 
 ## Unverified against a real runtime
 
@@ -347,7 +347,7 @@ Everything below could not be checked on the development machine. Each has a
 test in `internal/runsc/e2e_linux_test.go`; when one passes, delete its line
 here. Ordered by blast radius.
 
-1. **`--host-uds=create`** — that the flag exists with that name and that a socket bound inside a sandbox is genuinely reachable from the host. Nothing in this repository has ever demonstrated it: the pipeline captures its checkpoints during the executor's pre-bind sleep. If it cannot be made to work, the fallback is to invert the socket direction — the worker listens, the executor connects — which changes `../executor/`. **Check this first.**
+1. **`--host-uds=create`** - that the flag exists with that name and that a socket bound inside a sandbox is genuinely reachable from the host. Nothing in this repository has ever demonstrated it: the pipeline captures its checkpoints during the executor's pre-bind sleep. If it cannot be made to work, the fallback is to invert the socket direction - the worker listens, the executor connects - which changes `../executor/`. **Check this first.**
 2. `runsc restore --detach` exists, and restore blocks without it.
 3. `runsc checkpoint --leave-running` exists. If not, `Manager.Checkpoint` is terminal and must be documented so.
 4. Whether `runsc checkpoint` works on a paused sandbox. The adapter assumes not, and resumes → checkpoints → re-pauses.
@@ -365,5 +365,5 @@ execution is affordable; switching is a follow-up.
 ## Known gaps
 
 - **No trigger for taking checkpoints.** `execution.proto` carries `checkpoint_id` as an input only, so the router cannot ask for a snapshot. `Manager.Checkpoint` exists and is tested; wiring a policy needs a protocol change.
-- **The rootfs is not tailored** to the packages the analysis selects — it is the full base image regardless. That is deliberate: a new request distribution then regenerates only checkpoints, not tens of gigabytes of rootfs.
+- **The rootfs is not tailored** to the packages the analysis selects - it is the full base image regardless. That is deliberate: a new request distribution then regenerates only checkpoints, not tens of gigabytes of rootfs.
 - **Reaping.** `runsc create` daemonises a sandbox and a gofer that reparent to PID 1. The worker does not reap them, so it must not be PID 1; compose sets `init: true` and the worker warns at startup if it finds itself as PID 1.

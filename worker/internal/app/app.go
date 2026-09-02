@@ -3,7 +3,7 @@
 // This is the composition root: it is the only place that constructs concrete
 // implementations, and every collaborator below it receives its dependencies
 // through its constructor. Deps exists so tests can substitute the process
-// boundaries — the listener, the container runtime and the router connection —
+// boundaries - the listener, the container runtime and the router connection -
 // without touching anything else.
 package app
 
@@ -39,8 +39,8 @@ import (
 type Deps struct {
 	// Listen creates the gRPC listener.
 	Listen func(network, addr string) (net.Listener, error)
-	// NewRuntime builds the sandbox runtime. Substituting here — above the
-	// runsc adapter — is what keeps the integration suite runnable on a
+	// NewRuntime builds the sandbox runtime. Substituting here - above the
+	// runsc adapter - is what keeps the integration suite runnable on a
 	// development machine, since gVisor is Linux-only.
 	NewRuntime func(ctx context.Context, cfg config.Config, layout container.DirLayout, log *slog.Logger) (sandbox.Port, error)
 	// LoadArtifacts discovers the generations this worker can run.
@@ -160,8 +160,8 @@ type versioner interface {
 
 // verifyCheckpointCompat refuses baked checkpoints this worker could never
 // restore. A checkpoint is bound to the exact sandbox spec and runsc build it
-// was captured under; if either has drifted — a different overlay, GPU mode,
-// resource limit, or runsc version — every restore silently degrades to a cold
+// was captured under; if either has drifted - a different overlay, GPU mode,
+// resource limit, or runsc version - every restore silently degrades to a cold
 // start while the worker keeps advertising the checkpoints. When strict (the
 // default) it drops them so the worker serves cold-only and the mismatch is
 // loud; otherwise it warns and honours the operator's choice to tolerate it.
@@ -289,7 +289,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	layout := container.NewDirLayout(cfg.WorkerDir)
 
 	// 1. Artifacts. A worker with no generation still starts: it serves health,
-	// registers itself, and reports that it cannot run anything — which is far
+	// registers itself, and reports that it cannot run anything - which is far
 	// easier to diagnose than a container that exits before it logs. Executions
 	// then fail fast, naming the missing artifact.
 	artifacts, err := deps.LoadArtifacts(cfg, log)
@@ -354,7 +354,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 	// A baked checkpoint restores only into the exact sandbox it was captured
 	// under. If this worker's spec or runsc build has drifted, every restore
 	// would silently fall back to a cold start while the worker still advertised
-	// the checkpoints — so validate before serving.
+	// the checkpoints - so validate before serving.
 	verifyCheckpointCompat(ctx, cfg, artifacts, manager, runtimePort, log)
 
 	dialer := executor.NewUnixDialer(layout, executor.RetryPolicy{
@@ -432,7 +432,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.server.SetServing(true)
 	if a.degraded != nil {
 		// Not "ready". It is listening and registered, and it cannot run
-		// anything — saying otherwise two lines after reporting that would be
+		// anything - saying otherwise two lines after reporting that would be
 		// the kind of log that costs someone an afternoon.
 		a.log.Warn("worker serving but unusable; every execution will be refused",
 			"addr", a.cfg.WorkerURI, "router", a.cfg.RouterURI,
@@ -470,14 +470,14 @@ func (a *App) Run(ctx context.Context) error {
 //
 // Best-effort throughout: the router losing a load report degrades scheduling
 // quality for one interval and must never disturb an execution. Before this
-// existed, PostWorkerUtilization had no caller at all — the worker sent only
-// per-executor utilization — so the router's notion of worker-level load was
+// existed, PostWorkerUtilization had no caller at all - the worker sent only
+// per-executor utilization - so the router's notion of worker-level load was
 // permanently zero and it could only schedule on in-flight count.
 func (a *App) utilizationLoop(ctx context.Context) {
 	interval := a.cfg.UtilizationInterval
 	if interval <= 0 {
-		// Validate rejects this, but a Config built directly — as tests and
-		// embedders do — skips Validate, and time.NewTicker panics on it. A
+		// Validate rejects this, but a Config built directly - as tests and
+		// embedders do - skips Validate, and time.NewTicker panics on it. A
 		// load report is not worth taking the worker down for.
 		interval = 10 * time.Second
 	}

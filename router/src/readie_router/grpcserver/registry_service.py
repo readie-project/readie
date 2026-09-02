@@ -4,7 +4,7 @@ Workers push their lifecycle and load here. Every handler is a thin adapter:
 validate, translate, hand to the domain, acknowledge.
 
 Two things differ from the previous implementation beyond the bug fixes. The
-handlers subclass the generated ``*Servicer`` base rather than the client stub —
+handlers subclass the generated ``*Servicer`` base rather than the client stub -
 which had worked only because the registration helper duck-types on method
 names, and which lost the UNIMPLEMENTED default for anything not overridden.
 And they are ``async def``: they run on an aio server, where a synchronous
@@ -101,8 +101,8 @@ class RegistryService(registry_pb2_grpc.RegistryServiceServicer):
     ) -> registry_pb2.RegistryUpdateResponse:
         """Record a worker's load.
 
-        The previous implementation indexed ``request.container_id`` — a field
-        this message does not have — so every call raised AttributeError and
+        The previous implementation indexed ``request.container_id`` - a field
+        this message does not have - so every call raised AttributeError and
         worker-level load stayed permanently zero.
         """
         if not request.worker_id:
@@ -121,7 +121,8 @@ class RegistryService(registry_pb2_grpc.RegistryServiceServicer):
             gpu_mem_used=request.gpu_mem_used,
             gpu_mem_total=request.gpu_mem_total,
         )
-        self._log.debug("worker utilization", **{KEY_WORKER_ID: request.worker_id})
+        self._log.debug("worker utilization", **
+                        {KEY_WORKER_ID: request.worker_id})
         return registry_pb2.RegistryUpdateResponse(updated=True)
 
     async def PostExecutorUtilization(  # noqa: N802

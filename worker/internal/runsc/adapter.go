@@ -294,7 +294,7 @@ func (a *Adapter) coldStart(ctx context.Context, id string) error {
 // The runtime creates the sandbox before restoring into it, so a partial
 // failure leaves state behind. Deleting it here is what lets the caller
 // immediately downgrade to a cold start with the same id instead of hitting an
-// "already exists" conflict — turning a recoverable downgrade into a hard
+// "already exists" conflict - turning a recoverable downgrade into a hard
 // failure.
 func (a *Adapter) restore(ctx context.Context, id string, spec sandbox.StartSpec) error {
 	if err := checkCheckpointImage(spec.CheckpointDir); err != nil {
@@ -571,7 +571,7 @@ func (a *Adapter) Inspect(ctx context.Context, id string) (sandbox.Info, error) 
 	}
 
 	// The allocation lives in the bundle rather than in runtime state, which
-	// keeps the adapter stateless — important because orphan cleanup inspects
+	// keeps the adapter stateless - important because orphan cleanup inspects
 	// sandboxes created by a previous worker process.
 	if ociSpec, err := readSpec(filepath.Join(a.BundleDir(id), configFileName)); err == nil {
 		if ociSpec.Linux != nil && ociSpec.Linux.Resources != nil && ociSpec.Linux.Resources.Memory != nil {
@@ -586,7 +586,7 @@ func (a *Adapter) Inspect(ctx context.Context, id string) (sandbox.Info, error) 
 // List returns sandboxes whose id begins with idPrefix.
 //
 // It enumerates bundle directories rather than asking the runtime, for two
-// reasons: it depends on no listing flag, and — the point — it finds sandboxes
+// reasons: it depends on no listing flag, and - the point - it finds sandboxes
 // whose runtime state was lost but whose bundle survives. Those are exactly
 // the orphans cleanup exists to reclaim, and a runtime listing would not
 // mention them, so their directories would leak forever.

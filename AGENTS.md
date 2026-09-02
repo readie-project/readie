@@ -15,15 +15,15 @@ offline. Everything talks gRPC over contracts in `protos/`.
 
 ## Repo map
 
-| Path | Language | Purpose |
-|---|---|---|
-| `nginx`   | NGINX | Client-facing proxy |
-| `router/` | Python 3.13 | Placement, cluster registry |
-| `worker/` | Go 1.25 | Sandbox lifecycle, checkpoint/restore, executor I/O |
-| `executor/` | Python 3.11+ | Runs *inside* every sandbox; unpickles and calls the function |
-| `pkg/` | Python 3.11+ | `readie-client`, the `@remote` SDK (imported as `readie`) |
-| `pipeline/` | Python 3.12 | Offline: corpus, package analysis, checkpoint planning and capture |
-| `protos/` | protobuf | Wire contracts: `execution`, `proxy`, `registry`, `resources` |
+| Path        | Language     | Purpose                                                            |
+| ----------- | ------------ | ------------------------------------------------------------------ |
+| `nginx`     | NGINX        | Client-facing proxy                                                |
+| `router/`   | Python 3.13  | Placement, cluster registry                                        |
+| `worker/`   | Go 1.25      | Sandbox lifecycle, checkpoint/restore, executor I/O                |
+| `executor/` | Python 3.11+ | Runs _inside_ every sandbox; unpickles and calls the function      |
+| `pkg/`      | Python 3.11+ | `readie-client`, the `@remote` SDK (imported as `readie`)          |
+| `pipeline/` | Python 3.12  | Offline: corpus, package analysis, checkpoint planning and capture |
+| `protos/`   | protobuf     | Wire contracts: `execution`, `proxy`, `registry`, `resources`      |
 
 Supporting: `.github/` (CI, CODEOWNERS, PR template), `catalogues/` (per-flavor
 router catalogues), `docker-compose.yml`, and the umbrella root `Makefile`.
@@ -32,13 +32,13 @@ router catalogues), `docker-compose.yml`, and the umbrella root `Makefile`.
 
 Run these from the repo root; the root `Makefile` fans out to every component.
 
-- `make install` — sync every Python venv (via `uv`) and `go mod download`.
-- `make lint type test` — the full gate, mirroring CI. (`type` covers the four
-  Python components; the Go worker has no `type` target — its lint includes vet.)
+- `make install` - sync every Python venv (via `uv`) and `go mod download`.
+- `make lint type test` - the full gate, mirroring CI. (`type` covers the four
+  Python components; the Go worker has no `type` target - its lint includes vet.)
 - Per-component passthroughs: `make worker-test`, `make router-lint`,
   `make pkg-type`, `make pipeline-test`, … (equivalently `make -C <component> <verb>`).
-- `make protos` — regenerate all gRPC stubs after editing `protos/*.proto`.
-- `make help` — list annotated targets.
+- `make protos` - regenerate all gRPC stubs after editing `protos/*.proto`.
+- `make help` - list annotated targets.
 
 The Go worker runs under the race detector: `make worker-test` is `go test -race`.
 Most tests use fakes and run anywhere (see gVisor note below).
@@ -50,17 +50,17 @@ Most tests use fakes and run anywhere (see gVisor note below).
   worker, and a router test depend on it, and `buf.yaml` enforces it. Do not add a
   package declaration.
 - **Generated code is committed.** After changing `protos/*.proto`, run
-  `make protos` and commit the diff — CI (`protos` job) and the `proto-stubs-current`
+  `make protos` and commit the diff - CI (`protos` job) and the `proto-stubs-current`
   pre-commit hook fail on drift. `proxy.proto` is Python-only (not generated for Go).
-- **Proto changes are additive-only** — new field numbers, never reuse or
+- **Proto changes are additive-only** - new field numbers, never reuse or
   renumber. `buf breaking` runs against `main` on PRs.
 - **gVisor/runsc is amd64-only.** `make generation` and the worker's
   `make test-e2e` need a real amd64 gVisor host and won't run on Apple Silicon or
   in CI. Regular `make test` substitutes fakes and runs anywhere.
 - **The `alpha` cost constant (0.002) is shared** and must match between the
   pipeline (`READIE_ALPHA`) and the router (`ALPHA`).
-- **The executor wire protocol is dual-implemented** — Python (`executor/`) and Go
-  (worker) — and locked by a cross-language golden fixture
+- **The executor wire protocol is dual-implemented** - Python (`executor/`) and Go
+  (worker) - and locked by a cross-language golden fixture
   (`executor/tests/data/frames.golden.json`). Change both sides and regenerate the
   golden; the `golden` CI job checks for drift.
 - **The two Python floors are deliberate:** `pkg` and `executor` target 3.11
@@ -82,8 +82,8 @@ Brief here; [`CONTRIBUTING.md`](CONTRIBUTING.md) is authoritative.
 
 ## Where to read more
 
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, conventions, and "what is
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - setup, conventions, and "what is
   deliberately not done".
-- [`SECURITY.md`](SECURITY.md) — trust boundaries and deployment posture.
-- Each component's `README.md` — its internals and configuration.
-- `worker/README.md` (Testing section) — the four Go test tiers and their seams.
+- [`SECURITY.md`](SECURITY.md) - trust boundaries and deployment posture.
+- Each component's `README.md` - its internals and configuration.
+- `worker/README.md` (Testing section) - the four Go test tiers and their seams.

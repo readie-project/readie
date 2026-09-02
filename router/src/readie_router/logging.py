@@ -1,6 +1,6 @@
 """Structured logging.
 
-The previous implementation used ``print`` — one line per response chunk, no
+The previous implementation used ``print`` - one line per response chunk, no
 level, no correlation. Every log line here carries the identifiers needed to
 follow one request across the router, the worker and the client, using the same
 key names the Go worker uses so the two services' logs join.
@@ -69,7 +69,8 @@ def configure(
 
 def get_logger(name: str, **initial: Any) -> structlog.stdlib.BoundLogger:
     """Return a logger bound to a component name and any initial context."""
-    logger: structlog.stdlib.BoundLogger = structlog.get_logger(name).bind(**initial)
+    logger: structlog.stdlib.BoundLogger = structlog.get_logger(
+        name).bind(**initial)
     return logger
 
 
@@ -80,7 +81,8 @@ def discard_logger() -> structlog.stdlib.BoundLogger:
     """
     logger: structlog.stdlib.BoundLogger = structlog.wrap_logger(
         None,
-        wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL + 1),
+        wrapper_class=structlog.make_filtering_bound_logger(
+            logging.CRITICAL + 1),
         processors=[],
     )
     return logger

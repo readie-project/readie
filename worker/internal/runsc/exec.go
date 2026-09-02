@@ -169,7 +169,7 @@ func (r *ExecRunner) classify(ctx context.Context, args []string, result Result,
 
 // commandName returns the subcommand from an argv, for error messages and for
 // keying test doubles. It is the first argument that is not a global flag,
-// except that a bare version query names itself — there is no subcommand, and
+// except that a bare version query names itself - there is no subcommand, and
 // "runsc runsc failed" would read poorly.
 func commandName(args []string) string {
 	for _, a := range args {

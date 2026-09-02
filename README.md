@@ -3,7 +3,7 @@
 Run a Python function on a remote sandbox that has already imported the
 libraries it needs.
 
-A serverless cold start is dominated by imports — `import pandas` alone costs a
+A serverless cold start is dominated by imports - `import pandas` alone costs a
 quarter of a second, `torch` several. This platform pays that cost once, offline:
 it runs an executor with a chosen set of packages imported, checkpoints the live
 process with gVisor, and restores that image to serve a request. The restored
@@ -32,7 +32,7 @@ image. See [`pkg/`](pkg/) for sessions, error handling and the async surface.
 
 The client cloudpickles `{func, args, kwargs}` and streams it to the router,
 which decides where it runs and relays it to a worker. The worker acquires a
-container — resuming a paused one, restoring a checkpoint, or starting cold —
+container - resuming a paused one, restoring a checkpoint, or starting cold -
 and writes the payload over a unix socket to the executor inside it. The
 executor unpickles the call, makes it, and sends back a result envelope, which
 the worker relays to the router and the router to the client, alongside anything
@@ -46,8 +46,8 @@ the router serialises the calls within one.
 
 |                          | Language     |                                                                    |
 | ------------------------ | ------------ | ------------------------------------------------------------------ |
-| [`nginx/`](nginx/)     | NGINX  | Client-facing proxy
-| [`router/`](router/)     | Python 3.13  | Placement, the cluster registry
+| [`nginx/`](nginx/)       | NGINX        | Client-facing proxy                                                |
+| [`router/`](router/)     | Python 3.13  | Placement, the cluster registry                                    |
 | [`worker/`](worker/)     | Go           | Sandbox lifecycle, checkpoint/restore, executor I/O                |
 | [`executor/`](executor/) | Python 3.11+ | Runs _inside_ every sandbox; unpickles and calls the function      |
 | [`pkg/`](pkg/)           | Python 3.11+ | `readie-client`, the `@remote` SDK users import                    |
@@ -59,7 +59,7 @@ to: the root filesystem it is captured against, the pinned gVisor release, and t
 base image it ships in.
 
 The two Python floors are deliberate. `pkg` and `executor` are installed into
-someone else's process — a user's script and the sandbox image — so they must
+someone else's process - a user's script and the sandbox image - so they must
 work on whatever is already there. `router` and `pipeline` control their own
 images and pin.
 
@@ -72,7 +72,7 @@ documented and hoped for.
 (client↔router), `ExecutionService` (router↔worker), `RegistryService`
 (worker→router). `buf lint` and `buf breaking` run in CI, and a job fails if the
 committed stubs are stale. The protos declare no `package`, so service names are
-bare — the compose healthcheck's grpcurl and the worker both depend on that.
+bare - the compose healthcheck's grpcurl and the worker both depend on that.
 
 **The executor socket protocol**, implemented twice: `executor/` in Python and
 `worker/internal/executor` in Go. Length-prefixed chunks terminated by a
@@ -84,7 +84,7 @@ records the runsc version, the OCI spec fingerprint and the executor protocol
 version. The protocol is the one field a worker checks against its own compiled-in
 truth, and it refuses the whole generation at _load_ rather than failing opaquely
 minutes into a request. The runsc version and the fingerprint are recorded but not
-compared — see the gap under [What works](#what-works-and-what-does-not). It
+compared - see the gap under [What works](#what-works-and-what-does-not). It
 records no rootfs identity, because there is nothing to compare: the base image
 build is the only way to put a rootfs and checkpoints together.
 
@@ -117,13 +117,13 @@ docker compose down --remove-orphans
 
 See `nginx/README.md` for the NGINX configuration, TLS certificates, DNS setup, and troubleshooting.
 
-Point the client's `router_uri` at `localhost:50051` and it will reach 
+Point the client's `router_uri` at `localhost:50051` and it will reach
 the router when running locally.
 
 One prerequisite the router does not have: the worker is built `FROM
 readie-worker-base:latest`, the image carrying runsc, the root filesystem and the
 checkpoints. It has to be present or pullable, so `make worker-base` must have run
-once on the machine — `make generation` does it for you. Whether a worker has
+once on the machine - `make generation` does it for you. Whether a worker has
 checkpoints to restore is a property of that base, not of the worker image.
 
 Both compose and `make generation` tag `readie-worker:latest`, which is what makes
@@ -131,7 +131,7 @@ Both compose and `make generation` tag `readie-worker:latest`, which is what mak
 
 Only `router` and `worker` are services. `executor` runs _inside_ a sandbox the
 worker creates, `pkg` is a library you install into your own program, and
-`pipeline` is an offline tool — none of them belong in Compose.
+`pipeline` is an offline tool - none of them belong in Compose.
 
 ## Developing it
 
@@ -146,8 +146,8 @@ make help             # every target
 ```
 
 Per component, `make -C router test`, or the passthrough `make router-test`.
-Each component's Makefile takes the same verbs — `install`, `fmt`, `lint`,
-`type`, `test` — so you never have to remember which tool a directory uses.
+Each component's Makefile takes the same verbs - `install`, `fmt`, `lint`,
+`type`, `test` - so you never have to remember which tool a directory uses.
 
 To redeploy a worker code change, without recapturing anything:
 
@@ -170,9 +170,9 @@ make generation                     # tags readie-worker:<timestamp> and :latest
 make generation TAG=my-experiment
 ```
 
-Capture is its own phase because `docker build` cannot capture a checkpoint —
+Capture is its own phase because `docker build` cannot capture a checkpoint -
 runsc needs privileged namespace access that a stock BuildKit builder will not
-grant — so the pipeline runs privileged, and the base image is built around what
+grant - so the pipeline runs privileged, and the base image is built around what
 it wrote.
 
 The result is a single deployable: the Go binary, runsc, the root filesystem and
@@ -182,15 +182,15 @@ ones its tag names.
 
 Two Dockerfiles, split along what a checkpoint's validity depends on.
 [`pipeline/Dockerfile`](pipeline/Dockerfile) defines the rootfs, the capture tool
-and the base image carrying both runsc and the captured checkpoints — one file, so
+and the base image carrying both runsc and the captured checkpoints - one file, so
 the tree a checkpoint is captured against and the tree it is restored into cannot
 drift, and the gVisor release is pinned exactly once.
 [`worker/Dockerfile`](worker/Dockerfile) adds the Go server and grpcurl, and
 nothing else.
 
 The 26 GB root filesystem is therefore _inherited_ by the worker image, never
-copied into it. `COPY --from=` produces a fresh layer every build — two identical
-worker builds were measured producing different digests for it — so inheriting is
+copied into it. `COPY --from=` produces a fresh layer every build - two identical
+worker builds were measured producing different digests for it - so inheriting is
 what lets a rebuilt worker share that layer instead of re-uploading it, and is why
 a worker rebuild takes seconds.
 
@@ -211,13 +211,13 @@ Built and tested:
 - Per-function resource budgets set on the decorator
   (`@remote(memory="2Gi", max_memory="8Gi", gpu_memory=…)`), defaulted when
   unset, forwarded through the router as an extensible `ResourceBudget` set. The
-  worker enforces the memory budget and auto-expands it — a live `memory.max`
+  worker enforces the memory budget and auto-expands it - a live `memory.max`
   raise before an OOM, plus a one-shot retry with a larger container when a hard
   OOM slips through. GPU memory rides the same seam; it is not cgroup-enforceable
   through runsc, so for GPU auto-expand is the retry alone.
 - **A heterogeneous CPU/GPU fleet.** A worker is `cpu` or `gpu` (`WORKER_FLAVOR`,
-  advertised on every status). A GPU request — `@remote(gpu=True)` or any
-  `gpu_memory` budget — routes only to gpu workers; a cpu request prefers cpu
+  advertised on every status). A GPU request - `@remote(gpu=True)` or any
+  `gpu_memory` budget - routes only to gpu workers; a cpu request prefers cpu
   workers and spills to gpu only when none are free. GPU workers run an
   independently-generated image (Kaggle GPU rootfs, `runsc --nvproxy`) whose
   checkpoints are fingerprint-incompatible with cpu ones. Placement respects both
@@ -235,7 +235,7 @@ Not built. Each of these is a real gap, not an oversight:
 
 - **Measured metadata for datasets, models and tokenizers.** The cost model and
   catalogue treat them exactly like packages, but nothing measures their size and
-  load time yet — `metadata.json` is packages-only, so today they price as free.
+  load time yet - `metadata.json` is packages-only, so today they price as free.
   The measurement (a `from_pretrained` / `load_dataset` profiler, per the
   `ResourceType` scaffolding) needs a network and, for GPU models, a GPU host.
 - **Checkpoint/worker compatibility is checked at startup, but coarsely.** A
@@ -243,9 +243,9 @@ Not built. Each of these is a real gap, not an oversight:
   the worker now computes its own `spec_fingerprint` (from `container.CanonicalSpec`
   through `runsc.Fingerprint`) and reads its live `runsc --version`, and compares
   both to the manifest (`verifyCheckpointCompat` in `worker/internal/app/app.go`).
-  On a mismatch — a worker change touching `internal/runsc/spec.go` or
+  On a mismatch - a worker change touching `internal/runsc/spec.go` or
   `container.createSpec`, or a deployment changing `SANDBOX_OVERLAY` /
-  `SANDBOX_NETWORK` / the CPU or pids limits, or an upgraded runsc — a strict
+  `SANDBOX_NETWORK` / the CPU or pids limits, or an upgraded runsc - a strict
   worker (`CHECKPOINT_STRICT_COMPAT`, the default) drops every checkpoint and
   serves cold starts only, logging the reasons loudly; a tolerant one just warns.
   What is still missing is _granularity_: it is all-or-nothing per worker, not
@@ -253,17 +253,17 @@ Not built. Each of these is a real gap, not an oversight:
   spec changing.
 - **Swapping checkpoints without a new image.** Artifacts are baked in and read
   once at startup, so new checkpoints mean a new base image and a new container.
-  That is the trade taken deliberately — one deployable, nothing mounted — but it
+  That is the trade taken deliberately - one deployable, nothing mounted - but it
   does mean a ~40 GB base per capture, and rolling one out drains warm containers.
   A worker _code_ change is cheap; a checkpoint change is not.
-- **Persistence.** Router state is in memory. A restart loses sessions — their
-  containers are then reclaimed by the workers' own TTLs — and workers
+- **Persistence.** Router state is in memory. A restart loses sessions - their
+  containers are then reclaimed by the workers' own TTLs - and workers
   re-register on their next status report.
 - **Authentication and transport security are opt-in, and off by default.** The
   router can require a bearer token on `ProxyService` (the only path that runs
-  code) — set `AUTH_TOKEN` on the router and the matching `READIE_AUTH_TOKEN` on 
-  the client. Unset, everything is with no auth, so anything that can reach port 
-  50051 can run code. The router↔worker mesh and the worker's own server stay 
+  code) - set `AUTH_TOKEN` on the router and the matching `READIE_AUTH_TOKEN` on
+  the client. Unset, everything is with no auth, so anything that can reach port
+  50051 can run code. The router↔worker mesh and the worker's own server stay
   plaintext by design and must run on a private network. See [SECURITY.md](SECURITY.md).
 - **Datasets, models and tokenizers.** Carried through the corpus schema and the
   plan, but only packages are pre-imported. Loading a model into the captured
@@ -280,8 +280,8 @@ checkpoint and executing a function are not.
 
 ## More
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — how to build and test each component, the
+- [CONTRIBUTING.md](CONTRIBUTING.md) - how to build and test each component, the
   conventions, and what is deliberately not done
-- [SECURITY.md](SECURITY.md) — the trust boundaries, including why the client
+- [SECURITY.md](SECURITY.md) - the trust boundaries, including why the client
   unpickling cluster-supplied bytes is inherent rather than a defect
-- [LICENSE](LICENSE) — Apache-2.0
+- [LICENSE](LICENSE) - Apache-2.0

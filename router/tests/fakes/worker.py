@@ -1,7 +1,7 @@
 """A programmable stand-in for the Go worker.
 
 It implements ``ExecutionClient`` directly rather than serving real gRPC. That
-keeps the integration tests to one real server — the router's own — so a test
+keeps the integration tests to one real server - the router's own - so a test
 exercises the router's transport without also depending on a second server's
 timing.
 """
@@ -24,7 +24,8 @@ class RecordedCall:
     """One execution the fake worker was asked to run."""
 
     target: str
-    requests: list[execution_pb2.WorkerExecutionRequest] = field(default_factory=list)
+    requests: list[execution_pb2.WorkerExecutionRequest] = field(
+        default_factory=list)
     cancelled: bool = False
 
     @property

@@ -2,8 +2,8 @@
 
 This is a research platform for running untrusted Python on shared
 infrastructure. Two of its trust boundaries are inherent to that job rather than
-defects, and are documented here so nobody mistakes them for oversights — and so
-nobody mistakes the boundaries that *are* defects for design.
+defects, and are documented here so nobody mistakes them for oversights - and so
+nobody mistakes the boundaries that _are_ defects for design.
 
 ## Reporting a vulnerability
 
@@ -27,14 +27,14 @@ user's process          router            worker              sandbox
                                           └─── boundary 2 ───────┘
 ```
 
-### Boundary 1 — the client unpickles what the cluster sends it
+### Boundary 1 - the client unpickles what the cluster sends it
 
 `readie.CloudpickleCodec.decode_result` calls `cloudpickle.loads` on bytes that
 arrived over the wire. Unpickling executes arbitrary code by design. A
 compromised router or worker can therefore run code **in the user's own
 process**, with that user's filesystem and credentials.
 
-This cannot be fixed by validating the payload — it is what shipping live Python
+This cannot be fixed by validating the payload - it is what shipping live Python
 objects means. It is confined rather than hidden: `ResultCodec`
 (`pkg/src/readie/codec.py`) is a `Protocol`, so a deployment that cannot accept
 this boundary can supply a codec restricted to a safe format and lose only the
@@ -43,7 +43,7 @@ ability to return arbitrary objects.
 **Only point a client at a router you trust as much as you trust your own
 laptop.**
 
-### Boundary 2 — the sandbox runs arbitrary user code
+### Boundary 2 - the sandbox runs arbitrary user code
 
 That is the product. Containment is gVisor: the executor runs under `runsc`,
 which intercepts syscalls in userspace rather than passing them to the host
@@ -64,19 +64,19 @@ the worker inherits it through `readie-worker-base`. Floating that pin would als
 silently invalidate every checkpoint, since the save format is not stable across
 releases. Track
 [gVisor's advisories](https://github.com/google/gvisor/security/advisories) and
-bump it together with regenerating the checkpoints — which also means a worker
-rebuilt on a *new* base picks up a patched runsc, while `make worker-image` alone
+bump it together with regenerating the checkpoints - which also means a worker
+rebuilt on a _new_ base picks up a patched runsc, while `make worker-image` alone
 does not.
 
 ## Deployment expectations
 
-By default the router and worker speak **plaintext gRPC with no authentication** —
+By default the router and worker speak **plaintext gRPC with no authentication** -
 opt-in security keeps local runs, tests and the compose healthchecks working
 without certs. Configure both before exposing the router:
 
 - **Authorization (bearer token).** Set the router's `AUTH_TOKEN` and give the
   same token to clients (`READIE_AUTH_TOKEN`). The router
-  then requires it on **`ProxyService`** — the only path that runs code — so
+  then requires it on **`ProxyService`** - the only path that runs code - so
   reaching the port is no longer enough to execute on the cluster. The check is a
   server interceptor over a pluggable `Authenticator` (`grpcserver/auth.py`), so a
   deployment can swap the shared token for JWT or per-tenant validation. Health,
@@ -85,7 +85,7 @@ without certs. Configure both before exposing the router:
 
 What is **not** secured, by design (the "external only" boundary): the
 router→worker call (`ExecutionService`) and the worker's own server stay
-plaintext with no auth. Run the router↔worker mesh on a private network, and do
+plaintext with no auth. Run the router<->worker mesh on a private network, and do
 not expose the worker's port. Do not expose the router's port to anything you
 would not hand a shell to.
 
