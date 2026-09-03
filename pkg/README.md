@@ -57,8 +57,7 @@ The following are configurable only from the environment:
 |                                                          |                                                               |
 | -------------------------------------------------------- | ------------------------------------------------------------- |
 | `READIE_AUTH_TOKEN`                                      | bearer token for a router that requires one; unset sends none |
-| `READIE_TLS_CA`                                          | connect over TLS; a CA path verifies the nginx server,        |
-| else system roots. TLS is required for HTTPS router URIs |
+| `READIE_TLS_CA`                                          | connect over TLS; a CA path verifies the nginx server, else system roots. TLS is required for HTTPS router URIs |
 
 ## When a remote function raises
 
