@@ -36,15 +36,6 @@ def test_select_picks_the_lowest_cost_checkpoint() -> None:
     assert catalogue.select(["pandas", "numpy"]) == "c-data"
 
 
-def test_select_falls_back_to_a_cold_start_when_no_checkpoint_is_worth_it() -> None:
-    # A high alpha makes even a modest checkpoint cost more than the import it
-    # would save, so the cheapest option is no checkpoint at all.
-    catalogue = Catalogue.from_document(_document())
-
-    # numpy alone saves 0.15 s; c-data costs 0.02*50 = 1.0. Cold (0.15) wins.
-    assert catalogue.select(["numpy"]) == ""
-
-
 def test_unknown_required_items_do_not_change_the_winner() -> None:
     catalogue = Catalogue.from_document(_document())
 

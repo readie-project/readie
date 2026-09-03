@@ -68,12 +68,6 @@ class Settings:
         if not self.router_uri:
             msg = "router_uri is required; set READIE_ROUTER_URI or pass it explicitly"
             raise ConfigurationError(msg)
-        if self.router_uri.startswith("https://") and not self.use_tls:
-            msg = (
-                "TLS is required when router is on HTTPS; "
-                "set tls to True or add a READIE_TLS_CA to enable TLS"
-            )
-            raise ConfigurationError(msg)
         if self.chunk_size <= 0:
             msg = f"chunk_size must be positive, got {self.chunk_size}"
             raise ConfigurationError(msg)

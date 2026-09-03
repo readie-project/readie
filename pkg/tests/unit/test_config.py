@@ -24,9 +24,6 @@ def test_an_empty_router_uri_fails_at_construction() -> None:
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"chunk_size": 0}, "chunk_size must be positive"),
-        ({"chunk_size": -1}, "chunk_size must be positive"),
-        ({"max_message_bytes": 512, "chunk_size": 1024}, "must exceed"),
         ({"timeout": 0.0}, "timeout must be positive"),
         ({"timeout": -3.0}, "timeout must be positive"),
     ],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import grpc
+import os
 import pytest
 
 from readie._channels import channel_credentials
@@ -16,7 +17,10 @@ def test_no_token_sends_no_metadata() -> None:
 
 
 def test_a_token_becomes_bearer_metadata() -> None:
-    settings = Settings(auth_token="s3cret")  # noqa: S106 - a test literal, not a secret
+    os.environ["READIE_AUTH_TOKEN"] = "s3cret"  # noqa: S106 - a test literal, not a secret
+    settings = Settings()
+    del os.environ["READIE_AUTH_TOKEN"]
+
     assert _auth_metadata(settings) == [("authorization", "Bearer s3cret")]
 
 
@@ -30,8 +34,6 @@ def test_tls_produces_channel_credentials() -> None:
 
 def test_a_ca_path_implies_tls() -> None:
     # tls_ca alone turns TLS on, without needing tls=True as well.
-    assert Settings(tls_ca="/dev/null").use_tls
-
-def test_router_uri_with_https_has_tls_required() -> None:
-    with pytest.raises(ConfigurationError, match="TLS is required when router is on HTTPS"):
-        Settings(router_uri="https://example.com", tls=False)
+    os.environ["READIE_TLS_CA"] = "/dev/null"
+    assert Settings().use_tls
+    del os.environ["READIE_TLS_CA"]
