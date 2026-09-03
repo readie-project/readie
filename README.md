@@ -93,26 +93,27 @@ build is the only way to put a rootfs and checkpoints together.
 Docker Compose is the whole runtime story. No other tooling is needed to stand
 the system up. The router is always accessed through NGINX rather than being exposed directly.
 
-Local:
+Run locally:
 
 ```sh
-docker compose \
-    -f docker-compose.yml \
-    -f docker-compose.local.yml \
-    up -d --build
-docker compose logs -f router
-docker compose down --remove-orphans
+make run-local
 ```
 
-Production:
+Run production application:
 
 ```sh
-docker compose \
-    -f docker-compose.yml \
-    -f docker-compose.prod.yml \
-    up -d --build
+make run-prod
+```
+
+Shutting down:
+```sh
+make shutdown
+```
+
+Logs:
+```sh
 docker compose logs -f router
-docker compose down --remove-orphans
+docker compose logs -f worker
 ```
 
 See `nginx/README.md` for the NGINX configuration, TLS certificates, DNS setup, and troubleshooting.
