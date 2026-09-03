@@ -5,7 +5,7 @@ description = "Runs inside a checkpoint-restore sandbox and executes the functio
 readme = "README.md"
 # The floor is not ours to choose freely: this is installed into the rootfs
 # image, so it has to run on whatever Python that image ships.
-requires-python = ">=3.11"
+requires-python = "~=3.12.0"
 license = { text = "Apache-2.0" }
 
 dependencies = [

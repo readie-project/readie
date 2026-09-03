@@ -26,14 +26,9 @@ jobs:
           # script and the sandbox rootfs -- so they must work on whatever is
           # already there.
           - { package: router, python: "3.13" }
-          - { package: pipeline, python: "3.12" }
           - { package: pipeline, python: "3.13" }
-          - { package: pkg, python: "3.11" }
           - { package: pkg, python: "3.12" }
-          - { package: pkg, python: "3.13" }
-          - { package: executor, python: "3.11" }
           - { package: executor, python: "3.12" }
-          - { package: executor, python: "3.13" }
     defaults:
       run:
         working-directory: ${{ matrix.package }}

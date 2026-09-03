@@ -3,7 +3,7 @@ name = "readie"
 version = "0.2.0"
 description = "Client SDK for running Python functions on Readie"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "~=3.12.0"
 license = { text = "Apache-2.0" }
 
 dependencies = [

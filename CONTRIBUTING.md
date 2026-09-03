@@ -8,11 +8,11 @@ Five, each with its own build, its own tests, and its own entry in CI. The root
 |                          | Language     | What it is                                                                |
 | ------------------------ | ------------ | ------------------------------------------------------------------------- |
 | [`nginx/`](nginx/)       | NGINX        | Client-facing proxy                                                       |
-| [`router/`](router/)     | Python 3.12  | Placement, the cluster registry                                           |
+| [`router/`](router/)     | Python 3.13  | Placement, the cluster registry                                           |
 | [`worker/`](worker/)     | Go           | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
 | [`executor/`](executor/) | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
 | [`pkg/`](pkg/)           | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
-| [`pipeline/`](pipeline/) | Python 3.12  | Offline: corpus, package analysis, checkpoint planning and capture        |
+| [`pipeline/`](pipeline/) | Python 3.13  | Offline: corpus, package analysis, checkpoint planning and capture        |
 
 `protos/` is the single source of truth for every wire contract, and
 `pipeline/Dockerfile` for everything a checkpoint is bound to: its two targets are

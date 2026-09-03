@@ -196,7 +196,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		LoadArtifacts: func(config.Config, *slog.Logger) (container.Artifacts, error) {
 			return artifacts, nil
 		},
-		DialRegistry: func(context.Context, string, string) (pb.RegistryServiceClient, io.Closer, error) {
+		DialRegistry: func(context.Context, string) (pb.RegistryServiceClient, io.Closer, error) {
 			return routerClient, io.NopCloser(nil), nil
 		},
 		Clock: clock.NewSystem(),
@@ -366,7 +366,7 @@ func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakesandbox.Sandbo
 		LoadArtifacts: func(config.Config, *slog.Logger) (container.Artifacts, error) {
 			return artifacts, nil
 		},
-		DialRegistry: func(context.Context, string, string) (pb.RegistryServiceClient, io.Closer, error) {
+		DialRegistry: func(context.Context, string) (pb.RegistryServiceClient, io.Closer, error) {
 			return routerClient, io.NopCloser(nil), nil
 		},
 		Clock: clock.NewSystem(),

@@ -18,11 +18,11 @@ offline. Everything talks gRPC over contracts in `protos/`.
 | Path        | Language     | Purpose                                                                   |
 | ----------- | ------------ | ------------------------------------------------------------------------- |
 | `nginx`     | NGINX        | Client-facing proxy                                                       |
-| `router/`   | Python 3.12  | Placement, cluster registry                                               |
+| `router/`   | Python 3.13  | Placement, cluster registry                                               |
 | `worker/`   | Go 1.25      | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
 | `executor/` | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
 | `pkg/`      | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
-| `pipeline/` | Python 3.12  | Offline: corpus, package analysis, checkpoint planning and capture        |
+| `pipeline/` | Python 3.13  | Offline: corpus, package analysis, checkpoint planning and capture        |
 | `protos/`   | protobuf     | Wire contracts: `execution`, `proxy`, `registry`, `resources`             |
 
 Supporting: `.github/` (CI, CODEOWNERS, PR template), `catalogues/` (per-flavor
@@ -63,8 +63,8 @@ Most tests use fakes and run anywhere (see gVisor note below).
   (worker) - and locked by a cross-language golden fixture
   (`executor/tests/data/frames.golden.json`). Change both sides and regenerate the
   golden; the `golden` CI job checks for drift.
-- **The two Python floors are deliberate:** `pkg` and `executor` target 3.11
-  because they install into a user's process; `router` (3.13) and `pipeline` (3.12)
+- **The two Python floors are deliberate:** `pkg` and `executor` target 3.12
+  because they have to be the same and also be compatible with the rootfs Python version; `router` and `pipeline` target 3.13
   control their own images.
 
 ## Conventions
