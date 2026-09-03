@@ -1,7 +1,7 @@
 [project]
-name = "readie-client"
+name = "readie"
 version = "0.1.0"
-description = "Client SDK for running Python functions on checkpoint-restore serverless workers"
+description = "Client SDK for running Python functions on Readie"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }

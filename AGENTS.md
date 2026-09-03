@@ -15,15 +15,15 @@ offline. Everything talks gRPC over contracts in `protos/`.
 
 ## Repo map
 
-| Path        | Language     | Purpose                                                            |
-| ----------- | ------------ | ------------------------------------------------------------------ |
-| `nginx`     | NGINX        | Client-facing proxy                                                |
-| `router/`   | Python 3.13  | Placement, cluster registry                                        |
-| `worker/`   | Go 1.25      | Sandbox lifecycle, checkpoint/restore, executor I/O                |
-| `executor/` | Python 3.11+ | Runs _inside_ every sandbox; unpickles and calls the function      |
-| `pkg/`      | Python 3.11+ | `readie-client`, the `@remote` SDK (imported as `readie`)          |
-| `pipeline/` | Python 3.12  | Offline: corpus, package analysis, checkpoint planning and capture |
-| `protos/`   | protobuf     | Wire contracts: `execution`, `proxy`, `registry`, `resources`      |
+| Path        | Language     | Purpose                                                                   |
+| ----------- | ------------ | ------------------------------------------------------------------------- |
+| `nginx`     | NGINX        | Client-facing proxy                                                       |
+| `router/`   | Python 3.12  | Placement, cluster registry                                               |
+| `worker/`   | Go 1.25      | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
+| `executor/` | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
+| `pkg/`      | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
+| `pipeline/` | Python 3.12  | Offline: corpus, package analysis, checkpoint planning and capture        |
+| `protos/`   | protobuf     | Wire contracts: `execution`, `proxy`, `registry`, `resources`             |
 
 Supporting: `.github/` (CI, CODEOWNERS, PR template), `catalogues/` (per-flavor
 router catalogues), `docker-compose.yml`, and the umbrella root `Makefile`.

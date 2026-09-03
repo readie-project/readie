@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from readie.errors import ConfigurationError
 
 # Public endpoint of the nginx client-facing proxy
-DEFAULT_ROUTER_URI = "https://readie.eastus.cloudapp.azure.com:443"
+DEFAULT_ROUTER_URI = "readie.eastus.cloudapp.azure.com:443"
 DEFAULT_TIMEOUT = None
 DEFAULT_STREAM_LOGS = True
 CHUNK_SIZE = 1024 * 1024
