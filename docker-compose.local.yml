@@ -4,3 +4,6 @@ services:
             - "50051:50051"
         volumes:
             - ./nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
+    worker:
+        environment:
+            LOG_LEVEL: debug

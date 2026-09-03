@@ -64,7 +64,6 @@ services:
         platform: linux/amd64
         container_name: worker
         environment:
-            LOG_LEVEL: debug
             # cgroup v2 delegation inside Docker Desktop refuses the subtree
             # write runsc needs, so every sandbox create fails with "device or
             # resource busy". Harmless on a host with proper delegation, and the

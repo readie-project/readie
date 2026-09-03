@@ -66,7 +66,8 @@ READIE_ALPHA := 0.0075
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image capture worker-image generation clean-artifacts \
-        router-% pkg-% executor-% pipeline-% worker-% lint type test help
+        router-% pkg-% executor-% pipeline-% worker-% lint type test help \
+		run-prod run-local shutdown
 
 all: protos lint type test ## Generate, check and test everything
 
@@ -267,11 +268,24 @@ test: ## Test every component
 	@$(MAKE) --no-print-directory -C pipeline test
 	@$(MAKE) --no-print-directory -C worker test
 
-# No up/down/build targets. They were one-line aliases for the equivalent
-# docker compose commands, which added a layer of indirection and made `make`
-# look like a prerequisite for running the system. It is not: compose runs the
-# stack, and this file covers the development loop compose cannot.
-
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+# ---------------------------------------------------------------------------
+# Deployment helpers (docker compose)
+# ---------------------------------------------------------------------------
+run-prod: ## Run the router and a worker in production mode
+	docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    up -d --build
+
+run-local: ## Run the router and a worker in local mode
+	docker compose \
+	-f docker-compose.yml \
+	-f docker-compose.local.yml \
+	up -d --build
+
+shutdown: ## Stop the router and worker containers
+	docker compose down --remove-orphans
