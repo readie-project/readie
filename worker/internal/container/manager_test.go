@@ -345,7 +345,10 @@ func TestAcquire_CleansUpTheDirectoryWhenCreateFails(t *testing.T) {
 func TestAcquire_ResumesAnExistingContainer(t *testing.T) {
 	f := newFixture(t)
 	first := acquireNew(t, f)
-	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, first, container.OutcomeSuccess))
+	// Pause directly: Release no longer leaves a container paused (see
+	// TestRelease_SuccessDestroysTheContainer), but resume must still work
+	// against whatever containers are left paused.
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, first.ID))
 
 	second, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		ContainerID: first.ID,
@@ -374,7 +377,10 @@ func TestAcquire_ReportsErrorWhenResumeFails(t *testing.T) {
 	assert.Contains(t, f.registry.StatusesFor(first.ID), pb.Status_STATUS_ERROR)
 }
 
-func TestRelease_SuccessPausesForReuse(t *testing.T) {
+// Pause-on-success is disabled for now (see Manager.Release); a successful
+// execution destroys the container just like a failed one, until that's
+// uncommented.
+func TestRelease_SuccessDestroysTheContainer(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
 
@@ -382,11 +388,10 @@ func TestRelease_SuccessPausesForReuse(t *testing.T) {
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.True(t, state.Paused)
-	assert.False(t, state.Removed)
+	assert.True(t, state.Removed)
 
-	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_READY}, f.registry.StatusesFor(h.ID))
-	assert.DirExists(t, f.layout.ContainerDir(h.ID), "a reusable container keeps its socket directory")
+	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_REMOVED}, f.registry.StatusesFor(h.ID))
+	assert.NoDirExists(t, f.layout.ContainerDir(h.ID))
 }
 
 func TestRelease_FailureDestroysTheContainerAndItsDirectory(t *testing.T) {
@@ -522,8 +527,9 @@ func TestDestroy_UnpausesBeforeStoppingAPausedContainer(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
 
-	// Leave it paused the way a completed execution does.
-	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+	// Leave it paused the way a completed execution does when pause-on-success
+	// is enabled (Release itself no longer pauses; see Manager.Release).
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	require.True(t, state.Paused)
@@ -615,6 +621,11 @@ func TestLoad_DropsAContainerOnRelease(t *testing.T) {
 // A paused container holds pages but is reserved for nobody. Counting it as
 // occupied would strand the warm containers the whole system exists to reuse.
 func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
+	// Pause-on-success is disabled for now (see Manager.Release), so Release
+	// no longer leaves an untracked-but-paused container behind for this test
+	// to exercise. Re-enable once that's uncommented.
+	t.Skip("pause-on-success is temporarily disabled; see Manager.Release")
+
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		Alloc: memAlloc(512 << 20),
@@ -635,8 +646,9 @@ func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
 	assert.Equal(t, h.ID, resumed.ID)
 }
 
-// Release runs on the failure path too, and a pause that fails must not leave
-// the container reserved forever - that leaks capacity for the process's life.
+// Release destroys on every outcome right now (see Manager.Release), and a
+// destroy that fails must not leave the container reserved forever - that
+// leaks capacity for the process's life.
 func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
@@ -644,7 +656,7 @@ func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	f.runtime.FailOn("Pause", errors.New("runtime is wedged"))
+	f.runtime.FailOn("Stop", errors.New("runtime is wedged"))
 	require.Error(t, f.manager.Release(
 		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
 

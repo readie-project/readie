@@ -453,9 +453,11 @@ func (m *Manager) Release(ctx context.Context, ref registry.ExecutionRef, h Hand
 	// regardless of whether the runtime cooperated.
 	m.untrack(h.ID)
 
-	if outcome == OutcomeSuccess {
-		return m.Pause(ctx, ref, h.ID)
-	}
+	// Pause-on-success (warm reuse) disabled for now; always stop+destroy.
+	// Uncomment to restore warm reuse:
+	// if outcome == OutcomeSuccess {
+	// 	return m.Pause(ctx, ref, h.ID)
+	// }
 	return m.Destroy(ctx, ref, h.ID)
 }
 

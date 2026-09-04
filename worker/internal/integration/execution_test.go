@@ -114,11 +114,12 @@ func TestExecution_HappyPath(t *testing.T) {
 	assert.Equal(t, "req-1", first.GetRequestId())
 	assert.Equal(t, "sess-1", first.GetSessionId())
 
-	// A completed container is paused for reuse, not destroyed.
+	// Pause-on-success is disabled for now (see Manager.Release): a completed
+	// container is destroyed, not paused for reuse.
 	state, ok := h.Runtime.Get(first.GetContainerId())
 	require.True(t, ok)
-	assert.True(t, state.Paused)
-	assert.False(t, state.Removed)
+	assert.False(t, state.Paused)
+	assert.True(t, state.Removed)
 
 	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
 		return len(s.ExecutorStatuses()) >= 2
@@ -128,7 +129,7 @@ func TestExecution_HappyPath(t *testing.T) {
 	for _, s := range h.Router.ExecutorStatuses() {
 		statuses = append(statuses, s.GetStatus())
 	}
-	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_READY}, statuses)
+	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_REMOVED}, statuses)
 }
 
 func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
@@ -159,6 +160,10 @@ func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
 }
 
 func TestExecution_ReusesAWarmContainer(t *testing.T) {
+	// Pause-on-success is disabled for now (see Manager.Release), so a
+	// container is never left warm to reuse. Re-enable once that's uncommented.
+	t.Skip("pause-on-success is temporarily disabled; see Manager.Release")
+
 	h := newHarness(t)
 
 	first, err := execute(t, h, "", []byte("first"))
