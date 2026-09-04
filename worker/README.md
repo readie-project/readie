@@ -209,11 +209,10 @@ envelope back. `internal/executor` implements this side; the Python side is in
 `../executor/`, and `../executor/tests/data/frames.golden.json` is decoded by
 both test suites so the two cannot drift.
 
-Two properties matter. The executor sleeps 30 seconds awaiting a checkpoint
-_before_ binding, so `DIAL_TOTAL_TIMEOUT` must exceed it. And a `{"ok": false}`
-envelope is _not_ a worker failure - the sandbox ran and the interpreter is
-healthy - so the execution is reported as a success and the container is paused
-for reuse. Only the client turns that envelope into an exception.
+A `{"ok": false}` envelope is _not_ a worker failure - the sandbox ran and the
+interpreter is healthy - so the execution is reported as a success and the
+container is paused for reuse. Only the client turns that envelope into an
+exception.
 
 The manifest records `executor_protocol`, and `internal/artifact` refuses
 artifacts whose version this worker does not implement, at load rather than at
@@ -222,7 +221,9 @@ restore.
 **Spec compatibility** - the worker and the offline pipeline generate their
 bundles from the same `runsc.BuildSpec`, via `cmd/ocispec`. Two independent
 generators cannot be kept in agreement by review, and a mismatch fails a restore
-opaquely 30 seconds into a request. `Fingerprint` hashes what a checkpoint is
+opaquely - nothing internal to the runtime call bounds a restore once it
+starts, so the failure surfaces only once the caller's own dial budget
+(`DIAL_TOTAL_TIMEOUT`) runs out. `Fingerprint` hashes what a checkpoint is
 sensitive to - args, `terminal`, cwd, `root.readonly`, the ordered mount list,
 namespaces, cpu/pids limits, overlay and network - and deliberately excludes
 mount sources, the memory limit and the cgroup path, so per-request variation

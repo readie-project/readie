@@ -19,6 +19,7 @@ async def test_the_auth_token_is_sent_as_bearer_metadata(harness: RouterHarness)
         Settings(
             router_uri=harness.uri,
             timeout=15.0,
+            tls=False,
             stream_logs=False,
         )
     )
@@ -32,7 +33,7 @@ async def test_the_auth_token_is_sent_as_bearer_metadata(harness: RouterHarness)
 
 
 async def test_no_token_sends_no_authorization_header(harness: RouterHarness) -> None:
-    client = Client(Settings(router_uri=harness.uri, timeout=15.0, stream_logs=False))
+    client = Client(Settings(router_uri=harness.uri, timeout=15.0, tls=False, stream_logs=False))
     try:
         assert await client.acall(add, (2, 2)) == 4
     finally:

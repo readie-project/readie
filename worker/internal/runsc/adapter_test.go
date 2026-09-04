@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -93,6 +94,12 @@ func (f *fixture) readBundleSpec(t *testing.T, id string) *specs.Spec {
 // non-flag argument. Global flags must precede the subcommand and subcommand
 // flags must follow it; getting that wrong is misread rather than rejected, so
 // argv is asserted whole rather than by substring.
+//
+// Start launches coldStart/restore in a goroutine - run and restore otherwise
+// block in the foreground for the sandbox's entire lifetime, which would wedge
+// Start for as long as the sandbox lives - so every assertion on what the
+// runner recorded has to wait for that goroutine rather than read argv the
+// instant Start returns.
 func TestColdStart_BuildsTheExactArgv(t *testing.T) {
 	f := newFixture(t)
 
@@ -103,14 +110,14 @@ func TestColdStart_BuildsTheExactArgv(t *testing.T) {
 	require.NoError(t, f.adapter.Start(context.Background(), testID, sandbox.StartSpec{}))
 
 	bundle := filepath.Join(f.bundles, testID)
+	require.Eventually(t, func() bool {
+		return len(f.runner.argv()) > 0
+	}, time.Second, time.Millisecond, "coldStart never spawned run")
+
 	assert.Equal(t, [][]string{
 		{
 			"--root=" + f.root, "--network=none", "--host-uds=create", "--overlay2=root:memory",
-			"create", "--bundle=" + bundle, "--pid-file=" + filepath.Join(bundle, pidFileName), testID,
-		},
-		{
-			"--root=" + f.root, "--network=none", "--host-uds=create", "--overlay2=root:memory",
-			"start", testID,
+			"run", "--bundle=" + bundle, "--pid-file=" + filepath.Join(bundle, pidFileName), testID,
 		},
 	}, f.runner.argv())
 }
@@ -129,11 +136,15 @@ func TestRestore_BuildsTheExactArgv(t *testing.T) {
 	}))
 
 	bundle := filepath.Join(f.bundles, testID)
+	require.Eventually(t, func() bool {
+		return len(f.runner.argv()) > 0
+	}, time.Second, time.Millisecond, "restore was never spawned")
+
 	assert.Equal(t, [][]string{{
 		"--root=" + f.root, "--network=none", "--host-uds=create", "--overlay2=root:memory",
-		"restore", "--bundle=" + bundle, "--image-path=" + image,
-		"--pid-file=" + filepath.Join(bundle, pidFileName), "--detach", testID,
-	}}, f.runner.argv(), "restore creates and starts in one call, and must detach")
+		"restore", "--detach", "--bundle=" + bundle, "--image-path=" + image,
+		"--pid-file=" + filepath.Join(bundle, pidFileName), testID,
+	}}, f.runner.argv(), "restore blocks in the foreground for the sandbox's life regardless of --detach")
 }
 
 func TestGlobalFlags_OptionalOnesAreOmittedWhenUnset(t *testing.T) {
@@ -415,6 +426,12 @@ func TestFingerprint_IsStable(t *testing.T) {
 // The runtime creates the sandbox before restoring into it, so a partial
 // failure leaves state behind. Without cleanup the caller's cold-start retry
 // hits "already exists" and a recoverable downgrade becomes a hard failure.
+//
+// Start no longer reports this failure itself - it returns before restore has
+// even run, let alone failed - so what's observable here is the cleanup
+// side effect, not Start's return value. A caller learns of the failure only
+// by the sandbox never coming up (its dial times out); that's a real gap this
+// design accepts, not one this test can paper over.
 func TestRestore_CleansUpSoAColdStartCanFollow(t *testing.T) {
 	f := newFixture(t)
 	_, err := f.adapter.Create(context.Background(), testCreateSpec(f))
@@ -425,19 +442,23 @@ func TestRestore_CleansUpSoAColdStartCanFollow(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(image, "checkpoint.img"), []byte("x"), 0o644))
 	f.runner.fail["restore"] = commandErr("restore", "failed to restore", 1)
 
-	err = f.adapter.Start(context.Background(), testID, sandbox.StartSpec{
+	require.NoError(t, f.adapter.Start(context.Background(), testID, sandbox.StartSpec{
 		CheckpointID: "checkpoint_1", CheckpointDir: image,
-	})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, sandbox.ErrRestoreFailed)
-	assert.Contains(t, f.runner.commands(), "delete",
+	}))
+
+	require.Eventually(t, func() bool {
+		return slices.Contains(f.runner.commands(), "delete")
+	}, time.Second, time.Millisecond,
 		"a partially restored sandbox must be removed before the caller retries")
 
 	// The downgrade the container manager performs must now succeed.
 	f.runner.reset()
 	delete(f.runner.fail, "restore")
 	require.NoError(t, f.adapter.Start(context.Background(), testID, sandbox.StartSpec{}))
-	assert.Equal(t, []string{"create", "start"}, f.runner.commands())
+	require.Eventually(t, func() bool {
+		return len(f.runner.commands()) > 0
+	}, time.Second, time.Millisecond, "coldStart never ran")
+	assert.Equal(t, []string{"run"}, f.runner.commands())
 }
 
 // Discovering an unusable image costs a full restore timeout unless it is
@@ -446,22 +467,28 @@ func TestRestore_RejectsAnEmptyImageWithoutSpawningAnything(t *testing.T) {
 	f := newFixture(t)
 	empty := t.TempDir()
 
-	err := f.adapter.Start(context.Background(), testID, sandbox.StartSpec{
+	require.NoError(t, f.adapter.Start(context.Background(), testID, sandbox.StartSpec{
 		CheckpointID: "checkpoint_1", CheckpointDir: empty,
-	})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, sandbox.ErrRestoreFailed)
-	assert.Empty(t, f.runner.argv(), "no process should be started for an unusable image")
+	}))
+
+	require.Never(t, func() bool {
+		return len(f.runner.argv()) > 0
+	}, 200*time.Millisecond, 10*time.Millisecond,
+		"no process should be started for an unusable image")
 }
 
 func TestColdStart_CleansUpWhenStartFails(t *testing.T) {
 	f := newFixture(t)
 	_, err := f.adapter.Create(context.Background(), testCreateSpec(f))
 	require.NoError(t, err)
-	f.runner.fail["start"] = commandErr("start", "boom", 1)
+	f.runner.fail["run"] = commandErr("run", "boom", 1)
 
-	require.Error(t, f.adapter.Start(context.Background(), testID, sandbox.StartSpec{}))
-	assert.Equal(t, []string{"create", "start", "delete"}, f.runner.commands())
+	require.NoError(t, f.adapter.Start(context.Background(), testID, sandbox.StartSpec{}))
+
+	require.Eventually(t, func() bool {
+		return slices.Contains(f.runner.commands(), "delete")
+	}, time.Second, time.Millisecond, "a failed run must be cleaned up")
+	assert.Equal(t, []string{"run", "delete"}, f.runner.commands())
 }
 
 func TestStart_AttachesTheLogFileAsRealDescriptors(t *testing.T) {
@@ -469,6 +496,10 @@ func TestStart_AttachesTheLogFileAsRealDescriptors(t *testing.T) {
 	_, err := f.adapter.Create(context.Background(), testCreateSpec(f))
 	require.NoError(t, err)
 	require.NoError(t, f.adapter.Start(context.Background(), testID, sandbox.StartSpec{}))
+
+	require.Eventually(t, func() bool {
+		return f.runner.lastStdio().Out != nil
+	}, time.Second, time.Millisecond, "run was never spawned with stdio attached")
 
 	stdio := f.runner.lastStdio()
 	require.NotNil(t, stdio.Out, "the sandbox inherits these; they cannot be pipes we own")

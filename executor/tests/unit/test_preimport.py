@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 
+import pytest
+
 from readie_executor.preimport import preimport
 
 
@@ -14,15 +16,13 @@ def test_real_modules_load():
     assert "json" in sys.modules
 
 
-def test_a_missing_module_is_recorded_and_the_rest_still_load():
-    # One bad name in a planned set must leave a checkpoint missing a module,
-    # not a sandbox that exited. The pipeline can only tell those apart if this
-    # keeps going.
-    report = preimport(("json", "no_such_module_xyz", "statistics"))
-
-    assert report.loaded == ["json", "statistics"]
-    assert "no_such_module_xyz" in report.failed
-    assert "ModuleNotFoundError" in report.failed["no_such_module_xyz"]
+def test_a_missing_module_raises_so_the_pipeline_sees_a_failed_capture():
+    # A bad name in a planned set means the whole capture is invalid.
+    # __main__ calls preimport unguarded in capture mode, so this must crash
+    # the process rather than ship a checkpoint that is silently missing a
+    # module.
+    with pytest.raises(ModuleNotFoundError):
+        preimport(("json", "no_such_module_xyz", "statistics"))
 
 
 def test_an_empty_set_is_fine():

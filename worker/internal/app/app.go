@@ -91,7 +91,6 @@ func newRunscRuntime(
 		Debug:             cfg.SandboxDebug,
 		DebugLogDir:       cfg.SandboxDebugLogDir,
 		CommandTimeout:    cfg.RuntimeCommandTimeout,
-		RestoreTimeout:    cfg.RestoreTimeout,
 		CheckpointTimeout: cfg.CheckpointTimeout,
 		StatsInterval:     cfg.StatsInterval,
 		Log:               log,

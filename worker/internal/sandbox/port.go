@@ -175,8 +175,13 @@ type Lifecycle interface {
 	// Start launches a created sandbox, restoring it from a checkpoint when
 	// StartSpec names one.
 	//
-	// A failed restore must leave nothing behind, so the caller may retry
-	// immediately with a cold start.
+	// A runtime may launch a sandbox with a call that blocks for its entire
+	// life, in which case Start cannot wait for that call to return without
+	// blocking for the sandbox's whole life too - so it may return nil before
+	// the launch has actually succeeded, with no way to report a failure that
+	// surfaces afterward. Such a failure is still cleaned up so a later
+	// attempt may reuse the same id, but the caller of Start finds out only
+	// indirectly, e.g. by the sandbox never coming up.
 	Start(ctx context.Context, id string, spec StartSpec) error
 
 	// Stop asks a sandbox to exit, forcing it after timeout.

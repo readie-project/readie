@@ -147,7 +147,7 @@ func TestAcquire_LocksTheExecutorContract(t *testing.T) {
 
 	assert.Equal(t, h.ID, spec.ID)
 	assert.Equal(t, executorArgv, spec.Args, "the manifest records argv; the worker replays it")
-	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=" + pythonPath}, spec.Env)
+	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "EXECUTOR_MODE=sandbox", "PYTHONPATH=" + pythonPath}, spec.Env)
 	assert.Equal(t, activeRootfs(t, f), spec.RootfsPath)
 	assert.Equal(t, f.layout.BundleDir(h.ID), spec.BundleDir)
 	assert.Equal(t, f.layout.LogPath(h.ID), spec.LogPath)

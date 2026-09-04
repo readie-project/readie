@@ -25,14 +25,7 @@ class PreimportReport:
 
 
 def preimport(modules: tuple[str, ...]) -> PreimportReport:
-    """Import each module, continuing past failures.
-
-    A failed import is reported and skipped rather than raised. The alternative
-    is that one bad name in a planned set aborts the whole capture, and the
-    operator sees a sandbox that exited instead of a checkpoint that is merely
-    missing one module - the pipeline can only tell those apart if we keep
-    going and say so.
-    """
+    """Import each module, stopping and raising on the first failure."""
     report = PreimportReport()
     started = time.perf_counter()
 
@@ -41,11 +34,11 @@ def preimport(modules: tuple[str, ...]) -> PreimportReport:
             importlib.import_module(name)
         except BaseException as exc:  # noqa: BLE001 - a module may raise anything at import
             # Including SystemExit: some scientific packages call sys.exit on an
-            # unsupported platform, and that must not take the executor with it.
+            # unsupported platform, and that must not take the executor with it
+            # silently - it still needs to surface as a hard preimport failure.
             report.failed[name] = f"{type(exc).__name__}: {exc}"
             print(
                 f"[preimport] {name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-            # Raise so that it propogates to the pipeline
             raise
         else:
             report.loaded.append(name)

@@ -24,7 +24,7 @@ async def harness() -> AsyncIterator[RouterHarness]:
 
 @pytest_asyncio.fixture
 async def client(harness: RouterHarness) -> AsyncIterator[Client]:
-    client = Client(Settings(router_uri=harness.uri, timeout=15.0, stream_logs=False))
+    client = Client(Settings(router_uri=harness.uri, timeout=15.0, tls=False, stream_logs=False))
     try:
         yield client
     finally:

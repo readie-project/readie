@@ -25,7 +25,7 @@ def test_a_token_becomes_bearer_metadata() -> None:
 
 
 def test_no_tls_means_a_plaintext_channel() -> None:
-    assert channel_credentials(Settings()) is None
+    assert channel_credentials(Settings(tls=False)) is None
 
 
 def test_tls_produces_channel_credentials() -> None:

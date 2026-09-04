@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // versionFlag queries the runtime version. It is the one invocation with no
@@ -130,6 +131,12 @@ func (r *ExecRunner) command(ctx context.Context, args ...string) *exec.Cmd {
 	full = append(full, args...)
 
 	cmd := exec.CommandContext(ctx, r.binary, full...)
+	// A canceled context only kills this direct child; a grandchild it forked
+	// (e.g. a shell's own child) can outlive it and keep an inherited pipe
+	// open, which would otherwise hang Wait() until that orphan exits on its
+	// own. WaitDelay bounds that: Wait() gives up on the I/O relay goroutines
+	// this long after cancellation instead of waiting for it indefinitely.
+	cmd.WaitDelay = 5 * time.Second
 	if len(r.env) > 0 {
 		cmd.Env = r.env
 	}

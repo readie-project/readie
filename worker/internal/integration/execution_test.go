@@ -143,7 +143,7 @@ func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
 
 	assert.Equal(t, []string{"python", "-u", "-m", "readie_executor"}, spec.Args,
 		"the manifest records argv and the worker replays it verbatim")
-	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/lib/python3.12/dist-packages"}, spec.Env)
+	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "EXECUTOR_MODE=sandbox", "PYTHONPATH=/lib/python3.12/dist-packages"}, spec.Env)
 	assert.Equal(t, cpuAlloc, spec.MemoryBytes)
 	assert.Equal(t, int64(50000), spec.CPUQuota)
 	assert.Equal(t, int64(100), spec.PidsLimit)

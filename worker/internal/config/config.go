@@ -144,7 +144,6 @@ type Config struct {
 
 	// Runtime call bounds.
 	RuntimeCommandTimeout time.Duration
-	RestoreTimeout        time.Duration
 	CheckpointTimeout     time.Duration
 	// CheckpointStrictCompat controls what happens when, at startup, this
 	// worker's spec fingerprint or runsc version disagrees with the manifest the
@@ -266,7 +265,6 @@ func Load(getenv Getenv) (Config, error) {
 		MemGrowthFactor:      2.0,
 
 		RuntimeCommandTimeout:  30 * time.Second,
-		RestoreTimeout:         30 * time.Second,
 		CheckpointTimeout:      5 * time.Minute,
 		CheckpointStrictCompat: true,
 
@@ -442,7 +440,6 @@ func applyDurationOverrides(getenv Getenv, cfg *Config) error {
 		"STATS_INTERVAL":              &cfg.StatsInterval,
 		"CONTAINER_STOP_TIMEOUT":      &cfg.ContainerStopTimeout,
 		"RUNSC_COMMAND_TIMEOUT":       &cfg.RuntimeCommandTimeout,
-		"RESTORE_TIMEOUT":             &cfg.RestoreTimeout,
 		"CHECKPOINT_TIMEOUT":          &cfg.CheckpointTimeout,
 		"WORKER_UTILIZATION_INTERVAL": &cfg.UtilizationInterval,
 	}

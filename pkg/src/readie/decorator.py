@@ -231,9 +231,7 @@ def default_client() -> Client:
 def configure(client: Client | None = None, **settings: Any) -> Client:
     """Install the process-wide client.
 
-    Pass a client, or keyword settings to build one::
-
-        readie.configure(router_uri="localhost:50051", timeout=120.0, stream_logs=False, tls=False)
+    Pass a client, or keyword settings to build one.
 
     Replacing an existing default closes it first, so its channel is not
     orphaned.

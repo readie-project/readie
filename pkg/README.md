@@ -49,7 +49,7 @@ Configuration options:
 ```python
 import readie
 
-readie.configure(router_uri="localhost:50051", timeout=120.0, stream_logs=True, tls=False)
+readie.configure(router_uri="localhost:50051", timeout=120.0, chunk_size=64*1024, stream_logs=True, tls=False)
 ```
 
 The following are configurable only from the environment:

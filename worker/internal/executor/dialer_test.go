@@ -19,9 +19,9 @@ func newDialer(path string, retry executor.RetryPolicy) *executor.UnixDialer {
 	return executor.NewUnixDialer(pathResolver(path), retry, clock.NewSystem(), logging.Discard())
 }
 
-// The real executor sleeps 30 seconds awaiting a checkpoint before it binds its
-// socket, so the dialer has to keep retrying across a startup gap rather than
-// failing on the first refused connection.
+// The real executor's socket doesn't exist until the sandbox has started and
+// bound it, so the dialer has to keep retrying across that startup gap rather
+// than failing on the first refused connection.
 func TestDial_RetriesUntilTheExecutorBinds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing-sensitive")

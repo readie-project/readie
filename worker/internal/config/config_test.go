@@ -155,7 +155,6 @@ func TestLoad_Overrides(t *testing.T) {
 	env["SANDBOX_DEBUG"] = "true"
 	env["CHECKPOINT_STRICT_COMPAT"] = "false"
 	env["EXECUTION_TIMEOUT"] = "90s"
-	env["RESTORE_TIMEOUT"] = "45s"
 	env["CHECKPOINT_TIMEOUT"] = "10m"
 	env["STATS_INTERVAL"] = "250ms"
 	env["STREAM_STATS"] = "false"
@@ -172,7 +171,6 @@ func TestLoad_Overrides(t *testing.T) {
 	assert.True(t, cfg.SandboxDebug)
 	assert.False(t, cfg.CheckpointStrictCompat)
 	assert.Equal(t, 90*time.Second, cfg.ExecutionTimeout)
-	assert.Equal(t, 45*time.Second, cfg.RestoreTimeout)
 	assert.Equal(t, 10*time.Minute, cfg.CheckpointTimeout)
 	assert.Equal(t, 250*time.Millisecond, cfg.StatsInterval)
 	assert.False(t, cfg.StreamStats)

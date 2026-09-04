@@ -24,9 +24,8 @@ type PathResolver interface {
 
 // RetryPolicy bounds how long a dial may keep retrying.
 type RetryPolicy struct {
-	// Total is the overall budget. It must exceed the 30 seconds the executor
-	// spends awaiting a checkpoint before binding its socket, or a cold
-	// container can never be reached.
+	// Total is the overall budget: how long a cold or restored sandbox has to
+	// bind its socket before the dial gives up.
 	Total time.Duration
 	// Interval is the pause between attempts.
 	Interval time.Duration

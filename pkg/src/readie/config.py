@@ -20,13 +20,6 @@ CHUNK_SIZE = 1024 * 1024
 MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 
-def _bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
 @dataclass(frozen=True, slots=True)
 class Settings:
     """How the client reaches the router and frames what it sends."""
@@ -37,7 +30,7 @@ class Settings:
     timeout: float | None = DEFAULT_TIMEOUT
     """Deadline for a whole call, in seconds. ``None`` means no deadline."""
 
-    chunk_size: int = field(default=CHUNK_SIZE, init=False)
+    chunk_size: int = CHUNK_SIZE
     """Payload bytes per stream message. Matches the executor's socket reads."""
 
     max_message_bytes: int = field(default=MAX_MESSAGE_BYTES, init=False)

@@ -61,8 +61,6 @@ type Options struct {
 
 	// CommandTimeout bounds every non-blocking runtime call.
 	CommandTimeout time.Duration
-	// RestoreTimeout bounds a checkpoint restore.
-	RestoreTimeout time.Duration
 	// CheckpointTimeout bounds taking a snapshot, which can be large.
 	CheckpointTimeout time.Duration
 	// StatsInterval is the sampling period for streaming stats.
@@ -84,9 +82,6 @@ func (o Options) withDefaults() Options {
 	}
 	if o.CommandTimeout <= 0 {
 		o.CommandTimeout = 30 * time.Second
-	}
-	if o.RestoreTimeout <= 0 {
-		o.RestoreTimeout = 30 * time.Second
 	}
 	if o.CheckpointTimeout <= 0 {
 		o.CheckpointTimeout = 5 * time.Minute
@@ -307,9 +302,10 @@ func (a *Adapter) restore(ctx context.Context, id string, spec sandbox.StartSpec
 	}
 	defer closeStdio()
 
-	restoreCtx, cancel := context.WithTimeout(ctx, a.opts.RestoreTimeout)
+	restoreCtx, cancel := context.WithTimeout(ctx, a.opts.CommandTimeout)
 	_, err = a.runner.Spawn(restoreCtx, stdio, a.args(
 		"restore",
+		"--detach",
 		"--bundle="+a.BundleDir(id),
 		"--image-path="+spec.CheckpointDir,
 		"--pid-file="+filepath.Join(a.BundleDir(id), pidFileName),
