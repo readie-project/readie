@@ -129,6 +129,7 @@ class Client:
         timeout: float | None = None,
         budgets: tuple[Budget, ...] = (),
         gpu: bool = False,
+        packages: tuple[str, ...] = (),
     ) -> Any:
         """Execute ``func`` remotely and return its result.
 
@@ -136,7 +137,7 @@ class Client:
         loop, where blocking would stall the loop the response must arrive on.
         """
         _reject_running_loop()
-        ref, payload, imports = self._prepare(func, args, kwargs, session)
+        ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
         outcome = self._transport.execute(
             ref,
             payload,
@@ -158,9 +159,10 @@ class Client:
         timeout: float | None = None,  # noqa: ASYNC109 - the deadline is the gRPC call's, not a wrapper's
         budgets: tuple[Budget, ...] = (),
         gpu: bool = False,
+        packages: tuple[str, ...] = (),
     ) -> Any:
         """Execute ``func`` remotely and return its result, without blocking."""
-        ref, payload, imports = self._prepare(func, args, kwargs, session)
+        ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
         outcome = await self._async_transport.execute(
             ref,
             payload,
@@ -221,6 +223,7 @@ class Client:
         args: Sequence[Any],
         kwargs: Mapping[str, Any] | None,
         session: Session | None,
+        packages: tuple[str, ...] = (),
     ) -> tuple[CallRef, bytes, tuple[str, ...]]:
         self._check_open()
         if session is not None:
@@ -230,7 +233,7 @@ class Client:
         # so unrelated calls do not contend for one container's queue.
         session_id = session.id if session is not None else new_session_id()
         ref = CallRef(request_id=new_request_id(), session_id=session_id)
-        payload = self._codec.encode_call(func, args, kwargs or {})
+        payload = self._codec.encode_call(func, args, kwargs or {}, packages)
         imports = extract_imports(func)
         return ref, payload, imports
 

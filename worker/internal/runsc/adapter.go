@@ -40,6 +40,9 @@ type Options struct {
 
 	// Network, HostUDS and Overlay are global runtime flags.
 	//
+	// Network empty omits --network so runsc's own default applies, rather
+	// than this package forcing "none".
+	//
 	// HostUDS governs whether a socket bound inside the sandbox is visible on
 	// the host. The executor is a socket server, so without it every execution
 	// fails at dial time; see the package's Linux verification notes.
@@ -77,9 +80,9 @@ func (o Options) withDefaults() Options {
 	if o.Binary == "" {
 		o.Binary = "runsc"
 	}
-	if o.Network == "" {
-		o.Network = "none"
-	}
+	// Network is deliberately left alone when empty: globalFlags omits
+	// --network in that case, so runsc's own compiled-in default governs
+	// rather than this adapter forcing "none".
 	if o.CommandTimeout <= 0 {
 		o.CommandTimeout = 30 * time.Second
 	}
@@ -134,7 +137,9 @@ func New(opts Options) (*Adapter, error) {
 func (a *Adapter) globalFlags() []string {
 	flags := []string{
 		"--root=" + a.opts.Root,
-		"--network=" + a.opts.Network,
+	}
+	if a.opts.Network != "" {
+		flags = append(flags, "--network="+a.opts.Network)
 	}
 	if a.opts.HostUDS != "" {
 		flags = append(flags, "--host-uds="+a.opts.HostUDS)

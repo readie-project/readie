@@ -15,15 +15,35 @@ def add(a: int, b: int) -> int:
 
 
 def test_the_encoded_call_matches_what_the_executor_unpickles() -> None:
-    # The executor's codec.py does exactly this. If these three keys ever change
+    # The executor's codec.py does exactly this. If these four keys ever change
     # spelling, the executor breaks and nothing else notices.
     import cloudpickle
 
     raw = CloudpickleCodec().encode_call(add, (1, 2), {})
     loaded = cloudpickle.loads(raw)
 
-    assert set(loaded) == {"func", "args", "kwargs"}
+    assert set(loaded) == {"func", "args", "kwargs", "packages"}
     assert loaded["func"](*loaded["args"], **loaded["kwargs"]) == 3
+
+
+def test_packages_ride_along_as_a_fourth_key() -> None:
+    # The executor installs from this key before invoking func; the worker and
+    # router never see it, exactly like the function body itself.
+    import cloudpickle
+
+    raw = CloudpickleCodec().encode_call(add, (1, 2), {}, ("numpy", "requests==2.31.0"))
+    loaded = cloudpickle.loads(raw)
+
+    assert loaded["packages"] == ["numpy", "requests==2.31.0"]
+
+
+def test_packages_default_to_an_empty_list() -> None:
+    import cloudpickle
+
+    raw = CloudpickleCodec().encode_call(add, (1, 2), {})
+    loaded = cloudpickle.loads(raw)
+
+    assert loaded["packages"] == []
 
 
 def test_a_closure_over_local_state_survives_the_round_trip() -> None:

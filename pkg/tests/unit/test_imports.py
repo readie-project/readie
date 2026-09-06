@@ -113,3 +113,34 @@ def test_extraction_is_cached_per_function() -> None:
 
     first = extract_imports(target)
     assert extract_imports(target) is first
+
+
+def test_a_garbage_collected_function_leaves_no_stale_cache_entry() -> None:
+    # Pins a real bug: the cache used to key on id(func) alone, with no
+    # reference keeping func alive. Once a function was garbage collected,
+    # CPython was free to hand that same id to an unrelated function defined
+    # later, which then got back the first function's cached imports instead
+    # of its own. Keying on the function object itself, in a WeakKeyDictionary,
+    # means the entry is dropped instead of left behind for something else to
+    # collide with.
+    import gc
+
+    from readie import resources
+
+    def target():
+        import json
+
+        return json
+
+    extract_imports(target)
+    before = len(resources._cache)
+
+    del target
+    gc.collect()
+
+    # Strictly fewer, not exactly one fewer: other closures from earlier tests
+    # in this same process may also be swept by this collection. The old
+    # dict-keyed-by-id cache never shrank at all -- entries lived forever -- so
+    # any decrease here is proof the fix actually drops dead entries rather
+    # than leaving their id free for something else to collide with.
+    assert len(resources._cache) < before

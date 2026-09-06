@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import functools
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Generic, ParamSpec, TypeVar, overload
 
 from readie.budget import Budget, build_budgets
 from readie.client import Client, Session
+from readie.packages import normalize_packages
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -25,7 +26,16 @@ class RemoteFunction(Generic[P, R]):
     or a thread will fail at encode time with ``SerializationError``.
     """
 
-    __slots__ = ("__dict__", "_budgets", "_client", "_func", "_gpu", "_session", "_timeout")
+    __slots__ = (
+        "__dict__",
+        "_budgets",
+        "_client",
+        "_func",
+        "_gpu",
+        "_packages",
+        "_session",
+        "_timeout",
+    )
 
     # Written by functools.update_wrapper below; declared so the decorated
     # object type-checks as the drop-in replacement it is at runtime.
@@ -40,6 +50,7 @@ class RemoteFunction(Generic[P, R]):
         client: Client | None = None,
         budgets: tuple[Budget, ...] = (),
         gpu: bool = False,
+        packages: tuple[str, ...] = (),
         timeout: float | None = None,
         session: Session | None = None,
     ) -> None:
@@ -47,6 +58,7 @@ class RemoteFunction(Generic[P, R]):
         self._client = client
         self._budgets = budgets
         self._gpu = gpu
+        self._packages = packages
         self._timeout = timeout
         self._session = session
         # Carries __name__, __doc__, __module__ and __wrapped__ across, so the
@@ -70,6 +82,7 @@ class RemoteFunction(Generic[P, R]):
             timeout=self._timeout,
             budgets=self._budgets,
             gpu=self._gpu,
+            packages=self._packages,
         )
         end_time = time.perf_counter()
         print(f"Execution completed in {end_time - start_time}s")
@@ -86,6 +99,7 @@ class RemoteFunction(Generic[P, R]):
             timeout=self._timeout,
             budgets=self._budgets,
             gpu=self._gpu,
+            packages=self._packages,
         )
         end_time = time.perf_counter()
         print(f"Execution completed in {end_time - start_time}s")
@@ -113,6 +127,7 @@ class RemoteFunction(Generic[P, R]):
             client=client if client is not None else self._client,
             budgets=self._budgets,
             gpu=self._gpu,
+            packages=self._packages,
             timeout=timeout if timeout is not None else self._timeout,
             session=session if session is not None else self._session,
         )
@@ -158,6 +173,7 @@ def remote(
     max_memory: str | int | None = ...,
     gpu_memory: str | int | None = ...,
     max_gpu_memory: str | int | None = ...,
+    packages: Sequence[str] | None = ...,
 ) -> Callable[[Callable[P, R]], RemoteFunction[P, R]]: ...
 
 
@@ -173,6 +189,7 @@ def remote(
     max_memory: str | int | None = None,
     gpu_memory: str | int | None = None,
     max_gpu_memory: str | int | None = None,
+    packages: Sequence[str] | None = None,
 ) -> RemoteFunction[P, R] | Callable[[Callable[P, R]], RemoteFunction[P, R]]:
     """Mark a function for remote execution.
 
@@ -184,13 +201,20 @@ def remote(
         @remote(gpu=True, memory="2Gi", max_memory="8Gi")
         def g(x): ...
 
+        @remote(packages=["numpy==1.26.0", "requests"])
+        def h(x): ...
+
     ``gpu=True`` routes the call to a GPU worker (a ``gpu_memory`` budget implies
     it too). ``memory``/``gpu_memory`` set the container's initial budget and
     ``max_memory``/``max_gpu_memory`` the ceiling the worker may auto-expand to;
     each accepts a byte count or a size string (``"512Mi"``, ``"4Gi"``). An unset
-    budget falls back to the cluster default. Decoration itself does no work and
-    opens no connection, so a module of ``@remote`` definitions imports as fast
-    as one without them.
+    budget falls back to the cluster default. ``packages`` names PyPI
+    requirements (bare names or full specs like ``"numpy==1.26.0"``) that the
+    executor installs with ``uv`` before every call, unconditionally -- entries
+    are normalized and deduped by distribution name, but nothing is cached
+    between calls, so each one pays the install cost. Decoration itself does no
+    work and opens no connection, so a module of ``@remote`` definitions imports
+    as fast as one without them.
     """
     budgets = build_budgets(
         memory=memory,
@@ -198,10 +222,17 @@ def remote(
         gpu_memory=gpu_memory,
         max_gpu_memory=max_gpu_memory,
     )
+    packages_tuple = normalize_packages(packages or ())
 
     def decorate(target: Callable[P, R]) -> RemoteFunction[P, R]:
         return RemoteFunction(
-            target, client=client, budgets=budgets, gpu=gpu, timeout=timeout, session=session
+            target,
+            client=client,
+            budgets=budgets,
+            gpu=gpu,
+            packages=packages_tuple,
+            timeout=timeout,
+            session=session,
         )
 
     if func is not None:

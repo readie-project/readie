@@ -65,8 +65,9 @@ WORKDIR /
 RUN --mount=from=executor-wheel,source=/dist,target=/dist \
     uv pip install --system --no-cache-dir --no-deps /dist/*.whl
 
-# Clean up temporary files and the uv binary to keep rootfs minimal
-RUN rm -rf /tmp/build /bin/uv
+# Clean up temporary build files. /bin/uv is kept: the executor shells out to
+# it to install a call's requested packages before running the function.
+RUN rm -rf /tmp/build
 
 # Fail the build rather than the first restore if the entry point is not
 # importable. A rootfs whose executor cannot start produces checkpoints that

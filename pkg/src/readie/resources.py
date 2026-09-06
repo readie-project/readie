@@ -21,15 +21,24 @@ frozen binary has no retrievable source, and none of that should fail a call.
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import textwrap
 import types
+import weakref
 from collections.abc import Callable
 from typing import Any
 
 from readie import _ast
 
-_cache: dict[int, tuple[str, ...]] = {}
+# Keyed by the function object itself, not id(func): a cache keyed by id alone
+# is unsafe once the original function is garbage collected, since CPython can
+# and does hand that same id to an unrelated function defined later, producing
+# a false cache hit for entirely different source. A builtin (e.g. len) is
+# neither hashable in a useful way here nor weakly referenceable, so both
+# lookup and store fall back to no caching for it -- extraction is cheap for
+# something with no retrievable source anyway.
+_cache: weakref.WeakKeyDictionary[Callable[..., Any], tuple[str, ...]] = weakref.WeakKeyDictionary()
 
 
 def extract_imports(func: Callable[..., Any]) -> tuple[str, ...]:
@@ -39,12 +48,15 @@ def extract_imports(func: Callable[..., Any]) -> tuple[str, ...]:
     ``model:<name>`` entries -- they are artefacts a checkpoint might stage, and
     the wire carries imports as plain strings.
     """
-    key = id(func)
-    cached = _cache.get(key)
+    try:
+        cached = _cache.get(func)
+    except TypeError:
+        cached = None
     if cached is not None:
         return cached
     imports = _analyse(func)
-    _cache[key] = imports
+    with contextlib.suppress(TypeError):
+        _cache[func] = imports
     return imports
 
 

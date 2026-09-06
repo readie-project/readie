@@ -49,7 +49,17 @@ That is the product. Containment is gVisor: the executor runs under `runsc`,
 which intercepts syscalls in userspace rather than passing them to the host
 kernel. Layered on top:
 
-- **No network.** `SANDBOX_NETWORK=none` by default, and the worker validates it.
+- **No network by convention, not by forced default.** The worker passes
+  `SANDBOX_NETWORK` straight through to `runsc --network`; leaving it unset
+  omits the flag and defers to `runsc`'s own compiled-in default rather than
+  this project forcing `none`. Set `SANDBOX_NETWORK=none` explicitly for the
+  strict, network-isolated posture this section otherwise describes. A
+  deployment that enables network access (`sandbox` or `host`, or an unset
+  value that happens to resolve to one) does so to let `@remote(packages=...)`
+  reach PyPI for its per-call `uv pip install` - that trades this boundary for
+  the ability to install packages at request time, including whatever
+  supply-chain risk an unpinned or typosquatted package name carries, and
+  should be a deliberate choice, not an accident of leaving a variable unset.
 - **A read-only shared rootfs** with a per-sandbox copy-on-write overlay, so one
   execution cannot alter what the next one starts from. The worker rejects an
   `all:` overlay (it would hide the executor's socket) and any `:self` overlay

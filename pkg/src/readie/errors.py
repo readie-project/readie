@@ -20,6 +20,15 @@ class ConfigurationError(ReadieError):
     """
 
 
+class InvalidPackageError(ConfigurationError):
+    """A ``packages=`` entry on ``@remote`` is not a valid requirement spec.
+
+    Raised at decoration time, from ``normalize_packages``, so a typo in a
+    version specifier fails immediately rather than surfacing as an opaque
+    ``uv pip install`` error minutes later on the executor.
+    """
+
+
 class SerializationError(ReadieError):
     """The call could not be encoded, or the result could not be decoded.
 

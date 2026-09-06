@@ -276,6 +276,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cloudpickle" },
     { name = "grpcio" },
+    { name = "packaging" },
     { name = "protobuf" },
 ]
 
@@ -294,6 +295,7 @@ dev = [
 requires-dist = [
     { name = "cloudpickle", specifier = ">=3.1" },
     { name = "grpcio", specifier = ">=1.78.1" },
+    { name = "packaging", specifier = ">=24.0" },
     { name = "protobuf", specifier = ">=6.0" },
 ]
 

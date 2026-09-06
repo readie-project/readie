@@ -276,6 +276,41 @@ def test_imports_and_budgets_reach_the_transport() -> None:
     assert sync.last[3] == budgets
 
 
+def test_packages_reach_the_payload() -> None:
+    # packages travel inside the pickled call itself -- like the function body,
+    # the transport never sees them.
+    import cloudpickle
+
+    sync = RecordingTransport(1)
+    client = Client(SETTINGS, transport=sync, async_transport=AsyncRecordingTransport(1))
+    client.call(add, (1, 2), packages=("numpy",))
+
+    loaded = cloudpickle.loads(sync.last[1])
+    assert loaded["packages"] == ["numpy"]
+
+
+async def test_packages_reach_the_payload_on_the_async_path() -> None:
+    import cloudpickle
+
+    a_sync = AsyncRecordingTransport(1)
+    client = Client(SETTINGS, transport=RecordingTransport(1), async_transport=a_sync)
+    await client.acall(add, (1, 2), packages=("numpy",))
+
+    loaded = cloudpickle.loads(a_sync.last[1])
+    assert loaded["packages"] == ["numpy"]
+
+
+def test_packages_default_to_empty() -> None:
+    import cloudpickle
+
+    sync = RecordingTransport(1)
+    client = Client(SETTINGS, transport=sync, async_transport=AsyncRecordingTransport(1))
+    client.call(add, (1, 2))
+
+    loaded = cloudpickle.loads(sync.last[1])
+    assert loaded["packages"] == []
+
+
 def test_repr_names_the_router() -> None:
     client, _, _ = build()
     assert "127.0.0.1:1" in repr(client)

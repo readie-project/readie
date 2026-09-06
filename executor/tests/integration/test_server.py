@@ -21,8 +21,12 @@ def add(a: int, b: int) -> int:
     return a + b
 
 
-def call(func: object, *args: object, **kwargs: object) -> bytes:
-    return bytes(cloudpickle.dumps({"func": func, "args": args, "kwargs": kwargs}))
+def call(func: object, *args: object, packages: list[str] | None = None, **kwargs: object) -> bytes:
+    return bytes(
+        cloudpickle.dumps(
+            {"func": func, "args": args, "kwargs": kwargs, "packages": packages or []}
+        )
+    )
 
 
 def exchange(request: bytes, *, settings: Settings | None = None) -> dict[str, object]:
@@ -140,6 +144,60 @@ def test_an_unpicklable_result_is_reported_rather_than_swallowed():
 
     envelope = exchange(call(make_a_lock))
     assert envelope["ok"] is False
+
+
+def test_packages_are_installed_before_the_call_runs(monkeypatch: pytest.MonkeyPatch):
+    installed: list[list[str]] = []
+
+    def fake_install(specs: list[str], **_: object) -> str:
+        installed.append(specs)
+        return ""
+
+    monkeypatch.setattr("readie_executor.server.install_packages", fake_install)
+
+    envelope = exchange(call(add, 1, 2, packages=["numpy", "requests==2.31.0"]))
+
+    assert value_of(envelope) == 3
+    assert installed == [["numpy", "requests==2.31.0"]]
+
+
+def test_an_empty_packages_list_still_reads_correctly_and_runs_the_call(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    installed: list[list[str]] = []
+
+    def fake_install(specs: list[str], **_: object) -> str:
+        installed.append(specs)
+        return ""
+
+    monkeypatch.setattr("readie_executor.server.install_packages", fake_install)
+
+    envelope = exchange(call(add, 1, 2))
+
+    assert value_of(envelope) == 3
+    assert installed == [[]]
+
+
+def test_a_failed_install_returns_a_failure_envelope_without_running_the_call(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from readie_executor.install import InstallError
+
+    called = []
+
+    def boom(specs, **_):
+        raise InstallError("uv pip install failed (exit 1): no matching distribution")
+
+    monkeypatch.setattr("readie_executor.server.install_packages", boom)
+
+    def marks_that_it_ran() -> None:
+        called.append(True)
+
+    envelope = exchange(call(marks_that_it_ran, packages=["does-not-exist"]))
+
+    assert envelope["ok"] is False
+    assert "no matching distribution" in str(envelope["message"])
+    assert called == []
 
 
 def test_none_is_a_value_not_an_absence():

@@ -38,6 +38,23 @@ extracts the function's imports and forwards them so the router can pick a
 checkpoint that already imported them - this is automatic and needs no
 configuration.
 
+## Packages
+
+Declare PyPI requirements a function needs beyond what the checkpoint's rootfs
+already carries. The executor installs them with `uv` before every call:
+
+```python
+@remote(packages=["numpy==1.26.0", "requests"])
+def fetch(url): ...
+```
+
+Entries are requirement strings (a bare name or a full spec like
+`"numpy==1.26.0"`), normalized and deduped by distribution name at decoration
+time - `"Requests"` and `"requests"` collapse to one entry. Installation is
+unconditional: it runs on every call, even when the package looks already
+present, since each call restores a fresh, isolated container with nothing to
+check that claim against.
+
 ```sh
 make install   # sync the virtualenv from the lockfile
 make test      # unit + in-process gRPC integration tests

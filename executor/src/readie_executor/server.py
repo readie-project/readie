@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, TextIO
 from readie_executor import protocol
 from readie_executor.codec import DecodeError, decode_call, encode_result
 from readie_executor.config import Settings
+from readie_executor.install import InstallError, install_packages
 
 if TYPE_CHECKING:
     from typing import Any
@@ -114,7 +115,7 @@ class ExecutorServer:
         while True:
             try:
                 conn, _ = listener.accept()
-                print(f"[executor] listening for request", flush=True)
+                print("[executor] listening for request", flush=True)
             except (KeyboardInterrupt, SystemExit):
                 raise
             except OSError as exc:
@@ -136,7 +137,7 @@ class ExecutorServer:
         lives in is meant to be reused.
         """
         try:
-            print(f"[executor] received request", flush=True)
+            print("[executor] received request", flush=True)
             raw = protocol.read_message(conn, chunk_size=self._settings.chunk_size)
         except protocol.ProtocolError as exc:
             # A framing failure means the peer is not speaking this protocol, so
@@ -164,11 +165,15 @@ class ExecutorServer:
             print(f"[executor] could not send response: {exc}", file=sys.stderr, flush=True)
 
     def _run(self, raw: bytes) -> tuple[dict[str, Any], list[str]]:
-        """Decode and invoke, turning any failure into a response.
+        """Decode, install packages, and invoke, turning any failure into a response.
 
         Every path returns an envelope. Version 1 returned nothing when the
         function raised, so the caller saw an empty response and had to infer
         what happened from log lines; that inference is what this removes.
+
+        Installing runs unconditionally, even for a package the rootfs already
+        carries: every request restores a fresh container, so there is no warm
+        state to check an "already installed" claim against.
         """
         try:
             call = decode_call(raw)
@@ -177,6 +182,17 @@ class ExecutorServer:
             return protocol.failure_envelope(exc, traceback.format_exc()), []
 
         output: list[str] = []
+        if call.packages:
+            print(f"[executor] installing packages: {sorted(call.packages)}", flush=True)
+        try:
+            install_output = install_packages(list(call.packages))
+        except InstallError as exc:
+            print(f"[executor] {exc}", file=sys.stderr, flush=True)
+            return protocol.failure_envelope(exc, traceback.format_exc()), output
+        if install_output:
+            output.append(install_output)
+            print("[executor] packages installed", flush=True)
+
         try:
             with (
                 contextlib.redirect_stdout(_OutputTee(sys.stdout, output)),

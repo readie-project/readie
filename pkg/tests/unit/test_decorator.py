@@ -171,6 +171,52 @@ def test_gpu_defaults_to_false(rig: Rig) -> None:
     assert rig.sent.last[5] is False
 
 
+def test_packages_reach_the_payload_normalized_and_deduped(rig: Rig) -> None:
+    # packages travel inside the pickled call itself, alongside func/args/kwargs
+    # -- like the function body, the transport never sees them.
+    import cloudpickle
+
+    @remote(client=rig.client, packages=["Requests", "requests==2.31.0", "numpy"])
+    def f():
+        return None
+
+    f()
+    loaded = cloudpickle.loads(rig.sent.last[1])
+    assert loaded["packages"] == ["numpy", "Requests"]
+
+
+def test_packages_default_to_empty(rig: Rig) -> None:
+    import cloudpickle
+
+    @remote(client=rig.client)
+    def f():
+        return None
+
+    f()
+    loaded = cloudpickle.loads(rig.sent.last[1])
+    assert loaded["packages"] == []
+
+
+def test_an_invalid_package_spec_is_rejected_at_decoration() -> None:
+    with pytest.raises(readie.InvalidPackageError):
+
+        @remote(packages=["not a valid requirement!!"])
+        def f():
+            return None
+
+
+def test_bind_preserves_the_packages(rig: Rig) -> None:
+    import cloudpickle
+
+    @remote(client=rig.client, packages=["numpy"])
+    def f():
+        return None
+
+    f.bind(readie.Session("s"))()
+    loaded = cloudpickle.loads(rig.sent.last[1])
+    assert loaded["packages"] == ["numpy"]
+
+
 def test_bind_preserves_the_budgets(rig: Rig) -> None:
     @remote(client=rig.client, memory="128Mi")
     def f():

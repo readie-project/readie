@@ -35,12 +35,17 @@ Version 2. The worker dials; the executor is the server.
 ```
 message:   ([8-byte big-endian length][chunk])* [8 zero bytes]
 
-request:   one message, the cloudpickle of {func, args, kwargs}
+request:   one message, the cloudpickle of {func, args, kwargs, packages}
 response:  one message, the cloudpickle of a result envelope
 
 envelope = {"ok": True,  "value": <return value>}
          | {"ok": False, "exc_type": str, "message": str, "traceback": str}
 ```
+
+``packages`` is optional and defaults to empty: PyPI requirement specs the
+executor installs with `uv pip install` before invoking `func`. It rides with
+the call itself rather than through a separate channel, so an older client
+that never sends it still decodes fine.
 
 Framed per chunk rather than once per message so a sender can stream without
 knowing the total size. The worker relays request bytes straight from a gRPC
