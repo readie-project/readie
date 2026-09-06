@@ -6,6 +6,12 @@ imported those modules can be chosen. This is *checkpoint selection*, not memory
 sizing -- what a call needs in memory is now declared on the decorator, not
 guessed from its source.
 
+A module imported outside the function but merely referenced inside it (a
+top-of-file ``import numpy as np`` used as ``np.dot(...)`` in the body) never
+shows up as an ``import`` statement in the function's own source, so it is
+resolved separately by looking up the function's free variables -- its globals
+and closure cells -- against the modules they actually came from.
+
 Extraction is deferred to the first call and cached per function, so importing a
 module full of ``@remote`` definitions stays free while a repeatedly called
 function pays for analysis once. A source that cannot be read or parsed yields no
@@ -17,6 +23,7 @@ from __future__ import annotations
 
 import inspect
 import textwrap
+import types
 from collections.abc import Callable
 from typing import Any
 
@@ -42,7 +49,8 @@ def extract_imports(func: Callable[..., Any]) -> tuple[str, ...]:
 
 
 def _analyse(func: Callable[..., Any]) -> tuple[str, ...]:
-    source = _source_of(func)
+    target = inspect.unwrap(func)
+    source = _source_of(target)
     if source is None:
         return ()
     try:
@@ -51,14 +59,13 @@ def _analyse(func: Callable[..., Any]) -> tuple[str, ...]:
         # Only reachable when dedenting a fragment produced something the parser
         # rejects. Import hints are advisory; a hint is not worth a crash.
         return ()
-    modules = sorted(facts.imports)
+    modules = sorted(facts.imports | _external_modules(target))
     artefacts = sorted(f"model:{name}" for name in facts.models | facts.tokenizers)
     return tuple(modules + artefacts)
 
 
-def _source_of(func: Callable[..., Any]) -> str | None:
-    """Return ``func``'s dedented source, or ``None`` if it is unavailable."""
-    target = inspect.unwrap(func)
+def _source_of(target: Callable[..., Any]) -> str | None:
+    """Return ``target``'s dedented source, or ``None`` if it is unavailable."""
     try:
         source = inspect.getsource(target)
     except (OSError, TypeError):
@@ -67,3 +74,32 @@ def _source_of(func: Callable[..., Any]) -> str | None:
     # A decorator line referring to a name the parser cannot resolve is fine --
     # this is syntax only -- and dedent handles a method's leading indentation.
     return textwrap.dedent(source)
+
+
+def _external_modules(target: Callable[..., Any]) -> set[str]:
+    """Return modules behind names ``target`` reaches as a global or closure cell.
+
+    Covers ``import numpy as np`` at module scope with ``np.dot(...)`` used in
+    the body: ``np`` is never a local import statement, but it is a free
+    variable of ``target``, and ``inspect.getclosurevars`` resolves it to the
+    real ``numpy`` module object without re-deriving Python's own scoping rules.
+    """
+    try:
+        closure = inspect.getclosurevars(target)
+    except TypeError:
+        # Not a plain Python function/method (e.g. a builtin) -- nothing to walk.
+        return set()
+    own_module = getattr(target, "__module__", None)
+    modules: set[str] = set()
+    for value in (*closure.nonlocals.values(), *closure.globals.values()):
+        name = _module_name_of(value)
+        if name and name not in (own_module, "builtins"):
+            modules.add(name)
+    return modules
+
+
+def _module_name_of(value: Any) -> str | None:
+    """Name the module ``value`` came from, resolving through its type if needed."""
+    if isinstance(value, types.ModuleType):
+        return value.__name__
+    return getattr(value, "__module__", None) or type(value).__module__

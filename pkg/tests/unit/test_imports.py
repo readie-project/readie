@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import statistics as stats
+import uuid
+
 from readie._ast import analyse
 from readie.resources import extract_imports
 
@@ -51,6 +54,43 @@ def test_models_ride_along_as_prefixed_imports() -> None:
         return AutoModel.from_pretrained("gpt2")
 
     assert "model:gpt2" in extract_imports(loads_a_model)
+
+
+def test_a_module_imported_at_module_scope_is_resolved_via_global_lookup() -> None:
+    def generates_an_id():
+        return uuid.uuid4()
+
+    assert "uuid" in extract_imports(generates_an_id)
+
+
+def test_an_aliased_module_level_import_reports_the_real_name() -> None:
+    def computes_mean():
+        return stats.mean([1, 2, 3])
+
+    assert "statistics" in extract_imports(computes_mean)
+
+
+def test_a_module_imported_in_an_enclosing_function_is_resolved_via_closure() -> None:
+    def outer():
+        import json as _json
+
+        def inner():
+            return _json.dumps({})
+
+        return inner
+
+    assert "json" in extract_imports(outer())
+
+
+def _local_helper() -> str:
+    return "helper"
+
+
+def test_a_sibling_defined_in_the_same_module_adds_no_import() -> None:
+    def calls_helper():
+        return _local_helper()
+
+    assert __name__ not in extract_imports(calls_helper)
 
 
 def test_a_function_with_no_retrievable_source_extracts_nothing() -> None:
