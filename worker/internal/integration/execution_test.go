@@ -246,6 +246,25 @@ func TestExecution_UnreachableExecutorIsReportedAsUnavailable(t *testing.T) {
 		"a container whose executor never answered is not reusable")
 }
 
+// An executor that dies after producing some output must fail the call as
+// Unavailable (the backend disappeared mid-response), not the generic
+// Internal a fully-unrecognized error would get, and not a truncated
+// "success" -- the direct regression test for the ErrTruncatedResponse ->
+// toStatus mapping gap.
+func TestExecution_ExecutorDeathMidResponseIsReportedAsUnavailable(t *testing.T) {
+	h := newHarness(t, withExecutor(fakeexecutor.Options{
+		Mode:  fakeexecutor.ModeTruncatedResponse,
+		Reply: []byte("partial"),
+	}))
+
+	_, err := execute(t, h, "", []byte("body"))
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+
+	assert.Empty(t, h.Runtime.LiveIDs(),
+		"a container whose executor died mid-response is not reusable")
+}
+
 func TestExecution_ClientCancellationReleasesTheContainer(t *testing.T) {
 	h := newHarness(t,
 		withConfig(func(c *config.Config) {
@@ -274,10 +293,27 @@ func TestExecution_ClientCancellationReleasesTheContainer(t *testing.T) {
 	require.Eventually(t, func() bool { return len(h.Runtime.IDs()) > 0 }, 10*time.Second, 20*time.Millisecond)
 	cancel()
 
-	// Cleanup runs on a context detached from the cancelled one.
+	// Cleanup runs on a context detached from the cancelled one. A cancelled
+	// client must not leave the sandboxed executor running to waste work on a
+	// result nobody wants: LiveIDs empty proves Stop *and* Remove both ran
+	// (Remove refuses an already-removed id), matching the same rigor as the
+	// timeout test above rather than just "the worker stopped waiting."
 	require.Eventually(t, func() bool {
 		return len(h.Runtime.LiveIDs()) == 0
 	}, 15*time.Second, 50*time.Millisecond, "cancellation must still release the container")
+
+	ids := h.Runtime.IDs()
+	require.Len(t, ids, 1)
+	assert.NoDirExists(t, h.Layout.ContainerDir(ids[0]))
+
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetStatus() == pb.Status_STATUS_REMOVED {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second), "the router must be told the container is gone")
 }
 
 // An executor that replies but never closes must not wedge the request.

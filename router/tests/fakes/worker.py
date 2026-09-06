@@ -51,6 +51,7 @@ class FakeWorker:
         container_id: str | None = None,
         checkpoint_id: str = "",
         error: grpc.aio.AioRpcError | None = None,
+        error_after_output: bool = False,
         response_delay: float = 0.0,
         silent: bool = False,
     ) -> None:
@@ -62,6 +63,10 @@ class FakeWorker:
         self.container_id = container_id
         self.checkpoint_id = checkpoint_id
         self.error = error
+        #: When True, `error` is raised *after* the reply has been yielded,
+        #: simulating a worker whose connection breaks mid-stream rather than
+        #: one that fails before producing anything.
+        self.error_after_output = error_after_output
         self.response_delay = response_delay
         #: Produce no output at all. This is the real worker's behaviour when
         #: the user's function raises: the executor prints the traceback and
@@ -114,7 +119,7 @@ class _FakeStream:
         """
         await self._writes_done.wait()
 
-        if self._worker.error is not None:
+        if self._worker.error is not None and not self._worker.error_after_output:
             raise self._worker.error
         if self._worker.response_delay:
             await asyncio.sleep(self._worker.response_delay)
@@ -143,3 +148,6 @@ class _FakeStream:
         message = base()
         message.payload = self._worker.reply
         yield message
+
+        if self._worker.error is not None and self._worker.error_after_output:
+            raise self._worker.error

@@ -140,6 +140,7 @@ func TestToStatus(t *testing.T) {
 		{"container missing", sandbox.ErrNotFound, codes.NotFound},
 		{"daemon down", sandbox.ErrRuntimeUnavailable, codes.Unavailable},
 		{"executor unreachable", executor.ErrDialTimeout, codes.Unavailable},
+		{"executor died mid-response", executor.ErrTruncatedResponse, codes.Unavailable},
 		{"router down", registry.ErrRouterUnavailable, codes.Unavailable},
 		{"cannot provision", container.ErrAcquireFailed, codes.ResourceExhausted},
 		{"unknown", errors.New("something else"), codes.Internal},

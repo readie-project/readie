@@ -53,6 +53,13 @@ func toStatus(err error) error {
 		errors.Is(err, registry.ErrRouterUnavailable):
 		return status.Error(codes.Unavailable, "worker temporarily unavailable")
 
+	case errors.Is(err, executor.ErrTruncatedResponse):
+		// The executor produced some output, then its connection died --
+		// distinct from ErrNoResponse (it never answered at all). Unavailable,
+		// not Internal: the backend disappeared mid-response, which is not
+		// this worker's own code being broken.
+		return status.Error(codes.Unavailable, "executor connection lost mid-response")
+
 	case errors.Is(err, artifact.ErrNoArtifacts), errors.Is(err, artifact.ErrIncompleteArtifacts):
 		// FailedPrecondition, not ResourceExhausted: this worker is not out of
 		// capacity, it has no root filesystem to run anything against. And the

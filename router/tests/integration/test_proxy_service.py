@@ -249,6 +249,29 @@ async def test_a_worker_error_is_mapped_not_leaked(harness: Harness) -> None:
     assert caught.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
 
 
+async def test_a_worker_dying_after_partial_output_still_fails_the_client(
+    harness: Harness,
+) -> None:
+    # A worker that streams real output and then breaks (crash, connection
+    # drop) must not leave the client with a truncated "success" -- the
+    # payload already sent is not the whole story, and success was never
+    # confirmed.
+    await harness.register_worker()
+    harness.worker.reply = b"partial-result"
+    harness.worker.error_after_output = True
+    harness.worker.error = grpc.aio.AioRpcError(
+        code=grpc.StatusCode.UNAVAILABLE,
+        initial_metadata=grpc.aio.Metadata(),
+        trailing_metadata=grpc.aio.Metadata(),
+        details="worker connection lost",
+    )
+
+    with pytest.raises(grpc.aio.AioRpcError) as caught:
+        await execute(harness, header(), chunk(b"x"))
+
+    assert caught.value.code() == grpc.StatusCode.UNAVAILABLE
+
+
 async def test_a_failed_execution_releases_its_reservation(harness: Harness) -> None:
     await harness.register_worker("w1")
     harness.worker.error = grpc.aio.AioRpcError(
