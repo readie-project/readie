@@ -61,7 +61,10 @@ class Settings:
 
     # Runtime modes. Part of what a checkpoint is sensitive to, so they must
     # match the worker's configuration or a restore fails on the fingerprint.
-    sandbox_network: str = "none"
+    #
+    # An empty sandbox_network value means ocispec omits --network from the captured
+    # spec, the same as the worker's own SandboxNetwork when SANDBOX_NETWORK is unset.
+    sandbox_network: str = ""
     sandbox_host_uds: str = "create"
     sandbox_overlay: str = "root:memory"
 
@@ -148,12 +151,15 @@ class Settings:
         runsc parses with stdlib flag semantics, which stop at the first
         non-flag argument, so these cannot follow the subcommand.
         """
-        return [
-            f"--network={self.sandbox_network}",
+        flags = []
+        if self.sandbox_network:
+            flags.append(f"--network={self.sandbox_network}")
+        flags += [
             f"--host-uds={self.sandbox_host_uds}",
             f"--overlay2={self.sandbox_overlay}",
             "--ignore-cgroups",
         ]
+        return flags
 
     def __post_init__(self) -> None:
         """Reject settings that would fail later, and less legibly."""
@@ -206,7 +212,7 @@ class Settings:
             "data_dir": path_of("READIE_DATA_DIR", str(_default_data_dir())),
             "plan_dir": optional_path("READIE_PLAN_DIR"),
             "rootfs_pythonpath": source.get("ROOTFS_PYTHONPATH") or "/lib/python3.12/dist-packages",
-            "sandbox_network": source.get("SANDBOX_NETWORK") or "none",
+            "sandbox_network": source.get("SANDBOX_NETWORK") or "",
             "sandbox_host_uds": source.get("SANDBOX_HOST_UDS") or "create",
             "sandbox_overlay": source.get("SANDBOX_OVERLAY") or "root:memory",
             "ocispec_binary": source.get("OCISPEC_BINARY") or "/usr/local/bin/ocispec",

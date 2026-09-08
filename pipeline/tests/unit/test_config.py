@@ -43,9 +43,14 @@ def test_the_socket_dir_is_a_host_path_distinct_from_the_sandbox_one():
 
 def test_global_runsc_flags_precede_the_subcommand_and_match_the_worker():
     flags = settings().global_runsc_flags
-    assert flags[0].startswith("--network=")
+    assert not any(f.startswith("--network=") for f in flags)
     assert "--host-uds=create" in flags
     assert "--overlay2=root:memory" in flags
+
+
+def test_global_runsc_flags_include_network_when_set():
+    flags = settings(sandbox_network="none").global_runsc_flags
+    assert "--network=none" in flags
 
 
 def test_an_all_overlay_is_refused():

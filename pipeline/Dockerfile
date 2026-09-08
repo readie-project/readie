@@ -187,7 +187,7 @@ ENV ROOTFS_PYTHONPATH="/lib/python3.12/dist-packages"
 
 # Runtime modes. These are part of what a checkpoint is sensitive to, so they
 # must match the worker's configuration.
-ENV SANDBOX_NETWORK="none"
+ENV SANDBOX_NETWORK=""
 ENV SANDBOX_HOST_UDS="create"
 ENV SANDBOX_OVERLAY="root:memory"
 
