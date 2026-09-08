@@ -333,6 +333,48 @@ worker (`CHECKPOINT_STRICT_COMPAT=false`) logs a WARN and keeps them, accepting
 that restores may degrade to cold starts. Either way the rootfs and manifest
 stay, so the worker keeps running; only the offer of checkpoints changes.
 
+**Seeing this at startup?** The ERROR names which part of the fingerprint
+diverged. The usual cause is not a code change but a deployment where the
+worker's sandbox env vars - `SANDBOX_NETWORK`, `SANDBOX_OVERLAY`, `SANDBOX_GPU`
+- disagree with what the pipeline used to capture the checkpoints. Nothing
+enforces that the two deployments agree - each is configured independently,
+e.g. in `docker-compose.yml` versus the pipeline's own config or CLI overrides.
+`SANDBOX_NETWORK` has no forced default on either side specifically so an
+*unconfigured* worker and an *unconfigured* pipeline agree by construction (both
+omit `--network`, letting runsc's own default govern); `SANDBOX_OVERLAY`
+defaults to `root:memory` and `SANDBOX_GPU` is derived from the flavor on both
+sides, which match today but are two independently maintained defaults, not one
+shared one. An explicit override of any of the three on only one side is what
+actually causes drift. Fix it by changing the worker's env to match the
+pipeline's, not the other way around: the fingerprint has to match the
+checkpoints that already exist, and re-running the pipeline to match a worker's
+env is wasted work if a second worker (or the next redeploy) drifts again.
+Restart the worker after fixing the env var; nothing here is a code change or a
+reason to rebuild the image.
+
+**Confirming a request actually restored from a checkpoint** (rather than
+silently cold-starting):
+
+- **Worker startup logs, first.** If every request is cold-starting, check for
+  the one-time `"baked checkpoints are incompatible with this worker"` ERROR
+  discussed above: strict mode drops every checkpoint at boot, so no restore is
+  ever attempted for the life of that process, regardless of what any
+  individual request asks for.
+- **Per-request worker logs, otherwise.** A restore logs
+  `"container restored from checkpoint"` (INFO) naming the checkpoint. A cold
+  start instead logs either `"cannot resolve the requested checkpoint;
+  starting cold"` (the requested id is not one this worker has installed) or
+  `"checkpoint restore failed, falling back to a cold start"` (the id was
+  valid but the restore call itself failed) - both WARN, both naming the
+  underlying error.
+- **The wire response, for router-side code.**
+  `WorkerExecutionResponse.checkpoint_id` carries the checkpoint a request
+  actually ran against - empty means that request cold started, non-empty
+  names which checkpoint restored. The router reads it off the first response
+  to bind its own scheduler state, but does not forward it to the
+  client-facing `ClientExecutionResponse` - so this is visible to router-side
+  code and logs, not to a `readie` caller.
+
 ## Testing
 
 Four tiers; three run on macOS.
