@@ -268,7 +268,7 @@ func Load(getenv Getenv) (Config, error) {
 		CgroupParent:         valueOr(getenv("CGROUP_PARENT"), "/readie"),
 		ContainerStopTimeout: 2 * time.Second,
 		SandboxPauseTTL:      5 * time.Minute,
-		DefaultContainerMem:  512 << 20,
+		DefaultContainerMem:  1 << 30,
 		MemGrowthThreshold:   0.9,
 		MemGrowthFactor:      2.0,
 

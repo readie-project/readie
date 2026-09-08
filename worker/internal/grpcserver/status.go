@@ -41,7 +41,6 @@ func toStatus(err error) error {
 		return status.Error(codes.Canceled, "request cancelled")
 
 	case errors.Is(err, execution.ErrExecutionTimeout),
-		errors.Is(err, executor.ErrNoResponse),
 		errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "execution timed out")
 
@@ -52,6 +51,15 @@ func toStatus(err error) error {
 		errors.Is(err, executor.ErrDialTimeout),
 		errors.Is(err, registry.ErrRouterUnavailable):
 		return status.Error(codes.Unavailable, "worker temporarily unavailable")
+
+	case errors.Is(err, executor.ErrNoResponse):
+		// The executor's connection closed before producing anything -- most
+		// commonly an OOM kill of the sandboxed process, not a deadline
+		// expiring. Unavailable, not DeadlineExceeded: the backend
+		// disappeared, which is a different condition from an execution that
+		// genuinely ran out of time, and conflating the two sends whoever is
+		// debugging it chasing a timeout that never happened.
+		return status.Error(codes.Unavailable, "executor produced no response")
 
 	case errors.Is(err, executor.ErrTruncatedResponse):
 		// The executor produced some output, then its connection died --

@@ -298,7 +298,7 @@ true when the flavor is `gpu`, and must match what the checkpoints were captured
 under - it is in the fingerprint).
 
 Memory auto-expand: `DEFAULT_CONTAINER_MEM` (the limit for a request that
-carries no memory budget; default 512 MiB), `MEM_GROWTH_THRESHOLD` (the fraction
+carries no memory budget; default 1 GiB), `MEM_GROWTH_THRESHOLD` (the fraction
 of a container's limit whose use triggers a raise; default 0.9) and
 `MEM_GROWTH_FACTOR` (how much the limit is multiplied by; default 2.0). The live
 `memory.max` raise is best-effort - where cgroup delegation is unavailable
