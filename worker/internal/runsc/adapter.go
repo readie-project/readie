@@ -420,9 +420,10 @@ func (a *Adapter) Remove(ctx context.Context, id string, force bool) error {
 }
 
 func (a *Adapter) removeBundle(id string) {
-	if err := os.RemoveAll(a.BundleDir(id)); err != nil {
-		a.log.Warn("could not remove sandbox bundle", logging.KeyContainerID, id, logging.KeyError, err)
-	}
+	// Uncomment to cleanup logs after every execution
+	// if err := os.RemoveAll(a.BundleDir(id)); err != nil {
+	// 	a.log.Warn("could not remove sandbox bundle", logging.KeyContainerID, id, logging.KeyError, err)
+	// }
 }
 
 // forceDelete discards a partially created sandbox, ignoring errors.
