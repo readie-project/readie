@@ -158,7 +158,7 @@ async def test_the_placement_is_stamped_on_the_first_worker_message(
     # No budget on the request, so the router applies its default.
     budget = memory_budget(sent)
     assert budget is not None
-    assert budget.alloc == 512 * 1024 * 1024
+    assert budget.alloc == 1024 * 1024 * 1024
     assert sent.container_id == "", "an empty container id asks for a cold start"
 
 
@@ -169,7 +169,7 @@ async def test_a_client_supplied_memory_budget_reaches_the_worker(harness: Harne
 
     budget = memory_budget(harness.worker.calls[0].header)
     assert budget is not None
-    assert budget.alloc == 256 << 20, "the client's budget, not the 512 MiB default"
+    assert budget.alloc == 256 << 20, "the client's budget, not the 1 GiB default"
     assert budget.max == 1 << 30, "the auto-expand ceiling is forwarded too"
 
 

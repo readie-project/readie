@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     #: Memory budget, in bytes, given to a request that does not set one on its
     #: ``@remote`` decorator. The worker maps it onto a container memory limit
     #: and auto-expands from there when the container needs more.
-    default_memory: int = Field(default=512 * 1024 * 1024, gt=0)
+    default_memory: int = Field(default=1024 * 1024 * 1024, gt=0)
 
     #: Directory of per-flavor ``<flavor>.json`` checkpoint catalogues (mounted
     #: from the generations). Empty or absent means no request-time selection -
