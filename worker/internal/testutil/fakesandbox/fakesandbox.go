@@ -51,6 +51,10 @@ type Sandbox struct {
 	checkpoints []CheckpointCall
 	failures    map[string]error
 	closed      bool
+	// stopCalls counts Stop invocations per id, so a test can tell a
+	// redundant concurrent teardown (e.g. CleanupOrphans racing a background
+	// release) from a single clean one.
+	stopCalls map[string]int
 
 	// FailRestore makes any Start carrying a checkpoint id fail, which
 	// exercises the manager's downgrade to a cold start.
@@ -70,6 +74,11 @@ type Sandbox struct {
 	// reporting io.EOF.
 	StatsHoldOpen bool
 
+	// StopDelay makes Stop block for this long before taking effect, standing
+	// in for a slow real teardown so tests can prove callers no longer wait on
+	// it.
+	StopDelay time.Duration
+
 	// OnCreate runs after a sandbox is recorded, outside the lock. The
 	// integration harness uses it to "boot" a fake executor on the sandbox's
 	// socket path.
@@ -83,7 +92,15 @@ func New() *Sandbox {
 	return &Sandbox{
 		sandboxes: make(map[string]*State),
 		failures:  make(map[string]error),
+		stopCalls: make(map[string]int),
 	}
+}
+
+// StopCallCount returns how many times Stop was invoked for id.
+func (d *Sandbox) StopCallCount(id string) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.stopCalls[id]
 }
 
 // FailOn makes the named sandbox.Port method return err. Method names match
@@ -219,9 +236,21 @@ func (d *Sandbox) Start(_ context.Context, id string, spec sandbox.StartSpec) er
 }
 
 // Stop marks a sandbox stopped.
-func (d *Sandbox) Stop(_ context.Context, id string, _ time.Duration) error {
+func (d *Sandbox) Stop(ctx context.Context, id string, _ time.Duration) error {
 	if err := d.fail("Stop"); err != nil {
 		return err
+	}
+
+	d.mu.Lock()
+	delay := d.StopDelay
+	d.stopCalls[id]++
+	d.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	d.mu.Lock()

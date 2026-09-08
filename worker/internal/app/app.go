@@ -130,6 +130,7 @@ type App struct {
 	log      *slog.Logger
 	server   *grpcserver.Server
 	manager  *container.Manager
+	runner   *execution.Runner
 	reporter registry.Reporter
 
 	// degraded is non-nil when this worker started without a usable
@@ -381,6 +382,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 			IdleTimeout:      cfg.ResponseIdleTimeout,
 		},
 	}, log)
+	app.runner = runner
 
 	// 5. Reclaim orphans before serving. A process killed without warning
 	// leaves containers and directories behind, and startup is the only
@@ -573,9 +575,23 @@ func (a *App) Shutdown(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("shutdown %s: %w", step.name, err))
 		}
 
-		// Containers are reclaimed once the server has drained, so every
-		// in-flight execution has already released its own.
+		// The server draining no longer guarantees every in-flight execution's
+		// container is gone: release now finishes in the background rather
+		// than before the RPC returns. Give stragglers up to ReleaseTimeout -
+		// the bound already placed on any single release - to land, then let
+		// CleanupOrphans reconcile whatever is still left. A race between the
+		// two is a harmless double-cleanup: Destroy already tolerates
+		// ErrNotFound/ErrConflict.
 		if step.name == "gRPC server" && a.manager != nil {
+			if a.runner != nil {
+				waitCtx, cancelWait := context.WithTimeout(ctx, a.cfg.ReleaseTimeout)
+				if err := a.runner.WaitPendingReleases(waitCtx); err != nil {
+					a.log.Warn("container releases still pending after drain window; cleanup orphans will finish what's left",
+						logging.KeyError, err)
+				}
+				cancelWait()
+			}
+
 			cleanupCtx, cancelCleanup := context.WithTimeout(ctx, a.cfg.CleanupTimeout)
 			if err := a.manager.CleanupOrphans(cleanupCtx); err != nil {
 				a.log.Error("could not reclaim containers during shutdown", logging.KeyError, err)

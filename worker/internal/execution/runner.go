@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -21,8 +22,9 @@ type RunnerConfig struct {
 
 	// ExecutionTimeout bounds one execution end to end.
 	ExecutionTimeout time.Duration
-	// ReleaseTimeout bounds container cleanup, which runs on a context
-	// detached from the execution's own.
+	// ReleaseTimeout bounds container cleanup, which runs in the background on
+	// a context detached from the execution's own and from the RPC that
+	// requested it: the response no longer waits on cleanup finishing.
 	ReleaseTimeout time.Duration
 	// StatusTimeout bounds a router status report.
 	StatusTimeout time.Duration
@@ -86,6 +88,12 @@ type Runner struct {
 	reporter   registry.Reporter
 	cfg        RunnerConfig
 	log        *slog.Logger
+
+	// releaseWG tracks container releases still running in the background
+	// after their owning RPC has already returned. Shutdown waits on it
+	// (bounded) before sweeping orphans, so a straggling Destroy isn't raced
+	// by that sweep as a matter of course.
+	releaseWG sync.WaitGroup
 }
 
 // NewRunner builds a Runner.
@@ -136,6 +144,29 @@ func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink S
 
 	rec.rewind()
 	return r.runOnce(ctx, grown, rec, sink)
+}
+
+// WaitPendingReleases blocks until every container release started by a past
+// runOnce has finished, or ctx is done, whichever comes first.
+//
+// It exists for shutdown: the RPC response no longer waits on teardown, so
+// the gRPC server draining is no longer proof that a request's container is
+// gone. This gives the caller a bounded window to let straggling releases
+// land before CleanupOrphans double-checks the runtime. No single release
+// can run longer than ReleaseTimeout by construction, so callers should bound
+// ctx by roughly that same duration.
+func (r *Runner) WaitPendingReleases(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		r.releaseWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // looksLikeOOM reports whether a failure is consistent with the executor being
@@ -210,15 +241,31 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 
 	outcome := container.OutcomeFailure // zero value, restated for emphasis
 	defer func() {
-		// Cleanup must survive the very deadline that caused it, so it runs on
-		// a context detached from execCtx.
-		releaseCtx, releaseCancel := context.WithTimeout(
-			context.WithoutCancel(ctx), r.cfg.ReleaseTimeout)
-		defer releaseCancel()
+		// Release runs in the background: the caller has already read outcome
+		// by return time (nothing writes it afterward), and teardown is no
+		// longer something the RPC response waits on. Cleanup must survive
+		// the very deadline that caused it, so it runs on a context detached
+		// from execCtx and from ctx's cancellation.
+		releaseOutcome := outcome
 
-		if releaseErr := r.containers.Release(releaseCtx, req.Ref, handle, outcome); releaseErr != nil {
-			log.Error("could not release container", "outcome", outcome.String(), logging.KeyError, releaseErr)
-		}
+		r.releaseWG.Add(1)
+		go func() {
+			defer r.releaseWG.Done()
+			defer func() {
+				if rec := recover(); rec != nil {
+					log.Error("panic during background container release",
+						"outcome", releaseOutcome.String(), "panic", rec)
+				}
+			}()
+
+			releaseCtx, releaseCancel := context.WithTimeout(
+				context.WithoutCancel(ctx), r.cfg.ReleaseTimeout)
+			defer releaseCancel()
+
+			if releaseErr := r.containers.Release(releaseCtx, req.Ref, handle, releaseOutcome); releaseErr != nil {
+				log.Error("could not release container", "outcome", releaseOutcome.String(), logging.KeyError, releaseErr)
+			}
+		}()
 	}()
 
 	// The router reads the scheduling decision off the first response, so the

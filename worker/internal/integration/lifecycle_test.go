@@ -210,6 +210,39 @@ func TestShutdown_LeavesNoContainerDirectoriesBehind(t *testing.T) {
 	assert.Empty(t, entries, "every per-container directory must be reclaimed")
 }
 
+// Release now finishes in the background rather than before the RPC returns
+// (see Runner.WaitPendingReleases), so a container's teardown can still be
+// running when shutdown begins. Shutdown must wait for it rather than race
+// CleanupOrphans against it: a race here would either surface as a spurious
+// "could not reclaim containers" error, or as a container the shutdown left
+// behind because CleanupOrphans checked before the async release landed.
+func TestShutdown_WaitsForABackgroundReleaseBeforeReclaimingOrphans(t *testing.T) {
+	h := newHarness(t, withFakes(func(d *fakesandbox.Sandbox, _ *fakeregistry.Server) {
+		d.StopDelay = 300 * time.Millisecond
+	}))
+
+	responses, err := execute(t, h, "", []byte("body"))
+	require.NoError(t, err)
+	containerID := responses[0].GetContainerId()
+
+	// The release this execution triggered is very likely still mid-teardown
+	// (Stop is asleep) at the instant shutdown starts.
+	require.NoError(t, h.Shutdown())
+
+	state, ok := h.Runtime.Get(containerID)
+	require.True(t, ok)
+	assert.True(t, state.Removed, "the container must not be left running after shutdown")
+	assert.NoDirExists(t, h.Layout.ContainerDir(containerID))
+
+	// The real assertion: CleanupOrphans must not have found this container
+	// still around to destroy a second time. Both Destroy and CleanupOrphans
+	// tolerate a redundant destroy without erroring, so an end state of
+	// "removed, no directory" is reachable even if the wait did nothing and
+	// the two raced - only the call count tells them apart.
+	assert.Equal(t, 1, h.Runtime.StopCallCount(containerID),
+		"the background release must finish before CleanupOrphans looks for orphans, not race it")
+}
+
 // A worker image built with no artifacts baked in - what `docker compose build`
 // produces before any checkpoint has been captured.
 //

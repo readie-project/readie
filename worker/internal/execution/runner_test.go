@@ -42,9 +42,10 @@ type fakeContainers struct {
 	logsErr    error
 	statsErr   error
 
-	logData     []byte
-	logsHang    bool
-	statsFrames []sandbox.Stats
+	logData      []byte
+	logsHang     bool
+	statsFrames  []sandbox.Stats
+	releaseDelay time.Duration
 }
 
 func memAlloc(n int64) container.Allocation {
@@ -69,7 +70,17 @@ func (f *fakeContainers) Acquire(_ context.Context, req container.AcquireRequest
 	return f.handle, nil
 }
 
-func (f *fakeContainers) Release(_ context.Context, _ registry.ExecutionRef, _ container.Handle, outcome container.Outcome) error {
+func (f *fakeContainers) Release(ctx context.Context, _ registry.ExecutionRef, _ container.Handle, outcome container.Outcome) error {
+	f.mu.Lock()
+	delay := f.releaseDelay
+	f.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.released = append(f.released, outcome)
@@ -342,6 +353,26 @@ func TestRun_HappyPath(t *testing.T) {
 	assert.Equal(t, "first-second-third", string(h.dialer.RequestBody()),
 		"every chunk must reach the executor in order")
 	assert.Equal(t, "result", string(h.sink.PayloadBytes()))
+	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
+	assert.Equal(t, []container.Outcome{container.OutcomeSuccess}, h.containers.Outcomes())
+}
+
+// Release used to run before Run returned; now it runs in the background, so
+// a slow container teardown must not delay the response to the caller.
+func TestRun_ReturnsBeforeReleaseCompletes(t *testing.T) {
+	testutil.AssertNoLeak(t)
+
+	h := newHarness(t, execution.RunnerConfig{}, func(h *harness) {
+		h.containers.releaseDelay = 500 * time.Millisecond
+	})
+
+	started := time.Now()
+	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
+	require.NoError(t, err)
+	assert.Less(t, time.Since(started), 250*time.Millisecond, "Run must not block on release")
+	assert.Empty(t, h.containers.Outcomes(), "release should not have landed yet")
+
+	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
 	assert.Equal(t, []container.Outcome{container.OutcomeSuccess}, h.containers.Outcomes())
 }
 
@@ -419,6 +450,7 @@ func TestRun_TimeoutFailsAndDestroysTheContainer(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, execution.ErrExecutionTimeout)
 
+	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
 	assert.Equal(t, []container.Outcome{container.OutcomeFailure}, h.containers.Outcomes(),
 		"a timed-out container is in an unknown state and must not be reused")
 }
@@ -439,7 +471,9 @@ func TestRun_ClientCancellationStillReleasesTheContainer(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, execution.ErrClientClosed)
 
-	// Cleanup runs on a detached context, so it happens despite the cancellation.
+	// Cleanup runs on a detached context, in the background, so it happens
+	// despite the cancellation; wait for it before checking the outcome.
+	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
 	assert.Equal(t, []container.Outcome{container.OutcomeFailure}, h.containers.Outcomes())
 }
 
@@ -546,6 +580,7 @@ func TestRun_SinkErrorAbortsTheExecution(t *testing.T) {
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sinkErr)
+	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
 	assert.Equal(t, []container.Outcome{container.OutcomeFailure}, h.containers.Outcomes())
 }
 
@@ -568,6 +603,7 @@ func TestRun_DialFailureDestroysTheContainer(t *testing.T) {
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, executor.ErrDialTimeout)
+	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
 	assert.Equal(t, []container.Outcome{container.OutcomeFailure}, h.containers.Outcomes(),
 		"a container whose executor never answered is not reusable")
 }
@@ -579,6 +615,7 @@ func TestRun_RequestSourceErrorFailsTheExecution(t *testing.T) {
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{err: srcErr}, h.sink)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, srcErr)
+	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
 	assert.Equal(t, []container.Outcome{container.OutcomeFailure}, h.containers.Outcomes())
 }
 

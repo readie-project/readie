@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -115,11 +116,13 @@ func TestExecution_HappyPath(t *testing.T) {
 	assert.Equal(t, "sess-1", first.GetSessionId())
 
 	// Pause-on-success is disabled for now (see Manager.Release): a completed
-	// container is destroyed, not paused for reuse.
-	state, ok := h.Runtime.Get(first.GetContainerId())
-	require.True(t, ok)
-	assert.False(t, state.Paused)
-	assert.True(t, state.Removed)
+	// container is destroyed, not paused for reuse. Release now runs in the
+	// background after the RPC returns, so this must poll rather than assert
+	// immediately.
+	require.Eventually(t, func() bool {
+		state, ok := h.Runtime.Get(first.GetContainerId())
+		return ok && !state.Paused && state.Removed
+	}, 5*time.Second, 20*time.Millisecond, "the container must eventually be destroyed, not paused")
 
 	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
 		return len(s.ExecutorStatuses()) >= 2
@@ -215,12 +218,18 @@ func TestExecution_TimeoutFailsAndDestroysTheContainer(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, codes.DeadlineExceeded, status.Code(err))
 
-	live := h.Runtime.LiveIDs()
-	assert.Empty(t, live, "a timed-out container must be destroyed, not reused")
+	// Release now runs in the background after the RPC returns, so destruction
+	// must be polled for rather than asserted immediately.
+	require.Eventually(t, func() bool {
+		return len(h.Runtime.LiveIDs()) == 0
+	}, 5*time.Second, 20*time.Millisecond, "a timed-out container must be destroyed, not reused")
 
 	ids := h.Runtime.IDs()
 	require.Len(t, ids, 1)
-	assert.NoDirExists(t, h.Layout.ContainerDir(ids[0]))
+	require.Eventually(t, func() bool {
+		_, statErr := os.Stat(h.Layout.ContainerDir(ids[0]))
+		return os.IsNotExist(statErr)
+	}, 5*time.Second, 20*time.Millisecond, "the container directory must eventually be removed")
 
 	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
 		for _, st := range s.ExecutorStatuses() {
@@ -230,6 +239,24 @@ func TestExecution_TimeoutFailsAndDestroysTheContainer(t *testing.T) {
 		}
 		return false
 	}, 5*time.Second), "the router must be told the container is gone")
+}
+
+// Release moved off the RPC's critical path so a slow teardown cannot inflate
+// response latency: the RPC must return well before Stop's delay elapses, and
+// teardown must still complete afterward on its own.
+func TestExecution_RPCReturnsBeforeTeardownCompletes(t *testing.T) {
+	h := newHarness(t, withFakes(func(rt *fakesandbox.Sandbox, _ *fakeregistry.Server) {
+		rt.StopDelay = 2 * time.Second
+	}))
+
+	started := time.Now()
+	_, err := execute(t, h, "", []byte("body"))
+	require.NoError(t, err)
+	assert.Less(t, time.Since(started), time.Second, "the RPC must return before teardown finishes")
+
+	require.Eventually(t, func() bool {
+		return len(h.Runtime.LiveIDs()) == 0
+	}, 5*time.Second, 20*time.Millisecond, "teardown must still complete in the background")
 }
 
 func TestExecution_UnreachableExecutorIsReportedAsUnavailable(t *testing.T) {
