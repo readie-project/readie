@@ -345,6 +345,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		Artifacts: artifacts,
 		Spec:      container.SpecFromConfig(cfg),
 		Log:       log,
+		Clock:     deps.Clock,
 	})
 	if err != nil {
 		return fail(fmt.Errorf("build container manager: %w", err))
@@ -451,6 +452,16 @@ func (a *App) Run(ctx context.Context) error {
 		a.utilizationLoop(ctx)
 	}()
 
+	// Started alongside utilizationLoop. Nothing calls Manager.Pause today
+	// outside tests (see Manager.Release), so in normal operation this finds
+	// nothing to reap on every tick - it exists so the TTL machinery is
+	// exercised and correct for when a caller does pause a container.
+	pauseReapDone := make(chan struct{})
+	go func() {
+		defer close(pauseReapDone)
+		a.pauseReapLoop(ctx)
+	}()
+
 	var runErr error
 	select {
 	case <-ctx.Done():
@@ -464,6 +475,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	shutdownErr := a.Shutdown(context.WithoutCancel(ctx))
 	<-utilizationDone
+	<-pauseReapDone
 	return errors.Join(runErr, shutdownErr)
 }
 
@@ -500,6 +512,33 @@ func (a *App) utilizationLoop(ctx context.Context) {
 			})
 			if err != nil && ctx.Err() == nil {
 				a.log.Warn("could not report worker utilization", logging.KeyError, err)
+			}
+		}
+	}
+}
+
+// pauseReapInterval paces pauseReapLoop. Fixed rather than configurable: the
+// TTL itself (SANDBOX_PAUSE_TTL) is the only knob an operator needs, and this
+// only bounds how far a reap can lag behind it - 30s against a 5m default TTL
+// keeps worst-case over-retention to about 10% of it.
+const pauseReapInterval = 30 * time.Second
+
+// pauseReapLoop destroys containers that have sat paused past their TTL,
+// until ctx is cancelled.
+//
+// Best-effort like utilizationLoop: a failed reap on one tick is retried on
+// the next, and must never disturb an in-flight execution.
+func (a *App) pauseReapLoop(ctx context.Context) {
+	ticker := time.NewTicker(pauseReapInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.manager.ReapExpiredPauses(ctx); err != nil && ctx.Err() == nil {
+				a.log.Warn("could not reap expired paused containers", logging.KeyError, err)
 			}
 		}
 	}

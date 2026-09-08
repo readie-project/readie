@@ -179,6 +179,15 @@ runtime. That needs no listing flag and, more importantly, finds sandboxes
 whose runtime state was lost but whose bundle survives - exactly the case
 cleanup exists for, and one a runtime listing would not mention.
 
+Paused containers carry a TTL (`SANDBOX_PAUSE_TTL`, default 5m):
+`Manager.ReapExpiredPauses` runs on a fixed 30s ticker and destroys anything
+paused past it, and the timer restarts on every re-pause. Pause-on-success is
+currently disabled (see `Manager.Release`),
+so nothing reaches the warm pool through normal request completion today -
+the TTL machinery exists and is exercised by tests and by any caller that
+explicitly resumes and re-pauses a container, ready for when pause-on-success
+is re-enabled.
+
 ## Contracts
 
 **Router** - the protos declare no `package`, so the method is
@@ -303,7 +312,8 @@ Optional: `WORKER_ID`, `RUNSC_BINARY`, `RUNSC_ROOT`,
 `APP_ENV`, plus duration overrides `EXECUTION_TIMEOUT`, `DIAL_TOTAL_TIMEOUT`,
 `RESPONSE_IDLE_TIMEOUT`, `SHUTDOWN_TIMEOUT`, `CLEANUP_TIMEOUT`,
 `CONTAINER_STOP_TIMEOUT`, `RUNSC_COMMAND_TIMEOUT`, `RESTORE_TIMEOUT`,
-`CHECKPOINT_TIMEOUT`, `STATS_INTERVAL`, and `STREAM_LOGS` / `STREAM_STATS`.
+`CHECKPOINT_TIMEOUT`, `STATS_INTERVAL`, `SANDBOX_PAUSE_TTL` (default 5m), and
+`STREAM_LOGS` / `STREAM_STATS`.
 
 Two settings are coupled and validated together: `SANDBOX_OVERLAY` must be a
 `root:` overlay. An `all:` overlay would keep the executor's socket in the

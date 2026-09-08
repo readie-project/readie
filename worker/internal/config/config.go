@@ -137,6 +137,11 @@ type Config struct {
 	// because reclamation runs during the worker's shutdown, inside whatever
 	// grace period the supervisor allows before it sends SIGKILL.
 	ContainerStopTimeout time.Duration
+	// SandboxPauseTTL bounds how long a paused container may sit in the warm
+	// pool before the reaper destroys it. Zero or negative disables reaping
+	// entirely, rather than expiring everything immediately: a Manager built
+	// directly (bypassing Validate, as tests and embedders do) must fail safe.
+	SandboxPauseTTL time.Duration
 
 	// Executor socket.
 	ChunkSize           int
@@ -267,6 +272,7 @@ func Load(getenv Getenv) (Config, error) {
 		PidsLimit:            100,
 		CgroupParent:         valueOr(getenv("CGROUP_PARENT"), "/readie"),
 		ContainerStopTimeout: 2 * time.Second,
+		SandboxPauseTTL:      5 * time.Minute,
 		DefaultContainerMem:  512 << 20,
 		MemGrowthThreshold:   0.9,
 		MemGrowthFactor:      2.0,
@@ -448,6 +454,7 @@ func applyDurationOverrides(getenv Getenv, cfg *Config) error {
 		"RUNSC_COMMAND_TIMEOUT":       &cfg.RuntimeCommandTimeout,
 		"CHECKPOINT_TIMEOUT":          &cfg.CheckpointTimeout,
 		"WORKER_UTILIZATION_INTERVAL": &cfg.UtilizationInterval,
+		"SANDBOX_PAUSE_TTL":           &cfg.SandboxPauseTTL,
 	}
 	for name, target := range overrides {
 		raw := getenv(name)

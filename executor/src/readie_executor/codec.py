@@ -83,7 +83,7 @@ def decode_call(raw: bytes) -> Call:
     args, kwargs = tuple(payload["args"]), dict(payload["kwargs"])
     packages = tuple(payload.get("packages", ()))
     print(
-        f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}", flush=True)
+        f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}, packages={packages}", flush=True)
     return Call(func=func, args=args, kwargs=kwargs, packages=packages)
 
 

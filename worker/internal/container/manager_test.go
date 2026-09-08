@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/illinoisdata/readie/worker/internal/artifact"
+	"github.com/illinoisdata/readie/worker/internal/clock"
 	"github.com/illinoisdata/readie/worker/internal/config"
 	"github.com/illinoisdata/readie/worker/internal/container"
 	"github.com/illinoisdata/readie/worker/internal/executor"
@@ -44,6 +45,7 @@ type fixture struct {
 	artifacts    container.Artifacts
 	workerDir    string
 	artifactRoot string
+	clock        *clock.Fake
 }
 
 // buildArtifacts lays out a rootfs, a manifest and the given checkpoints, the
@@ -86,11 +88,26 @@ func newFixture(t *testing.T) *fixture {
 // a test can exercise a worker that holds no root filesystem.
 func newFixtureWith(t *testing.T, artifacts container.Artifacts) *fixture {
 	t.Helper()
+	return newFixtureWithSpec(t, artifacts, container.Spec{
+		NamePrefix:   "exec_container-",
+		CPUQuota:     50000,
+		CPUPeriod:    100000,
+		PidsLimit:    100,
+		CgroupParent: "/readie",
+		DirPerm:      0o777,
+	})
+}
+
+// newFixtureWithSpec is newFixtureWith with a caller-supplied Spec, so tests
+// exercising Spec-driven behaviour (such as PauseTTL) can override just that.
+func newFixtureWithSpec(t *testing.T, artifacts container.Artifacts, spec container.Spec) *fixture {
+	t.Helper()
 
 	workerDir := t.TempDir()
 	fake := fakesandbox.New()
 	recorder := fakeregistry.NewRecorder()
 	layout := container.NewDirLayout(workerDir)
+	fakeClock := clock.NewFake(time.Now())
 	// Only a real registry has a root on disk; the empty-artifact tests do not
 	// need one.
 	artifactRoot := ""
@@ -105,21 +122,16 @@ func newFixtureWith(t *testing.T, artifacts container.Artifacts) *fixture {
 		Names:     container.NewUUIDNamer("exec_container-"),
 		FS:        container.NewOSFS(),
 		Artifacts: artifacts,
-		Spec: container.Spec{
-			NamePrefix:   "exec_container-",
-			CPUQuota:     50000,
-			CPUPeriod:    100000,
-			PidsLimit:    100,
-			CgroupParent: "/readie",
-			DirPerm:      0o777,
-		},
-		Log: logging.Discard(),
+		Spec:      spec,
+		Log:       logging.Discard(),
+		Clock:     fakeClock,
 	})
 	require.NoError(t, err)
 
 	return &fixture{
 		manager: manager, runtime: fake, registry: recorder, layout: layout,
 		artifacts: artifacts, workerDir: workerDir, artifactRoot: artifactRoot,
+		clock: fakeClock,
 	}
 }
 
@@ -483,6 +495,165 @@ func TestCleanupOrphans_SurfacesListFailures(t *testing.T) {
 	err := f.manager.CleanupOrphans(context.Background())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sandbox.ErrRuntimeUnavailable)
+}
+
+// newFixtureWithPauseTTL is newFixture with a nonzero Spec.PauseTTL, so the
+// reaper has something to expire.
+func newFixtureWithPauseTTL(t *testing.T, ttl time.Duration) *fixture {
+	t.Helper()
+	_, artifacts := buildArtifacts(t, "checkpoint_1")
+	return newFixtureWithSpec(t, artifacts, container.Spec{
+		NamePrefix:   "exec_container-",
+		CPUQuota:     50000,
+		CPUPeriod:    100000,
+		PidsLimit:    100,
+		CgroupParent: "/readie",
+		DirPerm:      0o777,
+		PauseTTL:     ttl,
+	})
+}
+
+func TestReapExpiredPauses_DestroysAContainerPastItsTTL(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, time.Minute)
+	h := acquireNew(t, f)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+
+	f.clock.Advance(time.Minute)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.True(t, state.Removed)
+	assert.NoDirExists(t, f.layout.ContainerDir(h.ID))
+}
+
+func TestReapExpiredPauses_LeavesAContainerBeforeItsTTL(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, time.Minute)
+	h := acquireNew(t, f)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+
+	f.clock.Advance(30 * time.Second)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.False(t, state.Removed)
+	assert.True(t, state.Paused)
+}
+
+func TestReapExpiredPauses_ResumingClearsTheTimer(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, time.Minute)
+	h := acquireNew(t, f)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+
+	f.clock.Advance(30 * time.Second)
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: h.ID})
+	require.NoError(t, err)
+
+	// More time has now passed since the original pause than the TTL, but the
+	// container was resumed in between and never re-paused.
+	f.clock.Advance(time.Minute)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.False(t, state.Removed, "a resumed container must not be reaped for its former pause")
+}
+
+func TestReapExpiredPauses_RepausingResetsTheTimerToFullTTL(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, time.Minute)
+	h := acquireNew(t, f)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+
+	f.clock.Advance(30 * time.Second)
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: h.ID})
+	require.NoError(t, err)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+
+	// Only half the TTL has elapsed since the second pause, even though more
+	// than a full TTL has elapsed since the first.
+	f.clock.Advance(30 * time.Second)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.False(t, state.Removed, "the timer must have restarted at the second pause")
+
+	f.clock.Advance(30 * time.Second)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	state, ok = f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.True(t, state.Removed, "the full TTL has now elapsed since the second pause")
+}
+
+func TestReapExpiredPauses_NonPositiveTTLDisablesReaping(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, 0)
+	h := acquireNew(t, f)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+
+	f.clock.Advance(24 * time.Hour)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.False(t, state.Removed)
+}
+
+func TestReapExpiredPauses_NoOpWhenNothingIsPaused(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, time.Minute)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+}
+
+func TestReapExpiredPauses_DestroysOnlyTheExpiredOnes(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, time.Minute)
+
+	older := acquireNew(t, f)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, older.ID))
+
+	f.clock.Advance(45 * time.Second)
+
+	newer, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+		Alloc: memAlloc(1 << 20),
+	})
+	require.NoError(t, err)
+	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, newer.ID))
+
+	// 45s since older's pause, 15s since newer's - only older has crossed the
+	// one-minute TTL.
+	f.clock.Advance(15 * time.Second)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+
+	olderState, ok := f.runtime.Get(older.ID)
+	require.True(t, ok)
+	assert.True(t, olderState.Removed)
+
+	newerState, ok := f.runtime.Get(newer.ID)
+	require.True(t, ok)
+	assert.False(t, newerState.Removed)
+	assert.True(t, newerState.Paused)
+}
+
+func TestReapExpiredPauses_IsSafeUnderConcurrentPauseAndReap(t *testing.T) {
+	f := newFixtureWithPauseTTL(t, time.Millisecond)
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
+				Alloc: memAlloc(1 << 20),
+			})
+			if err != nil {
+				return
+			}
+			_ = f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID)
+			_ = f.manager.ReapExpiredPauses(context.Background())
+		}()
+	}
+	wg.Wait()
+
+	f.clock.Advance(time.Hour)
+	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
 }
 
 func TestInspect_ReportsTheAppliedAllocation(t *testing.T) {

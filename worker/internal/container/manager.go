@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/illinoisdata/readie/worker/internal/artifact"
+	"github.com/illinoisdata/readie/worker/internal/clock"
 	"github.com/illinoisdata/readie/worker/internal/config"
 	"github.com/illinoisdata/readie/worker/internal/logging"
 	"github.com/illinoisdata/readie/worker/internal/registry"
@@ -131,6 +132,9 @@ type Spec struct {
 	// killed. It must stay well inside the supervisor's own shutdown grace
 	// period, since reclamation happens during shutdown.
 	StopTimeout time.Duration
+	// PauseTTL bounds how long a paused container may sit before
+	// ReapExpiredPauses destroys it. Zero or negative disables reaping.
+	PauseTTL time.Duration
 	// DirPerm is the mode for per-container host directories. The executor runs
 	// as an arbitrary uid, so it must be able to create its socket here.
 	DirPerm os.FileMode
@@ -151,6 +155,7 @@ func SpecFromConfig(cfg config.Config) Spec {
 		RootReadonly:       cfg.SandboxRootReadonly,
 		CgroupParent:       cfg.CgroupParent,
 		StopTimeout:        cfg.ContainerStopTimeout,
+		PauseTTL:           cfg.SandboxPauseTTL,
 		DirPerm:            0o777,
 		DefaultMemoryBytes: cfg.DefaultContainerMem,
 		GPU:                cfg.SandboxGPU,
@@ -185,6 +190,8 @@ type ManagerDeps struct {
 	Artifacts Artifacts
 	Spec      Spec
 	Log       *slog.Logger
+	// Clock drives pause-TTL tracking. Defaults to clock.NewSystem() when nil.
+	Clock clock.Clock
 }
 
 // Manager owns executor container lifecycles.
@@ -197,6 +204,7 @@ type Manager struct {
 	artifacts Artifacts
 	spec      Spec
 	log       *slog.Logger
+	clock     clock.Clock
 
 	// live tracks acquired containers so the worker can report its own load.
 	//
@@ -208,6 +216,13 @@ type Manager struct {
 	// runtime on every report would mean an exec per scheduling tick.
 	mu   sync.Mutex
 	live map[string]Allocation
+
+	// pausedAt records when each currently-paused container was last paused,
+	// keyed by container ID. An entry exists only while the container is
+	// believed paused and untouched since; resuming or destroying it through
+	// any path (resume, Destroy, CleanupOrphans, ReapExpiredPauses) removes
+	// the entry, so it never points at a container that is no longer paused.
+	pausedAt map[string]time.Time
 }
 
 // Load reports how much of this worker is currently committed.
@@ -246,6 +261,13 @@ func (m *Manager) untrack(id string) {
 	delete(m.live, id)
 }
 
+// clearPaused removes id's pause-TTL entry, if any.
+func (m *Manager) clearPaused(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.pausedAt, id)
+}
+
 // NewManager validates its dependencies and returns a Manager.
 func NewManager(deps ManagerDeps) (*Manager, error) {
 	var missing []string
@@ -278,6 +300,10 @@ func NewManager(deps ManagerDeps) (*Manager, error) {
 	if log == nil {
 		log = slog.Default()
 	}
+	clk := deps.Clock
+	if clk == nil {
+		clk = clock.NewSystem()
+	}
 	return &Manager{
 		runtime:   deps.Runtime,
 		reporter:  deps.Reporter,
@@ -287,7 +313,9 @@ func NewManager(deps ManagerDeps) (*Manager, error) {
 		artifacts: deps.Artifacts,
 		spec:      deps.Spec,
 		log:       log,
+		clock:     clk,
 		live:      make(map[string]Allocation),
+		pausedAt:  make(map[string]time.Time),
 	}, nil
 }
 
@@ -431,6 +459,7 @@ func (m *Manager) resume(ctx context.Context, req AcquireRequest) (Handle, error
 		m.report(ctx, req.Ref, req.ContainerID, pb.Status_STATUS_ERROR)
 		return Handle{}, fmt.Errorf("update container resources: %w", err)
 	}
+	m.clearPaused(req.ContainerID)
 	log.Info("container resumed")
 
 	return Handle{
@@ -468,6 +497,13 @@ func (m *Manager) Pause(ctx context.Context, ref registry.ExecutionRef, id strin
 		return fmt.Errorf("pause container %s: %w", id, err)
 	}
 
+	// Recorded unconditionally, overwriting any earlier entry: a container
+	// paused, resumed and paused again gets its TTL clock restarted from this
+	// pause, not the first one.
+	m.mu.Lock()
+	m.pausedAt[id] = m.clock.Now()
+	m.mu.Unlock()
+
 	m.log.Info("container paused", logging.KeyContainerID, id)
 	m.report(ctx, ref, id, pb.Status_STATUS_READY)
 	return nil
@@ -479,6 +515,12 @@ func (m *Manager) Pause(ctx context.Context, ref registry.ExecutionRef, id strin
 // wedged container cannot leak disk indefinitely.
 func (m *Manager) Destroy(ctx context.Context, ref registry.ExecutionRef, id string) error {
 	log := m.log.With(logging.KeyContainerID, id)
+
+	// Cleared unconditionally, regardless of what follows: Destroy is the
+	// convergence point for every teardown path (Release, CleanupOrphans,
+	// ReapExpiredPauses itself), and a stale entry would otherwise have the
+	// reaper try to destroy this ID again on its next tick.
+	m.clearPaused(id)
 
 	defer func() {
 		if err := m.fs.RemoveAll(m.layout.ContainerDir(id)); err != nil {
@@ -619,6 +661,52 @@ func (m *Manager) CleanupOrphans(ctx context.Context) error {
 	var errs []error
 	for _, summary := range summaries {
 		if err := m.Destroy(ctx, registry.ExecutionRef{}, summary.ID); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ReapExpiredPauses destroys every container that has been paused for at
+// least Spec.PauseTTL. A non-positive PauseTTL disables reaping: a Manager
+// built directly, bypassing config.Validate as tests and embedders do, must
+// never destroy warm containers out from under a caller solely because no
+// TTL was configured.
+func (m *Manager) ReapExpiredPauses(ctx context.Context) error {
+	if m.spec.PauseTTL <= 0 {
+		return nil
+	}
+
+	now := m.clock.Now()
+	var expired []string
+	m.mu.Lock()
+	for id, pausedAt := range m.pausedAt {
+		if now.Sub(pausedAt) >= m.spec.PauseTTL {
+			expired = append(expired, id)
+		}
+	}
+	m.mu.Unlock()
+
+	if len(expired) == 0 {
+		return nil
+	}
+	m.log.Info("reaping expired paused containers", "count", len(expired))
+
+	var errs []error
+	for _, id := range expired {
+		// Re-checked immediately before destroying: a concurrent resume may
+		// have cleared this ID between the snapshot above and now, and acting
+		// on a stale snapshot would destroy a container a caller just picked
+		// back up. This narrows, but does not eliminate, that race - the same
+		// class already accepted between CleanupOrphans and an in-flight
+		// Acquire.
+		m.mu.Lock()
+		_, stillPaused := m.pausedAt[id]
+		m.mu.Unlock()
+		if !stillPaused {
+			continue
+		}
+		if err := m.Destroy(ctx, registry.ExecutionRef{}, id); err != nil {
 			errs = append(errs, err)
 		}
 	}
