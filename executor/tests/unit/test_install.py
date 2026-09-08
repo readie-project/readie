@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 import readie_executor.install as install_mod
-from readie_executor.install import InstallError, install_packages, installed_versions
+from readie_executor.install import InstallError, install_packages
 
 
 def test_an_empty_list_runs_no_subprocess():
@@ -113,23 +113,3 @@ def test_a_missing_baked_default_is_a_safe_no_op(monkeypatch: pytest.MonkeyPatch
         install_packages(["numpy"])  # must not raise
 
     assert resolv.read_text() == ""
-
-
-class _FakeDistribution:
-    def __init__(self, name: str, version: str) -> None:
-        self.metadata = {"Name": name}
-        self.version = version
-
-
-def test_installed_versions_maps_every_distribution_to_its_version(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    from importlib import metadata
-
-    monkeypatch.setattr(
-        metadata,
-        "distributions",
-        lambda: [_FakeDistribution("pandas", "2.3.3"), _FakeDistribution("numpy", "2.0.2")],
-    )
-
-    assert installed_versions() == {"pandas": "2.3.3", "numpy": "2.0.2"}

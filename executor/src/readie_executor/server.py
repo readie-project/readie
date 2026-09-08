@@ -5,19 +5,15 @@ from __future__ import annotations
 import contextlib
 import io
 import socket
-import subprocess
 import sys
-import tempfile
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
-import cloudpickle
-
 from readie_executor import protocol
-from readie_executor.codec import Call, DecodeError, decode_call, encode_result
+from readie_executor.codec import DecodeError, decode_call, encode_result
 from readie_executor.config import Settings
-from readie_executor.install import install_packages, installed_versions
+from readie_executor.install import install_packages
 
 if TYPE_CHECKING:
     from typing import Any
@@ -186,10 +182,8 @@ class ExecutorServer:
             return protocol.failure_envelope(exc, traceback.format_exc()), []
 
         output: list[str] = []
-        before: dict[str, str] = {}
         if call.packages:
             print(f"[executor] installing packages: {sorted(call.packages)}", flush=True)
-            before = installed_versions()
         try:
             install_output = install_packages(list(call.packages))
         except Exception as exc:  # noqa: BLE001 - any install failure must produce a response, not a crash
@@ -199,22 +193,6 @@ class ExecutorServer:
             output.append(install_output)
             print("[executor] packages installed", flush=True)
 
-        if call.packages and installed_versions() != before:
-            # Something actually moved on disk -- possibly a native extension
-            # at a different version than whatever a checkpoint restore left
-            # resident in this process (see install.py). Invoking here would
-            # risk two ABI-incompatible copies of the same extension in one
-            # address space, which can crash the interpreter outright rather
-            # than raise. A freshly spawned interpreter has nothing preloaded,
-            # so it always reads what is on disk right now. A pin already
-            # satisfied changes nothing, so that case stays on the fast,
-            # already-warm path below.
-            return self._invoke_in_subprocess(raw, output)
-
-        return self._invoke_in_process(call, output)
-
-    def _invoke_in_process(self, call: Call, output: list[str]) -> tuple[dict[str, Any], list[str]]:
-        """Run ``call`` directly in this process and turn any failure into a response."""
         try:
             with (
                 contextlib.redirect_stdout(_OutputTee(sys.stdout, output)),
@@ -233,46 +211,6 @@ class ExecutorServer:
             return protocol.failure_envelope(exc, traceback.format_exc()), output
 
         return protocol.success_envelope(value), output
-
-    def _invoke_in_subprocess(
-        self, raw: bytes, output: list[str]
-    ) -> tuple[dict[str, Any], list[str]]:
-        """Re-decode and invoke ``raw`` in a freshly spawned interpreter.
-
-        ``readie_executor._invoke_subprocess`` does the decoding and invoking on
-        the other end, so decode runs twice -- once here just to read
-        ``packages``, once there to get ``func``/``args``/``kwargs`` -- but the
-        call itself never touches a module this process already had loaded.
-        """
-        try:
-            with tempfile.NamedTemporaryFile(delete=False) as handle:
-                result_path = handle.name
-
-            try:
-                completed = subprocess.run(  # noqa: S603 - argv is fixed; raw travels as stdin
-                    [sys.executable, "-m", "readie_executor._invoke_subprocess", result_path],
-                    input=raw,
-                    capture_output=True,
-                    check=False,
-                )
-                for stream in (completed.stdout, completed.stderr):
-                    text = stream.decode("utf-8", errors="replace")
-                    if text:
-                        output.append(text)
-
-                result_bytes = Path(result_path).read_bytes()
-            finally:
-                Path(result_path).unlink(missing_ok=True)
-
-            if not result_bytes:
-                msg = f"call subprocess exited {completed.returncode} without a result"
-                raise RuntimeError(msg)  # noqa: TRY301 - caught immediately below
-
-            envelope: dict[str, Any] = cloudpickle.loads(result_bytes)
-        except Exception as exc:  # noqa: BLE001 - preserve a subprocess failure as a response
-            return protocol.failure_envelope(exc, traceback.format_exc()), output
-
-        return envelope, output
 
     def close(self) -> None:
         """Stop listening and remove the socket.

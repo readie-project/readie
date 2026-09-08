@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import socket
 import tempfile
 import threading
@@ -223,44 +222,6 @@ def test_an_unexpected_install_failure_still_returns_a_failure_envelope(
     assert envelope["ok"] is False
     assert "uv" in str(envelope["message"])
     assert called == []
-
-
-def get_pid() -> int:
-    return os.getpid()
-
-
-def test_a_call_whose_install_changed_something_runs_in_a_different_process(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    # The whole point: a package whose version this call's install actually
-    # moved must never be imported back in this already-warm process (see
-    # install.py), so the invocation has to happen somewhere else entirely.
-    monkeypatch.setattr("readie_executor.server.install_packages", lambda *_, **__: "")
-    versions = iter([{"numpy": "2.0.2"}, {"numpy": "1.26.4"}])
-    monkeypatch.setattr("readie_executor.server.installed_versions", lambda: next(versions))
-
-    envelope = exchange(call(get_pid, packages=["numpy==1.26.4"]))
-
-    assert value_of(envelope) != os.getpid()
-
-
-def test_a_call_whose_install_changed_nothing_stays_in_this_process(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    # A pin already satisfied by whatever the checkpoint preloaded must not
-    # pay for a subprocess it does not need -- that would waste exactly the
-    # preimport work the checkpoint exists to save.
-    monkeypatch.setattr("readie_executor.server.install_packages", lambda *_, **__: "")
-    monkeypatch.setattr("readie_executor.server.installed_versions", lambda: {"numpy": "2.0.2"})
-
-    envelope = exchange(call(get_pid, packages=["numpy==2.0.2"]))
-
-    assert value_of(envelope) == os.getpid()
-
-
-def test_a_call_without_packages_still_runs_in_this_process():
-    # The common case pays no subprocess cost: no packages, no isolation needed.
-    assert value_of(exchange(call(get_pid))) == os.getpid()
 
 
 def test_none_is_a_value_not_an_absence():
