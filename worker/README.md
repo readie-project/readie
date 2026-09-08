@@ -325,6 +325,75 @@ the rootfs directory every sandbox shares.
 on the host. The executor is a socket server, so a value that forbids it breaks
 every execution.
 
+`SANDBOX_NETWORK=sandbox` also opts this worker into building a real network
+namespace, veth pair and host-side NAT per sandbox - see
+[Sandbox networking](#sandbox-networking) below.
+
+## Sandbox networking
+
+`--network=sandbox` (gVisor's own isolated userspace netstack) is more secure
+than `--network=host` (full passthrough to this worker's own network
+namespace, shared directly with whatever untrusted code a sandbox runs) - but
+`runsc create`/`start` never build networking for `sandbox` mode themselves.
+At sandbox start, the sentry joins whatever network namespace the OCI spec's
+`NetworkNamespace.Path` names and harvests whatever non-loopback interfaces
+already exist there; normally a CNI plugin builds that namespace before a
+container runtime invokes `runsc`. This worker has no CNI, so left alone,
+`sandbox` mode gets an empty, freshly-created namespace - loopback only, no
+route out - which is silent and easy to mistake for a working, just
+locked-down network.
+
+`internal/network` is the CNI-shaped alternative: when `SANDBOX_NETWORK=sandbox`,
+`container.Manager` asks it for a network namespace before creating each
+sandbox, and passes the resulting path as `NetworkNamespace.Path`.
+`Manager.Destroy` releases it afterward, and `CleanupOrphans` inherits that for
+free since it already routes every orphan it finds through `Destroy`.
+
+This is fingerprint-neutral: `runsc.Fingerprint` hashes a namespace's
+presence, never its `Path`, so a real, per-sandbox, per-restore-varying netns
+never invalidates a checkpoint. It does need `iproute2` and `iptables` in this
+worker's own image (see `Dockerfile`) and `CAP_NET_ADMIN`/`CAP_NET_RAW` (already
+implied by `privileged: true` in `docker-compose.yml`).
+
+**The pool is pre-warmed at startup, not built per request.** Provisioning
+runs unconditionally for every sandbox once `SANDBOX_NETWORK=sandbox` is set -
+deliberately not gated further on whether a given call actually needs network,
+since the worker has no visibility into that at container-creation time anyway. A network namespace,
+its veth pair, addresses and route are all fully slot-derived and 
+sandbox-independent, so there is no reason to build
+them inside the request path at all: `VethProvisioner.WarmUp` builds every
+capacity slot's namespace and veth pair once, before the worker starts
+serving, plus the one-time `setupNAT` rules. `Provision` then only ever does
+id-to-slot bookkeeping - no `ip` call, no netlink round trip - and `Release`
+returns a slot to the pool for reuse instead of tearing it down, so the same
+namespace and addresses go straight to the next sandbox assigned that slot.
+Only `Close`, run once during worker shutdown after every container has been
+destroyed, actually deletes the namespaces.
+
+Each slot's one-time setup still avoids nine sequential `ip` process spawns in
+favor of two `ip -batch` invocations - `hostSetupCommands` (netns, veth pair,
+host-side address+up, run in the current namespace) and `netnsSetupCommands`
+(sandbox-side address+up, loopback, default route, run via
+`ip netns exec <slot> ip -batch`) - each writing its lines to a temp file
+rather than one process per command. The one-time `setupNAT` rules are not
+batched: `iptables` has no equivalent for the existing per-rule idempotent
+check-then-add logic, and it only runs once per worker process regardless.
+
+**Egress is restricted, not just enabled.** The interface every sandbox's
+traffic exits through (`HostIface`, auto-detected from the default route) is
+the *same* interface this worker uses to reach every sibling container on its
+own Docker network - the router in particular, which has no authentication of
+its own by default (see `SECURITY.md`). Giving a sandbox real network access
+without also excluding that network would let untrusted code reach the router
+directly, bypassing the sandbox entirely. So `setupNAT` installs two `DROP`
+rules - the host's own subnet (`ifaceSubnet`, read off `HostIface`'s own
+address) and `169.254.0.0/16` (link-local, which is where every major cloud
+provider serves its instance metadata endpoint - a classic SSRF target) -
+*before* the general egress `ACCEPT` rule, since iptables evaluates a chain in
+order and stops at the first match. Determining the host's own subnet fails
+closed: if it can't be read, `WarmUp` fails - and so worker startup fails -
+rather than silently standing up unrestricted egress.
+
 ## Checkpoint compatibility
 
 A baked checkpoint restores only into the exact sandbox it was captured under. At
@@ -349,9 +418,9 @@ worker's sandbox env vars - `SANDBOX_NETWORK`, `SANDBOX_OVERLAY`, `SANDBOX_GPU`
 - disagree with what the pipeline used to capture the checkpoints. Nothing
 enforces that the two deployments agree - each is configured independently,
 e.g. in `docker-compose.yml` versus the pipeline's own config or CLI overrides.
-`SANDBOX_NETWORK` has no forced default on either side specifically so an
-*unconfigured* worker and an *unconfigured* pipeline agree by construction (both
-omit `--network`, letting runsc's own default govern); `SANDBOX_OVERLAY`
+`SANDBOX_NETWORK` defaults to `sandbox` on both sides specifically so an
+*unconfigured* worker and an *unconfigured* pipeline agree by construction;
+`SANDBOX_OVERLAY`
 defaults to `root:memory` and `SANDBOX_GPU` is derived from the flavor on both
 sides, which match today but are two independently maintained defaults, not one
 shared one. An explicit override of any of the three on only one side is what

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, TextIO
 from readie_executor import protocol
 from readie_executor.codec import DecodeError, decode_call, encode_result
 from readie_executor.config import Settings
-from readie_executor.install import InstallError, install_packages
+from readie_executor.install import install_packages
 
 if TYPE_CHECKING:
     from typing import Any
@@ -186,7 +186,7 @@ class ExecutorServer:
             print(f"[executor] installing packages: {sorted(call.packages)}", flush=True)
         try:
             install_output = install_packages(list(call.packages))
-        except InstallError as exc:
+        except Exception as exc:  # noqa: BLE001 - any install failure must produce a response, not a crash
             print(f"[executor] {exc}", file=sys.stderr, flush=True)
             return protocol.failure_envelope(exc, traceback.format_exc()), output
         if install_output:

@@ -56,6 +56,14 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
 # buildable against a stub.
 FROM ${BASE_IMAGE}
 
+# iproute2 (ip) and iptables build and tear down each sandbox's own network
+# namespace and veth pair, and install the shared host NAT/forwarding rules,
+# when SANDBOX_NETWORK_PROVISION is set - see internal/network. Absent from
+# the base chain otherwise, so this worker adds them itself.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends iproute2 iptables \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=go-builder /app/go-server      /app/go-server

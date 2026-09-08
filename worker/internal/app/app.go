@@ -29,6 +29,7 @@ import (
 	"github.com/illinoisdata/readie/worker/internal/executor"
 	"github.com/illinoisdata/readie/worker/internal/grpcserver"
 	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/network"
 	"github.com/illinoisdata/readie/worker/internal/registry"
 	"github.com/illinoisdata/readie/worker/internal/runsc"
 	"github.com/illinoisdata/readie/worker/internal/sandbox"
@@ -48,6 +49,10 @@ type Deps struct {
 	// DialRegistry connects to the router, returning a client and the closer
 	// for the underlying connection.
 	DialRegistry func(ctx context.Context, target string) (pb.RegistryServiceClient, io.Closer, error)
+	// NewNetworkProvisioner builds the sandbox network provisioner. Only called
+	// when SandboxNetwork is "sandbox"; substituting here is what keeps the
+	// integration suite runnable without real root/netns/iptables access.
+	NewNetworkProvisioner func(cfg config.Config, log *slog.Logger) (network.Provisioner, error)
 	// Clock drives retry loops.
 	Clock clock.Clock
 }
@@ -64,6 +69,9 @@ func (d Deps) withDefaults() Deps {
 	}
 	if d.DialRegistry == nil {
 		d.DialRegistry = dialRegistry
+	}
+	if d.NewNetworkProvisioner == nil {
+		d.NewNetworkProvisioner = newVethProvisioner
 	}
 	if d.Clock == nil {
 		d.Clock = clock.NewSystem()
@@ -95,6 +103,34 @@ func newRunscRuntime(
 		StatsInterval:     cfg.StatsInterval,
 		Log:               log,
 	})
+}
+
+// newVethProvisioner builds the real sandbox network provisioner.
+func newVethProvisioner(cfg config.Config, log *slog.Logger) (network.Provisioner, error) {
+	return network.New(network.Options{
+		Capacity: networkCapacity(cfg.MaxExecutors),
+		Log:      log,
+	})
+}
+
+// networkCapacity sizes the network provisioner's IP pool off MaxExecutors (0
+// meaning unbounded). unboundedCapacity and ceiling keep it sane at either
+// extreme: an unset MaxExecutors still gets real room to work with, a small
+// explicit one is trusted as-is down to floor, and the default /24 subnet
+// holds at most 64 /30 slots.
+func networkCapacity(maxExecutors int32) int {
+	const floor, unboundedCapacity, ceiling = 2, 16, 60
+	if maxExecutors == 0 {
+		return unboundedCapacity
+	}
+	capacity := int(maxExecutors)
+	if capacity < floor {
+		capacity = floor
+	}
+	if capacity > ceiling {
+		capacity = ceiling
+	}
+	return capacity
 }
 
 // loadArtifacts reads the rootfs and checkpoints baked into this image.
@@ -336,6 +372,27 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		registryClient, cfg.WorkerID, cfg.WorkerURI, capacity, cfg.StatusTimeout, log)
 	app.reporter = reporter
 
+	// A real sandbox network is only built for "sandbox" mode - "none" and
+	// "host" have no use for one, and "host" would be doubly wrong to
+	// provision into (it already shares this worker's own network namespace).
+	// Without it, createSpec leaves every sandbox's NetnsPath empty, exactly
+	// as before this existed.
+	var netProvisioner network.Provisioner
+	if cfg.SandboxNetwork == "sandbox" {
+		netProvisioner, err = deps.NewNetworkProvisioner(cfg, log)
+		if err != nil {
+			return fail(fmt.Errorf("build sandbox network provisioner: %w", err))
+		}
+		// Pays every slot's netns/veth setup cost once, here, so Provision -
+		// called on every request whether or not it needs a network - never
+		// has to. Pushed before "gRPC server" so Close runs last, after
+		// CleanupOrphans has released every container's slot.
+		if err := netProvisioner.WarmUp(ctx); err != nil {
+			return fail(fmt.Errorf("warm up sandbox network pool: %w", err))
+		}
+		app.push("sandbox network", func(ctx context.Context) error { return netProvisioner.Close(ctx) })
+	}
+
 	manager, err := container.NewManager(container.ManagerDeps{
 		Runtime:   runtimePort,
 		Reporter:  reporter,
@@ -346,6 +403,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		Spec:      container.SpecFromConfig(cfg),
 		Log:       log,
 		Clock:     deps.Clock,
+		Network:   netProvisioner,
 	})
 	if err != nil {
 		return fail(fmt.Errorf("build container manager: %w", err))

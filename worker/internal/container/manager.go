@@ -15,6 +15,7 @@ import (
 	"github.com/illinoisdata/readie/worker/internal/clock"
 	"github.com/illinoisdata/readie/worker/internal/config"
 	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/network"
 	"github.com/illinoisdata/readie/worker/internal/registry"
 	"github.com/illinoisdata/readie/worker/internal/sandbox"
 	pb "github.com/illinoisdata/readie/worker/proto"
@@ -192,6 +193,11 @@ type ManagerDeps struct {
 	Log       *slog.Logger
 	// Clock drives pause-TTL tracking. Defaults to clock.NewSystem() when nil.
 	Clock clock.Clock
+	// Network provisions a real network namespace per sandbox for
+	// --network=sandbox. Nil is a legitimate, common value: it means every
+	// other --network mode, in which case createSpec leaves NetnsPath empty
+	// exactly as before this existed.
+	Network network.Provisioner
 }
 
 // Manager owns executor container lifecycles.
@@ -205,6 +211,7 @@ type Manager struct {
 	spec      Spec
 	log       *slog.Logger
 	clock     clock.Clock
+	network   network.Provisioner
 
 	// live tracks acquired containers so the worker can report its own load.
 	//
@@ -314,6 +321,7 @@ func NewManager(deps ManagerDeps) (*Manager, error) {
 		spec:      deps.Spec,
 		log:       log,
 		clock:     clk,
+		network:   deps.Network,
 		live:      make(map[string]Allocation),
 		pausedAt:  make(map[string]time.Time),
 	}, nil
@@ -375,8 +383,26 @@ func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error
 		return Handle{}, fmt.Errorf("prepare container directory %s: %w", dir, err)
 	}
 
-	id, err := m.runtime.Create(ctx, m.createSpec(name, req.Alloc, rootfs))
+	var netnsPath string
+	if m.network != nil {
+		alloc, err := m.network.Provision(ctx, name)
+		if err != nil {
+			if rmErr := m.fs.RemoveAll(dir); rmErr != nil {
+				log.Warn("could not remove the directory of a container whose network could not be provisioned",
+					logging.KeyError, rmErr)
+			}
+			return Handle{}, fmt.Errorf("provision sandbox network: %w", err)
+		}
+		netnsPath = alloc.NetnsPath
+	}
+
+	id, err := m.runtime.Create(ctx, m.createSpec(name, req.Alloc, rootfs, netnsPath))
 	if err != nil {
+		if m.network != nil {
+			if relErr := m.network.Release(context.WithoutCancel(ctx), name); relErr != nil {
+				log.Warn("could not release sandbox network after a failed create", logging.KeyError, relErr)
+			}
+		}
 		// Nothing was created, so the directory is garbage; leaving it behind
 		// would slowly fill the worker's disk.
 		if rmErr := m.fs.RemoveAll(dir); rmErr != nil {
@@ -546,6 +572,16 @@ func (m *Manager) Destroy(ctx context.Context, ref registry.ExecutionRef, id str
 	// Removal is forced so a container that refused to stop still goes away.
 	if err := m.runtime.Remove(ctx, id, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		errs = append(errs, fmt.Errorf("remove container %s: %w", id, err))
+	}
+
+	// After Remove, not before: the sentry holds the namespace open for the
+	// sandbox's entire life, so releasing it earlier could race a still-live
+	// process. Unconditional and always attempted, even after a Stop/Remove
+	// failure above, so a wedged runtime never leaks the network too.
+	if m.network != nil {
+		if err := m.network.Release(ctx, id); err != nil {
+			errs = append(errs, fmt.Errorf("release sandbox network %s: %w", id, err))
+		}
 	}
 
 	if err := errors.Join(errs...); err != nil {
@@ -735,10 +771,13 @@ const fingerprintProbeName = "fingerprint-probe"
 // container's. Memory, the id and the cgroup path vary per request but are all
 // excluded from the fingerprint, so a zero allocation and probe name are fine.
 func (m *Manager) CanonicalSpec(rootfs string) sandbox.CreateSpec {
-	return m.createSpec(fingerprintProbeName, Allocation{}, rootfs)
+	// No real sandbox ever runs under fingerprintProbeName, so this never
+	// provisions a real network namespace - only ever the empty Path a
+	// non-"sandbox" --network mode would also get, which Fingerprint ignores.
+	return m.createSpec(fingerprintProbeName, Allocation{}, rootfs, "")
 }
 
-func (m *Manager) createSpec(name string, alloc Allocation, rootfs string) sandbox.CreateSpec {
+func (m *Manager) createSpec(name string, alloc Allocation, rootfs, netnsPath string) sandbox.CreateSpec {
 	manifest := m.artifacts.Manifest()
 
 	env := []string{"EXECUTOR_DIR=" + config.ExecutorMountPath, "EXECUTOR_MODE=sandbox"}
@@ -767,6 +806,7 @@ func (m *Manager) createSpec(name string, alloc Allocation, rootfs string) sandb
 		PidsLimit:   m.spec.PidsLimit,
 		CgroupsPath: m.cgroupsPath(name),
 		GPU:         m.spec.GPU,
+		NetnsPath:   netnsPath,
 	}
 }
 

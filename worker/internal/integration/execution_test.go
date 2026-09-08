@@ -162,6 +162,60 @@ func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
 	assert.Equal(t, "bind", spec.Mounts[0].Type)
 }
 
+// Sandbox network provisioning only happens for SandboxNetwork == "sandbox";
+// these exercise the wiring through a fake, not a real netns/veth/iptables.
+func TestExecution_ProvisionsTheSandboxNetworkAndReleasesItOnTeardown(t *testing.T) {
+	netOpt, net := withNetworkProvisioning()
+	h := newHarness(t, netOpt)
+
+	responses, err := execute(t, h, "", []byte("body"))
+	require.NoError(t, err)
+	containerID := responses[0].GetContainerId()
+
+	assert.Equal(t, []string{containerID}, net.Provisions())
+
+	specs := h.Runtime.CreateSpecs()
+	require.Len(t, specs, 1)
+	alloc := net.Allocations()[containerID]
+	// Release now runs in the background after the RPC returns (see
+	// Runner.WaitPendingReleases), so the allocation itself may already be
+	// gone by the time we get here - only the spec the runtime received, set
+	// while the container was still live, is asserted directly.
+	if alloc.NetnsPath != "" {
+		assert.Equal(t, alloc.NetnsPath, specs[0].NetnsPath)
+	} else {
+		assert.NotEmpty(t, specs[0].NetnsPath, "the runtime must have received a real netns path")
+	}
+
+	require.Eventually(t, func() bool {
+		releases := net.Releases()
+		return len(releases) == 1 && releases[0] == containerID
+	}, 5*time.Second, 20*time.Millisecond, "the sandbox network must be released once the container is torn down")
+}
+
+func TestExecution_ANetworkProvisionFailureNeverReachesTheRuntime(t *testing.T) {
+	netOpt, net := withNetworkProvisioning()
+	net.FailOn("Provision", errors.New("no free network slot"))
+	h := newHarness(t, netOpt)
+
+	_, err := execute(t, h, "", []byte("body"))
+	require.Error(t, err)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+	assert.Empty(t, h.Runtime.CreateSpecs(), "a failed provision must never reach the runtime")
+}
+
+func TestExecution_ReclaimingAnOrphanAlsoReleasesItsNetwork(t *testing.T) {
+	netOpt, net := withNetworkProvisioning()
+	newHarness(t, netOpt, withFakes(func(d *fakesandbox.Sandbox, _ *fakeregistry.Server) {
+		d.Seed(config.ContainerNamePrefix + "orphan")
+	}))
+
+	// newHarness returns only once health reports SERVING, so reclamation has
+	// already happened by the time this runs (see TestStartup_ReclaimsOrphansBeforeServing).
+	assert.Contains(t, net.Releases(), config.ContainerNamePrefix+"orphan",
+		"CleanupOrphans must release a leaked container's network too, via the same Destroy path")
+}
+
 func TestExecution_ReusesAWarmContainer(t *testing.T) {
 	// Pause-on-success is disabled for now (see Manager.Release), so a
 	// container is never left warm to reuse. Re-enable once that's uncommented.

@@ -37,8 +37,10 @@ import (
 	"github.com/illinoisdata/readie/worker/internal/container"
 	"github.com/illinoisdata/readie/worker/internal/executor"
 	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/illinoisdata/readie/worker/internal/network"
 	"github.com/illinoisdata/readie/worker/internal/sandbox"
 	"github.com/illinoisdata/readie/worker/internal/testutil/fakeexecutor"
+	"github.com/illinoisdata/readie/worker/internal/testutil/fakenetwork"
 	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
 	"github.com/illinoisdata/readie/worker/internal/testutil/fakesandbox"
 	pb "github.com/illinoisdata/readie/worker/proto"
@@ -56,6 +58,8 @@ type harness struct {
 	Router  *fakeregistry.Server
 	Layout  container.Layout
 	Config  config.Config
+	// Network is non-nil only when the harness was built withNetworkProvisioning.
+	Network *fakenetwork.Provisioner
 
 	WorkerDir string
 	// ArtifactRoot is where this harness laid out its rootfs and checkpoints.
@@ -105,6 +109,9 @@ type harnessOptions struct {
 	// noArtifacts starts the worker over an empty artifact root, reproducing a
 	// node brought up before any generation was installed on it.
 	noArtifacts bool
+	// network provisions a fake sandbox network when set, standing in for a
+	// real network.Provisioner without touching real root/netns/iptables.
+	network *fakenetwork.Provisioner
 }
 
 func withExecutor(opts fakeexecutor.Options) option {
@@ -125,6 +132,13 @@ func withoutExecutors() option {
 
 func withoutArtifacts() option {
 	return func(o *harnessOptions) { o.noArtifacts = true }
+}
+
+// withNetworkProvisioning turns on sandbox network provisioning over a fake
+// network.Provisioner, and returns it so a test can assert against it.
+func withNetworkProvisioning() (option, *fakenetwork.Provisioner) {
+	net := fakenetwork.New()
+	return func(o *harnessOptions) { o.network = net }, net
 }
 
 // newHarness assembles a running worker and returns clients for it.
@@ -152,6 +166,9 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	if options.tuneCfg != nil {
 		options.tuneCfg(&cfg)
 	}
+	if options.network != nil {
+		cfg.SandboxNetwork = "sandbox"
+	}
 
 	fakeRuntime := fakesandbox.New()
 	router := fakeregistry.NewServer()
@@ -170,6 +187,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		WorkerDir:    workerDir,
 		ArtifactRoot: artifactRoot,
 		Artifacts:    artifacts,
+		Network:      options.network,
 		runErr:       make(chan error, 1),
 	}
 
@@ -198,6 +216,9 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		},
 		DialRegistry: func(context.Context, string) (pb.RegistryServiceClient, io.Closer, error) {
 			return routerClient, io.NopCloser(nil), nil
+		},
+		NewNetworkProvisioner: func(config.Config, *slog.Logger) (network.Provisioner, error) {
+			return options.network, nil
 		},
 		Clock: clock.NewSystem(),
 	})

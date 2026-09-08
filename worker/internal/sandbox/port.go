@@ -81,6 +81,15 @@ type CreateSpec struct {
 	// LogPath receives the sandbox's merged stdout and stderr. The runtime has
 	// no log API, so this file is the only source Logs can read.
 	LogPath string
+
+	// NetnsPath names a pre-provisioned network namespace for the sandbox to
+	// join under --network=sandbox (gVisor otherwise creates only an empty
+	// one and never populates it - nothing short of a real, already-configured
+	// namespace gives that mode outbound connectivity). Empty under every other
+	// --network value, and always empty for the startup fingerprint probe.
+	// Excluded from the checkpoint fingerprint (only the namespace's presence,
+	// not its Path, is hashed), so this never needs to match across a restore.
+	NetnsPath string
 }
 
 // StartSpec describes how to bring a created sandbox up.

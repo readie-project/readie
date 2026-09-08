@@ -51,7 +51,7 @@ func TestLoad_Defaults(t *testing.T) {
 
 	assert.Equal(t, "/usr/local/bin/runsc", cfg.RunscBinary)
 	assert.Equal(t, "/run/readie-runsc", cfg.RunscRoot)
-	assert.Equal(t, "", cfg.SandboxNetwork, "unset, so runsc's own default is used")
+	assert.Equal(t, "sandbox", cfg.SandboxNetwork, "unset SANDBOX_NETWORK defaults to sandbox, not omitted")
 	assert.Equal(t, "exec_container-", cfg.ContainerNamePrefix)
 	assert.Equal(t, int64(50000), cfg.CPUQuota)
 	assert.Equal(t, int64(100000), cfg.CPUPeriod)

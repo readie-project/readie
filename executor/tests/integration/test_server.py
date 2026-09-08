@@ -200,6 +200,30 @@ def test_a_failed_install_returns_a_failure_envelope_without_running_the_call(
     assert called == []
 
 
+def test_an_unexpected_install_failure_still_returns_a_failure_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # install_packages shells out to a subprocess; anything other than a clean
+    # non-zero exit (InstallError) - e.g. the binary itself being unusable -
+    # must still produce a response, not leave the connection hanging with
+    # nothing written to it.
+    called = []
+
+    def boom(specs, **_):
+        raise FileNotFoundError("uv")
+
+    monkeypatch.setattr("readie_executor.server.install_packages", boom)
+
+    def marks_that_it_ran() -> None:
+        called.append(True)
+
+    envelope = exchange(call(marks_that_it_ran, packages=["numpy"]))
+
+    assert envelope["ok"] is False
+    assert "uv" in str(envelope["message"])
+    assert called == []
+
+
 def test_none_is_a_value_not_an_absence():
     # The whole reason for an envelope: "returned None" and "sent nothing" were
     # the same thing on the wire under version 1.

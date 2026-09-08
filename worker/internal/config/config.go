@@ -95,11 +95,8 @@ type Config struct {
 	RunscBinary string
 	RunscRoot   string // runtime state directory, owned exclusively by this worker
 	// SandboxNetwork is "none", "sandbox" or "host", passed to runsc as
-	// --network. Empty omits the flag entirely and lets runsc's own compiled-in
-	// default apply, rather than this worker forcing one — set it explicitly
-	// to "none" for the previous strict-isolation behavior. Whatever value is
-	// in effect is folded into the checkpoint fingerprint, so it must match
-	// what the pipeline captured against.
+	// --network. Whatever value is in effect is folded into the checkpoint fingerprint,
+	// so it must match what the pipeline captured against.
 	SandboxNetwork string
 	// SandboxHostUDS governs whether a socket bound inside the sandbox is
 	// visible on the host. The executor is a socket server, so anything that
@@ -249,11 +246,9 @@ func Load(getenv Getenv) (Config, error) {
 
 		WorkerDir: workerDir,
 
-		RunscBinary: valueOr(getenv("RUNSC_BINARY"), "/usr/local/bin/runsc"),
-		RunscRoot:   valueOr(getenv("RUNSC_ROOT"), "/run/readie-runsc"),
-		// No forced default: an unset SANDBOX_NETWORK stays empty, so the
-		// runsc adapter omits --network and runsc's own default governs.
-		SandboxNetwork: getenv("SANDBOX_NETWORK"),
+		RunscBinary:    valueOr(getenv("RUNSC_BINARY"), "/usr/local/bin/runsc"),
+		RunscRoot:      valueOr(getenv("RUNSC_ROOT"), "/run/readie-runsc"),
+		SandboxNetwork: valueOr(getenv("SANDBOX_NETWORK"), "sandbox"),
 		// The executor binds its socket inside the sandbox and the worker dials
 		// it from the host, which the runtime forbids by default.
 		SandboxHostUDS: valueOr(getenv("SANDBOX_HOST_UDS"), "create"),

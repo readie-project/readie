@@ -47,6 +47,20 @@ RUN python -m build --wheel --outdir /dist
 # ---------------------------------------------------------------------------
 FROM --platform=${ROOTFS_PLATFORM} ${ROOTFS_BASE_IMAGE} AS rootfs
 
+# The base image ships an empty /etc/resolv.conf, and nothing populates it at
+# container-create time the way a normal container runtime would - a gVisor
+# sandbox runs directly against this rootfs with no host bind-mount. Without a
+# nameserver, every DNS lookup inside the sandbox fails.
+#
+# This has to be baked at a path other than /etc/resolv.conf itself: Docker
+# treats that exact path (along with /etc/hosts and /etc/hostname) as a
+# runtime-managed file and silently drops anything written to it here, whether
+# by RUN (fails outright, "Device or resource busy") or COPY (succeeds but the
+# content never survives into the exported layer). readie_executor copies this
+# into place at /etc/resolv.conf itself before it needs DNS, since only it -
+# not this build - ever runs against the real, unmanaged rootfs.
+RUN printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > /etc/readie-resolv.conf
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 COPY executor/pyproject.toml executor/uv.lock /tmp/build/
 WORKDIR /tmp/build
@@ -187,7 +201,7 @@ ENV ROOTFS_PYTHONPATH="/lib/python3.12/dist-packages"
 
 # Runtime modes. These are part of what a checkpoint is sensitive to, so they
 # must match the worker's configuration.
-ENV SANDBOX_NETWORK=""
+ENV SANDBOX_NETWORK="sandbox"
 ENV SANDBOX_HOST_UDS="create"
 ENV SANDBOX_OVERLAY="root:memory"
 

@@ -81,10 +81,15 @@ func BuildSpec(spec sandbox.CreateSpec) (*specs.Spec, error) {
 			Resources:   buildResources(spec),
 			Namespaces: []specs.LinuxNamespace{
 				{Type: specs.PIDNamespace},
-				// Retained but inert: gVisor takes its networking mode from
-				// the global --network flag, not from the spec. Removing it
-				// would change the fingerprint for no benefit.
-				{Type: specs.NetworkNamespace},
+				// Under --network=sandbox, gVisor creates no networking of its
+				// own: it joins whatever namespace Path names and harvests
+				// whatever non-loopback interfaces already exist there. An
+				// empty Path (every mode other than a provisioned "sandbox",
+				// and always for the startup fingerprint probe) gets a fresh,
+				// empty namespace - inert, exactly as before. Path is never
+				// part of the fingerprint (see Fingerprint below), so setting
+				// it here cannot invalidate a checkpoint.
+				{Type: specs.NetworkNamespace, Path: spec.NetnsPath},
 				{Type: specs.IPCNamespace},
 				{Type: specs.UTSNamespace},
 				{Type: specs.MountNamespace},
@@ -102,7 +107,16 @@ func cwdOr(cwd string) string {
 }
 
 func defaultCapabilities() []string {
-	return []string{"CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"}
+	return []string{
+		"CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE",
+		// The sentry enforces Linux's real permission model, which does not let
+		// UID 0 bypass every check unconditionally - deleting or replacing a
+		// file the overlay's lower (read-only, shared rootfs) layer already
+		// carries, e.g. `pip install --upgrade` on a package the rootfs baked
+		// in, needs these explicitly. Without them that fails EACCES even
+		// though the process runs as root and the file is root-owned.
+		"CAP_DAC_OVERRIDE", "CAP_FOWNER",
+	}
 }
 
 // buildMounts returns the standard mount set followed by the caller's binds.

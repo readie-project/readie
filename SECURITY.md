@@ -49,17 +49,27 @@ That is the product. Containment is gVisor: the executor runs under `runsc`,
 which intercepts syscalls in userspace rather than passing them to the host
 kernel. Layered on top:
 
-- **No network by convention, not by forced default.** The worker passes
-  `SANDBOX_NETWORK` straight through to `runsc --network`; leaving it unset
-  omits the flag and defers to `runsc`'s own compiled-in default rather than
-  this project forcing `none`. Set `SANDBOX_NETWORK=none` explicitly for the
-  strict, network-isolated posture this section otherwise describes. A
-  deployment that enables network access (`sandbox` or `host`, or an unset
-  value that happens to resolve to one) does so to let `@remote(packages=...)`
-  reach PyPI for its per-call `uv pip install` - that trades this boundary for
-  the ability to install packages at request time, including whatever
-  supply-chain risk an unpinned or typosquatted package name carries, and
-  should be a deliberate choice, not an accident of leaving a variable unset.
+- **Network access by default, for `@remote(packages=...)`.** The worker
+  passes `SANDBOX_NETWORK` straight through to `runsc --network`, defaulting
+  to `sandbox` when unset - a deployment gets real, routed network access out
+  of the box, because installing packages at request time (`uv pip install`
+  reaching PyPI) is the common case this project is built around. Set
+  `SANDBOX_NETWORK=none` explicitly for the strict, network-isolated posture
+  this section otherwise describes; that trade is a deliberate opt-out, not
+  the default. Whatever value is in effect includes whatever supply-chain risk
+  an unpinned or typosquatted package name carries when packages are
+  installed. Prefer `sandbox` over `host` when network access is needed at all: `host`
+  shares this worker's own network namespace directly with sandboxed code,
+  where `sandbox` keeps gVisor's own netstack isolation. Setting
+  `SANDBOX_NETWORK=sandbox` is itself what makes the worker provision a real
+  network namespace for it to join (see `worker/README.md`'s "Sandbox
+  networking") - there is no separate opt-in beyond that value, so choosing
+  `sandbox` at all means real, routed network access, not a quietly
+  loopback-only one. Provisioning excludes the worker's own Docker-network
+  subnet and link-local (`169.254.0.0/16`, where cloud metadata endpoints
+  live) from a sandbox's egress - real network access is for reaching PyPI,
+  not a path back to the router (unauthenticated by default, see below) or
+  sibling containers.
 - **A read-only shared rootfs** with a per-sandbox copy-on-write overlay, so one
   execution cannot alter what the next one starts from. The worker rejects an
   `all:` overlay (it would hide the executor's socket) and any `:self` overlay

@@ -322,6 +322,19 @@ func TestFingerprint_IgnoresWhatVariesPerRequest(t *testing.T) {
 		assert.Equal(t, want, Fingerprint(other, "root:memory", "none", false))
 	})
 
+	// Load-bearing: a provisioned network namespace's path is unique per
+	// sandbox (and can differ across a restore of the same checkpoint), so it
+	// must never affect the fingerprint the way the namespace's mere presence
+	// does.
+	t.Run("netns path", func(t *testing.T) {
+		spec := testCreateSpec(f)
+		spec.NetnsPath = "/var/run/netns/exec_container-abc"
+		other, err := BuildSpec(spec)
+		require.NoError(t, err)
+		assert.Equal(t, want, Fingerprint(other, "root:memory", "none", false),
+			"a provisioned netns path is unique per sandbox and must not invalidate checkpoints")
+	})
+
 	// Load-bearing, not incidental. The offline pipeline distinguishes one
 	// checkpoint from another purely by READIE_PREIMPORT in the environment, so
 	// every checkpoint in a generation has to share a fingerprint or the worker
@@ -407,6 +420,39 @@ func TestBuildSpec_GPUAddsTheNvidiaEnv(t *testing.T) {
 
 	assert.Contains(t, built.Process.Env, "NVIDIA_VISIBLE_DEVICES=all")
 	assert.Contains(t, built.Process.Env, "NVIDIA_DRIVER_CAPABILITIES=compute,utility")
+}
+
+func TestBuildSpec_NetnsPathJoinsTheNetworkNamespace(t *testing.T) {
+	f := newFixture(t)
+	spec := testCreateSpec(f)
+	spec.NetnsPath = "/var/run/netns/exec_container-abc"
+
+	built, err := BuildSpec(spec)
+	require.NoError(t, err)
+
+	var found bool
+	for _, ns := range built.Linux.Namespaces {
+		if ns.Type == specs.NetworkNamespace {
+			found = true
+			assert.Equal(t, spec.NetnsPath, ns.Path)
+		}
+	}
+	assert.True(t, found, "a network namespace entry must be present")
+}
+
+func TestBuildSpec_EmptyNetnsPathJoinsNothing(t *testing.T) {
+	f := newFixture(t)
+	spec := testCreateSpec(f)
+	spec.NetnsPath = ""
+
+	built, err := BuildSpec(spec)
+	require.NoError(t, err)
+
+	for _, ns := range built.Linux.Namespaces {
+		if ns.Type == specs.NetworkNamespace {
+			assert.Empty(t, ns.Path, "an unset NetnsPath must leave runsc to create a fresh, empty namespace")
+		}
+	}
 }
 
 func TestFingerprint_IsStable(t *testing.T) {

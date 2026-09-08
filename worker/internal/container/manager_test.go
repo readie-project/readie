@@ -21,6 +21,7 @@ import (
 	"github.com/illinoisdata/readie/worker/internal/registry"
 	"github.com/illinoisdata/readie/worker/internal/runsc"
 	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/illinoisdata/readie/worker/internal/testutil/fakenetwork"
 	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
 	"github.com/illinoisdata/readie/worker/internal/testutil/fakesandbox"
 	pb "github.com/illinoisdata/readie/worker/proto"
@@ -46,6 +47,7 @@ type fixture struct {
 	workerDir    string
 	artifactRoot string
 	clock        *clock.Fake
+	network      *fakenetwork.Provisioner
 }
 
 // buildArtifacts lays out a rootfs, a manifest and the given checkpoints, the
@@ -102,6 +104,16 @@ func newFixtureWith(t *testing.T, artifacts container.Artifacts) *fixture {
 // exercising Spec-driven behaviour (such as PauseTTL) can override just that.
 func newFixtureWithSpec(t *testing.T, artifacts container.Artifacts, spec container.Spec) *fixture {
 	t.Helper()
+	return newFixtureWithNetwork(t, artifacts, spec, nil)
+}
+
+// newFixtureWithNetwork is newFixtureWithSpec with a caller-supplied
+// network.Provisioner, so tests can exercise the sandbox-network wiring
+// without touching every other fixture-building test.
+func newFixtureWithNetwork(
+	t *testing.T, artifacts container.Artifacts, spec container.Spec, net *fakenetwork.Provisioner,
+) *fixture {
+	t.Helper()
 
 	workerDir := t.TempDir()
 	fake := fakesandbox.New()
@@ -115,7 +127,7 @@ func newFixtureWithSpec(t *testing.T, artifacts container.Artifacts, spec contai
 		artifactRoot = reg.Root()
 	}
 
-	manager, err := container.NewManager(container.ManagerDeps{
+	deps := container.ManagerDeps{
 		Runtime:   fake,
 		Reporter:  recorder,
 		Layout:    layout,
@@ -125,13 +137,18 @@ func newFixtureWithSpec(t *testing.T, artifacts container.Artifacts, spec contai
 		Spec:      spec,
 		Log:       logging.Discard(),
 		Clock:     fakeClock,
-	})
+	}
+	if net != nil {
+		deps.Network = net
+	}
+
+	manager, err := container.NewManager(deps)
 	require.NoError(t, err)
 
 	return &fixture{
 		manager: manager, runtime: fake, registry: recorder, layout: layout,
 		artifacts: artifacts, workerDir: workerDir, artifactRoot: artifactRoot,
-		clock: fakeClock,
+		clock: fakeClock, network: net,
 	}
 }
 
@@ -941,4 +958,99 @@ func TestAcquire_AnUnknownCheckpointWithoutARootfsReportsTheMissingArtifact(t *t
 	require.Error(t, err)
 	assert.ErrorIs(t, err, artifact.ErrNoArtifacts)
 	assert.NotErrorIs(t, err, artifact.ErrUnknownCheckpoint)
+}
+
+// --- Sandbox network provisioning -----------------------------------------
+
+func newFixtureWithFakeNetwork(t *testing.T) (*fixture, *fakenetwork.Provisioner) {
+	t.Helper()
+	_, artifacts := buildArtifacts(t, "checkpoint_1")
+	net := fakenetwork.New()
+	f := newFixtureWithNetwork(t, artifacts, container.Spec{
+		NamePrefix:   "exec_container-",
+		CPUQuota:     50000,
+		CPUPeriod:    100000,
+		PidsLimit:    100,
+		CgroupParent: "/readie",
+		DirPerm:      0o777,
+	}, net)
+	return f, net
+}
+
+func TestAcquire_ProvisionsTheNetworkBeforeCreatingTheContainer(t *testing.T) {
+	f, net := newFixtureWithFakeNetwork(t)
+
+	h := acquireNew(t, f)
+
+	assert.Equal(t, []string{h.ID}, net.Provisions())
+	spec := f.runtime.CreateSpecs()[0]
+	alloc := net.Allocations()[h.ID]
+	require.NotEmpty(t, alloc.NetnsPath)
+	assert.Equal(t, alloc.NetnsPath, spec.NetnsPath,
+		"the spec the runtime receives must carry the network's own allocated path")
+}
+
+func TestAcquire_APortProvisionFailureNeverReachesTheRuntime(t *testing.T) {
+	f, net := newFixtureWithFakeNetwork(t)
+	net.FailOn("Provision", errors.New("no free network slot"))
+
+	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{})
+
+	require.Error(t, err)
+	assert.Empty(t, f.runtime.CreateSpecs(), "a failed provision must never reach the runtime")
+	count, reserved := f.manager.Load()
+	assert.Zero(t, count)
+	assert.Zero(t, reserved)
+}
+
+func TestDestroy_ReleasesTheNetworkAfterRemove(t *testing.T) {
+	f, net := newFixtureWithFakeNetwork(t)
+	h := acquireNew(t, f)
+
+	require.NoError(t, f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID))
+
+	assert.Equal(t, []string{h.ID}, net.Releases())
+	assert.Empty(t, net.Allocations(), "the released allocation must no longer be tracked as live")
+}
+
+func TestDestroy_ReleasesTheNetworkEvenWhenTheRuntimeFails(t *testing.T) {
+	f, net := newFixtureWithFakeNetwork(t)
+	h := acquireNew(t, f)
+	f.runtime.FailOn("Stop", errors.New("daemon is wedged"))
+	f.runtime.FailOn("Remove", errors.New("daemon is wedged"))
+
+	err := f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID)
+	require.Error(t, err)
+
+	assert.Equal(t, []string{h.ID}, net.Releases(),
+		"a wedged runtime must not leak the network too")
+}
+
+func TestCanonicalSpec_NeverProvisionsARealNetwork(t *testing.T) {
+	f, net := newFixtureWithFakeNetwork(t)
+
+	_ = f.manager.CanonicalSpec(activeRootfs(t, f))
+
+	assert.Empty(t, net.Provisions(), "no real sandbox runs under the fingerprint probe")
+}
+
+func TestCanonicalSpec_FingerprintsIdenticallyToAContainerWithARealNetwork(t *testing.T) {
+	f, _ := newFixtureWithFakeNetwork(t)
+	acquireNew(t, f)
+	real := f.runtime.CreateSpecs()[0]
+	require.NotEmpty(t, real.NetnsPath, "the real container must have gotten a provisioned netns path")
+
+	canonical := f.manager.CanonicalSpec(activeRootfs(t, f))
+	require.Empty(t, canonical.NetnsPath)
+
+	realSpec, err := runsc.BuildSpec(real)
+	require.NoError(t, err)
+	canonicalSpec, err := runsc.BuildSpec(canonical)
+	require.NoError(t, err)
+
+	const overlay, network, gpu = "root:memory", "sandbox", false
+	assert.Equal(t,
+		runsc.Fingerprint(realSpec, overlay, network, gpu),
+		runsc.Fingerprint(canonicalSpec, overlay, network, gpu),
+		"a real, per-sandbox netns path must never change the fingerprint")
 }
