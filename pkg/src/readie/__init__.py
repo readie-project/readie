@@ -1,13 +1,19 @@
 """Run Python functions on checkpoint-restore serverless workers.
 
     from readie import remote
+    import asyncio
+
 
     @remote
     def add(a, b):
         return a + b
 
-    add(1, 2)             # blocking
-    await add.aio(1, 2)   # from an event loop
+    print(add(1, 2))  # blocking
+
+    async def add_async(a, b):
+        return await add.aio(a, b)
+
+    print(asyncio.run(add_async(1, 2)))  # from an event loop
 
 The decorated function is cloudpickled and executed by a Python interpreter
 inside a gVisor sandbox on a worker, so it must be picklable and its imports must
