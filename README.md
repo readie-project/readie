@@ -11,15 +11,19 @@ process is already past its imports.
 
 ```python
 from readie import remote
+import asyncio
 
 
 @remote
 def add(a, b):
     return a + b
 
-
 print(add(1, 2))  # blocking
-print(await add.aio(1, 2))  # from an event loop
+
+async def add_async(a, b):
+    return await add.aio(a, b)
+
+print(asyncio.run(add_async(1, 2)))  # from an event loop
 ```
 
 The decorated function is serialised with `cloudpickle` and executed inside the
