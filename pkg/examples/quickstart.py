@@ -33,21 +33,21 @@ def blocking() -> None:
 
 async def concurrent() -> None:
     """Independent calls have independent sessions, so they run in parallel."""
-    results = await asyncio.gather(*(add.aio(i, i) for i in range(4)))
+    results = await asyncio.gather(*(add.aio(i, i) for i in range(2)))
     print("concurrent:", results)
 
 
-def warm_session() -> None:
-    """A session reuses one container, keeping whatever state the last call left.
+# def warm_session() -> None:
+#     """A session reuses one container, keeping whatever state the last call left.
 
-    The trade is serialisation: a container is one interpreter behind one socket,
-    so the router runs these one after another.
-    """
-    client = readie.default_client()
-    with client.session() as session:
-        warm = load_frame.bind(session)
-        print("first (cold):", warm(10))
-        print("second (warm):", warm(20))
+#     The trade is serialisation: a container is one interpreter behind one socket,
+#     so the router runs these one after another.
+#     """
+#     client = readie.default_client()
+#     with client.session() as session:
+#         warm = load_frame.bind(session)
+#         print("first (cold):", warm(10))
+#         print("second (warm):", warm(20))
 
 
 def handling_failure() -> None:
@@ -69,5 +69,5 @@ def handling_failure() -> None:
 if __name__ == "__main__":
     blocking()
     asyncio.run(concurrent())
-    warm_session()
+    # warm_session()
     handling_failure()
