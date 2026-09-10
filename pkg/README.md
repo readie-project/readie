@@ -13,7 +13,7 @@ def add(a, b):
 
 print(add(1, 2))  # blocking
 
-async def add_async(a, b)
+async def add_async(a, b):
     return await add.aio(a, b)
 
 print(asyncio.run(add_async(1, 2)))  # from an event loop
