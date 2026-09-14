@@ -33,12 +33,12 @@ def facts(**sizes: tuple[float, float]) -> Metadata:
 # ---------------------------------------------------------------------------
 # The seam
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("planner", [FixedPlanner(), GreedyPlanner(alpha=0.002)])
+@pytest.mark.parametrize("planner", [FixedPlanner(), GreedyPlanner(alpha=0.01)])
 def test_every_planner_satisfies_the_protocol(planner):
     assert isinstance(planner, CheckpointPlanner)
 
 
-@pytest.mark.parametrize("planner", [FixedPlanner(), GreedyPlanner(alpha=0.002)])
+@pytest.mark.parametrize("planner", [FixedPlanner(), GreedyPlanner(alpha=0.01)])
 def test_an_empty_corpus_plans_nothing_rather_than_crashing(planner):
     plans = planner.plan(Corpus.of([]), Metadata({}), Budget())
     assert all(isinstance(p, CheckpointPlan) for p in plans)
@@ -69,7 +69,7 @@ def test_it_prefers_import_time_over_popularity():
     corpus = Corpus.of([req("slow")] * 10 + [req("quick")] * 100)
     metadata = facts(slow=(10, 4.0), quick=(10, 0.001))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
     assert plans[0].imports == ("slow",)
 
 
@@ -82,7 +82,7 @@ def test_it_prefers_the_cheaper_of_two_equally_useful_packages():
     corpus = Corpus.of([req("big")] * 10 + [req("small")] * 10)
     metadata = facts(big=(60, 1.0), small=(5, 1.0))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=60))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=60))
     assert plans[0].imports == ("small",)
 
 
@@ -90,7 +90,7 @@ def test_it_respects_the_size_budget():
     corpus = Corpus.of([req("a")] * 20 + [req("b")] * 20 + [req("c")] * 20)
     metadata = facts(a=(60, 1.0), b=(60, 1.0), c=(60, 1.0))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=130))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=130))
     assert plans[0].size_mb <= 130
     assert len(plans[0].imports) == 2
 
@@ -103,7 +103,7 @@ def test_later_checkpoints_specialise_rather_than_repeat():
     corpus = Corpus.of([req("pandas")] * 100 + [req("torch")] * 40)
     metadata = facts(pandas=(40, 0.3), torch=(80, 2.0))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=2, size_mb=80))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=2, size_mb=80))
 
     assert len(plans) == 1
     assert plans[0].imports == ("torch",)
@@ -115,7 +115,7 @@ def test_it_stops_once_nothing_improves_on_what_is_already_planned():
     corpus = Corpus.of([req("pandas")] * 50)
     metadata = facts(pandas=(40, 0.3))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=8, size_mb=500))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=8, size_mb=500))
     assert len(plans) == 1
 
 
@@ -126,7 +126,7 @@ def test_stdlib_modules_are_never_selected():
     corpus = Corpus.of([req("json", "collections", "pandas")] * 50)
     metadata = facts(pandas=(40, 0.3))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
 
     assert set(plans[0].imports).isdisjoint(sys.stdlib_module_names)
     assert "pandas" in plans[0].imports
@@ -136,7 +136,7 @@ def test_a_package_almost_nobody_uses_is_skipped():
     corpus = Corpus.of([req("common")] * 1000 + [req("rare")])
     metadata = facts(common=(10, 0.5), rare=(1, 5.0))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
     assert "rare" not in plans[0].imports
 
 
@@ -149,7 +149,7 @@ def test_a_package_with_no_measurement_ranks_below_a_measured_one():
     metadata = facts(measured=(10, 1.0))
 
     # A budget that fits exactly one of them: the measured one has to win it.
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
     assert plans[0].imports == ("measured",)
 
 
@@ -159,7 +159,7 @@ def test_the_reported_saving_is_undiscounted_so_it_can_be_checked():
     corpus = Corpus.of([req("a")] * 10)
     metadata = facts(a=(10, 2.0))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=50))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=50))
     assert plans[0].seconds_saved == pytest.approx(20.0)
     assert plans[0].requests_served == 10
 
@@ -178,7 +178,7 @@ def test_alpha_is_the_size_vs_time_threshold():
     metadata = facts(anchor=(1, 100.0), borderline=(10, 0.05))
     budget = Budget(max_checkpoints=1, size_mb=50)
 
-    lenient = GreedyPlanner(alpha=0.002).plan(corpus, metadata, budget)
+    lenient = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)
     strict = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)
 
     assert set(lenient[0].imports) == {"anchor", "borderline"}
@@ -189,7 +189,7 @@ def test_imports_are_sorted_so_a_plan_diffs_cleanly():
     corpus = Corpus.of([req("zeta", "alpha")] * 50)
     metadata = facts(zeta=(10, 1.0), alpha=(10, 1.0))
 
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=50))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=50))
     assert list(plans[0].imports) == sorted(plans[0].imports)
 
 
@@ -206,8 +206,8 @@ def test_the_plan_is_deterministic_across_runs():
     corpus, metadata = real_inputs()
     budget = Budget(max_checkpoints=4, size_mb=400)
 
-    first = [p.to_json() for p in GreedyPlanner(alpha=0.002).plan(corpus, metadata, budget)]
-    second = [p.to_json() for p in GreedyPlanner(alpha=0.002).plan(corpus, metadata, budget)]
+    first = [p.to_json() for p in GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)]
+    second = [p.to_json() for p in GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)]
 
     assert first == second
 
@@ -217,7 +217,7 @@ def test_it_beats_the_fixed_plan_on_the_real_corpus():
     corpus, metadata = real_inputs()
     budget = Budget(max_checkpoints=1, size_mb=400)
 
-    greedy = GreedyPlanner(alpha=0.002).plan(corpus, metadata, budget)[0]
+    greedy = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)[0]
     fixed = FixedPlanner().plan(corpus, metadata, budget)[0]
 
     assert greedy.requests_served > fixed.requests_served
@@ -231,8 +231,8 @@ def test_a_roomier_budget_affords_more_checkpoints():
     # stops there even though more checkpoints were allowed.
     corpus, metadata = real_inputs()
 
-    roomy = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=4096))
-    tight = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=300))
+    roomy = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=4096))
+    tight = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=300))
 
     assert len(roomy) > len(tight)
 
@@ -241,7 +241,7 @@ def test_every_planned_checkpoint_stays_within_its_budget():
     corpus, metadata = real_inputs()
     budget = Budget(max_checkpoints=4, size_mb=300)
 
-    for plan in GreedyPlanner(alpha=0.002).plan(corpus, metadata, budget):
+    for plan in GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget):
         assert plan.size_mb <= budget.size_mb
 
 
@@ -249,7 +249,7 @@ def test_the_plan_round_trips_through_json():
     # Through the JSON form, not back to the object: to_json rounds the scores
     # so a regenerated plan diffs cleanly, and that rounding is deliberate.
     corpus, metadata = real_inputs()
-    plans = GreedyPlanner(alpha=0.002).plan(corpus, metadata, Budget(max_checkpoints=2, size_mb=400))
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=2, size_mb=400))
 
     encoded = [p.to_json() for p in plans]
     assert [CheckpointPlan.from_json(e).to_json() for e in encoded] == encoded

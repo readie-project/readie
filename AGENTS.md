@@ -57,7 +57,7 @@ Most tests use fakes and run anywhere (see gVisor note below).
 - **gVisor/runsc is amd64-only.** `make generation` and the worker's
   `make test-e2e` need a real amd64 gVisor host and won't run on Apple Silicon or
   in CI. Regular `make test` substitutes fakes and runs anywhere.
-- **The `alpha` cost constant (0.002) is shared** and must match between the
+- **The `alpha` cost constant is shared** and must match between the
   pipeline (`READIE_ALPHA`) and the router (`ALPHA`).
 - **The executor wire protocol is dual-implemented** - Python (`executor/`) and Go
   (worker) - and locked by a cross-language golden fixture

@@ -13,7 +13,7 @@ def _document(flavor: str = "cpu", **overrides: Any) -> dict[str, Any]:
     document: dict[str, Any] = {
         "version": CATALOGUE_VERSION,
         "flavor": flavor,
-        "alpha": 0.002,
+        "alpha": 0.01,
         "items": {
             "pandas": {"size_mb": 30.0, "load_time": 0.25, "resource_type": "package"},
             "numpy": {"size_mb": 20.0, "load_time": 0.15, "resource_type": "package"},
@@ -31,8 +31,8 @@ def _document(flavor: str = "cpu", **overrides: Any) -> dict[str, Any]:
 def test_select_picks_the_lowest_cost_checkpoint() -> None:
     catalogue = Catalogue.from_document(_document())
 
-    # c-data covers pandas+numpy: cost 0.002*50 + 0 = 0.1.
-    # c-torch: 0.002*800 + (0.25+0.15) = 2.0.  cold: 0.4.
+    # c-data covers pandas+numpy: cost 0.01*50 + 0 = 0.5.
+    # c-torch: 0.01*800 + (0.25+0.15) = 8.4.  cold: 0.4.
     assert catalogue.select(["pandas", "numpy"]) == "c-data"
 
 

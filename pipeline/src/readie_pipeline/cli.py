@@ -161,7 +161,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     entries: list[tuple[str, CheckpointPlan]] = []
     baseline_time = 0.0
     computed_alphas: list[float] = []
-    for index, plan in enumerate(plans, start=1):
+    for index, plan in enumerate(plans):
         checkpoint_id = f"checkpoint_{index}"
         print(f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
 

@@ -41,14 +41,14 @@ def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
     plan = CheckpointPlan(imports=("pandas", "numpy"), models=("gpt2",))
     doc = build_catalogue(
         flavor="cpu",
-        alpha=0.002,
+        alpha=0.01,
         metadata=_metadata(),
         entries=[("checkpoint_1", plan)],
     )
 
     assert doc["version"] == CATALOGUE_VERSION
     assert doc["flavor"] == "cpu"
-    assert doc["alpha"] == 0.002
+    assert doc["alpha"] == 0.01
 
     # Every measured item, keyed the way a request names it.
     assert doc["items"]["pandas"] == {
@@ -68,7 +68,7 @@ def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
 def test_catalogue_round_trips_through_a_file(tmp_path) -> None:
     doc = build_catalogue(
         flavor="gpu",
-        alpha=0.002,
+        alpha=0.01,
         metadata=_metadata(),
         entries=[("checkpoint_1", CheckpointPlan(imports=("pandas",)))],
     )

@@ -61,8 +61,8 @@ READIE_MAX_CHECKPOINTS := 15
 # Total size budget, in MB.
 READIE_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
-# more than alpha*size. Default 0.002.
-READIE_ALPHA := 0.0085
+# more than alpha*size. Default 0.01.
+READIE_ALPHA := 0.01
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image capture worker-image generation clean-artifacts \

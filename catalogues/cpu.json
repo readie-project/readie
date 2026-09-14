@@ -1,13 +1,13 @@
 {
-  "alpha": 0.010423,
+  "alpha": 0.01086,
   "checkpoints": [
     {
-      "id": "checkpoint_1",
+      "id": "checkpoint_0",
       "items": [],
       "size_mb": 0
     },
     {
-      "id": "checkpoint_2",
+      "id": "checkpoint_1",
       "items": [
         "gensim",
         "matplotlib",
@@ -22,7 +22,7 @@
       "size_mb": 210.9802
     },
     {
-      "id": "checkpoint_3",
+      "id": "checkpoint_2",
       "items": [
         "networkx",
         "nltk",
@@ -36,7 +36,7 @@
       "size_mb": 202.4183
     },
     {
-      "id": "checkpoint_4",
+      "id": "checkpoint_3",
       "items": [
         "PIL",
         "matplotlib",
@@ -51,7 +51,7 @@
       "size_mb": 238.3084
     },
     {
-      "id": "checkpoint_5",
+      "id": "checkpoint_4",
       "items": [
         "networkx",
         "nltk",
