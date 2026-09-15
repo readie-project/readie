@@ -99,7 +99,7 @@ RUN python -c "import readie_executor; print('readie-executor', readie_executor.
 # Only ocispec is built. The worker's server is built by worker/Dockerfile, which
 # owns its own image.
 # ---------------------------------------------------------------------------
-FROM golang:1.25-bookworm AS ocispec-builder
+FROM golang:1.27-bookworm AS ocispec-builder
 WORKDIR /src
 
 # Dependencies first, so the module cache layer survives source edits.
