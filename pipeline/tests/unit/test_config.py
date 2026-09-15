@@ -23,7 +23,17 @@ def test_derived_paths():
     assert s.rootfs_path == Path("/app/executorfs/rootfs")
     assert s.checkpoints_dir == Path("/app/executor/checkpoints")
     assert s.plan_path == Path("/app/executor/checkpoints.json")
-    assert s.corpus_path == Path("/data/dataset.json")
+    assert s.corpus_path == Path("/data/datasets/cpu.json")
+    assert s.metadata_path == Path("/data/metadata/cpu.json")
+
+
+def test_corpus_and_metadata_paths_are_per_flavor():
+    # A cpu and a gpu base image install different packages -- and different
+    # builds of shared ones -- so their measurements, and a corpus that leans on
+    # GPU-shaped snippets, cannot share a file between flavors.
+    s = settings(flavor="gpu")
+    assert s.corpus_path == Path("/data/datasets/gpu.json")
+    assert s.metadata_path == Path("/data/metadata/gpu.json")
 
 
 def test_a_plan_dir_moves_the_plan_off_the_output_directory():

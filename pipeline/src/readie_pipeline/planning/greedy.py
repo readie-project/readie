@@ -25,7 +25,7 @@ from readie_pipeline.planning.ports import Budget, CheckpointPlan
 STDLIB = frozenset(sys.stdlib_module_names)
 
 #: A package used by fewer than this fraction of requests is not worth a
-#: checkpoint slot, however cheap it is: the tail of an 88-package corpus is
+#: checkpoint slot, however cheap it is: the tail of the corpus is
 #: mostly packages used once, and including them crowds out the ones that matter.
 MIN_COVERAGE = 0.002
 
@@ -63,7 +63,7 @@ class GreedyPlanner:
         if not requests:
             return []
 
-        eligible_packages = self._eligible_packages(requests)
+        eligible_packages = self._eligible_packages(requests, metadata)
         if not eligible_packages:
             return []
 
@@ -91,22 +91,21 @@ class GreedyPlanner:
                 metadata=metadata,
             )
 
-            if not plan.imports:
-                break
-
             if plan.size_mb > remaining_budget:
                 break
 
             plans.append(plan)
             remaining_budget -= plan.size_mb
 
-            checkpoint_imports = frozenset(plan.imports)
+            # The closure, not plan.imports: a request is fully covered once
+            # this checkpoint's actual resident set (dependencies included)
+            # is a superset of what it needs, regardless of which of those
+            # names plan.imports trims out of the executor-facing list.
+            closures = self._closures(remaining_requests, metadata)
             next_requests = [
                 request
                 for request in remaining_requests
-                if not checkpoint_imports.issuperset(
-                    request.top_level_imports
-                )
+                if not selected.issuperset(closures[request.top_level_imports])
             ]
 
             if len(next_requests) == len(remaining_requests):
@@ -119,14 +118,35 @@ class GreedyPlanner:
 
         return plans
 
+    @staticmethod
+    def _closures(
+        requests: Sequence[Request],
+        metadata: Metadata,
+    ) -> dict[frozenset[str], frozenset[str]]:
+        """Each distinct request import set's dependency closure, computed once.
+
+        A corpus repeats the same import set across many requests -- many
+        snippets do ``import pandas, numpy`` -- so memoising on the set itself,
+        not the request, keeps this to one closure walk per distinct
+        combination instead of one per request.
+        """
+        cache: dict[frozenset[str], frozenset[str]] = {}
+        for request in requests:
+            imports = request.top_level_imports
+            if imports not in cache:
+                cache[imports] = metadata.closure(imports)
+        return cache
+
     def _eligible_packages(
         self,
         requests: Sequence[Request],
+        metadata: Metadata,
     ) -> set[str]:
+        closures = self._closures(requests, metadata)
         users: dict[str, set[int]] = {}
 
         for index, request in enumerate(requests):
-            for name in request.top_level_imports:
+            for name in closures[request.top_level_imports]:
                 if name in STDLIB:
                     continue
 
@@ -137,11 +157,7 @@ class GreedyPlanner:
             int(len(requests) * self._min_coverage),
         )
 
-        return {
-            name
-            for name, request_indices in users.items()
-            if len(request_indices) >= floor
-        }
+        return {name for name, request_indices in users.items() if len(request_indices) >= floor}
 
     @staticmethod
     def _import_time(
@@ -169,13 +185,12 @@ class GreedyPlanner:
         metadata: Metadata,
         size_budget_mb: float,
     ) -> frozenset[str]:
+        closures = self._closures(requests, metadata)
         normalized_requests: list[frozenset[str]] = []
 
         for request in requests:
             imports = frozenset(
-                name
-                for name in request.top_level_imports
-                if name in eligible_packages
+                name for name in closures[request.top_level_imports] if name in eligible_packages
             )
 
             if imports:
@@ -201,10 +216,7 @@ class GreedyPlanner:
 
         all_facility_sizes = np.asarray(
             [
-                sum(
-                    self._size_mb(package, metadata)
-                    for package in request
-                )
+                sum(self._size_mb(package, metadata) for package in request)
                 for request in unique_requests
             ],
             dtype=float,
@@ -219,12 +231,8 @@ class GreedyPlanner:
 
             residual = node_names.difference(facility_names)
 
-            return (
-                self._alpha * all_facility_sizes[facility_idx]
-                + sum(
-                    self._import_time(package, metadata)
-                    for package in residual
-                )
+            return self._alpha * all_facility_sizes[facility_idx] + sum(
+                self._import_time(package, metadata) for package in residual
             )
 
         dist = np.empty(
@@ -234,16 +242,12 @@ class GreedyPlanner:
 
         for facility_idx in range(num_facilities):
             for node_idx in range(num_nodes):
-                dist[facility_idx, node_idx] = (
-                    node_to_facility_distance(
-                        facility_idx,
-                        node_idx,
-                    )
+                dist[facility_idx, node_idx] = node_to_facility_distance(
+                    facility_idx,
+                    node_idx,
                 )
 
-        feasible = np.where(
-            all_facility_sizes <= size_budget_mb
-        )[0]
+        feasible = np.where(all_facility_sizes <= size_budget_mb)[0]
 
         selected: set[int] = set()
 
@@ -264,9 +268,7 @@ class GreedyPlanner:
                 int(f)
                 for f in feasible
                 if int(f) not in selected
-                and current_total_size
-                + all_facility_sizes[int(f)]
-                <= size_budget_mb
+                and current_total_size + all_facility_sizes[int(f)] <= size_budget_mb
             ]
 
             if not remaining:
@@ -282,9 +284,7 @@ class GreedyPlanner:
                 cand_dists,
             )
 
-            new_costs = (
-                new_best_dists * node_occurrences
-            ).sum(axis=1)
+            new_costs = (new_best_dists * node_occurrences).sum(axis=1)
 
             idx = int(np.argmin(new_costs))
 
@@ -306,9 +306,7 @@ class GreedyPlanner:
 
             selected.add(best_facility)
 
-            current_total_size += (
-                all_facility_sizes[best_facility]
-            )
+            current_total_size += all_facility_sizes[best_facility]
 
             best_dist = np.minimum(
                 best_dist,
@@ -320,9 +318,7 @@ class GreedyPlanner:
         selected_packages: set[str] = set()
 
         for facility_idx in selected:
-            selected_packages.update(
-                unique_requests[facility_idx]
-            )
+            selected_packages.update(unique_requests[facility_idx])
 
         return frozenset(selected_packages)
 
@@ -333,28 +329,37 @@ class GreedyPlanner:
         requests: Sequence[Request],
         metadata: Metadata,
     ) -> CheckpointPlan:
-        """Convert the selected facility union to the old output type."""
+        """Convert the selected facility union to the old output type.
+
+        ``size_mb`` and ``seconds_saved`` are scored over ``selected`` -- the
+        full closure -- because that is what is actually resident once the
+        executor imports it and what a checkpoint's disk footprint really is.
+        ``imports`` itself is narrower: only the names some request actually
+        asked for, not every dependency ``selected`` pulled in to cost them
+        correctly. The executor never needs the difference spelled out --
+        `import pandas` imports numpy as a side effect regardless of whether
+        numpy is separately named -- so sending the full closure there would
+        only be redundant. (The catalogue still needs the closure for its own
+        pricing, and re-derives it from this trimmed list; see
+        ``catalogue.py``.)
+        """
+        closures = self._closures(requests, metadata)
         served = 0
         saved = 0.0
+        requested: set[str] = set()
 
         for request in requests:
-            overlap = selected.intersection(
-                request.top_level_imports
-            )
+            overlap = selected.intersection(closures[request.top_level_imports])
 
             if overlap:
                 served += 1
-                saved += sum(
-                    self._import_time(package, metadata)
-                    for package in overlap
-                )
+                saved += sum(self._import_time(package, metadata) for package in overlap)
+
+            requested.update(request.top_level_imports)
 
         return CheckpointPlan(
-            imports=tuple(sorted(selected)),
+            imports=tuple(sorted(selected.intersection(requested))),
             requests_served=served,
             seconds_saved=saved,
-            size_mb=sum(
-                self._size_mb(package, metadata)
-                for package in selected
-            ),
+            size_mb=sum(self._size_mb(package, metadata) for package in selected),
         )

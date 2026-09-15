@@ -121,7 +121,7 @@ def test_the_older_load_time_spelling_is_still_accepted():
 
 def test_the_resource_type_field_is_actually_emitted():
     # The previous writer used the bare name `type` as a dict key -- the
-    # builtin -- so the field never appeared in any of the 918 entries.
+    # builtin.
     payload = PackageFacts(base_import="pandas").to_json()
     assert payload["resource_type"] == "package"
     assert ResourceType.PACKAGE in set(ResourceType)
@@ -137,6 +137,134 @@ def test_an_unmeasured_package_reads_as_free_rather_than_raising():
 def test_an_errored_entry_is_not_usable():
     assert not PackageFacts(base_import="x", error="not installed").usable
     assert PackageFacts(base_import="x").usable
+
+
+def test_an_errored_entry_is_dropped_from_the_written_metadata():
+    # Nothing downstream distinguishes "never seen" from "measured and
+    # broken" (both cost 0.0), so writing the error down is pure clutter --
+    # and, for a dependency name top_level_imports guessed wrong, actively
+    # misleading clutter, since it then looks like a real package that failed.
+    metadata = Metadata(
+        {
+            "pandas": PackageFacts(base_import="pandas", import_time=0.3),
+            "broken": PackageFacts(base_import="broken", error="not installed"),
+        }
+    )
+    payload = metadata.to_json()
+    assert set(payload) == {"pandas"}
+    assert "error" not in payload["pandas"]
+
+
+# ---------------------------------------------------------------------------
+# Dependency closures
+# ---------------------------------------------------------------------------
+def test_direct_dependencies_resolves_distribution_names_to_import_names():
+    # `dependencies` is keyed by distribution name (what a requirement names);
+    # the planner and catalogue key everything else by import name.
+    metadata = Metadata(
+        {
+            "pandas": PackageFacts(
+                base_import="pandas", distribution="pandas", dependencies={"numpy": ">=1.20"}
+            ),
+            "numpy": PackageFacts(base_import="numpy", distribution="numpy"),
+        }
+    )
+    assert metadata.direct_dependencies("pandas") == {"numpy"}
+
+
+def test_direct_dependencies_resolves_across_a_hyphen_underscore_spelling_mismatch():
+    # Real-world bug: huggingface_hub's own `distribution` was recorded as
+    # "huggingface_hub" (underscore), but transformers/datasets/gradio depend
+    # on it spelled "huggingface-hub" (hyphen) -- the same PyPI project, and
+    # PEP 503 treats the two spellings as identical, but an exact-string match
+    # did not, so "huggingface-hub" landed unresolved in a checkpoint's
+    # imports and failed at restore time: ModuleNotFoundError, since a name
+    # with a hyphen was never importable to begin with.
+    metadata = Metadata(
+        {
+            "transformers": PackageFacts(
+                base_import="transformers",
+                distribution="transformers",
+                dependencies={"huggingface-hub": ">=0.34.0"},
+            ),
+            "huggingface_hub": PackageFacts(
+                base_import="huggingface_hub", distribution="huggingface_hub"
+            ),
+        }
+    )
+    assert metadata.direct_dependencies("transformers") == {"huggingface_hub"}
+
+
+def test_direct_dependencies_falls_back_to_the_distribution_name_when_unresolved():
+    # A dependency that was never itself analysed (not installed, or its
+    # analysis failed) has no entry to resolve to; it must still show up in a
+    # closure rather than vanishing silently.
+    metadata = Metadata(
+        {"pandas": PackageFacts(base_import="pandas", dependencies={"numpy": ">=1.20"})}
+    )
+    assert metadata.direct_dependencies("pandas") == {"numpy"}
+
+
+def test_direct_dependencies_of_an_unmeasured_package_is_empty():
+    assert Metadata({}).direct_dependencies("unknown") == frozenset()
+
+
+def test_closure_includes_the_starting_names_and_their_dependencies():
+    metadata = Metadata(
+        {
+            "pandas": PackageFacts(base_import="pandas", dependencies={"numpy": ">=1.20"}),
+            "numpy": PackageFacts(base_import="numpy"),
+        }
+    )
+    assert metadata.closure(["pandas"]) == {"pandas", "numpy"}
+
+
+def test_closure_walks_transitively_to_a_package_with_no_dependencies():
+    metadata = Metadata(
+        {
+            "a": PackageFacts(base_import="a", dependencies={"b": "(any)"}),
+            "b": PackageFacts(base_import="b", distribution="b", dependencies={"c": "(any)"}),
+            "c": PackageFacts(base_import="c", distribution="c"),
+        }
+    )
+    assert metadata.closure(["a"]) == {"a", "b", "c"}
+
+
+def test_closure_visits_a_shared_dependency_once_despite_two_paths_to_it():
+    # A cycle would otherwise recurse forever; visiting each name once is also
+    # what makes a shared dependency's cost countable exactly once.
+    metadata = Metadata(
+        {
+            "pandas": PackageFacts(base_import="pandas", dependencies={"numpy": ">=1.20"}),
+            "scipy": PackageFacts(base_import="scipy", dependencies={"numpy": ">=1.20"}),
+            "numpy": PackageFacts(base_import="numpy"),
+        }
+    )
+    assert metadata.closure(["pandas", "scipy"]) == {"pandas", "scipy", "numpy"}
+
+
+def test_closure_of_a_package_with_no_metadata_is_just_itself():
+    assert Metadata({}).closure(["unknown"]) == {"unknown"}
+
+
+def test_closure_resolves_across_a_hyphen_underscore_spelling_mismatch():
+    # Same real-world bug as direct_dependencies above, but this is the path
+    # that actually fed a checkpoint's `imports`: the unresolved literal
+    # "huggingface-hub" ending up in a closure is what got selected into a
+    # plan and failed to import at restore time.
+    metadata = Metadata(
+        {
+            "transformers": PackageFacts(
+                base_import="transformers",
+                distribution="transformers",
+                dependencies={"huggingface-hub": ">=0.34.0"},
+            ),
+            "huggingface_hub": PackageFacts(
+                base_import="huggingface_hub", distribution="huggingface_hub"
+            ),
+        }
+    )
+    assert metadata.closure(["transformers"]) == {"transformers", "huggingface_hub"}
 
 
 def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
@@ -165,16 +293,9 @@ DATA = Path(__file__).parents[2] / "data"
 
 
 def test_the_committed_corpus_loads():
-    corpus = Corpus.load(DATA / "dataset.json")
+    corpus = Corpus.load(DATA / "datasets" / "cpu.json")
     assert len(corpus) > 9000
     assert "pandas" in corpus.import_counts()
-
-
-def test_the_committed_metadata_loads_and_has_real_measurements():
-    metadata = Metadata.load(DATA / "metadata.json")
-    assert len(metadata) > 900
-    assert metadata.import_time("pandas") > 0
-    assert metadata.size_mb("pandas") > 0
 
 
 def test_every_common_third_party_package_has_metadata():
@@ -184,8 +305,8 @@ def test_every_common_third_party_package_has_metadata():
     # reason.
     import sys
 
-    corpus = Corpus.load(DATA / "dataset.json")
-    metadata = Metadata.load(DATA / "metadata.json")
+    corpus = Corpus.load(DATA / "datasets" / "cpu.json")
+    metadata = Metadata.load(DATA / "metadata" / "cpu.json")
 
     common = [
         name

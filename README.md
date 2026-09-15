@@ -199,6 +199,11 @@ worker builds were measured producing different digests for it - so inheriting i
 what lets a rebuilt worker share that layer instead of re-uploading it, and is why
 a worker rebuild takes seconds.
 
+`make analyze FLAVOR=cpu|gpu` measures every package a flavor's base image
+installs (disk size, import time), ahead of `plan`/`generation` - see
+[`pipeline/README.md`](pipeline/README.md) for what it writes and why it needs
+to run against the image, not just the request corpus.
+
 [`pipeline/`](pipeline/) has the planner's algorithm and the individual stages.
 
 ## What works, and what does not
@@ -209,8 +214,9 @@ Built and tested:
   forces.
 - Placement on real memory pressure, with liveness probed over `grpc.health.v1`
   and TTL eviction for workers, containers and sessions.
-- Checkpoint planning by greedy set cover over a 9,773-request corpus and 918
-  measured packages, maximising import time saved per megabyte.
+- Checkpoint planning by greedy set cover over a request corpus and
+  measured packages (each request's full dependency closure, not just its
+  top-level imports), maximising import time saved per megabyte.
 - Capture and restore through gVisor, with the sandbox spec generated from the
   worker's own code on both sides so the two cannot drift by hand.
 - Per-function resource budgets set on the decorator
@@ -230,9 +236,10 @@ Built and tested:
   without touching the other.
 - **Request-time checkpoint selection.** The pipeline emits a per-flavor
   `catalogue.json`; the router loads it and, for each cold start, picks the
-  checkpoint minimising `alpha·size + Σ load_time(required items not in it)`
-  against a cold-start baseline (the dual of the planner's objective, sharing one
-  `alpha`). Datasets, models and tokenizers price in alongside packages.
+  checkpoint minimising `alpha·size + Σ load_time(closure of required items not
+  in it)` against a cold-start baseline (the dual of the planner's objective,
+  sharing one `alpha`). Datasets, models and tokenizers price in alongside
+  packages.
 - Graceful shutdown on both sides: the router drains in-flight calls, the worker
   deregisters before draining and reclaims its sandboxes.
 
@@ -240,7 +247,7 @@ Not built. Each of these is a real gap, not an oversight:
 
 - **Measured metadata for datasets, models and tokenizers.** The cost model and
   catalogue treat them exactly like packages, but nothing measures their size and
-  load time yet - `metadata.json` is packages-only, so today they price as free.
+  load time yet - the measured metadata is packages-only, so today they price as free.
   The measurement (a `from_pretrained` / `load_dataset` profiler, per the
   `ResourceType` scaffolding) needs a network and, for GPU models, a GPU host.
 - **Checkpoint/worker compatibility is checked at startup, but coarsely.** A

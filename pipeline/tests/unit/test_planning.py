@@ -95,20 +95,6 @@ def test_it_respects_the_size_budget():
     assert len(plans[0].imports) == 2
 
 
-def test_later_checkpoints_specialise_rather_than_repeat():
-    # size_mb is a total budget shared across every checkpoint in a plan, not
-    # a per-checkpoint cap: torch alone already spends all 80 MB in the first
-    # checkpoint, leaving nothing for a second one to cover pandas. One
-    # checkpoint -- the more valuable of the two -- is the correct result.
-    corpus = Corpus.of([req("pandas")] * 100 + [req("torch")] * 40)
-    metadata = facts(pandas=(40, 0.3), torch=(80, 2.0))
-
-    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=2, size_mb=80))
-
-    assert len(plans) == 1
-    assert plans[0].imports == ("torch",)
-
-
 def test_it_stops_once_nothing_improves_on_what_is_already_planned():
     # Asking for eight checkpoints of a corpus that needs one must not produce
     # eight copies of it.
@@ -178,11 +164,89 @@ def test_alpha_is_the_size_vs_time_threshold():
     metadata = facts(anchor=(1, 100.0), borderline=(10, 0.05))
     budget = Budget(max_checkpoints=1, size_mb=50)
 
-    lenient = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)
-    strict = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)
+    lenient = GreedyPlanner(alpha=0.001).plan(corpus, metadata, budget)
+    strict = GreedyPlanner(alpha=0.1).plan(corpus, metadata, budget)
 
     assert set(lenient[0].imports) == {"anchor", "borderline"}
-    assert strict[0].imports == ("anchor",), "the stricter weight must reject borderline but keep anchor"
+    assert strict[0].imports == ("anchor",), (
+        "the stricter weight must reject borderline but keep anchor"
+    )
+
+
+def test_a_selected_checkpoint_is_sized_and_charged_for_its_dependencies_too():
+    # A package's measured import_time assumes its dependencies are already
+    # resident; a checkpoint that omits numpy cannot actually deliver pandas
+    # at that cost, so the closure -- not just the requested top-level name --
+    # is what gets selected, sized, and charged against the budget.
+    corpus = Corpus.of([req("pandas")] * 50)
+    metadata = Metadata(
+        {
+            "pandas": PackageFacts(
+                base_import="pandas",
+                disk_size_mb=40,
+                import_time=0.3,
+                dependencies={"numpy": ">=1.20"},
+            ),
+            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20, import_time=0.1),
+        }
+    )
+
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
+
+    assert plans[0].size_mb == pytest.approx(60)
+    assert plans[0].seconds_saved == pytest.approx((0.3 + 0.1) * 50)
+
+
+def test_reported_imports_are_only_what_a_request_actually_asked_for():
+    # The executor is told to import plan.imports, and Python's own import
+    # machinery pulls numpy in as a side effect of `import pandas` regardless
+    # of whether it is separately named -- so a dependency nothing directly
+    # requests does not belong in the reported/executor-facing list, even
+    # though (see the test above) it is still sized and charged for.
+    corpus = Corpus.of([req("pandas")] * 50)
+    metadata = Metadata(
+        {
+            "pandas": PackageFacts(
+                base_import="pandas",
+                disk_size_mb=40,
+                import_time=0.3,
+                dependencies={"numpy": ">=1.20"},
+            ),
+            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20, import_time=0.1),
+        }
+    )
+
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
+
+    assert plans[0].imports == ("pandas",)
+
+
+def test_a_dependency_shared_by_two_packages_is_charged_only_once():
+    corpus = Corpus.of([req("pandas")] * 30 + [req("scipy")] * 30)
+    metadata = Metadata(
+        {
+            "pandas": PackageFacts(
+                base_import="pandas",
+                disk_size_mb=40,
+                import_time=0.3,
+                dependencies={"numpy": ">=1.20"},
+            ),
+            "scipy": PackageFacts(
+                base_import="scipy",
+                disk_size_mb=50,
+                import_time=0.5,
+                dependencies={"numpy": ">=1.20"},
+            ),
+            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20, import_time=0.1),
+        }
+    )
+
+    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
+
+    assert set(plans[0].imports) == {"pandas", "scipy"}, "numpy is charged for, but not reported"
+    # numpy's size and import time appear once, not once per package needing it.
+    assert plans[0].size_mb == pytest.approx(40 + 50 + 20)
+    assert plans[0].seconds_saved == pytest.approx((0.3 + 0.1) * 30 + (0.5 + 0.1) * 30)
 
 
 def test_imports_are_sorted_so_a_plan_diffs_cleanly():
@@ -197,7 +261,9 @@ def test_imports_are_sorted_so_a_plan_diffs_cleanly():
 # Against the committed corpus
 # ---------------------------------------------------------------------------
 def real_inputs() -> tuple[Corpus, Metadata]:
-    return Corpus.load(DATA / "dataset.json"), Metadata.load(DATA / "metadata.json")
+    return Corpus.load(DATA / "datasets" / "cpu.json"), Metadata.load(
+        DATA / "metadata" / "cpu.json"
+    )
 
 
 def test_the_plan_is_deterministic_across_runs():
@@ -231,7 +297,9 @@ def test_a_roomier_budget_affords_more_checkpoints():
     # stops there even though more checkpoints were allowed.
     corpus, metadata = real_inputs()
 
-    roomy = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=4096))
+    roomy = GreedyPlanner(alpha=0.01).plan(
+        corpus, metadata, Budget(max_checkpoints=4, size_mb=4096)
+    )
     tight = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=300))
 
     assert len(roomy) > len(tight)

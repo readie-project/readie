@@ -6,8 +6,10 @@
 # the tree the worker restores into cannot drift, and so the gVisor release is
 # pinned exactly once.
 #
-# Two targets:
+# Three targets:
 #
+#   --target analyzer      `readie-pipeline analyze` alone, run natively against
+#                          the base image with no gVisor and no rootfs copy.
 #   --target pipeline      the capture tool. Run privileged, because runsc needs
 #                          namespace access `docker build` cannot grant.
 #   --target worker-base   what a worker runs on: runsc, the root filesystem, and
@@ -155,6 +157,41 @@ RUN runsc --version
 COPY --from=rootfs / /var/lib/readie/rootfs
 
 # ---------------------------------------------------------------------------
+# The analyzer: `readie-pipeline analyze`, run natively inside a container
+# built directly from the base image, so it measures exactly what that image
+# ships with no cross-environment tricks needed.
+#
+# This used to run inside `pipeline` below via PYTHONPATH into `host-base`'s
+# copied rootfs -- but that mixes this stage's own libc with the base image's
+# copy of *its* libc, glibc and friends included, the moment anything beyond
+# pure Python is involved. Confirmed against a real build: with that PYTHONPATH
+# set, even `import pandas` crashed with SIGFPE, not just the packages it was
+# meant to additionally reach (cv2 and the like, which need OS-level shared
+# libraries no PYTHONPATH addition can supply safely). Building from the base
+# image directly instead means there is only one libc, because there is only
+# one image -- nothing to mismatch.
+# ---------------------------------------------------------------------------
+FROM --platform=${ROOTFS_PLATFORM} ${ROOTFS_BASE_IMAGE} AS analyzer
+
+WORKDIR /app
+
+COPY pipeline/pyproject.toml pipeline/README.md ./
+COPY pipeline/src ./src
+COPY pipeline/data ./data
+
+# --no-deps: numpy and packaging are already whatever this base image ships
+# (analyze doesn't need a newer one; it never touches the planner's own numpy
+# use). Resolving readie-pipeline's own requirement here could upgrade the
+# base image's copy before measuring it -- exactly the kind of interference
+# `rootfs` above avoids for the executor with the same flag.
+RUN pip install --no-cache-dir --no-deps .
+
+ENV READIE_DATA_DIR="/app/data"
+
+ENTRYPOINT ["readie-pipeline"]
+CMD ["analyze"]
+
+# ---------------------------------------------------------------------------
 # The capture tool. It analyses the request corpus, decides which package sets
 # are worth pre-importing, and captures one gVisor checkpoint per set against
 # the rootfs above.
@@ -242,10 +279,12 @@ FROM host-base AS worker-base
 # runtime's state directory, which the worker owns exclusively.
 RUN mkdir -p /shared /run/readie-runsc /var/log/runsc
 
-# manifest.json and checkpoints/, produced by `readie-pipeline capture`.
+# manifest.json and checkpoints/, produced by `readie-pipeline capture`. The
+# Makefile always overrides this per FLAVOR (pipeline/out/<flavor>); the
+# default here only matters for a `docker build` run outside the Makefile.
 #
-# Empty by default - pipeline/out/ holds only a .gitkeep - so this still yields a
-# working base: rootfs, no checkpoints, every start cold. `make generation`
-# captures first, then builds this.
-ARG ARTIFACTS_DIR=pipeline/out
+# Empty by default - pipeline/out/cpu/ holds only a .gitkeep - so this still
+# yields a working base: rootfs, no checkpoints, every start cold. `make
+# generation` captures first, then builds this.
+ARG ARTIFACTS_DIR=pipeline/out/cpu
 COPY ${ARTIFACTS_DIR}/ /var/lib/readie/

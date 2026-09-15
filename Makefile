@@ -24,7 +24,7 @@ STAGE := .build/proto-stage
 FLAVOR          ?= cpu
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
-ARTIFACTS_DIR   := pipeline/out-$(FLAVOR)
+ARTIFACTS_DIR   := pipeline/out/$(FLAVOR)
 # Bind mount for the ARTIFACTS_DIR on the executor
 EXECUTOR_DIR    := /app/executor
 # The per-flavor catalogues the router mounts (as <flavor>.json).
@@ -35,6 +35,7 @@ CATALOGUE_DIR   := catalogues
 PIPELINE_DOCKERFILE := pipeline/Dockerfile
 WORKER_DOCKERFILE   := worker/Dockerfile
 PIPELINE_IMAGE  := readie-pipeline-$(FLAVOR):latest
+ANALYZER_IMAGE  := readie-pipeline-analyzer-$(FLAVOR):latest
 WORKER_BASE     := readie-worker-base-$(FLAVOR):latest
 WORKER_IMAGE    := readie-worker-$(FLAVOR)
 
@@ -65,7 +66,7 @@ READIE_SIZE_BUDGET_MB := 2048.0
 READIE_ALPHA := 0.01
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
-        worker-base pipeline-image capture worker-image generation clean-artifacts \
+        worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
         router-% pkg-% executor-% pipeline-% worker-% lint type test help \
 		run-prod run-local shutdown
 
@@ -172,6 +173,32 @@ pipeline-image: ## Build the offline pipeline image
 	docker build --target pipeline -t $(PIPELINE_IMAGE) \
 		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
 		-f $(PIPELINE_DOCKERFILE) .
+
+# Built `FROM` the base image directly (see pipeline/Dockerfile's `analyzer`
+# target), not from `pipeline-image` - running natively there is what avoids
+# mixing two images' system libraries, which crashed even `import pandas`
+# when this instead ran inside `pipeline` via a PYTHONPATH into a copied
+# rootfs. Needs neither gVisor nor --privileged: it only imports packages and
+# times them in a subprocess. Same amd64-only constraint as `capture` though,
+# since the base image itself publishes no other architecture.
+#
+# Mounts the whole data dir, not just metadata/, so the result lands on the
+# host at pipeline/data/metadata/$(FLAVOR).json - where it can be reviewed and
+# committed - instead of vanishing with the container.
+analyzer-image: ## Build the analyzer image (readie-pipeline on the base image itself)
+	@echo "==> analyzer image ($(FLAVOR))"
+	docker build --target analyzer -t $(ANALYZER_IMAGE) \
+		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
+		-f $(PIPELINE_DOCKERFILE) .
+
+analyze: analyzer-image ## Measure every package the $(FLAVOR) base image installs
+	@echo "==> analysing $(FLAVOR) packages against $(ROOTFS_BASE_IMAGE)"
+	@mkdir -p pipeline/data/metadata
+	docker run --rm \
+		-e FLAVOR=$(FLAVOR) \
+		-v "$(CURDIR)/pipeline/data:/app/data" \
+		$(ANALYZER_IMAGE)
+	@echo "==> wrote pipeline/data/metadata/$(FLAVOR).json"
 
 # One run, not two: `capture` plans and captures in the same container because
 # the plan writes the bundle's config.json into the image's own filesystem, which

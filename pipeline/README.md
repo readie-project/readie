@@ -19,7 +19,7 @@ make lint type # ruff + mypy --strict
 
 ```sh
 readie-pipeline corpus    # generate request snippets with a hosted model
-readie-pipeline analyze   # measure package sizes and import times
+readie-pipeline analyze   # measure every package installed here, and their deps
 readie-pipeline plan      # choose checkpoint contents, write the OCI spec
 readie-pipeline build     # capture one gVisor checkpoint per planned set
 readie-pipeline capture   # plan and then build, in one process
@@ -27,6 +27,16 @@ readie-pipeline capture   # plan and then build, in one process
 
 Each runs alone. `plan` needs only the committed data - no runsc, no network, no
 container - so it is the stage to iterate on.
+
+`analyze` measures whatever is importable in the environment it runs in - the
+base image, not the corpus's imports - so it has to run natively inside that
+base image, not merely alongside a copy of it: mixing this tool's own libc with
+a foreign one the moment anything beyond pure Python is involved crashes with
+SIGFPE, `import pandas` included, not just whatever the extra reach was for.
+`make analyze FLAVOR=cpu|gpu` (root `Makefile`) builds `pipeline/Dockerfile`'s
+`analyzer` target - `readie-pipeline` installed with `--no-deps` directly on
+top of the base image itself, so there is only one libc - and runs it. The
+result lands on the host at `data/metadata/<flavor>.json`.
 
 `capture` is the image's default command and exists because those two stages have
 to share a container: `plan` writes the bundle's `config.json` under `$BASE_DIR`,
@@ -52,10 +62,19 @@ other.
 ]
 ```
 
-One entry per checkpoint. `plan` chooses them from 9,773 corpus requests over 88
-top-level packages, weighted by 918 packages' measured import time and disk
+One entry per checkpoint. `plan` chooses them from all the corpus requests
+weighted by base image packages' measured import time and disk
 size. See [`planning/`](src/readie_pipeline/planning/) for the algorithm and why
 it is greedy.
+
+`imports` is what the executor is told to pre-import - only the packages some
+request actually asked for, not their full dependency closure. A dependency's
+own load time and disk size are still scored (a package's measured import time
+assumes its dependencies are already resident, so a checkpoint has to actually
+carry them to deliver that cost), but the executor doesn't need it spelled out:
+`import pandas` imports numpy as a side effect regardless of whether numpy is
+separately named. The catalogue (below) reconstructs the closure from this list
+when it needs the full resident set.
 
 ## How a checkpoint is captured
 
@@ -99,11 +118,12 @@ which is what a local `plan` run wants.
 
 ## Build and run
 
-[`Dockerfile`](Dockerfile) defines everything a checkpoint is bound to, in two
-targets:
+[`Dockerfile`](Dockerfile) defines everything a checkpoint is bound to, plus the
+`analyze` stage, in three targets:
 
 | Target        |                                                                       |
 | ------------- | --------------------------------------------------------------------- |
+| `analyzer`    | `readie-pipeline` on top of the base image itself, nothing else      |
 | `pipeline`    | this tool: runsc, the planner, the rootfs as an OCI bundle, `ocispec` |
 | `worker-base` | what a worker runs on: runsc, the rootfs, the captured checkpoints    |
 
@@ -131,6 +151,10 @@ you want them separately - and `make worker-image` alone is how a worker code
 change is redeployed, since the base already holds the checkpoints.
 `make clean-artifacts` discards what was captured.
 
+`make analyze` (see [The stages](#the-stages) above) measures a flavor's base
+image ahead of any of this - `plan`/`capture` just read whatever `data/metadata/
+<flavor>.json` already says, they do not regenerate it.
+
 To iterate on planning alone - no gVisor, no network, no container:
 
 ```sh
@@ -141,7 +165,7 @@ docker run --rm readie-pipeline plan --no-spec --max-checkpoints 3
 ## What it writes
 
 ```
-pipeline/out/
+pipeline/out/<flavor>/
 ├── manifest.json           runsc_version, spec_fingerprint, executor_argv,
 │                           executor_protocol, python_path, overlay, network
 └── checkpoints/<id>/       runsc image + meta.json

@@ -99,7 +99,9 @@ than failing opaquely inside a restore.
 against the import time it saves, and **the pipeline and the router must use the
 same value**. The pipeline's greedy planner adds a package while it saves more
 than `alpha·size`; the router selects the checkpoint minimising `alpha·size +
-residual load time` - the same quantity. They are separate services, so the value
+residual load time` - the same quantity, summed over the dependency closure of
+what is not already resident (not just the literally-requested items) on both
+sides. They are separate services, so the value
 lives in each config (`pipeline` `Settings.alpha` / `READIE_ALPHA`, `router`
 `Settings.alpha` / `catalogue.alpha`), defaulting to `0.01` on both, with a docstring on
 each pointing at the other. Changing one without the other makes the router

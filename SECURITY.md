@@ -117,7 +117,7 @@ would not hand a shell to.
 - **Resource exhaustion by a submitted function.** Bounded by the container
   limits and the execution deadline, both configurable. Denial of service by an
   authenticated user is an operational concern, not a vulnerability.
-- **Reading `pipeline/data/*.json`.** Generated corpus data, not secrets.
+- **Reading `pipeline/data/**/*.json`.** Generated corpus data, not secrets.
 
 ## Secrets
 

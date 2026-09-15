@@ -11,11 +11,13 @@ data that took a subprocess per package to measure.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
+
+from packaging.utils import canonicalize_name
 
 
 class MetadataError(Exception):
@@ -85,9 +87,14 @@ class PackageFacts:
 
         The key is ``resource_type``, not ``type``. The previous writer used the
         bare name ``type`` as a dict key, which is the *builtin*, so the field
-        was never emitted at all -- confirmed absent from all 918 entries.
+        was never emitted at all.
+
+        Carries no ``error`` field, on the theory that an entry only reaches
+        this method at all when ``Metadata.to_json`` chooses to keep it (see
+        there) -- a package that could not be measured is dropped rather than
+        written down as broken.
         """
-        payload: dict[str, Any] = {
+        return {
             "base_import": self.base_import,
             "distribution": self.distribution,
             "dependencies": dict(self.dependencies),
@@ -95,9 +102,6 @@ class PackageFacts:
             "import_time": self.import_time,
             "resource_type": str(self.resource_type),
         }
-        if self.error:
-            payload["error"] = self.error
-        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +137,74 @@ class Metadata:
         facts = self.packages.get(name)
         return facts.import_time if facts else 0.0
 
+    def _by_distribution(self) -> dict[str, str]:
+        """PEP 503 canonical distribution name -> the import name it was analysed under.
+
+        Canonicalized (lowercased, runs of ``-_.`` collapsed to one ``-``)
+        because the same distribution is spelled inconsistently across a real
+        base image: ``huggingface_hub`` records its own ``distribution`` as
+        ``huggingface_hub``, but ``transformers``, ``datasets`` and others
+        depend on it spelled ``huggingface-hub``. An exact-string map missed
+        that match entirely, so the unresolved literal ``huggingface-hub``
+        ended up in a checkpoint's ``imports`` and failed at restore time with
+        ``ModuleNotFoundError: No module named 'huggingface-hub'`` -- a name
+        with a hyphen was never importable to begin with.
+        """
+        return {
+            canonicalize_name(facts.distribution): name
+            for name, facts in self.packages.items()
+            if facts.distribution
+        }
+
+    def direct_dependencies(self, name: str) -> frozenset[str]:
+        """A package's measured dependencies, resolved to their import names.
+
+        ``PackageFacts.dependencies`` is keyed by distribution name (e.g.
+        ``scikit-learn``), because that is what a requirement names; this
+        resolves each one back to whichever import name it was analysed under
+        (via that entry's own ``distribution`` field, PEP 503 canonicalized so
+        differing spellings of the same distribution still match -- see
+        ``_by_distribution``), which is the name the planner and catalogue key
+        everything else by. A dependency with no matching entry (never
+        installed, or analysis failed for it) falls back to its distribution
+        name so it still shows up in a closure rather than vanishing silently.
+        """
+        facts = self.packages.get(name)
+        if facts is None:
+            return frozenset()
+        by_distribution = self._by_distribution()
+        return frozenset(
+            by_distribution.get(canonicalize_name(dist), dist) for dist in facts.dependencies
+        )
+
+    def closure(self, names: Iterable[str]) -> frozenset[str]:
+        """Every name in ``names``, plus everything they transitively depend on.
+
+        This is what a checkpoint actually has to hold resident for those
+        packages to import at their measured (dependencies-already-loaded)
+        cost: each dependency is walked once no matter how many packages in
+        the closure share it, via ``seen``. The distribution/import-name map is
+        built once per call rather than once per node -- this is walked once
+        per distinct request in a corpus of thousands, so that difference is
+        the one that matters.
+        """
+        by_distribution = self._by_distribution()
+        seen: set[str] = set()
+        stack = list(names)
+        while stack:
+            name = stack.pop()
+            if name in seen:
+                continue
+            seen.add(name)
+            facts = self.packages.get(name)
+            if facts is None:
+                continue
+            for dist in facts.dependencies:
+                dep = by_distribution.get(canonicalize_name(dist), dist)
+                if dep not in seen:
+                    stack.append(dep)
+        return frozenset(seen)
+
     @classmethod
     def load(cls, path: Path) -> Metadata:
         """Read and validate a metadata file."""
@@ -152,5 +224,18 @@ class Metadata:
         return cls({name: PackageFacts.from_json(name, entry) for name, entry in raw.items()})
 
     def to_json(self) -> dict[str, Any]:
-        """Render back to the on-disk shape."""
-        return {name: facts.to_json() for name, facts in sorted(self.packages.items())}
+        """Render back to the on-disk shape.
+
+        A package that could not be analysed is dropped rather than written
+        down with its error: nothing downstream distinguishes "never seen"
+        from "measured and broken" anyway (both cost 0.0, see ``size_mb`` and
+        ``import_time`` above), so keeping it around on disk would only be
+        clutter -- and, while analysing a real base image, actively misleading
+        clutter, since a dependency name guessed wrong by ``top_level_imports``
+        showed up here as if it were a real package that failed.
+        """
+        return {
+            name: facts.to_json()
+            for name, facts in sorted(self.packages.items())
+            if not facts.error
+        }

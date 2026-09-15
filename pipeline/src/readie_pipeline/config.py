@@ -131,13 +131,22 @@ class Settings:
 
     @property
     def corpus_path(self) -> Path:
-        """The request corpus."""
-        return self.data_dir / "dataset.json"
+        """The request corpus.
+
+        Per-flavor: a gpu corpus can lean on GPU-shaped snippets a cpu one
+        never would, and the two must not silently overwrite each other.
+        """
+        return self.data_dir / "datasets" / f"{self.flavor}.json"
 
     @property
     def metadata_path(self) -> Path:
-        """Measured package sizes and import times."""
-        return self.data_dir / "metadata.json"
+        """Measured package sizes and import times.
+
+        Per-flavor, for the same reason as ``corpus_path``: a cpu and a gpu
+        base image install different packages (and different builds of shared
+        ones), so their measurements cannot share a file.
+        """
+        return self.data_dir / "metadata" / f"{self.flavor}.json"
 
     @property
     def global_runsc_flags(self) -> list[str]:
@@ -237,7 +246,9 @@ def _int(source: Mapping[str, str], name: str, default: int) -> int:
         raise ConfigError(msg) from exc
 
 
-def _float(source: Mapping[str, str], name: str, default: float, ndigits: int | None = None) -> float:
+def _float(
+    source: Mapping[str, str], name: str, default: float, ndigits: int | None = None
+) -> float:
     raw = (source.get(name) or "").strip()
     if not raw:
         return default

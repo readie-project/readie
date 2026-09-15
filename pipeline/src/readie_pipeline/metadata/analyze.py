@@ -4,6 +4,13 @@ Two numbers per package: disk size, and the time to import it with its
 dependencies already resident. The second is what a checkpoint saves, and it has
 to be measured in a subprocess -- an import is cached after the first one, so
 timing it in-process measures a dictionary lookup.
+
+A package's dependencies are walked and measured too, recursively down to
+packages with no dependencies of their own, so a closure over the result (see
+``Metadata.closure``) has a real number for every package it reaches rather than
+falling back to the planner's nominal default. A package reachable more than
+once -- shared by two packages that were both requested -- is only ever
+profiled once: ``analyze`` memoizes on import name as it walks.
 """
 
 from __future__ import annotations
@@ -11,7 +18,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from importlib.metadata import PackageNotFoundError, distribution, packages_distributions
 from pathlib import Path
@@ -43,6 +50,39 @@ except BaseException as exc:
 
 #: A package that hangs on import must not hang the analysis.
 _PROFILE_TIMEOUT = 120.0
+
+
+#: This tool's own top-level package name. Analysing a real base image runs
+#: this stage's interpreter with the copied rootfs's dist-packages also on its
+#: PYTHONPATH (see pipeline/Dockerfile), so a plain sys.path scan reports
+#: readie-pipeline itself as if it were part of that base image -- it never
+#: is, so it is excluded below regardless of what else is on the path.
+#: Everything *else* this tool depends on (numpy, packaging) genuinely is also
+#: shipped by a real base image independently, and PYTHONPATH's ordering
+#: (prepended, so it is searched first) is what makes importing and measuring
+#: those resolve to the base image's own copy rather than this tool's --
+#: confirmed against a real build, not a name to special-case here.
+_SELF = __name__.partition(".")[0]
+
+#: Also excluded, unlike _SELF, this one genuinely is baked into every base
+#: image -- the rootfs stage in pipeline/Dockerfile installs it there so a
+#: sandbox can run `python -m readie_executor` -- but no request's own code
+#: ever imports the harness that is running it, so it is never actionable for
+#: the planner and would just be permanent, unused clutter in the metadata.
+_HARNESS_ONLY = frozenset({"readie_executor"})
+
+
+def installed_packages() -> list[str]:
+    """Every top-level import name installed in the current environment.
+
+    "The current environment" is the base image: this is meant to run wherever
+    a checkpoint's rootfs would import from, so the result is what that
+    checkpoint actually has available -- not just whatever a corpus of sample
+    requests happens to reference. A package the corpus never mentions but the
+    base image ships is still measured, so the planner can score it too.
+    """
+    excluded = _HARNESS_ONLY | {_SELF}
+    return sorted(name for name in packages_distributions() if name not in excluded)
 
 
 def top_level_imports(distribution_name: str) -> list[str]:
@@ -147,8 +187,56 @@ def analyze_package(import_name: str, dist_name: str) -> PackageFacts:
     return replace(facts, import_time=float(measured.get("time", 0.0)))
 
 
+def _visit(
+    name: str,
+    *,
+    provided: Mapping[str, list[str]],
+    results: dict[str, PackageFacts],
+    on_progress: object,
+) -> None:
+    """Measure ``name`` and recurse into its dependencies, unless already done.
+
+    ``results`` is the memo: a name is added to it before its dependencies are
+    visited, so a cycle (rare, but requirements permit one) terminates instead
+    of recursing forever, and a dependency shared by two packages is measured
+    on the first visit only.
+    """
+    if name in results:
+        return
+
+    distributions = provided.get(name)
+    if not distributions:
+        facts = PackageFacts(
+            base_import=name, error="no installed distribution provides this import"
+        )
+        results[name] = facts
+        if callable(on_progress):
+            on_progress(name, facts)
+        return
+
+    facts = analyze_package(name, distributions[0])
+    results[name] = facts
+    if callable(on_progress):
+        on_progress(name, facts)
+
+    for dependency_distribution in facts.dependencies:
+        for dependency_name in top_level_imports(dependency_distribution):
+            # top_level_imports falls back to guessing an import name from the
+            # distribution name when there is no top_level.txt to read (common
+            # for modern wheels) -- Flask, beautifulsoup4 and PyWavelets all
+            # lack one here, and the guess ("Flask", not "flask") matches
+            # nothing installed. That is a wrong guess, not a package that
+            # failed to analyse, so it is skipped silently rather than
+            # recorded as an unmeasured one -- unlike an explicitly requested
+            # name (see analyze() below), which still gets an error entry.
+            if dependency_name in provided or dependency_name in results:
+                _visit(
+                    dependency_name, provided=provided, results=results, on_progress=on_progress
+                )
+
+
 def analyze(import_names: Iterable[str], *, on_progress: object = None) -> Metadata:
-    """Measure every named package that is installed here.
+    """Measure every named package that is installed here, and its full dependency closure.
 
     Packages with no installed distribution are recorded with an error rather
     than skipped, so a later run can tell "not measured" from "measured as
@@ -160,17 +248,8 @@ def analyze(import_names: Iterable[str], *, on_progress: object = None) -> Metad
     results: dict[str, PackageFacts] = {}
 
     for import_name in sorted(set(import_names)):
-        top_level = import_name.split(".")[0]
-        distributions = provided.get(top_level)
-
-        if not distributions:
-            results[import_name] = PackageFacts(
-                base_import=top_level, error="no installed distribution provides this import"
-            )
-            continue
-
-        results[import_name] = analyze_package(import_name, distributions[0])
-        if callable(on_progress):
-            on_progress(import_name, results[import_name])
+        _visit(
+            import_name.split(".")[0], provided=provided, results=results, on_progress=on_progress
+        )
 
     return Metadata(results)

@@ -4,13 +4,19 @@ Written once per generation beside the manifest and read by the router at
 startup. It is the whole input to request-time checkpoint selection:
 
 * ``items`` - every measured item (package, dataset, model, tokenizer) with its
-  disk size and load time, so the router can price the residual load of anything
-  a request needs.
-* ``checkpoints`` - each checkpoint's item set and its raw total size (MB).
+  disk size, load time, and (for a package with measured dependencies) the
+  item keys of its direct dependencies, so the router can expand a request's
+  declared needs into the same closure the planner scored checkpoints against
+  before pricing the residual.
+* ``checkpoints`` - each checkpoint's item set and its raw total size (MB). Two
+  item lists per checkpoint: ``items`` is the full dependency closure (what is
+  actually resident, and what pricing needs), ``canonical`` is only what some
+  request actually asked for (what the executor was told to import; see
+  ``planning/greedy.py``'s ``_describe``).
 
-The router picks the checkpoint minimising ``alpha * size + Σ load_time(required
-items not in it)``, applying its own ``alpha`` to the raw size. The ``alpha`` the
-planner built these under is recorded here for reference.
+The router picks the checkpoint minimising ``alpha * size + Σ load_time(closure
+of required items not in it)``, applying its own ``alpha`` to the raw size. The
+``alpha`` the planner built these under is recorded here for reference.
 
 Items are keyed the way the client names them in a request's required set:
 packages by their bare import name, and datasets/models/tokenizers prefixed with
@@ -20,7 +26,7 @@ their kind (``model:gpt2``), so the router can match a request's needs directly.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -43,13 +49,38 @@ def item_key(name: str, resource_type: ResourceType | str) -> str:
     return f"{kind}:{name}"
 
 
-def _checkpoint_items(plan: CheckpointPlan) -> list[str]:
-    """Every item a checkpoint contains, keyed for the catalogue."""
-    keys = list(plan.imports)
+def _keyed_items(packages: Iterable[str], plan: CheckpointPlan) -> list[str]:
+    """Keys a package set plus a plan's non-package resources for the catalogue."""
+    keys = list(packages)
     keys += [item_key(n, ResourceType.DATASET) for n in plan.datasets]
     keys += [item_key(n, ResourceType.MODEL) for n in plan.models]
     keys += [item_key(n, ResourceType.TOKENIZER) for n in plan.tokenizers]
     return sorted(keys)
+
+
+def _checkpoint_items(plan: CheckpointPlan, metadata: Metadata) -> list[str]:
+    """Every item a checkpoint actually holds resident, keyed for the catalogue.
+
+    ``plan.imports`` is deliberately just what some request actually asked
+    for -- what the executor is told to import, since Python's own import
+    machinery pulls in the rest -- not the full dependency closure the
+    planner scored it against. This reconstructs that closure: a request-time
+    residual has to be priced against everything actually resident in this
+    checkpoint, dependencies included, not just the trimmed executor-facing
+    list (see ``_canonical_items`` for that one).
+    """
+    return _keyed_items(metadata.closure(plan.imports), plan)
+
+
+def _canonical_items(plan: CheckpointPlan) -> list[str]:
+    """The packages some request actually asked for, keyed for the catalogue.
+
+    Not expanded through dependencies -- this is the same list the executor
+    was told to import (``plan.imports``), kept alongside the full closure
+    (``_checkpoint_items``) for a reader that wants to know what was actually
+    requested rather than what pricing needed.
+    """
+    return _keyed_items(plan.imports, plan)
 
 
 def build_catalogue(
@@ -65,20 +96,25 @@ def build_catalogue(
     """
     items: dict[str, dict[str, Any]] = {}
     for name, facts in metadata.packages.items():
-        items[item_key(name, facts.resource_type)] = {
+        entry: dict[str, Any] = {
             "size_mb": round(facts.disk_size_mb, 4),
             "load_time": facts.import_time,
             "resource_type": str(facts.resource_type),
         }
+        dependencies = metadata.direct_dependencies(name)
+        if dependencies:
+            entry["dependencies"] = sorted(dependencies)
+        items[item_key(name, facts.resource_type)] = entry
 
     checkpoints = []
     for checkpoint_id, plan in entries:
-        keys = _checkpoint_items(plan)
+        keys = _checkpoint_items(plan, metadata)
         size_mb = sum(metadata.size_mb(_bare(key)) for key in keys)
         checkpoints.append(
             {
                 "id": checkpoint_id,
                 "items": keys,
+                "canonical": _canonical_items(plan),
                 # Raw total item size.
                 "size_mb": round(size_mb, 4),
             }

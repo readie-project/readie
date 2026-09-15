@@ -165,12 +165,13 @@ def test_a_traceback_is_never_printed_for_an_expected_failure(tmp_path: Path, ca
 def test_plan_works_on_a_synthetic_corpus(tmp_path: Path):
     # Proves the stage depends on nothing but its inputs.
     data = tmp_path / "data"
-    data.mkdir()
+    (data / "datasets").mkdir(parents=True)
+    (data / "metadata").mkdir()
     corpus = Corpus.of(
         [Request(task_name=f"t{i}", category="c", code="", imports=("pandas",)) for i in range(50)]
     )
-    (data / "dataset.json").write_text(json.dumps([r.to_json() for r in corpus]))
-    (data / "metadata.json").write_text(
+    (data / "datasets" / "cpu.json").write_text(json.dumps([r.to_json() for r in corpus]))
+    (data / "metadata" / "cpu.json").write_text(
         json.dumps({"pandas": {"base_import": "pandas", "disk_size_mb": 40, "import_time": 0.3}})
     )
 

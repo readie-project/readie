@@ -32,7 +32,7 @@ from readie_pipeline.catalogue import build_catalogue, write_catalogue
 from readie_pipeline.config import ConfigError, CorpusSettings, Settings, ALPHA_PRECISION
 from readie_pipeline.corpus.models import Corpus, CorpusError
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
-from readie_pipeline.metadata.analyze import analyze
+from readie_pipeline.metadata.analyze import analyze, installed_packages
 from readie_pipeline.metadata.models import Metadata, MetadataError
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
 
@@ -73,19 +73,31 @@ def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
-    """Measure the packages the corpus refers to."""
-    corpus = Corpus.load(settings.corpus_path)
-    packages = sorted(corpus.resources().packages)
-    print(f"[*] analysing {len(packages)} packages from {len(corpus)} requests")
+    """Measure every package installed in this environment -- the base image.
+
+    Not the corpus's imports: a checkpoint restores into the base image, not
+    into whatever a sample of requests happens to reference, so that is the
+    universe the planner needs a real number for. Run this wherever that base
+    image's packages are actually importable (see ``installed_packages``).
+    """
+    packages = installed_packages()
+    print(f"[*] analysing {len(packages)} packages installed in this environment")
 
     def progress(name: str, facts: object) -> None:
-        detail = getattr(facts, "error", "") or (
-            f"{getattr(facts, 'disk_size_mb', 0.0):.1f} MB, "
-            f"{getattr(facts, 'import_time', 0.0):.3f} s"
-        )
-        print(f"    {name}: {detail}")
+        # An error is worth seeing on every run, verbose or not, because the
+        # package it names is about to be dropped from the written metadata
+        # rather than recorded -- this is the only place that reason surfaces
+        # at all. A successful measurement is only noise unless asked for.
+        error = getattr(facts, "error", "")
+        if error:
+            print(f"    {name}: {error}", file=sys.stderr)
+        elif args.verbose:
+            print(
+                f"    {name}: {getattr(facts, 'disk_size_mb', 0.0):.1f} MB, "
+                f"{getattr(facts, 'import_time', 0.0):.3f} s"
+            )
 
-    metadata = analyze(packages, on_progress=progress if args.verbose else None)
+    metadata = analyze(packages, on_progress=progress)
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
@@ -151,7 +163,9 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         else:
             item.unlink()
 
-    plans = [CheckpointPlan()] + [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
+    plans = [CheckpointPlan()] + [
+        CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())
+    ]
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
     metadata = Metadata.load(settings.metadata_path)
@@ -189,7 +203,9 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         print(f"    restored in {restore_time}s")
         if index == 0:
             baseline_time = restore_time
-        computed_alphas.append((restore_time - baseline_time) / plan.size_mb if plan.size_mb else 0.0)
+        computed_alphas.append(
+            (restore_time - baseline_time) / plan.size_mb if plan.size_mb else 0.0
+        )
 
     Manifest(
         runsc_version=version,
@@ -200,7 +216,9 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     ).write(settings.output_dir)
 
     computed_alpha = round(np.mean(computed_alphas), ALPHA_PRECISION)
-    print(f"\n[*] planned alpha value: {settings.alpha}, computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}")
+    print(
+        f"\n[*] planned alpha value: {settings.alpha}, computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}"
+    )
     # The catalogue the router selects from: every measured item's cost plus each
     # checkpoint's contents and precomputed size term.
     write_catalogue(
@@ -261,7 +279,9 @@ def build_parser() -> argparse.ArgumentParser:
     corpus.set_defaults(handler=cmd_corpus)
 
     analyze_cmd = sub.add_parser("analyze", help="measure package sizes and import times")
-    analyze_cmd.add_argument("-v", "--verbose", action="store_true", help="report each package")
+    analyze_cmd.add_argument(
+        "-v", "--verbose", action="store_true", help="also report each successful measurement"
+    )
     analyze_cmd.set_defaults(handler=cmd_analyze)
 
     plan = sub.add_parser("plan", help="choose checkpoint contents and write the spec")

@@ -39,11 +39,12 @@ env.bak/
 venv.bak/
 
 # What `make capture` writes: checkpoint images are gigabytes, and are an
-# artifact rather than a source. The directory itself is committed (see its
+# artifact rather than a source. Per-flavor (pipeline/out/<flavor>/) so a cpu
+# and a gpu generation coexist. Each flavor directory is committed (see its
 # .gitkeep) because the worker-base image build COPYs it.
-pipeline/out/*
-!pipeline/out/.gitkeep
-# Per-flavor generation outputs.
+pipeline/out/*/*
+!pipeline/out/*/.gitkeep
+# Stray output from before ARTIFACTS_DIR moved under pipeline/out/<flavor>/.
 pipeline/out-*/
 
 # Proto staging, created and removed by `make protos`.
