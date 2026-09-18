@@ -495,10 +495,13 @@ func (m *Manager) resume(ctx context.Context, req AcquireRequest) (Handle, error
 	}, nil
 }
 
-// Release returns a container to the pool on success, or destroys it otherwise.
+// Release returns a container to the pool on a successful, session-bound
+// execution, or destroys it otherwise.
 //
 // Callers pass the zero Outcome when unwinding from an error, so the failure
-// path is the default rather than something that has to be remembered.
+// path is the default rather than something that has to be remembered. A
+// container acquired for a request with no SessionID is always destroyed
+// too, successful or not: with no session, nothing can ever resume it by ID.
 func (m *Manager) Release(ctx context.Context, ref registry.ExecutionRef, h Handle, outcome Outcome) error {
 	if h.ID == "" {
 		return nil
@@ -508,11 +511,14 @@ func (m *Manager) Release(ctx context.Context, ref registry.ExecutionRef, h Hand
 	// regardless of whether the runtime cooperated.
 	m.untrack(h.ID)
 
-	// Pause-on-success (warm reuse) disabled for now; always stop+destroy.
-	// Uncomment to restore warm reuse:
-	// if outcome == OutcomeSuccess {
-	// 	return m.Pause(ctx, ref, h.ID)
-	// }
+	// A pause is only worth its TTL if someone could actually resume it: an
+	// empty SessionID means the router never established affinity for this
+	// container and never will, so nothing will ever ask for it by ID again.
+	// Pausing it would just hold its memory until SANDBOX_PAUSE_TTL for no
+	// caller to reuse.
+	if outcome == OutcomeSuccess && ref.SessionID != "" {
+		return m.Pause(ctx, ref, h.ID)
+	}
 	return m.Destroy(ctx, ref, h.ID)
 }
 

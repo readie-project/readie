@@ -2,7 +2,10 @@
 
 The previous router deleted nothing: STATUS_REMOVED was stored and acted on
 nowhere, so workers, containers and sessions accumulated for the life of the
-process.
+process. Sessions are still bounded, but not by this reaper: a session is
+removed the instant the container backing it is gone (ClusterState.
+remove_executor), never on a timer or a cap of its own - see test_scheduler.py
+for that behaviour.
 """
 
 from __future__ import annotations
@@ -29,9 +32,7 @@ POLICY = ReaperPolicy(
     worker_ttl=30.0,
     executor_ttl=600.0,
     executor_error_ttl=60.0,
-    session_ttl=1800.0,
     lease_ttl=7200.0,
-    max_sessions=3,
 )
 
 
@@ -79,27 +80,6 @@ def test_a_recently_seen_worker_survives(
     assert state.worker("w1") is not None
 
 
-def test_an_idle_session_is_deleted(state: ClusterState, clock: FakeClock, reaper: Reaper) -> None:
-    """This is the fix for unbounded growth."""
-    state.touch_session("sess-1", clock.now())
-
-    clock.advance(1801.0)
-    assert reaper.sweep().sessions == 1
-    assert state.session("sess-1") is None
-
-
-def test_a_session_with_work_in_flight_is_kept(
-    state: ClusterState, clock: FakeClock, scheduler: Scheduler, reaper: Reaper
-) -> None:
-    state.apply_worker_status("w1", "w1:50052", STATUS_READY, clock.now())
-    scheduler.provision(ProvisionRequest(request_id="req-1", session_id="sess-1", demand=DEMAND))
-
-    clock.advance(1801.0)
-    reaper.sweep()
-
-    assert state.session("sess-1") is not None, "a running request must not lose its session"
-
-
 def test_a_failed_container_is_reclaimed_sooner_than_a_healthy_one(
     state: ClusterState, clock: FakeClock, reaper: Reaper
 ) -> None:
@@ -141,20 +121,34 @@ def test_a_leaked_lease_is_force_released(
     assert worker.reserved_bytes == 0
 
 
-def test_the_session_cap_evicts_the_least_recently_used(
-    state: ClusterState, clock: FakeClock, reaper: Reaper
+def test_reclaiming_a_lost_executor_expires_its_session(
+    state: ClusterState, clock: FakeClock, scheduler: Scheduler, reaper: Reaper
 ) -> None:
-    """A TTL is a promise about a well-behaved client; the cap is about memory."""
-    for i in range(5):
-        state.touch_session(f"sess-{i}", clock.now())
-        clock.advance(1.0)
+    """A session's only expiry path is losing the container behind it.
 
-    result = reaper.sweep()
+    This is the backstop for a lost STATUS_REMOVED notification, not the
+    graceful path (see test_scheduler.py for that), but it must expire the
+    session the same way: sessions have no TTL or cap of their own.
+    """
+    state.apply_worker_status("w1", "w1:50052", STATUS_READY, clock.now())
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=DEMAND)
+    )
+    scheduler.bind("req-1", placement.worker_id, "c1")
+    scheduler.release("req-1", Outcome.SUCCESS)
 
-    assert result.evicted_by_cap == 2
-    assert state.session_count() == POLICY.max_sessions
-    assert state.session("sess-0") is None, "the oldest must go first"
-    assert state.session("sess-4") is not None
+    session = state.session("sess-1")
+    assert session is not None
+    assert not session.expired
+
+    clock.advance(601.0)
+    # Keep the worker itself alive; otherwise evicting it would clear the
+    # affinity as a side effect (evict_worker) instead of exercising
+    # remove_executor, which is what this test is about.
+    state.apply_worker_status("w1", "w1:50052", STATUS_READY, clock.now())
+
+    assert reaper.sweep().executors == 1
+    assert session.expired
 
 
 def test_an_empty_sweep_reports_nothing_to_log(reaper: Reaper) -> None:

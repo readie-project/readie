@@ -158,12 +158,20 @@ class WorkerRecord:
 
 @dataclass(slots=True)
 class SessionRecord:
-    """A client session and the container it is pinned to."""
+    """A client session and the container it is pinned to.
+
+    ``expired`` is a tombstone, not a deletion: once the container backing a
+    session is confirmed gone, the record stays - kept forever, since only
+    genuine, opted-in sessions ever get one - so that a caller reusing the
+    same session_id is told it has expired instead of silently cold-starting
+    under an id that looks like it still carries warm state.
+    """
 
     session_id: str
     affinity: Affinity | None = None
     requests: set[str] = field(default_factory=set)
     last_seen: float = 0.0
+    expired: bool = False
 
     @property
     def is_idle(self) -> bool:

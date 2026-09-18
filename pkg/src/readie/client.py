@@ -229,9 +229,12 @@ class Client:
         if session is not None:
             session._check()
 
-        # A call with no session gets a fresh id rather than a shared constant,
-        # so unrelated calls do not contend for one container's queue.
-        session_id = session.id if session is not None else new_session_id()
+        # A call with no session sends no session_id at all, rather than a
+        # fresh one per call: the router treats an empty id as "not part of
+        # any session" and skips session bookkeeping for it entirely, so
+        # nothing accumulates for the vast majority of calls that were never
+        # going to be resumed anyway.
+        session_id = session.id if session is not None else ""
         ref = CallRef(request_id=new_request_id(), session_id=session_id)
         payload = self._codec.encode_call(func, args, kwargs or {}, packages)
         imports = extract_imports(func)

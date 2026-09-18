@@ -87,9 +87,7 @@ class App:
                 worker_ttl=settings.worker_ttl,
                 executor_ttl=settings.executor_ttl,
                 executor_error_ttl=settings.executor_error_ttl,
-                session_ttl=settings.session_ttl,
                 lease_ttl=settings.lease_ttl,
-                max_sessions=settings.max_sessions,
             ),
         )
         self._prober = WorkerProber(
@@ -191,9 +189,7 @@ class App:
                     "reclaimed expired state",
                     workers=result.workers,
                     executors=result.executors,
-                    sessions=result.sessions,
                     leases=result.leases,
-                    evicted_by_cap=result.evicted_by_cap,
                 )
 
     async def _channel_gc_loop(self) -> None:

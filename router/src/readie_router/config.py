@@ -82,8 +82,6 @@ class Settings(BaseSettings):
     worker_ttl: float = Field(default=30.0, gt=0)
     executor_ttl: float = Field(default=600.0, gt=0)
     executor_error_ttl: float = Field(default=60.0, gt=0)
-    session_ttl: float = Field(default=1800.0, gt=0)
-    max_sessions: int = Field(default=10_000, gt=0)
 
     # -- Security ---------------------------------------------------------
     # All opt-in: unset means plaintext with no auth, the documented default.

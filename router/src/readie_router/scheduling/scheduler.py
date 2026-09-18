@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from readie_router.clock import Clock
-from readie_router.errors import NoCapacityError, NoWorkersRegisteredError
+from readie_router.errors import NoCapacityError, NoWorkersRegisteredError, SessionExpiredError
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
     RESOURCE_MEMORY,
@@ -67,10 +67,20 @@ class Scheduler:
         Raises:
             NoWorkersRegisteredError: nothing has registered, or nothing is healthy.
             NoCapacityError: workers exist but none can take this allocation.
+            SessionExpiredError: this session_id is known and has expired.
         """
         now = self._clock.now()
+        # None for an empty session_id: touch_session refuses to track one,
+        # since every call without an explicit session sends "" rather than a
+        # fresh id, and there would be nothing to ever look it up again.
         session = self._state.touch_session(request.session_id, now)
-        session.requests.add(request.request_id)
+        if session is not None and session.expired:
+            # Checked before anything else is touched: an expired session
+            # must not accrue a request, a reservation, or any other side
+            # effect on its way to being rejected.
+            raise SessionExpiredError(request.session_id)
+        if session is not None:
+            session.requests.add(request.request_id)
 
         demand = request.demand
         lease_id = self._state.next_lease_id()
@@ -111,15 +121,18 @@ class Scheduler:
 
         return placement
 
-    def _resolve_target(self, session: SessionRecord, demand: Demand) -> tuple[str, str, str, bool]:
+    def _resolve_target(
+        self, session: SessionRecord | None, demand: Demand
+    ) -> tuple[str, str, str, bool]:
         """Pick a worker and, when reusing, the container to resume.
 
         Affinity beats load. A warm container holds the session's live Python
         state, so placing the session elsewhere silently loses it - a much
-        worse outcome than an imbalanced cluster.
+        worse outcome than an imbalanced cluster. A caller with no session
+        (``session is None``) has no affinity to consider by construction.
         """
-        affinity = session.affinity
-        if affinity is not None:
+        if session is not None and session.affinity is not None:
+            affinity = session.affinity
             worker = self._state.worker(affinity.worker_id)
             if worker is not None and worker.is_selectable:
                 executor = worker.executors.get(affinity.container_id)

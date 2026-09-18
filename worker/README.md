@@ -179,14 +179,23 @@ runtime. That needs no listing flag and, more importantly, finds sandboxes
 whose runtime state was lost but whose bundle survives - exactly the case
 cleanup exists for, and one a runtime listing would not mention.
 
-Paused containers carry a TTL (`SANDBOX_PAUSE_TTL`, default 5m):
-`Manager.ReapExpiredPauses` runs on a fixed 30s ticker and destroys anything
-paused past it, and the timer restarts on every re-pause. Pause-on-success is
-currently disabled (see `Manager.Release`),
-so nothing reaches the warm pool through normal request completion today -
-the TTL machinery exists and is exercised by tests and by any caller that
-explicitly resumes and re-pauses a container, ready for when pause-on-success
-is re-enabled.
+A successful execution pauses its container for reuse rather than destroying
+it (`Manager.Release`) - unless the request carried no `session_id`, in which
+case it is destroyed regardless of outcome. An empty `session_id` means the
+router never established affinity for this container and never will (see the
+router README's Sessions section), so nothing could ever resume it by ID;
+pausing it would just hold its memory for `SANDBOX_PAUSE_TTL` for no caller
+to reuse. That pause (or destroy), and the teardown that follows it, both
+run in the background after the RPC returns (`Runner.WaitPendingReleases`), so
+a slow `Stop` cannot inflate response latency. Paused containers carry a TTL
+(`SANDBOX_PAUSE_TTL`, default 5m): `Manager.ReapExpiredPauses` runs on a fixed
+30s ticker and destroys anything paused past it, and the timer restarts on
+every re-pause. This TTL is the *only* thing that ends a container's warm
+life on a successful path - the router has no session TTL or cap of its own
+(see the router README's Sessions section) and only retires a session once
+this reaper (or a lost-notification backstop on the router itself) reports the
+container gone, at which point reusing that session_id errors rather than
+silently cold-starting.
 
 ## Contracts
 

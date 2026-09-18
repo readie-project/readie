@@ -115,12 +115,6 @@ func TestStartup_FailsWhenTheRouterRejectsRegistration(t *testing.T) {
 }
 
 func TestShutdown_DeregistersAndReclaimsContainers(t *testing.T) {
-	// Pause-on-success is disabled for now (see Manager.Release), so a
-	// completed execution's container is already destroyed by the time
-	// shutdown runs - there is nothing warm left for it to reclaim here.
-	// Re-enable once that's uncommented.
-	t.Skip("pause-on-success is temporarily disabled; see Manager.Release")
-
 	h := newHarness(t)
 
 	responses, err := execute(t, h, "", []byte("body"))
@@ -128,13 +122,15 @@ func TestShutdown_DeregistersAndReclaimsContainers(t *testing.T) {
 	containerID := responses[0].GetContainerId()
 
 	// The container is warm and paused, so shutdown has something to reclaim.
-	state, ok := h.Runtime.Get(containerID)
-	require.True(t, ok)
-	require.True(t, state.Paused)
+	// Release now runs in the background after the RPC returns, so poll for it.
+	require.Eventually(t, func() bool {
+		state, ok := h.Runtime.Get(containerID)
+		return ok && state.Paused
+	}, 5*time.Second, 20*time.Millisecond, "the container must eventually be paused for reuse")
 
 	require.NoError(t, h.Shutdown())
 
-	state, ok = h.Runtime.Get(containerID)
+	state, ok := h.Runtime.Get(containerID)
 	require.True(t, ok)
 	assert.True(t, state.Removed, "warm containers must not outlive the worker")
 	assert.NoDirExists(t, h.Layout.ContainerDir(containerID))

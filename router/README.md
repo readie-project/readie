@@ -77,12 +77,43 @@ interpreter behind one unix socket and cannot serve two executions at once, so
 binding a session to a container forces the calls in it to queue. The client SDK
 says so in `Session`'s docstring, and makes sessions opt-in for that reason.
 
+**An empty `session_id` means "not part of any session", not "invalid" or "a
+session of one".** The client sends `""` for every call with no explicit
+session, rather than minting a fresh id per call - most calls never opt into
+a session at all, so treating each as a singleton session would track one
+`SessionRecord` per request forever. `touch_session` refuses to create a
+record for `""`, `provision` skips affinity resolution and binding for it
+entirely, and `RequestExecution` skips the session gate rather than passing
+`""` through it (every unrelated empty-session call would otherwise share
+that one lock key and serialise against each other - the exact fleet-wide
+contention the per-call unique id used to exist to avoid, just moved to the
+gate instead of the scheduler).
+
 **Liveness** is probed every `PROBE_INTERVAL` over the pooled channel via
 `grpc.health.v1`, with `PROBE_FAILURE_THRESHOLD` strikes to eviction. Active
 probing rather than a last-seen TTL, because an idle worker emits nothing and a
-TTL alone would evict healthy workers. A separate reaper sweeps TTLs for workers,
-executors, sessions and leases, plus an LRU cap on sessions: a TTL is a promise
-about a well-behaved client, the cap is a promise about memory.
+TTL alone would evict healthy workers. A separate reaper sweeps TTLs for
+workers, executors and leases: a TTL is a promise about a well-behaved client.
+
+**Sessions carry no TTL or cap of their own, and a dead one is a tombstone,
+not a deletion.** The instant the container backing a session is gone -
+reported by the worker as `STATUS_REMOVED` (typically its own pause TTL
+expiring, see the worker README), reclaimed here after a lost removal
+notification, or because the *worker* holding it was evicted (every
+container on it is gone too, so `evict_worker` retires those sessions the
+same way `remove_executor` does for one container) - the `SessionRecord`
+is marked `expired` rather than popped from the map. `Scheduler.provision`
+checks that flag before doing anything else and raises `SessionExpiredError`
+(-> `NOT_FOUND` -> the client's `SessionExpiredError`) if a later request
+reuses that id, rather than silently cold-starting under an id that looks
+like it should still carry warm state. Tombstones are kept forever rather
+than reaped on a TTL, which is only sound because this applies solely to
+genuine, opted-in sessions in the first place - an empty `session_id` is
+never tracked at all (above), so the record count here scales with how many
+sessions an application deliberately opens, not with request volume. A
+session that has never had a container yet (or whose affinity was merely
+unpinned, e.g. `STATUS_ERROR`) is not expired - that case still just
+cold-starts, exactly as an id the router has never seen at all would.
 
 ## Contracts
 
@@ -124,8 +155,7 @@ Read from the environment by pydantic-settings, under the field names below
 | `AUTH_TOKEN`                                                                         | bearer token required on ProxyService; unset means no auth                                                               |
 | `SESSION_WAIT_TIMEOUT`, `EXECUTION_TIMEOUT`                                          | per-request bounds                                                                                                       |
 | `PROBE_INTERVAL`, `PROBE_TIMEOUT`, `PROBE_FAILURE_THRESHOLD`                         | liveness                                                                                                                 |
-| `REAPER_INTERVAL`, `WORKER_TTL`, `EXECUTOR_TTL`, `EXECUTOR_ERROR_TTL`, `SESSION_TTL` | eviction                                                                                                                 |
-| `MAX_SESSIONS`                                                                       | LRU cap, independent of the TTLs                                                                                         |
+| `REAPER_INTERVAL`, `WORKER_TTL`, `EXECUTOR_TTL`, `EXECUTOR_ERROR_TTL`                | eviction (workers, executors, leases - sessions have no TTL of their own, see Design)                                   |
 | `SHUTDOWN_GRACE`                                                                     | drain budget on SIGTERM                                                                                                  |
 | `LOG_LEVEL`, `LOG_FORMAT`                                                            | `json` or `console`                                                                                                      |
 
