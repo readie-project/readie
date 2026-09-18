@@ -51,6 +51,21 @@ class SessionBusyError(SchedulingError):
         self.session_id = session_id
 
 
+class SessionExpiredError(SchedulingError):
+    """The session's container has been torn down and the id was retired.
+
+    Raised for a *known* session that has since expired - never for an id
+    that has simply never been seen, which cold-starts normally instead. The
+    id is not reusable: a caller must open a new session rather than retry
+    this one, since reusing it would otherwise look like a warm resume that
+    silently lost all of its state.
+    """
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"session {session_id} has expired")
+        self.session_id = session_id
+
+
 class InvalidRequestError(RouterError):
     """The caller sent something the protocol does not allow."""
 

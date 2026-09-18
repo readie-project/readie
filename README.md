@@ -211,9 +211,13 @@ to run against the image, not just the request corpus.
 Built and tested:
 
 - Session affinity, warm-container reuse, and the per-session serialisation it
-  forces.
+  forces. A session carries no TTL or cap of its own - the instant the
+  container backing it is gone (driven entirely by the worker's own pause
+  TTL), the router retires the id rather than deleting it, so reusing it
+  raises a clear "session expired" error instead of silently losing all its
+  state under a cold start.
 - Placement on real memory pressure, with liveness probed over `grpc.health.v1`
-  and TTL eviction for workers, containers and sessions.
+  and TTL eviction for workers and containers.
 - Checkpoint planning by greedy set cover over a request corpus and
   measured packages (each request's full dependency closure, not just its
   top-level imports), maximising import time saved per megabyte.

@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 import grpc
 import pytest
 
-from readie_router.proto import execution_pb2, proxy_pb2, resources_pb2
+from readie_router.proto import execution_pb2, proxy_pb2, registry_pb2, resources_pb2
 from tests.fakes.worker import FakeWorker
 from tests.integration.conftest import Harness
 
@@ -212,13 +212,51 @@ async def test_an_empty_stream_is_rejected(harness: Harness) -> None:
     assert caught.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
 
-async def test_a_missing_session_id_is_rejected(harness: Harness) -> None:
+async def test_a_missing_session_id_is_accepted_as_not_part_of_any_session(
+    harness: Harness,
+) -> None:
+    """Unlike request_id, an empty session_id is valid input, not an error.
+
+    It is what every call without an explicit session sends - see
+    identity.py and Client._prepare - so the router must run it normally
+    and must not start tracking a session for it.
+    """
     await harness.register_worker()
 
-    with pytest.raises(grpc.aio.AioRpcError) as caught:
-        await execute(harness, header(session_id=""))
+    responses = await execute(harness, header(session_id=""))
 
-    assert caught.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert responses
+    assert harness.app.state.session("") is None
+
+
+async def test_reusing_an_expired_session_id_is_rejected_as_not_found(
+    harness: Harness,
+) -> None:
+    """Once a session's container is confirmed gone, its id is retired.
+
+    Distinct from an id the router has simply never seen, which must keep
+    cold-starting rather than erroring - see the "not part of any session"
+    test above.
+    """
+    await harness.register_worker()
+
+    responses = await execute(harness, header(session_id="sess-1"), chunk(b"body"))
+    container_id = next(r.container_id for r in responses if r.container_id)
+
+    await harness.registry.PostExecutorStatus(
+        registry_pb2.ExecutorStatus(
+            worker_id="worker-1",
+            container_id=container_id,
+            session_id="sess-1",
+            request_id="req-1",
+            status=registry_pb2.STATUS_REMOVED,
+        )
+    )
+
+    with pytest.raises(grpc.aio.AioRpcError) as caught:
+        await execute(harness, header(session_id="sess-1"), chunk(b"body"))
+
+    assert caught.value.code() == grpc.StatusCode.NOT_FOUND
 
 
 # ---------------------------------------------------------------------------

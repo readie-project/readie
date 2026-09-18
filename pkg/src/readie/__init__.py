@@ -43,6 +43,7 @@ from readie.errors import (
     RemoteTimeoutError,
     ResourceExhaustedError,
     SerializationError,
+    SessionExpiredError,
     TransportError,
 )
 from readie.protocol import CallRef, Outcome
@@ -76,6 +77,7 @@ __all__ = [
     "ResultCodec",
     "SerializationError",
     "Session",
+    "SessionExpiredError",
     "Settings",
     "Transport",
     "TransportError",

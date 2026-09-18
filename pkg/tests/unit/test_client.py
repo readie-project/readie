@@ -59,13 +59,16 @@ def test_each_call_gets_a_fresh_request_id() -> None:
     assert first.request_id != second.request_id
 
 
-def test_calls_without_a_session_get_different_session_ids() -> None:
-    # This is what keeps unrelated calls off one container's serialised queue.
+def test_calls_without_a_session_send_no_session_id() -> None:
+    # Empty, not a fresh id each time: the router treats "" as "not part of
+    # any session" and skips session bookkeeping for it entirely, rather than
+    # tracking one throwaway session record per call.
     client, sync, _ = build()
     client.call(add)
     client.call(add)
 
-    assert sync.calls[0][0].session_id != sync.calls[1][0].session_id
+    assert sync.calls[0][0].session_id == ""
+    assert sync.calls[1][0].session_id == ""
 
 
 def test_calls_within_a_session_share_its_id() -> None:

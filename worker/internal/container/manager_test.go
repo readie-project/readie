@@ -374,10 +374,9 @@ func TestAcquire_CleansUpTheDirectoryWhenCreateFails(t *testing.T) {
 func TestAcquire_ResumesAnExistingContainer(t *testing.T) {
 	f := newFixture(t)
 	first := acquireNew(t, f)
-	// Pause directly: Release no longer leaves a container paused (see
-	// TestRelease_SuccessDestroysTheContainer), but resume must still work
-	// against whatever containers are left paused.
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, first.ID))
+	// A real session, or the release below would destroy rather than pause it.
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, first, container.OutcomeSuccess))
 
 	second, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		ContainerID: first.ID,
@@ -406,21 +405,36 @@ func TestAcquire_ReportsErrorWhenResumeFails(t *testing.T) {
 	assert.Contains(t, f.registry.StatusesFor(first.ID), pb.Status_STATUS_ERROR)
 }
 
-// Pause-on-success is disabled for now (see Manager.Release); a successful
-// execution destroys the container just like a failed one, until that's
-// uncommented.
-func TestRelease_SuccessDestroysTheContainer(t *testing.T) {
+func TestRelease_SuccessPausesForReuse(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
 
-	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, h, container.OutcomeSuccess))
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.True(t, state.Removed)
+	assert.True(t, state.Paused)
+	assert.False(t, state.Removed)
 
-	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_REMOVED}, f.registry.StatusesFor(h.ID))
-	assert.NoDirExists(t, f.layout.ContainerDir(h.ID))
+	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_READY}, f.registry.StatusesFor(h.ID))
+	assert.DirExists(t, f.layout.ContainerDir(h.ID), "a reusable container keeps its socket directory")
+}
+
+// A container acquired for a request with no session is never paused, even
+// on success: with no session, nothing can ever resume it by ID, so pausing
+// it would just hold its memory until SANDBOX_PAUSE_TTL for no one.
+func TestRelease_SuccessWithNoSessionDestroysInstead(t *testing.T) {
+	f := newFixture(t)
+	h := acquireNew(t, f)
+
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.False(t, state.Paused)
+	assert.True(t, state.Removed)
 }
 
 func TestRelease_FailureDestroysTheContainerAndItsDirectory(t *testing.T) {
@@ -715,9 +729,9 @@ func TestDestroy_UnpausesBeforeStoppingAPausedContainer(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
 
-	// Leave it paused the way a completed execution does when pause-on-success
-	// is enabled (Release itself no longer pauses; see Manager.Release).
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+	// Leave it paused the way a completed, session-bound execution does.
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, h, container.OutcomeSuccess))
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	require.True(t, state.Paused)
@@ -809,18 +823,13 @@ func TestLoad_DropsAContainerOnRelease(t *testing.T) {
 // A paused container holds pages but is reserved for nobody. Counting it as
 // occupied would strand the warm containers the whole system exists to reuse.
 func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
-	// Pause-on-success is disabled for now (see Manager.Release), so Release
-	// no longer leaves an untracked-but-paused container behind for this test
-	// to exercise. Re-enable once that's uncommented.
-	t.Skip("pause-on-success is temporarily disabled; see Manager.Release")
-
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		Alloc: memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 	require.NoError(t, f.manager.Release(
-		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, h, container.OutcomeSuccess))
 
 	// Resuming it makes it occupied again.
 	resumed, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
@@ -834,9 +843,8 @@ func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
 	assert.Equal(t, h.ID, resumed.ID)
 }
 
-// Release destroys on every outcome right now (see Manager.Release), and a
-// destroy that fails must not leave the container reserved forever - that
-// leaks capacity for the process's life.
+// Release runs on the failure path too, and a pause that fails must not leave
+// the container reserved forever - that leaks capacity for the process's life.
 func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
@@ -844,9 +852,9 @@ func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	f.runtime.FailOn("Stop", errors.New("runtime is wedged"))
+	f.runtime.FailOn("Pause", errors.New("runtime is wedged"))
 	require.Error(t, f.manager.Release(
-		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, h, container.OutcomeSuccess))
 
 	count, _ := f.manager.Load()
 	assert.Zero(t, count)

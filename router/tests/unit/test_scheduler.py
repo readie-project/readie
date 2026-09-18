@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from readie_router.clock import FakeClock
-from readie_router.errors import NoCapacityError, NoWorkersRegisteredError
+from readie_router.errors import NoCapacityError, NoWorkersRegisteredError, SessionExpiredError
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
     RESOURCE_GPU_MEMORY,
@@ -270,9 +270,14 @@ def test_a_different_session_does_not_reuse_the_container(
     assert provision(scheduler, "req-2", "sess-2").container_id == ""
 
 
-def test_affinity_is_dropped_when_the_container_is_gone(
+def test_reusing_a_session_whose_container_is_gone_raises_expired(
     scheduler: Scheduler, state: ClusterState
 ) -> None:
+    """A gone container doesn't just drop affinity - it expires the id.
+
+    Silently cold-starting under the same session_id would look like a warm
+    resume that quietly lost all its state, so the id is retired instead.
+    """
     register(state, "w1")
 
     first = provision(scheduler, "req-1", "sess-1")
@@ -283,7 +288,8 @@ def test_affinity_is_dropped_when_the_container_is_gone(
         "w1", "container-a", session_id="sess-1", request_id="", status=STATUS_REMOVED, now=0.0
     )
 
-    assert provision(scheduler, "req-2", "sess-1").container_id == ""
+    with pytest.raises(SessionExpiredError):
+        provision(scheduler, "req-2", "sess-1")
 
 
 def test_affinity_is_dropped_when_the_container_failed(
@@ -303,7 +309,7 @@ def test_affinity_is_dropped_when_the_container_failed(
     assert provision(scheduler, "req-2", "sess-1").container_id == ""
 
 
-def test_affinity_is_dropped_when_the_worker_is_evicted(
+def test_reusing_a_session_whose_worker_was_evicted_raises_expired(
     scheduler: Scheduler, state: ClusterState
 ) -> None:
     register(state, "w1")
@@ -315,8 +321,62 @@ def test_affinity_is_dropped_when_the_worker_is_evicted(
 
     state.evict_worker(first.worker_id)
 
-    second = provision(scheduler, "req-2", "sess-1")
-    assert second.worker_id != first.worker_id
+    with pytest.raises(SessionExpiredError):
+        provision(scheduler, "req-2", "sess-1")
+
+
+def test_evicting_a_worker_expires_its_sessions_outright(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """Every container on an evicted worker is gone with it, sessions included.
+
+    Not just unpinned, and not deleted either: a session has no way back
+    from losing its container, so it is retired (state.remove_executor
+    applies the same rule one container at a time) rather than surviving
+    unpinned or vanishing as if the id had never been seen.
+    """
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "sess-1")
+    scheduler.bind("req-1", first.worker_id, "container-a")
+    scheduler.release("req-1", Outcome.SUCCESS)
+    session = state.session("sess-1")
+    assert session is not None
+
+    state.evict_worker(first.worker_id)
+
+    assert session.expired
+    assert session.affinity is None
+
+
+def test_an_empty_session_id_is_never_tracked(scheduler: Scheduler, state: ClusterState) -> None:
+    """A call with no session sends "", not a fresh id each time.
+
+    Tracking it anyway would leave one permanent entry behind per call that
+    was never going to be resumed anyway.
+    """
+    register(state, "w1")
+
+    placement = provision(scheduler, "req-1", "")
+    scheduler.bind("req-1", placement.worker_id, "container-a")
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    assert placement.warm is False
+    assert state.session("") is None
+
+
+def test_repeated_empty_session_calls_never_share_a_container(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """Two unrelated "no session" calls must not look like the same session."""
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "")
+    scheduler.bind("req-1", first.worker_id, "container-a")
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    second = provision(scheduler, "req-2", "")
+    assert second.warm is False
     assert second.container_id == ""
 
 

@@ -4,9 +4,10 @@ The previous router never deleted anything: STATUS_REMOVED was stored as a
 value and acted on nowhere, so workers, containers and sessions accumulated for
 the process's lifetime.
 
-TTLs are a promise about a well-behaved client; the session cap is a promise
-about memory. Both are needed, because the first is only true when clients
-behave.
+TTLs are a promise about a well-behaved client. Sessions carry no TTL or cap
+of their own here: ClusterState.remove_executor deletes a session outright
+the moment the container backing it is gone, so a session can never outlive
+its container regardless of how a client behaves.
 """
 
 from __future__ import annotations
@@ -26,9 +27,7 @@ class ReaperPolicy:
     worker_ttl: float
     executor_ttl: float
     executor_error_ttl: float
-    session_ttl: float
     lease_ttl: float
-    max_sessions: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,16 +36,12 @@ class SweepResult:
 
     workers: int = 0
     executors: int = 0
-    sessions: int = 0
     leases: int = 0
-    evicted_by_cap: int = 0
 
     @property
     def is_empty(self) -> bool:
         """Whether the sweep removed nothing, so it need not be logged."""
-        return not (
-            self.workers or self.executors or self.sessions or self.leases or self.evicted_by_cap
-        )
+        return not (self.workers or self.executors or self.leases)
 
 
 class Reaper:
@@ -76,8 +71,6 @@ class Reaper:
             leases=self._sweep_leases(now),
             workers=self._sweep_workers(now),
             executors=self._sweep_executors(now),
-            sessions=self._sweep_sessions(now),
-            evicted_by_cap=self._enforce_session_cap(),
         )
 
     def _sweep_leases(self, now: float) -> int:
@@ -129,26 +122,3 @@ class Reaper:
                     self._state.remove_executor(worker.worker_id, executor.container_id)
                     removed += 1
         return removed
-
-    def _sweep_sessions(self, now: float) -> int:
-        """Delete idle sessions. This is the fix for unbounded growth."""
-        removed = 0
-        for session in self._state.sessions():
-            if session.is_idle and now - session.last_seen > self._policy.session_ttl:
-                self._state.remove_session(session.session_id)
-                removed += 1
-        return removed
-
-    def _enforce_session_cap(self) -> int:
-        """Evict the least recently used idle sessions above the cap."""
-        overflow = self._state.session_count() - self._policy.max_sessions
-        if overflow <= 0:
-            return 0
-
-        idle = sorted(
-            (s for s in self._state.sessions() if s.is_idle),
-            key=lambda s: s.last_seen,
-        )
-        for session in idle[:overflow]:
-            self._state.remove_session(session.session_id)
-        return min(overflow, len(idle))

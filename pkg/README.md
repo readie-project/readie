@@ -115,3 +115,47 @@ with readie.default_client().session() as s:
 Calls inside one session are **serialised by the router**: a session maps to one
 container running one interpreter behind one socket, so they cannot safely run at
 once. Unrelated sessions stay fully parallel.
+
+`client.session()` is a convenience wrapper - `Session` itself is a plain,
+constructible class, so you are not limited to the context-manager form:
+
+```python
+s = readie.Session()
+load_data.bind(s)()
+train.bind(s)()
+# ... later, maybe in another function ...
+s.close()
+```
+
+There are three equivalent ways to run a call inside a session - decoration
+time, a bound copy, or per-call:
+
+```python
+@remote(session=s)          # every call through this name uses s
+def f(): ...
+
+g = train.bind(s)           # a copy of an existing @remote bound to s
+                             # (the original is untouched, since it is
+                             # module-level and shared)
+
+readie.default_client().call(train.func, session=s)  # one-off, via the client directly
+```
+
+`Session()` also accepts an explicit id (`Session(session_id="sess-...")`), so
+a session can be reconstructed - in another process, or after this one
+restarts - as long as its container hasn't since been torn down (below).
+
+**Closing a session is purely local.** It just stops this client using the
+id; no message reaches the router. The router, in turn, never removes a
+session on a timer or a cap of its own - only once the container behind it
+is actually gone (typically the *worker's* own pause TTL reclaiming it; see
+the worker README) does it retire the id. So a session can safely outlive
+`close()`, but the two cases that follow are not the same:
+
+- A `session_id` the router has genuinely never seen (including a brand-new
+  `Session()`) is not an error - the call just cold-starts, exactly like a
+  call with no session at all.
+- Reusing a `session_id` whose container the router has already reclaimed
+  raises `readie.SessionExpiredError` instead of silently cold-starting under
+  an id that looks like it should still carry warm state. Open a new
+  `Session` rather than retrying the old one.
