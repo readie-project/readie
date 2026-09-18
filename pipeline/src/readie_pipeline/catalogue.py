@@ -4,10 +4,13 @@ Written once per generation beside the manifest and read by the router at
 startup. It is the whole input to request-time checkpoint selection:
 
 * ``items`` - every measured item (package, dataset, model, tokenizer) with its
-  disk size, load time, and (for a package with measured dependencies) the
-  item keys of its direct dependencies, so the router can expand a request's
-  declared needs into the same closure the planner scored checkpoints against
-  before pricing the residual.
+  resident memory size, load time, and (for a package with measured
+  dependencies) the item keys of its direct dependencies, so the router can
+  expand a request's declared needs into the same closure the planner scored
+  checkpoints against before pricing the residual. ``size_mb`` here is memory,
+  not disk: what gVisor actually copies back on restore, and what the
+  ``alpha * size`` term below is charging for -- see
+  ``PackageFacts.memory_size_mb``.
 * ``checkpoints`` - each checkpoint's item set and its raw total size (MB). Two
   item lists per checkpoint: ``items`` is the full dependency closure (what is
   actually resident, and what pricing needs), ``canonical`` is only what some
@@ -97,7 +100,7 @@ def build_catalogue(
     items: dict[str, dict[str, Any]] = {}
     for name, facts in metadata.packages.items():
         entry: dict[str, Any] = {
-            "size_mb": round(facts.disk_size_mb, 4),
+            "size_mb": round(facts.memory_size_mb, 4),
             "load_time": facts.import_time,
             "resource_type": str(facts.resource_type),
         }
@@ -109,7 +112,7 @@ def build_catalogue(
     checkpoints = []
     for checkpoint_id, plan in entries:
         keys = _checkpoint_items(plan, metadata)
-        size_mb = sum(metadata.size_mb(_bare(key)) for key in keys)
+        size_mb = sum(metadata.memory_size_mb(_bare(key)) for key in keys)
         checkpoints.append(
             {
                 "id": checkpoint_id,

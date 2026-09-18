@@ -41,7 +41,11 @@ def test_plan_produces_a_plan_from_the_committed_corpus(workspace: Path, capsys)
     assert code == 0
     plan = json.loads((workspace / "checkpoints.json").read_text())
     assert 1 <= len(plan) <= 2
-    assert plan[0]["imports"]
+    # A single facility's own top-level ask can be filtered out as ineligible
+    # even while its shared dependencies remain (see MIN_COVERAGE), so it's
+    # the plan as a whole -- not necessarily its first entry -- that must
+    # report something the executor can act on.
+    assert any(p["imports"] for p in plan)
     assert plan[0]["requests_served"] > 0
     assert "planning over" in capsys.readouterr().out
 

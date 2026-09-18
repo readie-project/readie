@@ -1,9 +1,14 @@
 """Measure what each package costs to have available.
 
-Two numbers per package: disk size, and the time to import it with its
-dependencies already resident. The second is what a checkpoint saves, and it has
-to be measured in a subprocess -- an import is cached after the first one, so
-timing it in-process measures a dictionary lookup.
+Three numbers per package: disk size, the resident memory it adds once
+imported, and the time to import it with its dependencies already resident.
+The last two have to be measured in a subprocess -- an import is cached after
+the first one, so timing or memory-sampling it in-process measures a
+dictionary lookup, not the real cost. Disk size and resident memory are not
+proportional to each other per package (a package can unpack to a small
+on-disk footprint but allocate a much larger one in memory, or the reverse),
+and it is memory, not disk, that gVisor actually has to copy back on restore --
+see ``PackageFacts.memory_size_mb``.
 
 A package's dependencies are walked and measured too, recursively down to
 packages with no dependencies of their own, so a closure over the result (see
@@ -27,11 +32,25 @@ from packaging.requirements import InvalidRequirement, Requirement
 
 from readie_pipeline.metadata.models import Metadata, PackageFacts
 
-#: Imports the dependencies first, then times the target alone. Without the
-#: warm-up the measurement is dominated by whatever the target pulls in, which
-#: is not what a checkpoint of *this* package saves.
+#: Imports the dependencies first, then times and memory-samples the target
+#: alone. Without the warm-up both measurements are dominated by whatever the
+#: target pulls in, which is not what a checkpoint of *this* package saves.
 _PROFILER = """
 import json, sys, time
+
+def _vmrss_mb():
+    # /proc/self/status, not resource.getrusage: ru_maxrss is a
+    # monotonically increasing peak, not a point-in-time snapshot, so a
+    # heavy dependency warmed up just before a small target would pollute
+    # that target's own before/after delta.
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024
+    except OSError:
+        pass
+    return 0.0
 
 dependencies, target = json.loads(sys.argv[1]), sys.argv[2]
 for name in dependencies:
@@ -40,10 +59,13 @@ for name in dependencies:
     except BaseException:
         pass
 
+before_mb = _vmrss_mb()
 start = time.perf_counter()
 try:
     __import__(target)
-    print(json.dumps({"time": time.perf_counter() - start}))
+    elapsed = time.perf_counter() - start
+    memory_mb = max(_vmrss_mb() - before_mb, 0.0)
+    print(json.dumps({"time": elapsed, "memory_mb": memory_mb}))
 except BaseException as exc:
     print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}))
 """
@@ -184,7 +206,11 @@ def analyze_package(import_name: str, dist_name: str) -> PackageFacts:
     if "error" in measured:
         return replace(facts, error=str(measured["error"]))
 
-    return replace(facts, import_time=float(measured.get("time", 0.0)))
+    return replace(
+        facts,
+        import_time=float(measured.get("time", 0.0)),
+        memory_size_mb=float(measured.get("memory_mb", 0.0)),
+    )
 
 
 def _visit(

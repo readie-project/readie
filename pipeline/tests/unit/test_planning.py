@@ -21,10 +21,16 @@ def req(*imports: str) -> Request:
 
 
 def facts(**sizes: tuple[float, float]) -> Metadata:
-    """metadata(name=(size_mb, import_seconds))."""
+    """metadata(name=(size_mb, import_seconds)).
+
+    Sets both disk and memory size to the same value: the planner scores
+    memory_size_mb, but these fixtures don't care about the distinction.
+    """
     return Metadata(
         {
-            name: PackageFacts(base_import=name, disk_size_mb=size, import_time=seconds)
+            name: PackageFacts(
+                base_import=name, disk_size_mb=size, memory_size_mb=size, import_time=seconds
+            )
             for name, (size, seconds) in sizes.items()
         }
     )
@@ -87,12 +93,17 @@ def test_it_prefers_the_cheaper_of_two_equally_useful_packages():
 
 
 def test_it_respects_the_size_budget():
+    # size_mb is a total shared across every checkpoint, not a per-checkpoint
+    # allowance: a, b and c are equally good on their own (60 MB each), so only
+    # two of the three fit in a 130 MB total before the budget is spent.
     corpus = Corpus.of([req("a")] * 20 + [req("b")] * 20 + [req("c")] * 20)
     metadata = facts(a=(60, 1.0), b=(60, 1.0), c=(60, 1.0))
 
-    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=130))
-    assert plans[0].size_mb <= 130
-    assert len(plans[0].imports) == 2
+    plans = GreedyPlanner(alpha=0.01).plan(
+        corpus, metadata, Budget(max_checkpoints=10, size_mb=130)
+    )
+    assert sum(p.size_mb for p in plans) <= 130
+    assert len(plans) == 2
 
 
 def test_it_stops_once_nothing_improves_on_what_is_already_planned():
@@ -157,18 +168,18 @@ def test_alpha_is_the_size_vs_time_threshold():
     # valuable and always wins that first pick regardless of alpha, which is
     # what gives the borderline package (a 10 MB facility saving 0.05s per
     # request, twice) a real baseline to be judged against: a low alpha still
-    # finds it worth adding on top of anchor, a high alpha does not. This is
-    # the knob the router shares to select the checkpoint that minimises the
-    # same alpha*size + residual cost.
+    # finds it worth its own checkpoint slot on top of anchor's, a high alpha
+    # does not. This is the knob the router shares to select the checkpoint
+    # that minimises the same alpha*size + residual cost.
     corpus = Corpus.of([req("anchor")] * 1000 + [req("borderline")] * 2)
     metadata = facts(anchor=(1, 100.0), borderline=(10, 0.05))
-    budget = Budget(max_checkpoints=1, size_mb=50)
+    budget = Budget(max_checkpoints=10, size_mb=50)
 
     lenient = GreedyPlanner(alpha=0.001).plan(corpus, metadata, budget)
     strict = GreedyPlanner(alpha=0.1).plan(corpus, metadata, budget)
 
-    assert set(lenient[0].imports) == {"anchor", "borderline"}
-    assert strict[0].imports == ("anchor",), (
+    assert {p.imports for p in lenient} == {("anchor",), ("borderline",)}
+    assert [p.imports for p in strict] == [("anchor",)], (
         "the stricter weight must reject borderline but keep anchor"
     )
 
@@ -184,10 +195,13 @@ def test_a_selected_checkpoint_is_sized_and_charged_for_its_dependencies_too():
             "pandas": PackageFacts(
                 base_import="pandas",
                 disk_size_mb=40,
+                memory_size_mb=40,
                 import_time=0.3,
                 dependencies={"numpy": ">=1.20"},
             ),
-            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20, import_time=0.1),
+            "numpy": PackageFacts(
+                base_import="numpy", disk_size_mb=20, memory_size_mb=20, import_time=0.1
+            ),
         }
     )
 
@@ -221,32 +235,47 @@ def test_reported_imports_are_only_what_a_request_actually_asked_for():
     assert plans[0].imports == ("pandas",)
 
 
-def test_a_dependency_shared_by_two_packages_is_charged_only_once():
+def test_unrelated_requests_each_get_their_own_checkpoint_priced_independently():
+    # pandas and scipy are unrelated top-level asks that happen to share a
+    # dependency. Checkpoints are never merged, so each becomes its own
+    # checkpoint, and each is charged for numpy on its own account rather than
+    # splitting or deduplicating it across the two.
     corpus = Corpus.of([req("pandas")] * 30 + [req("scipy")] * 30)
     metadata = Metadata(
         {
             "pandas": PackageFacts(
                 base_import="pandas",
                 disk_size_mb=40,
+                memory_size_mb=40,
                 import_time=0.3,
                 dependencies={"numpy": ">=1.20"},
             ),
             "scipy": PackageFacts(
                 base_import="scipy",
                 disk_size_mb=50,
+                memory_size_mb=50,
                 import_time=0.5,
                 dependencies={"numpy": ">=1.20"},
             ),
-            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20, import_time=0.1),
+            "numpy": PackageFacts(
+                base_import="numpy", disk_size_mb=20, memory_size_mb=20, import_time=0.1
+            ),
         }
     )
 
-    plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
+    plans = GreedyPlanner(alpha=0.01).plan(
+        corpus, metadata, Budget(max_checkpoints=10, size_mb=500)
+    )
+    by_imports = {p.imports: p for p in plans}
 
-    assert set(plans[0].imports) == {"pandas", "scipy"}, "numpy is charged for, but not reported"
-    # numpy's size and import time appear once, not once per package needing it.
-    assert plans[0].size_mb == pytest.approx(40 + 50 + 20)
-    assert plans[0].seconds_saved == pytest.approx((0.3 + 0.1) * 30 + (0.5 + 0.1) * 30)
+    # Each request restores from exactly one checkpoint, so a pandas request's
+    # numpy overlap is credited only to the pandas checkpoint (its cheapest
+    # option) even though the scipy checkpoint also holds numpy.
+    assert set(by_imports) == {("pandas",), ("scipy",)}
+    assert by_imports[("pandas",)].size_mb == pytest.approx(40 + 20)
+    assert by_imports[("pandas",)].seconds_saved == pytest.approx((0.3 + 0.1) * 30)
+    assert by_imports[("scipy",)].size_mb == pytest.approx(50 + 20)
+    assert by_imports[("scipy",)].seconds_saved == pytest.approx((0.5 + 0.1) * 30)
 
 
 def test_imports_are_sorted_so_a_plan_diffs_cleanly():
@@ -280,27 +309,28 @@ def test_the_plan_is_deterministic_across_runs():
 
 def test_it_beats_the_fixed_plan_on_the_real_corpus():
     # The bar the greedy planner has to clear: the hardcoded pandas+numpy set.
+    # Checkpoints are no longer merged, so a fair comparison needs enough
+    # slots for greedy's several small, targeted checkpoints to add up against
+    # fixed's one broad one.
     corpus, metadata = real_inputs()
-    budget = Budget(max_checkpoints=1, size_mb=400)
+    budget = Budget(max_checkpoints=8, size_mb=400)
 
-    greedy = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)[0]
+    greedy = GreedyPlanner(alpha=0.01).plan(corpus, metadata, budget)
     fixed = FixedPlanner().plan(corpus, metadata, budget)[0]
 
-    assert greedy.requests_served > fixed.requests_served
-    assert greedy.seconds_saved > fixed.seconds_saved
+    assert sum(p.requests_served for p in greedy) > fixed.requests_served
+    assert sum(p.seconds_saved for p in greedy) > fixed.seconds_saved
 
 
 def test_a_roomier_budget_affords_more_checkpoints():
     # size_mb is a total budget shared across every checkpoint in the plan, so
-    # a bigger total keeps affording another checkpoint each round, up to
-    # max_checkpoints; a tight total is spent after just a couple and the plan
-    # stops there even though more checkpoints were allowed.
+    # a bigger total keeps affording another checkpoint, up to max_checkpoints;
+    # a tight total is spent after just a couple and the plan stops there even
+    # though more checkpoints were allowed.
     corpus, metadata = real_inputs()
 
-    roomy = GreedyPlanner(alpha=0.01).plan(
-        corpus, metadata, Budget(max_checkpoints=4, size_mb=4096)
-    )
-    tight = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=300))
+    roomy = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=100))
+    tight = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=4, size_mb=20))
 
     assert len(roomy) > len(tight)
 

@@ -93,7 +93,8 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
             print(f"    {name}: {error}", file=sys.stderr)
         elif args.verbose:
             print(
-                f"    {name}: {getattr(facts, 'disk_size_mb', 0.0):.1f} MB, "
+                f"    {name}: {getattr(facts, 'disk_size_mb', 0.0):.1f} MB disk, "
+                f"{getattr(facts, 'memory_size_mb', 0.0):.1f} MB resident, "
                 f"{getattr(facts, 'import_time', 0.0):.3f} s"
             )
 

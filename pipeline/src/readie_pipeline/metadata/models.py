@@ -45,6 +45,15 @@ class PackageFacts:
 
     dependencies: dict[str, str] = field(default_factory=dict)
     disk_size_mb: float = 0.0
+    memory_size_mb: float = 0.0
+    """Resident memory (RSS) this package adds once imported, with its
+    dependencies already resident -- same incremental measurement as
+    ``import_time``, not cumulative, so a closure sums it without
+    double-counting a shared dependency. This, not ``disk_size_mb``, is what
+    gVisor actually has to copy back on restore: a package's on-disk install
+    footprint and its resident memory footprint are not proportional to each
+    other (nltk measures ~10MB on disk but ~120MB resident, for example), so
+    the planner and catalogue price checkpoints by this instead."""
     import_time: float = 0.0
     """Seconds to import with its dependencies already resident. This is what a
     checkpoint saves, and what the planner maximises."""
@@ -75,6 +84,7 @@ class PackageFacts:
             distribution=str(raw.get("distribution") or ""),
             dependencies=dict(raw.get("dependencies") or {}),
             disk_size_mb=float(raw.get("disk_size_mb") or 0.0),
+            memory_size_mb=float(raw.get("memory_size_mb") or 0.0),
             # Both spellings accepted: the committed data uses import_time and
             # the previous writer emitted load_time.
             import_time=float(raw.get("import_time") or raw.get("load_time") or 0.0),
@@ -99,6 +109,7 @@ class PackageFacts:
             "distribution": self.distribution,
             "dependencies": dict(self.dependencies),
             "disk_size_mb": round(self.disk_size_mb, 4),
+            "memory_size_mb": round(self.memory_size_mb, 4),
             "import_time": self.import_time,
             "resource_type": str(self.resource_type),
         }
@@ -131,6 +142,15 @@ class Metadata:
         """
         facts = self.packages.get(name)
         return facts.disk_size_mb if facts else 0.0
+
+    def memory_size_mb(self, name: str) -> float:
+        """Resident memory cost, or zero when unknown.
+
+        What the planner and catalogue actually price a checkpoint by -- see
+        ``PackageFacts.memory_size_mb``.
+        """
+        facts = self.packages.get(name)
+        return facts.memory_size_mb if facts else 0.0
 
     def import_time(self, name: str) -> float:
         """Import cost in seconds, or zero when unknown."""

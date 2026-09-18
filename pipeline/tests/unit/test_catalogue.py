@@ -19,11 +19,16 @@ from readie_pipeline.planning.ports import CheckpointPlan
 def _metadata() -> Metadata:
     return Metadata(
         {
-            "pandas": PackageFacts(base_import="pandas", disk_size_mb=30.0, import_time=0.25),
-            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20.0, import_time=0.15),
+            "pandas": PackageFacts(
+                base_import="pandas", disk_size_mb=30.0, memory_size_mb=30.0, import_time=0.25
+            ),
+            "numpy": PackageFacts(
+                base_import="numpy", disk_size_mb=20.0, memory_size_mb=20.0, import_time=0.15
+            ),
             "gpt2": PackageFacts(
                 base_import="gpt2",
                 disk_size_mb=500.0,
+                memory_size_mb=500.0,
                 import_time=2.0,
                 resource_type=ResourceType.MODEL,
             ),
@@ -112,11 +117,16 @@ def test_catalogue_carries_the_closure_and_the_canonical_list_separately() -> No
                 base_import="pandas",
                 distribution="pandas",
                 disk_size_mb=30.0,
+                memory_size_mb=30.0,
                 import_time=0.25,
                 dependencies={"numpy": ">=1.20"},
             ),
             "numpy": PackageFacts(
-                base_import="numpy", distribution="numpy", disk_size_mb=20.0, import_time=0.15
+                base_import="numpy",
+                distribution="numpy",
+                disk_size_mb=20.0,
+                memory_size_mb=20.0,
+                import_time=0.15,
             ),
         }
     )
