@@ -11,7 +11,8 @@ import readie
 from readie import remote
 
 # Uncomment the below line to connect to a router running locally.
-# readie.configure(router_uri="localhost:50051", tls=False)  # no TLS for local
+# readie.configure(router_uri="localhost:50051", tls=False)  # noqa: ERA001 - no TLS for local
+
 
 @remote
 def add(a: int, b: int) -> int:
@@ -37,17 +38,17 @@ async def concurrent() -> None:
     print("concurrent:", results)
 
 
-# def warm_session() -> None:
-#     """A session reuses one container, keeping whatever state the last call left.
+def warm_session() -> None:
+    """A session reuses one container, keeping whatever state the last call left.
 
-#     The trade is serialisation: a container is one interpreter behind one socket,
-#     so the router runs these one after another.
-#     """
-#     client = readie.default_client()
-#     with client.session() as session:
-#         warm = load_frame.bind(session)
-#         print("first (cold):", warm(10))
-#         print("second (warm):", warm(20))
+    The trade is serialisation: a container is one interpreter behind one socket,
+    so the router runs these one after another.
+    """
+    client = readie.default_client()
+    with client.session() as session:
+        warm = load_frame.bind(session)
+        print("first (cold):", warm(10))
+        print("second (warm):", warm(20))
 
 
 def handling_failure() -> None:
@@ -69,5 +70,5 @@ def handling_failure() -> None:
 if __name__ == "__main__":
     blocking()
     asyncio.run(concurrent())
-    # warm_session()
+    warm_session()
     handling_failure()

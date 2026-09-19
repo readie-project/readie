@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import grpc
 import os
-import pytest
+
+import grpc
 
 from readie._channels import channel_credentials
 from readie.config import Settings
 from readie.transport import _auth_metadata
-from readie.errors import ConfigurationError
 
 
 def test_no_token_sends_no_metadata() -> None:
@@ -17,7 +16,7 @@ def test_no_token_sends_no_metadata() -> None:
 
 
 def test_a_token_becomes_bearer_metadata() -> None:
-    os.environ["READIE_AUTH_TOKEN"] = "s3cret"  # noqa: S106 - a test literal, not a secret
+    os.environ["READIE_AUTH_TOKEN"] = "s3cret"  # noqa: S105 - a test literal, not a secret
     settings = Settings()
     del os.environ["READIE_AUTH_TOKEN"]
 

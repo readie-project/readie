@@ -19,17 +19,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import shutil
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
 from readie_pipeline.capture.build import CaptureError, capture, measure_time
-from readie_pipeline.capture.spec import SpecError, build_config, runsc_version, ExecutorMode
+from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, runsc_version
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
-from readie_pipeline.config import ConfigError, CorpusSettings, Settings, ALPHA_PRECISION
+from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
 from readie_pipeline.corpus.models import Corpus, CorpusError
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
@@ -42,7 +42,8 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 
     ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
     """
-    from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415 - avoids an import cycle
+    # Both nested imports avoid an import cycle.
+    from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415
 
     if name == "fixed":
         return FixedPlanner()
@@ -216,8 +217,10 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     ).write(settings.output_dir)
 
     computed_alpha = round(np.mean(computed_alphas), ALPHA_PRECISION)
+    drift = computed_alpha - settings.alpha
     print(
-        f"\n[*] planned alpha value: {settings.alpha}, computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}"
+        f"\n[*] planned alpha value: {settings.alpha}, "
+        f"computed alpha: {computed_alpha}, drift: {drift}"
     )
     # The catalogue the router selects from: every measured item's cost plus each
     # checkpoint's contents and precomputed size term.

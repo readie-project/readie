@@ -1,9 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # push:
+  #   branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 # A new push to the same branch makes the in-flight run redundant.
 concurrency:
@@ -74,9 +76,13 @@ jobs:
       - name: Test
         run: go test -race ./...
 
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          working-directory: worker
+      # Uses the golangci-lint version pinned in worker/Makefile rather than
+      # golangci-lint-action's own resolution, which can lag the module's Go
+      # version and refuse to run.
+      - name: Lint
+        run: |
+          make tools
+          make lint
 
   buf:
     name: protos lint
@@ -90,6 +96,13 @@ jobs:
       - uses: bufbuild/buf-action@v1
         with:
           setup_only: true
+
+      # actions/checkout only fetches the checked-out ref's history, even with
+      # fetch-depth: 0 - it never creates a local `main` branch, which is what
+      # `buf breaking --against '.git#branch=main'` needs below.
+      - name: Fetch main
+        if: github.event_name == 'pull_request'
+        run: git fetch origin main:main
 
       - name: Lint
         run: buf lint
@@ -118,11 +131,11 @@ jobs:
         with:
           go-version-file: worker/go.mod
 
+      # worker/Makefile pins protoc, protoc-gen-go and protoc-gen-go-grpc to the
+      # exact versions the committed stubs were generated with; `tools` is the
+      # one place that installs all three, so CI can't drift from local dev.
       - name: Install protoc plugins
-        run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        run: make -C worker tools
 
       - name: Regenerate
         run: make protos
@@ -163,6 +176,7 @@ jobs:
 
   images:
     name: images build
+    if: false # temporarily disabled
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

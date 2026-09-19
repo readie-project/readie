@@ -11,10 +11,13 @@ import asyncio
 def add(a, b):
     return a + b
 
+
 print(add(1, 2))  # blocking
+
 
 async def add_async(a, b):
     return await add.aio(a, b)
+
 
 print(asyncio.run(add_async(1, 2)))  # from an event loop
 ```
@@ -70,7 +73,9 @@ Configuration options:
 ```python
 import readie
 
-readie.configure(router_uri="localhost:50051", timeout=120.0, chunk_size=64*1024, stream_logs=True, tls=False)
+readie.configure(
+    router_uri="localhost:50051", timeout=120.0, chunk_size=64 * 1024, stream_logs=True, tls=False
+)
 ```
 
 The following are configurable only from the environment:
@@ -131,12 +136,13 @@ There are three equivalent ways to run a call inside a session - decoration
 time, a bound copy, or per-call:
 
 ```python
-@remote(session=s)          # every call through this name uses s
+@remote(session=s)  # every call through this name uses s
 def f(): ...
 
-g = train.bind(s)           # a copy of an existing @remote bound to s
-                             # (the original is untouched, since it is
-                             # module-level and shared)
+
+g = train.bind(s)  # a copy of an existing @remote bound to s
+# (the original is untouched, since it is
+# module-level and shared)
 
 readie.default_client().call(train.func, session=s)  # one-off, via the client directly
 ```

@@ -14,10 +14,10 @@ safe format and lose only the ability to return arbitrary objects.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-import sys
 import cloudpickle
 
 from readie.errors import SerializationError
@@ -62,11 +62,10 @@ class CloudpickleCodec:
         packages: Sequence[str] = (),
     ) -> bytes:
         """Pickle the function object together with its arguments."""
-
         # Print the Python interpreter version
-        print(f"Python version: {sys.version}")
+        print(f"Python version: {sys.version}")  # noqa: T201
         # Print the cloudpickle package version
-        print(f"cloudpickle version: {cloudpickle.__version__}")
+        print(f"cloudpickle version: {cloudpickle.__version__}")  # noqa: T201
 
         try:
             return bytes(

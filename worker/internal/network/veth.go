@@ -266,7 +266,7 @@ func (p *VethProvisioner) runBatch(ctx context.Context, lines []string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	if _, err := p.opts.Runner.Output(ctx, p.opts.IPBinary, "-batch", path); err != nil {
 		return err
@@ -285,7 +285,7 @@ func (p *VethProvisioner) runNetnsBatch(ctx context.Context, netns string, lines
 	if err != nil {
 		return err
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	if _, err := p.opts.Runner.Output(ctx, p.opts.IPBinary,
 		"netns", "exec", netns, p.opts.IPBinary, "-batch", path); err != nil {
@@ -301,10 +301,10 @@ func writeBatchFile(lines []string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create ip batch file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", fmt.Errorf("write ip batch file: %w", err)
 	}
 	return f.Name(), nil

@@ -33,8 +33,7 @@ class NoCapacityError(SchedulingError):
     """Workers exist, but none can accept the request's allocation."""
 
     def __init__(self, *, candidates: int) -> None:
-        super().__init__(
-            f"none of the {candidates} healthy workers can accept this request")
+        super().__init__(f"none of the {candidates} healthy workers can accept this request")
         self.candidates = candidates
 
 
@@ -46,8 +45,7 @@ class SessionBusyError(SchedulingError):
     """
 
     def __init__(self, session_id: str, *, waited: float) -> None:
-        super().__init__(
-            f"session {session_id} is still busy after {waited:g}s")
+        super().__init__(f"session {session_id} is still busy after {waited:g}s")
         self.session_id = session_id
 
 

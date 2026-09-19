@@ -102,8 +102,7 @@ class ClusterState:
         worker = self.ensure_worker(worker_id, now)
         executor = worker.executors.get(container_id)
         if executor is None:
-            executor = ExecutorRecord(
-                container_id=container_id, worker_id=worker_id, last_seen=now)
+            executor = ExecutorRecord(container_id=container_id, worker_id=worker_id, last_seen=now)
             worker.executors[container_id] = executor
         else:
             executor.last_seen = now

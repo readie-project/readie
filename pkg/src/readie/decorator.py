@@ -85,7 +85,7 @@ class RemoteFunction(Generic[P, R]):
             packages=self._packages,
         )
         end_time = time.perf_counter()
-        print(f"Execution completed in {end_time - start_time}s")
+        print(f"Execution completed in {end_time - start_time}s")  # noqa: T201
         return result
 
     async def aio(self, *args: P.args, **kwargs: P.kwargs) -> R:
@@ -102,7 +102,7 @@ class RemoteFunction(Generic[P, R]):
             packages=self._packages,
         )
         end_time = time.perf_counter()
-        print(f"Execution completed in {end_time - start_time}s")
+        print(f"Execution completed in {end_time - start_time}s")  # noqa: T201
         return result
 
     def local(self, *args: P.args, **kwargs: P.kwargs) -> R:

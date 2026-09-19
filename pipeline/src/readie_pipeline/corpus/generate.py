@@ -105,8 +105,7 @@ def parse_batch(raw: str, *, on_skip: Callable[[str, str], None] | None = None) 
 
     requests: list[Request] = []
     for entry in entries:
-        name = str(entry.get("task_name", "<unnamed>")) if isinstance(
-            entry, dict) else "<unnamed>"
+        name = str(entry.get("task_name", "<unnamed>")) if isinstance(entry, dict) else "<unnamed>"
         try:
             facts = analyse(str(entry["code"]))
             requests.append(
@@ -161,14 +160,12 @@ def generate(
             api_key=settings.api_key,
         )
 
-    corpus = Corpus.load(
-        corpus_path) if corpus_path.exists() else Corpus.of([])
+    corpus = Corpus.load(corpus_path) if corpus_path.exists() else Corpus.of([])
     wanted = tuple(categories or settings.categories or DEFAULT_CATEGORIES)
 
     for category in wanted:
         for batch in range(1, settings.batches_per_category + 1):
-            on_line(
-                f"[*] {category}: batch {batch}/{settings.batches_per_category}")
+            on_line(f"[*] {category}: batch {batch}/{settings.batches_per_category}")
 
             avoid = [r.task_name for r in corpus]
             response = client.chat.completions.create(
@@ -185,8 +182,7 @@ def generate(
             try:
                 fresh = parse_batch(
                     response.choices[0].message.content or "",
-                    on_skip=lambda name, why: on_line(
-                        f"    skipped {name}: {why}"),
+                    on_skip=lambda name, why: on_line(f"    skipped {name}: {why}"),
                 )
             except CorpusError as exc:
                 on_line(f"    batch failed: {exc}")

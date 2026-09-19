@@ -253,11 +253,11 @@ func (a *Adapter) Create(_ context.Context, spec sandbox.CreateSpec) (string, er
 // The timeout is belt and braces so a hang surfaces as a downgrade rather than a wedged execution.
 func (a *Adapter) Start(ctx context.Context, id string, spec sandbox.StartSpec) error {
 	if spec.CheckpointID != "" {
-		go a.restore(ctx, id, spec)
+		go func() { _ = a.restore(ctx, id, spec) }()
 		return nil
 	}
 
-	go a.coldStart(ctx, id)
+	go func() { _ = a.coldStart(ctx, id) }()
 	return nil
 }
 
