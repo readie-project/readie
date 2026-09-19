@@ -11,7 +11,7 @@ in the request path.
 ## Quick start
 
 ```sh
-make tools     # install pinned protoc plugins and golangci-lint
+make tools     # install pinned protoc, protoc plugins, and golangci-lint
 make test      # go test -race ./...
 make lint      # golangci-lint
 make build     # produce ./go-server and ./ocispec

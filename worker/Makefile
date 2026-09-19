@@ -8,6 +8,26 @@ PROTOC_GEN_GO      := google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 PROTOC_GEN_GO_GRPC := google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
 GOLANGCI_LINT      := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.6.2
 
+# protoc itself isn't go-installable; `tools` fetches this exact release into
+# GOBIN so `make proto` reproduces the committed stubs byte-for-byte instead of
+# drifting with whatever a package manager happens to carry. Bump alongside
+# the `protoc vX.Y.Z` line in the generated headers.
+PROTOC_VERSION := 33.4
+
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_S),Darwin)
+	PROTOC_OS := osx
+else
+	PROTOC_OS := linux
+endif
+ifneq (,$(filter arm64 aarch64,$(UNAME_M)))
+	PROTOC_ARCH := aarch_64
+else
+	PROTOC_ARCH := x86_64
+endif
+PROTOC_URL := https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/protoc-$(PROTOC_VERSION)-$(PROTOC_OS)-$(PROTOC_ARCH).zip
+
 # Pin lint's toolchain to the version the module targets so `make lint`
 # is deterministic regardless of what `go` resolves to on PATH.
 # Bump this once golangci-lint supports the newer format.
@@ -57,7 +77,7 @@ tidy: ## Tidy and verify go.mod/go.sum
 # this. Do not add a package declaration. proxy.proto is router-only and is not
 # generated here.
 proto: ## Regenerate the gRPC stubs from ../protos
-	@command -v protoc >/dev/null 2>&1 || { echo "protoc not found (brew install protobuf)"; exit 1; }
+	@PATH="$(GOBIN):$$PATH" command -v protoc >/dev/null 2>&1 || { echo "protoc not found; run 'make tools'"; exit 1; }
 	PATH="$(GOBIN):$$PATH" protoc -I $(PROTO_DIR) \
 		--go_out=. --go_opt=module=$(MODULE) \
 		--go-grpc_out=. --go-grpc_opt=module=$(MODULE) \
@@ -70,6 +90,13 @@ tools: ## Install the pinned code-generation and lint tools
 	$(GO) install $(PROTOC_GEN_GO)
 	$(GO) install $(PROTOC_GEN_GO_GRPC)
 	$(GO) install $(GOLANGCI_LINT)
+	@mkdir -p $(GOBIN)
+	@tmp=$$(mktemp -d); \
+	curl -sSL -o "$$tmp/protoc.zip" "$(PROTOC_URL)"; \
+	unzip -oq "$$tmp/protoc.zip" -d "$$tmp" bin/protoc; \
+	mv "$$tmp/bin/protoc" "$(GOBIN)/protoc"; \
+	chmod +x "$(GOBIN)/protoc"; \
+	rm -rf "$$tmp"
 
 # No `docker` target. `Dockerfile` here is `FROM readie-worker-base`, so building it
 # means resolving that tag and applying the repository's tagging convention:
