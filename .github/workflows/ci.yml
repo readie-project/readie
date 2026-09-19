@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
 
 # A new push to the same branch makes the in-flight run redundant.
 concurrency:
