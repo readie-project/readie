@@ -387,7 +387,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		// called on every request whether or not it needs a network - never
 		// has to. Pushed before "gRPC server" so Close runs last, after
 		// CleanupOrphans has released every container's slot.
-		if err := netProvisioner.WarmUp(ctx); err != nil {
+		if err = netProvisioner.WarmUp(ctx); err != nil {
 			return fail(fmt.Errorf("warm up sandbox network pool: %w", err))
 		}
 		app.push("sandbox network", func(ctx context.Context) error { return netProvisioner.Close(ctx) })

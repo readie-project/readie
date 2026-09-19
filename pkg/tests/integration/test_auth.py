@@ -14,7 +14,7 @@ def add(a: int, b: int) -> int:
 
 
 async def test_the_auth_token_is_sent_as_bearer_metadata(harness: RouterHarness) -> None:
-    os.environ["READIE_AUTH_TOKEN"] = "s3cret" # noqa: S106 - a test literal, not a secret
+    os.environ["READIE_AUTH_TOKEN"] = "s3cret"  # noqa: S105 - a test literal, not a secret
     client = Client(
         Settings(
             router_uri=harness.uri,

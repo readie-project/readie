@@ -78,7 +78,7 @@ def test_a_dependency_only_reached_by_a_wrong_name_guess_is_skipped_not_errored(
     monkeypatch.setattr(
         analyze,
         "analyze_package",
-        lambda import_name, dist_name: PackageFacts(
+        lambda import_name, _dist_name: PackageFacts(
             base_import=import_name, dependencies={"Flask": ">=1.0"}
         ),
     )

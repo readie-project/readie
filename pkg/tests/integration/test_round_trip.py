@@ -38,7 +38,9 @@ async def test_the_router_sees_a_header_then_payload_chunks(
 
 async def test_a_large_payload_survives_chunking_over_the_wire(harness: RouterHarness) -> None:
     # Two full chunks plus a remainder, so the framing is genuinely exercised.
-    client = Client(Settings(router_uri=harness.uri, tls=False, chunk_size=64 * 1024, stream_logs=False))
+    client = Client(
+        Settings(router_uri=harness.uri, tls=False, chunk_size=64 * 1024, stream_logs=False)
+    )
     blob = bytes(range(256)) * 1024  # 256 KiB
 
     def echo(payload):

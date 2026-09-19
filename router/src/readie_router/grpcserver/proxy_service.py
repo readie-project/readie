@@ -155,7 +155,11 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             )
         )
         log = log.bind(
-            **{KEY_WORKER_ID: placement.worker_id, KEY_CHECKPOINT_ID: placement.checkpoint_id, KEY_CONTAINER_ID: placement.container_id},
+            **{
+                KEY_WORKER_ID: placement.worker_id,
+                KEY_CHECKPOINT_ID: placement.checkpoint_id,
+                KEY_CONTAINER_ID: placement.container_id,
+            },
             warm=placement.warm,
         )
         log.info("execution placed")

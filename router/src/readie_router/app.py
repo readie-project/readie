@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
 
-import grpc
 import structlog
 
 from readie_router.clock import Clock, MonotonicClock
@@ -64,18 +63,15 @@ class App:
             ),
         )
         if catalogues:
-            self._log.info("loaded checkpoint catalogues",
-                           flavors=sorted(catalogues))
+            self._log.info("loaded checkpoint catalogues", flavors=sorted(catalogues))
         self._scheduler = Scheduler(
             state=self._state,
-            selector=default_selector(
-                memory_headroom=settings.memory_headroom),
+            selector=default_selector(memory_headroom=settings.memory_headroom),
             clock=self._clock,
             catalogues=catalogues,
         )
 
-        self._pool = WorkerChannelPool(
-            max_message_bytes=settings.max_message_bytes)
+        self._pool = WorkerChannelPool(max_message_bytes=settings.max_message_bytes)
         self._executions = deps.executions or GrpcExecutionClient(self._pool)
         health = deps.health or GrpcHealthClient(self._pool)
 
@@ -181,8 +177,7 @@ class App:
             try:
                 result = self._reaper.sweep()
             except Exception as exc:
-                self._log.warning("reaper sweep failed",
-                                  **{KEY_ERROR: str(exc)})
+                self._log.warning("reaper sweep failed", **{KEY_ERROR: str(exc)})
                 continue
             if not result.is_empty:
                 self._log.info(

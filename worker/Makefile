@@ -8,6 +8,11 @@ PROTOC_GEN_GO      := google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 PROTOC_GEN_GO_GRPC := google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
 GOLANGCI_LINT      := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.6.2
 
+# Pin lint's toolchain to the version the module targets so `make lint`
+# is deterministic regardless of what `go` resolves to on PATH.
+# Bump this once golangci-lint supports the newer format.
+GOTOOLCHAIN        := go1.25.0
+
 GO      ?= go
 GOBIN   := $(shell $(GO) env GOPATH)/bin
 
@@ -38,7 +43,7 @@ vet: ## Run go vet
 
 lint: ## Run golangci-lint
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not found; run 'make tools'"; exit 1; }
-	golangci-lint run ./...
+	GOTOOLCHAIN=$(GOTOOLCHAIN) golangci-lint run ./...
 
 fmt: ## Format the tree
 	$(GO) fmt ./...

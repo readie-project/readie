@@ -148,8 +148,7 @@ def read_message(
     total = 0
 
     while True:
-        length = decode_length(read_exactly(
-            reader, LENGTH_BYTES, chunk_size=chunk_size))
+        length = decode_length(read_exactly(reader, LENGTH_BYTES, chunk_size=chunk_size))
 
         if length == 0:
             return b"".join(parts)
@@ -174,7 +173,7 @@ def write_message(writer: Writer, payload: bytes, *, chunk_size: int) -> None:
     reason to wake the reader twice per chunk.
     """
     for start in range(0, len(payload), chunk_size):
-        piece = payload[start: start + chunk_size]
+        piece = payload[start : start + chunk_size]
         writer.sendall(encode_length(len(piece)) + piece)
 
     # A zero-length chunk is the terminator, and it is what an empty payload

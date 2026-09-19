@@ -20,11 +20,11 @@ rootfs. See SECURITY.md.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import sys
 import cloudpickle
 
 
@@ -54,7 +54,6 @@ def decode_call(raw: bytes) -> Call:
     body that unpickled to anything else raised ``KeyError`` or ``TypeError``
     inside the *user's* error path and was reported as the user's fault.
     """
-
     # Print the Python interpreter version
     print(f"[executor] Python version: {sys.version}")
     # Print the cloudpickle package version
@@ -83,7 +82,9 @@ def decode_call(raw: bytes) -> Call:
     args, kwargs = tuple(payload["args"]), dict(payload["kwargs"])
     packages = tuple(payload.get("packages", ()))
     print(
-        f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}, packages={packages}", flush=True)
+        f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}, packages={packages}",
+        flush=True,
+    )
     return Call(func=func, args=args, kwargs=kwargs, packages=packages)
 
 

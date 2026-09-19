@@ -143,8 +143,7 @@ class CompositeSelector:
         if not eligible:
             return None
 
-        best = min(eligible, key=lambda w: (
-            *self.scorer.score(w, demand), w.worker_id))
+        best = min(eligible, key=lambda w: (*self.scorer.score(w, demand), w.worker_id))
         return best.worker_id
 
 
@@ -161,10 +160,8 @@ def default_selector(
     return CompositeSelector(
         filters=(
             FlavorFilter(),
-            ResourceHeadroomFilter(kind=RESOURCE_MEMORY,
-                                   headroom=memory_headroom),
-            ResourceHeadroomFilter(
-                kind=RESOURCE_GPU_MEMORY, headroom=gpu_memory_headroom),
+            ResourceHeadroomFilter(kind=RESOURCE_MEMORY, headroom=memory_headroom),
+            ResourceHeadroomFilter(kind=RESOURCE_GPU_MEMORY, headroom=gpu_memory_headroom),
             ExecutorCountFilter(),
         ),
         scorer=LeastLoadedScorer(),

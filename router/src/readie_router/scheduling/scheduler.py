@@ -85,8 +85,7 @@ class Scheduler:
         demand = request.demand
         lease_id = self._state.next_lease_id()
 
-        worker_id, container_id, checkpoint_id, warm = self._resolve_target(
-            session, demand)
+        worker_id, container_id, checkpoint_id, warm = self._resolve_target(session, demand)
         worker = self._state.worker(worker_id)
         if worker is None:  # pragma: no cover - _resolve_target only returns live workers
             raise NoWorkersRegisteredError
@@ -116,8 +115,7 @@ class Scheduler:
         # same session must not see an empty affinity just because this one has
         # not reached the worker yet.
         if warm and container_id:
-            self._state.bind_session(
-                request.request_id, worker_id, container_id, now=now)
+            self._state.bind_session(request.request_id, worker_id, container_id, now=now)
 
         return placement
 
@@ -210,8 +208,7 @@ class Scheduler:
         worker = self._state.worker(lease.worker_id)
         if worker is not None:
             worker.inflight = max(0, worker.inflight - 1)
-            worker.reserved_bytes = max(
-                0, worker.reserved_bytes - lease.alloc_of(RESOURCE_MEMORY))
+            worker.reserved_bytes = max(0, worker.reserved_bytes - lease.alloc_of(RESOURCE_MEMORY))
 
         session = self._state.session(lease.session_id)
         if session is None:

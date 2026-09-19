@@ -16,10 +16,14 @@ from typing import Literal
 
 DEFAULT_CHUNK_SIZE = 1024 * 1024
 DEFAULT_SOCKET_NAME = "executor.sock"
-DEFAULT_MODE = "sandbox"
+DEFAULT_MODE: Literal["sandbox"] = "sandbox"
+_MODES: tuple[Literal["capture", "measure", "sandbox"], ...] = ("capture", "measure", "sandbox")
+
 
 def get_current_mode() -> Literal["capture", "measure", "sandbox"]:
-    return os.getenv("EXECUTOR_MODE", "") or DEFAULT_MODE
+    """Return the executor mode from ``EXECUTOR_MODE``, defaulting to sandbox."""
+    mode = os.getenv("EXECUTOR_MODE", "") or DEFAULT_MODE
+    return mode if mode in _MODES else DEFAULT_MODE
 
 
 class ConfigError(Exception):

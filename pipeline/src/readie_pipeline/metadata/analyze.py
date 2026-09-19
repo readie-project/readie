@@ -230,9 +230,7 @@ def _visit(
             # recorded as an unmeasured one -- unlike an explicitly requested
             # name (see analyze() below), which still gets an error entry.
             if dependency_name in provided or dependency_name in results:
-                _visit(
-                    dependency_name, provided=provided, results=results, on_progress=on_progress
-                )
+                _visit(dependency_name, provided=provided, results=results, on_progress=on_progress)
 
 
 def analyze(import_names: Iterable[str], *, on_progress: object = None) -> Metadata:

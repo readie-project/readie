@@ -231,8 +231,9 @@ class GreedyPlanner:
 
             residual = node_names.difference(facility_names)
 
-            return self._alpha * all_facility_sizes[facility_idx] + sum(
-                self._import_time(package, metadata) for package in residual
+            return float(
+                self._alpha * all_facility_sizes[facility_idx]
+                + sum(self._import_time(package, metadata) for package in residual)
             )
 
         dist = np.empty(
@@ -292,14 +293,9 @@ class GreedyPlanner:
             candidate_cost = float(new_costs[idx])
 
             # For first facility, accept even if current_cost is inf.
-            if np.isinf(current_cost):
+            if np.isinf(current_cost) or candidate_cost < current_cost:
                 best_facility = candidate_facility
                 best_new_cost = candidate_cost
-            else:
-                # Exact improvement check from the supplied implementation.
-                if candidate_cost < current_cost:
-                    best_facility = candidate_facility
-                    best_new_cost = candidate_cost
 
             if best_facility is None:
                 break
