@@ -11,7 +11,12 @@ from typing import Any
 import pytest
 
 from readie_router.clock import FakeClock
-from readie_router.errors import NoCapacityError, NoWorkersRegisteredError, SessionExpiredError
+from readie_router.errors import (
+    NoCapacityError,
+    NoWorkersRegisteredError,
+    OptimizedExecutionConflictError,
+    SessionExpiredError,
+)
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
     RESOURCE_GPU_MEMORY,
@@ -571,6 +576,94 @@ def test_no_catalogue_for_a_workers_flavor_means_a_cold_uncheckpointed_start(
     )
 
     assert placement.checkpoint_id == ""
+
+
+# ---------------------------------------------------------------------------
+# Disable optimized execution
+# ---------------------------------------------------------------------------
+def _cold_demand(*, disable_optimized_execution: bool = True) -> Demand:
+    return Demand(
+        budgets=(Budget(kind=RESOURCE_MEMORY, alloc=ALLOC),),
+        resources=("pandas", "numpy"),
+        disable_optimized_execution=disable_optimized_execution,
+    )
+
+
+def test_disable_optimized_execution_skips_checkpoint_selection_on_a_cold_start(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    """A catalogue match exists, but the flag must still force a bare cold start."""
+    scheduler = Scheduler(
+        state=state,
+        selector=default_selector(),
+        clock=clock,
+        catalogues={"cpu": _catalogue("cpu")},
+    )
+    register(state, "w1")
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_cold_demand())
+    )
+
+    assert placement.checkpoint_id == ""
+
+
+def test_disable_optimized_execution_still_reuses_a_cold_started_warm_container(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """Reusing a container that was itself never restored from a checkpoint is fine."""
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "sess-1")
+    scheduler.bind("req-1", first.worker_id, "container-a")
+    state.apply_executor_status(
+        "w1", "container-a", session_id="sess-1", request_id="req-1", status=STATUS_READY, now=0.0
+    )
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    second = scheduler.provision(
+        ProvisionRequest(request_id="req-2", session_id="sess-1", demand=_cold_demand())
+    )
+    assert second.container_id == "container-a"
+    assert second.warm is True
+
+
+def test_disable_optimized_execution_conflicts_with_an_already_optimized_session(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """The session's warm container was restored from a checkpoint already.
+
+    Reusing it would silently ignore the request; tearing it down would
+    silently lose the session's state - so this is rejected instead of
+    guessing.
+    """
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "sess-1")
+    scheduler.bind("req-1", first.worker_id, "container-a", checkpoint_id="c-data")
+    state.apply_executor_status(
+        "w1", "container-a", session_id="sess-1", request_id="req-1", status=STATUS_READY, now=0.0
+    )
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    with pytest.raises(OptimizedExecutionConflictError):
+        scheduler.provision(
+            ProvisionRequest(request_id="req-2", session_id="sess-1", demand=_cold_demand())
+        )
+
+
+def test_disable_optimized_execution_on_a_fresh_session_is_not_a_conflict(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """No affinity yet: there is nothing "already optimized" to conflict with."""
+    register(state, "w1")
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_cold_demand())
+    )
+
+    assert placement.checkpoint_id == ""
+    assert placement.warm is False
 
 
 # ---------------------------------------------------------------------------

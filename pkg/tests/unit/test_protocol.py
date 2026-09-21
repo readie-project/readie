@@ -96,6 +96,13 @@ def test_the_config_carries_the_gpu_flag() -> None:
     assert to_config(("a",), ()).gpu is False
 
 
+def test_the_config_carries_the_disable_optimized_execution_flag() -> None:
+    assert (
+        to_config(("a",), (), disable_optimized_execution=True).disable_optimized_execution is True
+    )
+    assert to_config(("a",), ()).disable_optimized_execution is False
+
+
 # ---------------------------------------------------------------------------
 # Assembling
 # ---------------------------------------------------------------------------

@@ -30,6 +30,7 @@ class RemoteFunction(Generic[P, R]):
         "__dict__",
         "_budgets",
         "_client",
+        "_disable_optimized_execution",
         "_func",
         "_gpu",
         "_packages",
@@ -53,6 +54,7 @@ class RemoteFunction(Generic[P, R]):
         packages: tuple[str, ...] = (),
         timeout: float | None = None,
         session: Session | None = None,
+        disable_optimized_execution: bool = False,
     ) -> None:
         self._func = func
         self._client = client
@@ -61,6 +63,7 @@ class RemoteFunction(Generic[P, R]):
         self._packages = packages
         self._timeout = timeout
         self._session = session
+        self._disable_optimized_execution = disable_optimized_execution
         # Carries __name__, __doc__, __module__ and __wrapped__ across, so the
         # decorated object still introspects and documents like the original --
         # and so inspect.getsource can unwrap to it for estimation.
@@ -83,6 +86,7 @@ class RemoteFunction(Generic[P, R]):
             budgets=self._budgets,
             gpu=self._gpu,
             packages=self._packages,
+            disable_optimized_execution=self._disable_optimized_execution,
         )
         end_time = time.perf_counter()
         print(f"Execution completed in {end_time - start_time}s")  # noqa: T201
@@ -100,6 +104,7 @@ class RemoteFunction(Generic[P, R]):
             budgets=self._budgets,
             gpu=self._gpu,
             packages=self._packages,
+            disable_optimized_execution=self._disable_optimized_execution,
         )
         end_time = time.perf_counter()
         print(f"Execution completed in {end_time - start_time}s")  # noqa: T201
@@ -130,6 +135,7 @@ class RemoteFunction(Generic[P, R]):
             packages=self._packages,
             timeout=timeout if timeout is not None else self._timeout,
             session=session if session is not None else self._session,
+            disable_optimized_execution=self._disable_optimized_execution,
         )
 
     def __get__(self, instance: object, owner: type | None = None) -> Any:
@@ -174,6 +180,7 @@ def remote(
     gpu_memory: str | int | None = ...,
     max_gpu_memory: str | int | None = ...,
     packages: Sequence[str] | None = ...,
+    disable_optimized_execution: bool = ...,
 ) -> Callable[[Callable[P, R]], RemoteFunction[P, R]]: ...
 
 
@@ -190,6 +197,7 @@ def remote(
     gpu_memory: str | int | None = None,
     max_gpu_memory: str | int | None = None,
     packages: Sequence[str] | None = None,
+    disable_optimized_execution: bool = False,
 ) -> RemoteFunction[P, R] | Callable[[Callable[P, R]], RemoteFunction[P, R]]:
     """Mark a function for remote execution.
 
@@ -204,6 +212,9 @@ def remote(
         @remote(packages=["numpy==1.26.0", "requests"])
         def h(x): ...
 
+        @remote(disable_optimized_execution=True)
+        def i(x): ...
+
     ``gpu=True`` routes the call to a GPU worker (a ``gpu_memory`` budget implies
     it too). ``memory``/``gpu_memory`` set the container's initial budget and
     ``max_memory``/``max_gpu_memory`` the ceiling the worker may auto-expand to;
@@ -212,9 +223,14 @@ def remote(
     requirements (bare names or full specs like ``"numpy==1.26.0"``) that the
     executor installs with ``uv`` before every call, unconditionally -- entries
     are normalized and deduped by distribution name, but nothing is cached
-    between calls, so each one pays the install cost. Decoration itself does no
-    work and opens no connection, so a module of ``@remote`` definitions imports
-    as fast as one without them.
+    between calls, so each one pays the install cost. ``disable_optimized_execution=True``
+    tells the router to skip checkpoint restore and always cold-start this
+    function; a bound session's warm container is still reused as normal, but
+    the router raises ``InvalidRequestError`` if that container was itself
+    restored from a checkpoint, since disabling the optimization at that point
+    is a contradiction rather than something it can silently resolve.
+    Decoration itself does no work and opens no connection, so a module of
+    ``@remote`` definitions imports as fast as one without them.
     """
     budgets = build_budgets(
         memory=memory,
@@ -233,6 +249,7 @@ def remote(
             packages=packages_tuple,
             timeout=timeout,
             session=session,
+            disable_optimized_execution=disable_optimized_execution,
         )
 
     if func is not None:

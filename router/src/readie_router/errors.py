@@ -64,6 +64,22 @@ class SessionExpiredError(SchedulingError):
         self.session_id = session_id
 
 
+class OptimizedExecutionConflictError(SchedulingError):
+    """A request asked to disable optimized execution for an already-optimized session.
+
+    Session affinity always reuses the existing warm container regardless of
+    how it started; silently ignoring the checkpoint origin, or tearing down
+    an already-optimized session, would surprise the caller either way, so
+    this is rejected instead.
+    """
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(
+            f"session {session_id} is already running on a checkpoint-restored container"
+        )
+        self.session_id = session_id
+
+
 class InvalidRequestError(RouterError):
     """The caller sent something the protocol does not allow."""
 

@@ -130,6 +130,7 @@ class Client:
         budgets: tuple[Budget, ...] = (),
         gpu: bool = False,
         packages: tuple[str, ...] = (),
+        disable_optimized_execution: bool = False,
     ) -> Any:
         """Execute ``func`` remotely and return its result.
 
@@ -144,6 +145,7 @@ class Client:
             imports,
             budgets,
             gpu=gpu,
+            disable_optimized_execution=disable_optimized_execution,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -160,6 +162,7 @@ class Client:
         budgets: tuple[Budget, ...] = (),
         gpu: bool = False,
         packages: tuple[str, ...] = (),
+        disable_optimized_execution: bool = False,
     ) -> Any:
         """Execute ``func`` remotely and return its result, without blocking."""
         ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
@@ -169,6 +172,7 @@ class Client:
             imports,
             budgets,
             gpu=gpu,
+            disable_optimized_execution=disable_optimized_execution,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )

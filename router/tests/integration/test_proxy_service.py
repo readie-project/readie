@@ -20,6 +20,7 @@ def header(
     imports: tuple[str, ...] = ("pandas", "numpy"),
     memory: int = 0,
     max_memory: int = 0,
+    disable_optimized_execution: bool = False,
 ) -> proxy_pb2.ClientExecutionRequest:
     """The first message a client must send."""
     budgets = []
@@ -32,7 +33,11 @@ def header(
     return proxy_pb2.ClientExecutionRequest(
         request_id=request_id,
         session_id=session_id,
-        config=proxy_pb2.ExecutionConfig(imports=list(imports), budgets=budgets),
+        config=proxy_pb2.ExecutionConfig(
+            imports=list(imports),
+            budgets=budgets,
+            disable_optimized_execution=disable_optimized_execution,
+        ),
     )
 
 
@@ -253,6 +258,45 @@ async def test_reusing_an_expired_session_id_is_rejected_as_not_found(
         await execute(harness, header(session_id="sess-1"), chunk(b"body"))
 
     assert caught.value.code() == grpc.StatusCode.NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# Disable optimized execution
+# ---------------------------------------------------------------------------
+
+
+async def test_disable_optimized_execution_is_accepted_on_a_fresh_session(
+    harness: Harness,
+) -> None:
+    """No existing affinity to conflict with, so this is just an ordinary call."""
+    await harness.register_worker()
+
+    responses = await execute(
+        harness, header(session_id="sess-1", disable_optimized_execution=True), chunk(b"body")
+    )
+
+    assert responses
+    assert all(r.success for r in responses)
+
+
+async def test_disable_optimized_execution_conflicts_with_an_optimized_session(
+    harness: Harness,
+) -> None:
+    """The session's warm container was itself restored from a checkpoint."""
+    harness.worker.container_id = "container-a"
+    harness.worker.checkpoint_id = "c-data"
+    await harness.register_worker()
+
+    await execute(harness, header(session_id="sess-1"), chunk(b"body"))
+
+    with pytest.raises(grpc.aio.AioRpcError) as caught:
+        await execute(
+            harness,
+            header(session_id="sess-1", disable_optimized_execution=True),
+            chunk(b"body"),
+        )
+
+    assert caught.value.code() == grpc.StatusCode.FAILED_PRECONDITION
 
 
 # ---------------------------------------------------------------------------

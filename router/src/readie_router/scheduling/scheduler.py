@@ -13,7 +13,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from readie_router.clock import Clock
-from readie_router.errors import NoCapacityError, NoWorkersRegisteredError, SessionExpiredError
+from readie_router.errors import (
+    NoCapacityError,
+    NoWorkersRegisteredError,
+    OptimizedExecutionConflictError,
+    SessionExpiredError,
+)
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
     RESOURCE_MEMORY,
@@ -135,6 +140,12 @@ class Scheduler:
             if worker is not None and worker.is_selectable:
                 executor = worker.executors.get(affinity.container_id)
                 if executor is not None and executor.is_reusable:
+                    if demand.disable_optimized_execution and executor.checkpoint_id:
+                        # The session is already running on a checkpoint-restored
+                        # container. Reusing it would silently ignore the request;
+                        # tearing it down would silently lose the session's state.
+                        # Neither is a good default, so this is the caller's call.
+                        raise OptimizedExecutionConflictError(session.session_id)
                     return (
                         affinity.worker_id,
                         affinity.container_id,
@@ -158,7 +169,9 @@ class Scheduler:
         # A cold start: pick the cheapest checkpoint from the chosen worker's
         # flavor catalogue. A GPU worker serving a CPU request restores a GPU
         # checkpoint, so selection follows the worker, not the request.
-        checkpoint_id = self._select_checkpoint(chosen, demand)
+        checkpoint_id = (
+            "" if demand.disable_optimized_execution else self._select_checkpoint(chosen, demand)
+        )
 
         # An empty container id is the worker's "provision a new one" sentinel.
         return chosen, "", checkpoint_id, False

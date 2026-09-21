@@ -294,6 +294,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             budgets=tuple(budgets),
             resources=imports,
             flavor="gpu" if gpu else "cpu",
+            disable_optimized_execution=config.disable_optimized_execution,
         )
 
 

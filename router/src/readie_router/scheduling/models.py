@@ -66,6 +66,10 @@ class Demand:
     #: "cpu" or "gpu". A gpu demand may run only on gpu workers; a cpu demand
     #: prefers cpu workers but may spill to gpu workers when none are free.
     flavor: str = "cpu"
+    #: When true, skip checkpoint selection for this request and cold-start.
+    #: Session affinity still applies; the scheduler rejects this only when the
+    #: session's warm container was itself restored from a checkpoint.
+    disable_optimized_execution: bool = False
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""
