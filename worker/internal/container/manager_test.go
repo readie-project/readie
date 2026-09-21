@@ -532,18 +532,8 @@ func TestCleanupOrphans_SurfacesListFailures(t *testing.T) {
 	assert.ErrorIs(t, err, sandbox.ErrRuntimeUnavailable)
 }
 
-// newFixtureWithIdleTTL is newFixture with a nonzero Spec.IdleTTL and no
-// PauseTTL, so the reaper has an idle container to pause but nothing ever
-// destroys it afterward - for tests concerned only with the idle stage.
+// newFixtureWithIdleTTL is newFixture with a nonzero Spec.IdleTTL.
 func newFixtureWithIdleTTL(t *testing.T, ttl time.Duration) *fixture {
-	t.Helper()
-	return newFixtureWithIdleAndPauseTTL(t, ttl, 0)
-}
-
-// newFixtureWithIdleAndPauseTTL is newFixture with nonzero Spec.IdleTTL and
-// Spec.PauseTTL, so the reaper can carry a container through both stages:
-// idle -> paused -> destroyed.
-func newFixtureWithIdleAndPauseTTL(t *testing.T, idleTTL, pauseTTL time.Duration) *fixture {
 	t.Helper()
 	_, artifacts := buildArtifacts(t, "checkpoint_1")
 	return newFixtureWithSpec(t, artifacts, container.Spec{
@@ -553,12 +543,11 @@ func newFixtureWithIdleAndPauseTTL(t *testing.T, idleTTL, pauseTTL time.Duration
 		PidsLimit:    100,
 		CgroupParent: "/readie",
 		DirPerm:      0o777,
-		IdleTTL:      idleTTL,
-		PauseTTL:     pauseTTL,
+		IdleTTL:      ttl,
 	})
 }
 
-func TestReapIdleContainers_PausesAContainerPastItsIdleTTL(t *testing.T) {
+func TestReapIdleContainers_DestroysAContainerPastItsIdleTTL(t *testing.T) {
 	f := newFixtureWithIdleTTL(t, time.Minute)
 	h := acquireNew(t, f)
 	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
@@ -568,103 +557,8 @@ func TestReapIdleContainers_PausesAContainerPastItsIdleTTL(t *testing.T) {
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.True(t, state.Paused, "past its IdleTTL, an idle container is paused, not destroyed")
-	assert.False(t, state.Removed)
-}
-
-func TestReapIdleContainers_DestroysAContainerPastItsPauseTTL(t *testing.T) {
-	f := newFixtureWithIdleAndPauseTTL(t, time.Minute, time.Minute)
-	h := acquireNew(t, f)
-	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
-
-	f.clock.Advance(time.Minute)
-	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	require.True(t, state.Paused, "precondition: the first tick must have paused it")
-
-	f.clock.Advance(time.Minute)
-	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
-
-	state, ok = f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.True(t, state.Removed)
+	assert.True(t, state.Removed, "past its IdleTTL, an idle container is destroyed")
 	assert.NoDirExists(t, f.layout.ContainerDir(h.ID))
-}
-
-func TestReapIdleContainers_NonPositivePauseTTLLeavesItPausedForever(t *testing.T) {
-	f := newFixtureWithIdleTTL(t, time.Minute) // PauseTTL is 0: the destroy stage is disabled
-	h := acquireNew(t, f)
-	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
-
-	f.clock.Advance(time.Minute)
-	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
-
-	f.clock.Advance(24 * time.Hour)
-	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
-
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.True(t, state.Paused)
-	assert.False(t, state.Removed)
-}
-
-// A resume() must unpause a container the reaper already paused, and must
-// not call Unpause at all for one that is merely idle (still running) -
-// calling it unconditionally is what raced Release's old immediate-pause
-// design.
-func TestResume_UnpausesAContainerThatWasReapedPastItsIdleTTL(t *testing.T) {
-	f := newFixtureWithIdleTTL(t, time.Minute)
-	h := acquireNew(t, f)
-	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
-	f.clock.Advance(time.Minute)
-	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	require.True(t, state.Paused, "precondition")
-
-	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: h.ID})
-	require.NoError(t, err)
-
-	state, ok = f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.False(t, state.Paused, "resume must unpause a container the reaper had paused")
-}
-
-func TestResume_NeverCallsUnpauseOnAMerelyIdleContainer(t *testing.T) {
-	f := newFixtureWithIdleTTL(t, time.Minute)
-	h := acquireNew(t, f)
-	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
-	f.runtime.FailOn("Unpause", errors.New("must not be called"))
-
-	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: h.ID})
-	require.NoError(t, err)
-}
-
-// The reaper's own Pause can race an in-flight resume: if a resume clears
-// idleSince (claiming the container) while Pause is running, the reaper must
-// notice on its post-pause recheck and undo the pause, since that resume's
-// caller was already told "not paused, just updated" before Pause was ever
-// called.
-func TestReapIdleContainers_UndoesAPauseRacedByAConcurrentResume(t *testing.T) {
-	f := newFixtureWithIdleTTL(t, time.Minute)
-	h := acquireNew(t, f)
-	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
-	f.clock.Advance(time.Minute)
-
-	// Simulate the resume landing between Pause's real effect and the
-	// reaper's post-pause recheck: clear idleSince (as resume() does) right
-	// as Pause is invoked, via a runtime hook.
-	f.runtime.OnPause = func(string) {
-		_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: h.ID})
-		require.NoError(t, err)
-	}
-
-	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
-
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.False(t, state.Paused, "the reaper must have undone its own pause once it lost the race")
 }
 
 func TestReapIdleContainers_LeavesAContainerBeforeItsTTL(t *testing.T) {
@@ -677,8 +571,7 @@ func TestReapIdleContainers_LeavesAContainerBeforeItsTTL(t *testing.T) {
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.False(t, state.Removed)
-	assert.False(t, state.Paused, "left running while idle, not suspended")
+	assert.False(t, state.Removed, "left running while idle, not yet reaped")
 }
 
 func TestReapIdleContainers_ResumingClearsTheTimer(t *testing.T) {
@@ -716,13 +609,13 @@ func TestReapIdleContainers_GoingIdleAgainResetsTheTimerToFullTTL(t *testing.T) 
 	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.False(t, state.Paused, "the timer must have restarted at the second idle mark")
+	assert.False(t, state.Removed, "the timer must have restarted at the second idle mark")
 
 	f.clock.Advance(30 * time.Second)
 	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 	state, ok = f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.True(t, state.Paused, "the full TTL has now elapsed since the second idle mark")
+	assert.True(t, state.Removed, "the full TTL has now elapsed since the second idle mark")
 }
 
 func TestReapIdleContainers_NonPositiveIdleTTLDisablesReaping(t *testing.T) {
@@ -735,7 +628,6 @@ func TestReapIdleContainers_NonPositiveIdleTTLDisablesReaping(t *testing.T) {
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.False(t, state.Paused)
 	assert.False(t, state.Removed)
 }
 
@@ -765,12 +657,11 @@ func TestReapIdleContainers_DestroysOnlyTheExpiredOnes(t *testing.T) {
 
 	olderState, ok := f.runtime.Get(older.ID)
 	require.True(t, ok)
-	assert.True(t, olderState.Paused)
+	assert.True(t, olderState.Removed)
 
 	newerState, ok := f.runtime.Get(newer.ID)
 	require.True(t, ok)
-	assert.False(t, newerState.Removed)
-	assert.False(t, newerState.Paused, "left running while idle, not suspended yet")
+	assert.False(t, newerState.Removed, "left running while idle, not yet reaped")
 }
 
 func TestReapIdleContainers_IsSafeUnderConcurrentIdleMarkingAndReap(t *testing.T) {
@@ -829,42 +720,6 @@ func TestManager_TreatsRouterFailuresAsNonFatal(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
-}
-
-// A paused container's processes are frozen and cannot act on SIGTERM, so
-// stopping one blocks for the whole stop timeout. A container reaped past its
-// PauseTTL is exactly this case, but Destroy must not stall on a paused
-// container regardless of how it got that way - Checkpoint's own temporary
-// pause is another - so this constructs the precondition directly against
-// the runtime rather than through the reaper.
-func TestDestroy_UnpausesBeforeStoppingAPausedContainer(t *testing.T) {
-	f := newFixture(t)
-	h := acquireNew(t, f)
-	require.NoError(t, f.runtime.Pause(context.Background(), h.ID))
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	require.True(t, state.Paused)
-
-	require.NoError(t, f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID))
-
-	state, ok = f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.True(t, state.Removed)
-	assert.False(t, state.Paused)
-}
-
-// Unpausing a container that is not paused is a conflict, and must not be
-// treated as a failure of the destroy.
-func TestDestroy_TolerantOfAnUnpausableContainer(t *testing.T) {
-	f := newFixture(t)
-	h := acquireNew(t, f)
-	f.runtime.FailOn("Unpause", sandbox.ErrConflict)
-
-	require.NoError(t, f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID))
-
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.True(t, state.Removed)
 }
 
 // The stop timeout must stay well inside a supervisor's shutdown grace period.

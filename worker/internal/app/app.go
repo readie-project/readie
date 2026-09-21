@@ -574,14 +574,10 @@ func (a *App) utilizationLoop(ctx context.Context) {
 	}
 }
 
-// idleReapInterval paces idleReapLoop. Fixed rather than configurable: the
-// TTLs themselves (SANDBOX_IDLE_TTL, SANDBOX_PAUSE_TTL) are the only knobs an
-// operator needs, and this only bounds how far a reap can lag behind
-// whichever one it is checking - 30s against SANDBOX_PAUSE_TTL's 5m default
-// keeps worst-case over-retention there to about 10%; against
-// SANDBOX_IDLE_TTL's shorter 1m default it is a larger fraction, which is
-// acceptable since overstaying the idle stage only delays a pause, not a
-// destroy.
+// idleReapInterval paces idleReapLoop. Fixed rather than configurable:
+// SANDBOX_IDLE_TTL is the only knob an operator needs, and this only bounds
+// how far a reap can lag behind it - 30s against its 5m default keeps
+// worst-case over-retention to about 10%.
 const idleReapInterval = 30 * time.Second
 
 // idleReapLoop destroys containers that have sat idle past their TTL, until

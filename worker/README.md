@@ -189,46 +189,25 @@ just hold its memory for `SANDBOX_IDLE_TTL` for no caller to reuse.
 
 It is left *running*, not suspended, the moment it goes idle - on purpose:
 `Release` runs in the background after the RPC returns
-(`Runner.WaitPendingReleases`), specifically so a slow `Stop` (or `Pause`)
-cannot inflate response latency, but that also means a client can receive a
-response and fire its session's next request before this worker's own
-release goroutine has finished. Suspending the container *right there* raced
-an immediate resume's `Unpause` against it: unpausing a container that has
-not finished pausing yet looks, to the runtime, identical to the container
-never having existed, which surfaces to the client as a `NOT_FOUND` it cannot
-distinguish from a genuinely expired session. Leaving it running on release
-removes that race outright.
+(`Runner.WaitPendingReleases`), specifically so a slow `Stop` cannot inflate
+response latency, but that also means a client can receive a response and
+fire its session's next request before this worker's own release goroutine
+has finished.
 
-An idle container's warm life has two further stages, both driven by
-`Manager.ReapIdleContainers` on a fixed 30s ticker:
+An idle container is destroyed by `Manager.ReapIdleContainers`, on a fixed
+30s ticker, once it has sat idle past `SANDBOX_IDLE_TTL` (default 5m). The
+timer restarts from zero every time the container goes idle again after a
+resume, and it applies only to a session-bound container - one released with
+no session is destroyed immediately, on the first release, never left idle at
+all (see `Release`'s own comment). `SANDBOX_IDLE_TTL` set to 0 disables
+reaping.
 
-1. **Idle** (`SANDBOX_IDLE_TTL`, default 1m): left running, exactly as above.
-   Past this TTL, the reaper *pauses* it - a real `runsc pause`, freezing the
-   process to stop reclaiming CPU while it waits. Pausing here, instead of on
-   release, is what avoids the race: by the time the reaper acts, a client
-   has already gone a full TTL without sending a new request, so a resume
-   landing at the exact instant the reaper pauses is a rare coincidence
-   rather than the guaranteed collision immediate pausing produced. It is
-   not risk-free even so - `Manager.pauseExpiredIdleContainers` double-checks
-   before *and* after the actual pause call, and unpauses right back if a
-   resume claimed the container while the pause was in flight, so a resume
-   that decided "not paused, just update" before the pause happened is never
-   left holding a container that turned out to be frozen after all.
-2. **Paused** (`SANDBOX_PAUSE_TTL`, default 5m): the reaper destroys anything
-   still paused past this second TTL.
-
-Both timers restart from zero every time the container goes idle again after
-a resume, and both apply only to a session-bound container - one released
-with no session is destroyed immediately, on the first release, never idled
-or paused at all (see `Release`'s own comment). Either TTL set to 0 disables
-its stage of reaping.
-
-This idle-then-paused sequence is the *only* thing that ends a container's
-warm life on a successful path - the router has no session TTL or cap of its
-own (see the router README's Sessions section) and only retires a session
-once this reaper (or a lost-notification backstop on the router itself)
-reports the container gone, at which point reusing that session_id errors
-rather than silently cold-starting.
+This is the *only* thing that ends a container's warm life on a successful
+path - the router has no session TTL or cap of its own (see the router
+README's Sessions section) and only retires a session once this reaper (or a
+lost-notification backstop on the router itself) reports the container gone,
+at which point reusing that session_id errors rather than silently
+cold-starting.
 
 ## Contracts
 
@@ -354,8 +333,8 @@ Optional: `WORKER_ID`, `RUNSC_BINARY`, `RUNSC_ROOT`,
 `APP_ENV`, plus duration overrides `EXECUTION_TIMEOUT`, `DIAL_TOTAL_TIMEOUT`,
 `RESPONSE_IDLE_TIMEOUT`, `SHUTDOWN_TIMEOUT`, `CLEANUP_TIMEOUT`,
 `CONTAINER_STOP_TIMEOUT`, `RUNSC_COMMAND_TIMEOUT`, `RESTORE_TIMEOUT`,
-`CHECKPOINT_TIMEOUT`, `STATS_INTERVAL`, `SANDBOX_IDLE_TTL` (default 1m),
-`SANDBOX_PAUSE_TTL` (default 5m), and `STREAM_LOGS` / `STREAM_STATS`.
+`CHECKPOINT_TIMEOUT`, `STATS_INTERVAL`, `SANDBOX_IDLE_TTL` (default 5m), and
+`STREAM_LOGS` / `STREAM_STATS`.
 
 Two settings are coupled and validated together: `SANDBOX_OVERLAY` must be a
 `root:` overlay. An `all:` overlay would keep the executor's socket in the

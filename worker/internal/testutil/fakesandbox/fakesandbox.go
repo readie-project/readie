@@ -83,12 +83,6 @@ type Sandbox struct {
 	// integration harness uses it to "boot" a fake executor on the sandbox's
 	// socket path.
 	OnCreate func(id string)
-	// OnPause runs after a sandbox is marked paused, outside the lock, before
-	// Pause returns to its caller. Tests use it to inject a concurrent
-	// operation (e.g. a resume) that "lands" while the manager is still
-	// waiting on the Pause call, standing in for the reaper's own Pause call
-	// racing an in-flight resume in production.
-	OnPause func(id string)
 }
 
 var _ sandbox.Port = (*Sandbox)(nil)
@@ -307,12 +301,7 @@ func (d *Sandbox) Pause(_ context.Context, id string) error {
 		return sandbox.ErrConflict
 	}
 	s.Paused = true
-	onPause := d.OnPause
 	d.mu.Unlock()
-
-	if onPause != nil {
-		onPause(id)
-	}
 	return nil
 }
 

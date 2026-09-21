@@ -50,8 +50,15 @@ class WorkerChannelPool:
                     ("grpc.max_receive_message_length", self._max_message_bytes),
                     # Detect a worker that vanished without closing the
                     # connection, rather than hanging on a dead channel.
-                    ("grpc.keepalive_time_ms", 20_000),
-                    ("grpc.keepalive_timeout_ms", 10_000),
+                    # timeout_ms must clear the worker's own longest legitimate
+                    # silence on an in-flight call before it can report its own
+                    # failure: CheckpointTimeout (5m default) plus
+                    # DialTotalTimeout (60s default) while restoring and then
+                    # dialing a sandbox, with nothing to send the router in
+                    # the meantime. A worker that is merely slow, not dead,
+                    # must never lose its channel first.
+                    ("grpc.keepalive_time_ms", 60_000),
+                    ("grpc.keepalive_timeout_ms", 420_000),
                     ("grpc.keepalive_permit_without_calls", 1),
                 ],
             )

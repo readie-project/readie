@@ -134,24 +134,11 @@ type Spec struct {
 	// period, since reclamation happens during shutdown.
 	StopTimeout time.Duration
 	// IdleTTL bounds how long a container may sit idle -- released for reuse
-	// but not picked up again -- before ReapIdleContainers pauses it (see
-	// PauseTTL for what happens after that). Zero or negative disables
-	// reaping.
+	// but not picked up again -- before ReapIdleContainers destroys it. Zero
+	// or negative disables reaping.
 	//
-	// The container is left running, not suspended, for this whole window:
-	// see Release's own comment for why pausing it immediately on release
-	// raced an immediate resume's Unpause (the RPC response does not wait for
-	// either, so a caller could fire the next request before this worker's
-	// own Release goroutine even starts pausing). Deferring the pause to the
-	// reaper - which only acts once IdleTTL has genuinely elapsed - turns
-	// that into a narrow, rare coincidence instead of a guaranteed race: see
-	// pauseExpiredIdleContainers for how the reaper still double-checks and
-	// self-corrects around it.
+	// The container is left running, not suspended, for this whole window.
 	IdleTTL time.Duration
-	// PauseTTL bounds how long a container already paused (past its IdleTTL)
-	// may stay paused before ReapIdleContainers destroys it. Same fail-safe
-	// rule as IdleTTL for a non-positive value.
-	PauseTTL time.Duration
 	// DirPerm is the mode for per-container host directories. The executor runs
 	// as an arbitrary uid, so it must be able to create its socket here.
 	DirPerm os.FileMode
@@ -173,7 +160,6 @@ func SpecFromConfig(cfg config.Config) Spec {
 		CgroupParent:       cfg.CgroupParent,
 		StopTimeout:        cfg.ContainerStopTimeout,
 		IdleTTL:            cfg.SandboxIdleTTL,
-		PauseTTL:           cfg.SandboxPauseTTL,
 		DirPerm:            0o777,
 		DefaultMemoryBytes: cfg.DefaultContainerMem,
 		GPU:                cfg.SandboxGPU,
@@ -208,7 +194,7 @@ type ManagerDeps struct {
 	Artifacts Artifacts
 	Spec      Spec
 	Log       *slog.Logger
-	// Clock drives pause-TTL tracking. Defaults to clock.NewSystem() when nil.
+	// Clock drives idle-TTL tracking. Defaults to clock.NewSystem() when nil.
 	Clock clock.Clock
 	// Network provisions a real network namespace per sandbox for
 	// --network=sandbox. Nil is a legitimate, common value: it means every
@@ -232,8 +218,8 @@ type Manager struct {
 
 	// live tracks acquired containers so the worker can report its own load.
 	//
-	// The Manager was otherwise stateless with respect to handles: it created,
-	// paused and destroyed containers without remembering any of them, and the
+	// The Manager was otherwise stateless with respect to handles: it created
+	// and destroyed containers without remembering any of them, and the
 	// runtime is the only durable record. That is still true of correctness -
 	// nothing here is consulted to decide anything - but "how much of this
 	// worker is spoken for" cannot be answered without it, and asking the
@@ -248,17 +234,11 @@ type Manager struct {
 	// Destroy, CleanupOrphans, ReapIdleContainers) removes the entry, and it
 	// never points at a container someone has already picked back up.
 	idleSince map[string]time.Time
-	// pausedSince records when each currently-paused container was actually
-	// suspended, keyed by container ID. An entry exists only while the
-	// container is believed paused and untouched since; resuming or
-	// destroying it removes the entry, the same way idleSince does for the
-	// running-idle stage that precedes this one.
-	pausedSince map[string]time.Time
 }
 
 // Load reports how much of this worker is currently committed.
 //
-// Both numbers count *acquired* containers, not merely existing ones: a paused
+// Both numbers count *acquired* containers, not merely existing ones: an idle
 // container waiting in the warm pool holds disk and memory pages but is not
 // reserved against anyone, and scheduling it as occupied would waste it.
 func (m *Manager) Load() (count int32, reservedBytes int64) {
@@ -299,13 +279,6 @@ func (m *Manager) clearIdle(id string) {
 	delete(m.idleSince, id)
 }
 
-// clearPaused removes id's pause-TTL entry, if any.
-func (m *Manager) clearPaused(id string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.pausedSince, id)
-}
-
 // NewManager validates its dependencies and returns a Manager.
 func NewManager(deps ManagerDeps) (*Manager, error) {
 	var missing []string
@@ -343,19 +316,18 @@ func NewManager(deps ManagerDeps) (*Manager, error) {
 		clk = clock.NewSystem()
 	}
 	return &Manager{
-		runtime:     deps.Runtime,
-		reporter:    deps.Reporter,
-		layout:      deps.Layout,
-		names:       deps.Names,
-		fs:          deps.FS,
-		artifacts:   deps.Artifacts,
-		spec:        deps.Spec,
-		log:         log,
-		clock:       clk,
-		network:     deps.Network,
-		live:        make(map[string]Allocation),
-		idleSince:   make(map[string]time.Time),
-		pausedSince: make(map[string]time.Time),
+		runtime:   deps.Runtime,
+		reporter:  deps.Reporter,
+		layout:    deps.Layout,
+		names:     deps.Names,
+		fs:        deps.FS,
+		artifacts: deps.Artifacts,
+		spec:      deps.Spec,
+		log:       log,
+		clock:     clk,
+		network:   deps.Network,
+		live:      make(map[string]Allocation),
+		idleSince: make(map[string]time.Time),
 	}, nil
 }
 
@@ -504,38 +476,19 @@ func (m *Manager) start(ctx context.Context, id string, checkpoint artifact.Chec
 	return "", nil
 }
 
-// resume re-applies an existing container's resource limits, unpausing it
-// first if the reaper had already moved it past its IdleTTL.
-//
-// Unpause only runs when pausedSince actually names this container: calling
-// it on one that is merely idle (still running) is at best a no-op the
-// runtime has to special-case and at worst masks a real problem, and calling
-// it on one the reaper is mid-pause on right now would race that pause the
-// same way an unconditional unpause always did. pauseExpiredIdleContainers is
-// the other half of that: it re-checks after actually pausing and reverses
-// itself if a resume claimed the container while the pause was in flight, so
-// whichever of the two sees the container "not paused" is not lying to it.
+// resume re-applies an existing container's resource limits.
 func (m *Manager) resume(ctx context.Context, req AcquireRequest) (Handle, error) {
 	log := m.log.With(logging.KeyContainerID, req.ContainerID, logging.KeyRequestID, req.Ref.RequestID)
 
 	m.mu.Lock()
-	_, wasPaused := m.pausedSince[req.ContainerID]
-	delete(m.pausedSince, req.ContainerID)
 	delete(m.idleSince, req.ContainerID)
 	m.mu.Unlock()
-
-	if wasPaused {
-		if err := m.runtime.Unpause(ctx, req.ContainerID); err != nil {
-			m.report(ctx, req.Ref, req.ContainerID, pb.Status_STATUS_ERROR)
-			return Handle{}, fmt.Errorf("unpause container: %w", err)
-		}
-	}
 
 	if err := m.runtime.Update(ctx, req.ContainerID, sandbox.UpdateSpec{MemoryBytes: m.memoryLimit(req.Alloc)}); err != nil {
 		m.report(ctx, req.Ref, req.ContainerID, pb.Status_STATUS_ERROR)
 		return Handle{}, fmt.Errorf("update container resources: %w", err)
 	}
-	log.Info("container resumed", "was_paused", wasPaused)
+	log.Info("container resumed")
 
 	return Handle{
 		ID:           req.ContainerID,
@@ -598,24 +551,12 @@ func (m *Manager) Destroy(ctx context.Context, ref registry.ExecutionRef, id str
 	// ReapIdleContainers itself), and a stale entry would otherwise have the
 	// reaper try to act on this ID again on its next tick.
 	m.clearIdle(id)
-	m.clearPaused(id)
 
 	defer func() {
 		if err := m.fs.RemoveAll(m.layout.ContainerDir(id)); err != nil {
 			log.Warn("could not remove container directory", logging.KeyError, err)
 		}
 	}()
-
-	// A paused container's processes are frozen and cannot act on SIGTERM, so
-	// stopping one blocks for the entire stop timeout. A container reaped past
-	// its PauseTTL is exactly that, and shutdown would otherwise stall long
-	// enough for the supervisor's own grace period to expire and SIGKILL the
-	// worker mid-cleanup. Unpausing first makes the signal deliverable; it is
-	// a harmless no-op for a container that was never paused at all.
-	if err := m.runtime.Unpause(ctx, id); err != nil &&
-		!errors.Is(err, sandbox.ErrNotFound) && !errors.Is(err, sandbox.ErrConflict) {
-		log.Debug("could not unpause before stopping", logging.KeyError, err)
-	}
 
 	var errs []error
 	if err := m.runtime.Stop(ctx, id, m.spec.StopTimeout); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
@@ -756,32 +697,13 @@ func (m *Manager) CleanupOrphans(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// ReapIdleContainers advances every container past its IdleTTL and PauseTTL:
-// pausing the former, destroying the latter. Called on a fixed tick (see
-// idleReapLoop); each phase is independently skipped when its own TTL is
+// ReapIdleContainers destroys every container that has sat idle -- released
+// for reuse but not picked back up -- for at least Spec.IdleTTL. Called on a
+// fixed tick (see idleReapLoop); skipped entirely when IdleTTL is
 // non-positive, so a Manager built directly (bypassing config.Validate, as
 // tests and embedders do) must fail safe rather than reap on an unconfigured
 // TTL.
 func (m *Manager) ReapIdleContainers(ctx context.Context) error {
-	return errors.Join(
-		m.pauseExpiredIdleContainers(ctx),
-		m.destroyExpiredPausedContainers(ctx),
-	)
-}
-
-// pauseExpiredIdleContainers pauses every container that has sat idle --
-// released for reuse but not picked back up -- for at least Spec.IdleTTL.
-//
-// Pausing is not free - it is a real runsc call, not a bookkeeping update -
-// so a resume racing this specific call is exactly the hazard IdleTTL's own
-// doc comment describes and Release's immediate-pause design used to hit on
-// every call. The double check here narrows it the same way the destroy path
-// below already did, but adds a second one *after* the pause completes: if a
-// resume claimed the container (cleared it from idleSince) while Pause was in
-// flight, that resume already told its caller "not paused, just updated" -
-// making it true again, by unpausing right back, is what keeps that promise
-// honest instead of leaving a resumed container silently frozen.
-func (m *Manager) pauseExpiredIdleContainers(ctx context.Context) error {
 	if m.spec.IdleTTL <= 0 {
 		return nil
 	}
@@ -799,70 +721,7 @@ func (m *Manager) pauseExpiredIdleContainers(ctx context.Context) error {
 	if len(expired) == 0 {
 		return nil
 	}
-	m.log.Info("pausing idle containers past their TTL", "count", len(expired))
-
-	var errs []error
-	for _, id := range expired {
-		m.mu.Lock()
-		_, stillIdle := m.idleSince[id]
-		m.mu.Unlock()
-		if !stillIdle {
-			continue // a resume already claimed it
-		}
-
-		if err := m.runtime.Pause(ctx, id); err != nil {
-			if !errors.Is(err, sandbox.ErrNotFound) {
-				errs = append(errs, fmt.Errorf("pause container %s: %w", id, err))
-			}
-			continue
-		}
-
-		m.mu.Lock()
-		_, stillIdle = m.idleSince[id]
-		if stillIdle {
-			delete(m.idleSince, id)
-			m.pausedSince[id] = now
-		}
-		m.mu.Unlock()
-
-		if !stillIdle {
-			// A resume claimed it while Pause was in flight and, finding it
-			// merely idle, did not unpause. Undo the pause so that decision
-			// stays correct.
-			if err := m.runtime.Unpause(ctx, id); err != nil {
-				errs = append(errs, fmt.Errorf("undo pause raced by a resume, container %s: %w", id, err))
-			}
-			continue
-		}
-		// No status report here: the router already has this container as
-		// READY from MarkIdle, and pausing does not change that - it is
-		// still available to resume by ID, just not running meanwhile.
-		m.log.Info("container paused", logging.KeyContainerID, id)
-	}
-	return errors.Join(errs...)
-}
-
-// destroyExpiredPausedContainers destroys every container that has stayed
-// paused for at least Spec.PauseTTL.
-func (m *Manager) destroyExpiredPausedContainers(ctx context.Context) error {
-	if m.spec.PauseTTL <= 0 {
-		return nil
-	}
-
-	now := m.clock.Now()
-	var expired []string
-	m.mu.Lock()
-	for id, pausedSince := range m.pausedSince {
-		if now.Sub(pausedSince) >= m.spec.PauseTTL {
-			expired = append(expired, id)
-		}
-	}
-	m.mu.Unlock()
-
-	if len(expired) == 0 {
-		return nil
-	}
-	m.log.Info("destroying paused containers past their TTL", "count", len(expired))
+	m.log.Info("reaping idle containers past their TTL", "count", len(expired))
 
 	var errs []error
 	for _, id := range expired {
@@ -873,9 +732,9 @@ func (m *Manager) destroyExpiredPausedContainers(ctx context.Context) error {
 		// class already accepted between CleanupOrphans and an in-flight
 		// Acquire.
 		m.mu.Lock()
-		_, stillPaused := m.pausedSince[id]
+		_, stillIdle := m.idleSince[id]
 		m.mu.Unlock()
-		if !stillPaused {
+		if !stillIdle {
 			continue
 		}
 		if err := m.Destroy(ctx, registry.ExecutionRef{}, id); err != nil {
