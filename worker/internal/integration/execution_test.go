@@ -115,13 +115,23 @@ func TestExecution_HappyPath(t *testing.T) {
 	assert.Equal(t, "req-1", first.GetRequestId())
 	assert.Equal(t, "sess-1", first.GetSessionId())
 
-	// A completed container is paused for reuse, not destroyed. Release now
-	// runs in the background after the RPC returns, so this must poll rather
-	// than assert immediately.
-	require.Eventually(t, func() bool {
-		state, ok := h.Runtime.Get(first.GetContainerId())
-		return ok && state.Paused && !state.Removed
-	}, 5*time.Second, 20*time.Millisecond, "the container must eventually be paused for reuse")
+	// A completed container is left running for reuse, not destroyed (see
+	// Manager.IdleTTL's doc comment for why it is not suspended either).
+	// Release now runs in the background after the RPC returns, so this polls
+	// for its STATUS_READY report rather than asserting immediately.
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetContainerId() == first.GetContainerId() && st.GetStatus() == pb.Status_STATUS_READY {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second), "the router must eventually be told the container is ready for reuse")
+
+	state, ok := h.Runtime.Get(first.GetContainerId())
+	require.True(t, ok)
+	assert.False(t, state.Paused, "left running while idle, not suspended")
+	assert.False(t, state.Removed)
 
 	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
 		return len(s.ExecutorStatuses()) >= 2
@@ -218,11 +228,16 @@ func TestExecution_ReusesAWarmContainer(t *testing.T) {
 	containerID := first[0].GetContainerId()
 
 	// Release now runs in the background after the RPC returns, so the first
-	// container's pause may not have landed yet; poll for it before resuming.
-	require.Eventually(t, func() bool {
-		state, ok := h.Runtime.Get(containerID)
-		return ok && state.Paused
-	}, 5*time.Second, 20*time.Millisecond, "the container must eventually be paused for reuse")
+	// container's release may not have landed yet; poll for its STATUS_READY
+	// report before resuming it.
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetContainerId() == containerID && st.GetStatus() == pb.Status_STATUS_READY {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second), "the router must eventually be told the container is ready for reuse")
 
 	second, err := execute(t, h, containerID, []byte("second"))
 	require.NoError(t, err)
@@ -231,10 +246,19 @@ func TestExecution_ReusesAWarmContainer(t *testing.T) {
 	assert.Equal(t, containerID, second[0].GetContainerId())
 	assert.Len(t, h.Runtime.CreateSpecs(), 1, "a warm container must not be recreated")
 
-	require.Eventually(t, func() bool {
-		state, ok := h.Runtime.Get(containerID)
-		return ok && state.Paused
-	}, 5*time.Second, 20*time.Millisecond, "the container is paused again after the second execution")
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		var readyReports int
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetContainerId() == containerID && st.GetStatus() == pb.Status_STATUS_READY {
+				readyReports++
+			}
+		}
+		return readyReports >= 2
+	}, 5*time.Second), "the container is released again, still running, after the second execution")
+
+	state, ok := h.Runtime.Get(containerID)
+	require.True(t, ok)
+	assert.False(t, state.Paused, "left running while idle, not suspended")
 }
 
 func TestExecution_LargePayloadRoundTrips(t *testing.T) {

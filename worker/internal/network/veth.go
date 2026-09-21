@@ -90,9 +90,9 @@ func New(opts Options) (*VethProvisioner, error) {
 	}, nil
 }
 
-// WarmUp implements Provisioner. It pays the entire per-slot netns/veth setup
-// cost once, up front, so Provision - called on every single request, whether
-// or not it needs a network - never has to.
+// WarmUp implements Provisioner. It builds every slot's netns and veth pair
+// once, up front, so Provision never has to create either on the request
+// path - only re-address them (see Provision).
 func (p *VethProvisioner) WarmUp(ctx context.Context) error {
 	p.natOnce.Do(func() { p.natErr = p.setupNAT(ctx) })
 	if p.natErr != nil {
@@ -124,9 +124,18 @@ func (p *VethProvisioner) WarmUp(ctx context.Context) error {
 // Provision implements Provisioner.
 //
 // Every slot's netns and veth pair already exist - WarmUp built them - so
-// this is pure bookkeeping: no `ip` call, no netlink round trip, on the
-// request path at all.
-func (p *VethProvisioner) Provision(_ context.Context, id string) (Allocation, error) {
+// this never creates either on the request path. It does re-address the
+// slot's sandbox-side interface and re-point its default route, though: a
+// gVisor sandbox given a real interface under --network=sandbox takes
+// exclusive ownership of it for that sandbox's lifetime rather than handing
+// it back configured, so a slot a previous sandbox actually used comes back
+// from Release with its address and route gone, not merely idle. Re-running
+// WarmUp's netns-side batch here (idempotently - see netnsSetupCommands)
+// heals that unconditionally, whether or not this is the slot's first use, so
+// every Allocation this returns is one the sandbox that gets it can actually
+// route out of. The cost is one `ip netns exec` batch per request instead of
+// zero, but a slot silently unable to reach the network is worse.
+func (p *VethProvisioner) Provision(ctx context.Context, id string) (Allocation, error) {
 	p.mu.Lock()
 	warmedUp := p.warmedUp
 	p.mu.Unlock()
@@ -139,9 +148,16 @@ func (p *VethProvisioner) Provision(_ context.Context, id string) (Allocation, e
 		return Allocation{}, fmt.Errorf("allocate network slot: %w", err)
 	}
 	slot, _ := p.pool.slot(id)
+	name := poolNetnsName(slot)
+	_, sandboxVeth := vethNames(slot)
+
+	if err := p.runNetnsBatch(ctx, name, netnsSetupCommands(sandboxVeth, sandboxIP, hostIP)); err != nil {
+		p.pool.release(id)
+		return Allocation{}, fmt.Errorf("re-address sandbox network slot %d: %w", slot, err)
+	}
 
 	return Allocation{
-		NetnsPath: netnsPath(poolNetnsName(slot)),
+		NetnsPath: netnsPath(name),
 		SandboxIP: sandboxIP.String() + "/30",
 		HostIP:    hostIP.String() + "/30",
 	}, nil
@@ -149,9 +165,10 @@ func (p *VethProvisioner) Provision(_ context.Context, id string) (Allocation, e
 
 // Release implements Provisioner.
 //
-// The slot's netns and veth pair stay up, addressed and routed exactly as
-// WarmUp left them, ready for whichever id Provision assigns the slot to
-// next - only the id-to-slot bookkeeping is undone here.
+// The slot's netns and veth pair stay up - only the id-to-slot bookkeeping is
+// undone here. Their address and route do not: see Provision, which restores
+// them unconditionally on the slot's next handout rather than assuming
+// Release's occupant left them intact.
 func (p *VethProvisioner) Release(_ context.Context, id string) error {
 	p.pool.release(id)
 	return nil
@@ -251,12 +268,18 @@ func hostSetupCommands(id, hostVeth, sandboxVeth string, hostIP netip.Addr) []st
 // netnsSetupCommands returns the ip(8) batch lines that finish the sandbox
 // side of the pair once inside id's namespace: address+bring-up the sandbox
 // end, bring up loopback, and point the default route at the host end.
+//
+// `replace`, not `add`, for the address and route: this batch runs both at
+// WarmUp (nothing to replace yet) and again on every Provision (the previous
+// occupant's gVisor sandbox already claimed this slot's address+route, see
+// Provision), so it has to be safe to re-apply over either a bare interface or
+// one already carrying them - `add` errors on the latter.
 func netnsSetupCommands(sandboxVeth string, sandboxIP, hostIP netip.Addr) []string {
 	return []string{
-		"addr add " + sandboxIP.String() + "/30 dev " + sandboxVeth,
+		"addr replace " + sandboxIP.String() + "/30 dev " + sandboxVeth,
 		"link set " + sandboxVeth + " up",
 		"link set lo up",
-		"route add default via " + hostIP.String(),
+		"route replace default via " + hostIP.String(),
 	}
 }
 

@@ -121,12 +121,18 @@ func TestShutdown_DeregistersAndReclaimsContainers(t *testing.T) {
 	require.NoError(t, err)
 	containerID := responses[0].GetContainerId()
 
-	// The container is warm and paused, so shutdown has something to reclaim.
-	// Release now runs in the background after the RPC returns, so poll for it.
-	require.Eventually(t, func() bool {
-		state, ok := h.Runtime.Get(containerID)
-		return ok && state.Paused
-	}, 5*time.Second, 20*time.Millisecond, "the container must eventually be paused for reuse")
+	// The container is warm and idle (left running, not suspended - see
+	// Manager.IdleTTL's doc comment), so shutdown has something to reclaim.
+	// Release now runs in the background after the RPC returns, so poll for
+	// its STATUS_READY report.
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetContainerId() == containerID && st.GetStatus() == pb.Status_STATUS_READY {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second), "the router must eventually be told the container is ready for reuse")
 
 	require.NoError(t, h.Shutdown())
 

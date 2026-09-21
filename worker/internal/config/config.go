@@ -134,10 +134,19 @@ type Config struct {
 	// because reclamation runs during the worker's shutdown, inside whatever
 	// grace period the supervisor allows before it sends SIGKILL.
 	ContainerStopTimeout time.Duration
-	// SandboxPauseTTL bounds how long a paused container may sit in the warm
-	// pool before the reaper destroys it. Zero or negative disables reaping
-	// entirely, rather than expiring everything immediately: a Manager built
-	// directly (bypassing Validate, as tests and embedders do) must fail safe.
+	// SandboxIdleTTL bounds how long a container may sit idle in the warm
+	// pool - left running, not suspended - before the reaper pauses it (see
+	// SandboxPauseTTL for what happens next). Zero or negative disables
+	// reaping entirely, rather than expiring everything immediately: a
+	// Manager built directly (bypassing Validate, as tests and embedders do)
+	// must fail safe.
+	SandboxIdleTTL time.Duration
+	// SandboxPauseTTL bounds how long a container already paused (past its
+	// SandboxIdleTTL) may stay paused before the reaper destroys it. Same
+	// fail-safe rule as SandboxIdleTTL for a non-positive value. Only a
+	// session-bound container ever reaches this state at all - a container
+	// released with no session is destroyed immediately, never idled or
+	// paused.
 	SandboxPauseTTL time.Duration
 
 	// Executor socket.
@@ -267,6 +276,7 @@ func Load(getenv Getenv) (Config, error) {
 		PidsLimit:            100,
 		CgroupParent:         valueOr(getenv("CGROUP_PARENT"), "/readie"),
 		ContainerStopTimeout: 2 * time.Second,
+		SandboxIdleTTL:       1 * time.Minute,
 		SandboxPauseTTL:      5 * time.Minute,
 		DefaultContainerMem:  1 << 30,
 		MemGrowthThreshold:   0.9,
@@ -449,6 +459,7 @@ func applyDurationOverrides(getenv Getenv, cfg *Config) error {
 		"RUNSC_COMMAND_TIMEOUT":       &cfg.RuntimeCommandTimeout,
 		"CHECKPOINT_TIMEOUT":          &cfg.CheckpointTimeout,
 		"WORKER_UTILIZATION_INTERVAL": &cfg.UtilizationInterval,
+		"SANDBOX_IDLE_TTL":            &cfg.SandboxIdleTTL,
 		"SANDBOX_PAUSE_TTL":           &cfg.SandboxPauseTTL,
 	}
 	for name, target := range overrides {

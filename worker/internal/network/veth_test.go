@@ -230,13 +230,11 @@ func TestVethProvisioner_ProvisionIsIdempotentPerID(t *testing.T) {
 
 	first, err := p.Provision(context.Background(), "a")
 	require.NoError(t, err)
-	before := len(runner.Calls())
 
 	second, err := p.Provision(context.Background(), "a")
 	require.NoError(t, err)
 
-	assert.Equal(t, first, second)
-	assert.Equal(t, before, len(runner.Calls()), "a repeat Provision for a still-live id must not redo any work")
+	assert.Equal(t, first, second, "a repeat Provision for a still-live id must return the same slot")
 }
 
 func TestVethProvisioner_ProvisionUsesDistinctVethNamesPerSlot(t *testing.T) {
@@ -275,10 +273,10 @@ func TestNetnsSetupCommands_UsesTheGivenNamesAndAddresses(t *testing.T) {
 	lines := netnsSetupCommands("veth-s0", sandboxIP, hostIP)
 
 	assert.Equal(t, []string{
-		"addr add 192.168.200.1/30 dev veth-s0",
+		"addr replace 192.168.200.1/30 dev veth-s0",
 		"link set veth-s0 up",
 		"link set lo up",
-		"route add default via 192.168.200.2",
+		"route replace default via 192.168.200.2",
 	}, lines)
 }
 
@@ -301,7 +299,7 @@ func TestVethProvisioner_WarmUpUsesTwoIPInvocationsPerSlotNotNine(t *testing.T) 
 		"each of the 4 slots' host-side and netns-side setup must each collapse into one ip -batch invocation")
 }
 
-func TestVethProvisioner_ProvisionMakesNoRunnerCallsAfterWarmUp(t *testing.T) {
+func TestVethProvisioner_ProvisionReAddressesTheSlotOnEveryHandout(t *testing.T) {
 	runner := newFakeRunner()
 	p := newTestProvisioner(t, runner) // WarmUp already ran here
 	before := len(runner.Calls())
@@ -309,8 +307,15 @@ func TestVethProvisioner_ProvisionMakesNoRunnerCallsAfterWarmUp(t *testing.T) {
 	_, err := p.Provision(context.Background(), "a")
 	require.NoError(t, err)
 
-	assert.Equal(t, before, len(runner.Calls()),
-		"Provision must be pure bookkeeping once the pool is warmed up - no ip call on the request path")
+	var batchCalls int
+	for _, c := range runner.Calls()[before:] {
+		if contains(c, "-batch") {
+			batchCalls++
+		}
+	}
+	assert.Equal(t, 1, batchCalls,
+		"a gVisor sandbox takes exclusive ownership of the interface it's given under --network=sandbox, "+
+			"so Provision must re-address and re-route the slot on every handout, not just once at WarmUp")
 }
 
 func TestVethProvisioner_ProvisionBeforeWarmUpReturnsAnError(t *testing.T) {
@@ -385,7 +390,17 @@ func TestVethProvisioner_ReleasedSlotIsReusedByTheNextID(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, first, second, "the recycled slot's netns/veth/addresses are handed to the next id unchanged")
-	assert.Equal(t, before, len(runner.Calls()), "reusing a released slot must not redo any ip work")
+
+	var batchCalls int
+	for _, c := range runner.Calls()[before:] {
+		if contains(c, "-batch") {
+			batchCalls++
+		}
+	}
+	assert.Equal(t, 1, batchCalls,
+		"reusing a released slot must re-address and re-route it: the previous occupant's gVisor sandbox "+
+			"took exclusive ownership of the interface under --network=sandbox and did not hand it back "+
+			"configured, so skipping this would silently hand the next sandbox a dead network")
 }
 
 func TestVethProvisioner_ReleaseOfAnUnprovisionedIDIsNotAnError(t *testing.T) {

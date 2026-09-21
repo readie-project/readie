@@ -251,6 +251,34 @@ func TestLoad_RejectsAnUnparsableCapacity(t *testing.T) {
 	}
 }
 
+func TestLoad_IdleTTLDefaultsAreConservative(t *testing.T) {
+	cfg, err := load(t, validEnv())
+	require.NoError(t, err)
+
+	assert.Equal(t, 1*time.Minute, cfg.SandboxIdleTTL)
+}
+
+func TestLoad_IdleTTLOverridesAreApplied(t *testing.T) {
+	env := validEnv()
+	env["SANDBOX_IDLE_TTL"] = "2m"
+
+	cfg, err := load(t, env)
+	require.NoError(t, err)
+
+	assert.Equal(t, 2*time.Minute, cfg.SandboxIdleTTL)
+}
+
+// A zero TTL is a deliberate "reaping disabled" sentinel, not an error -
+// nothing about SandboxIdleTTL requires it to be positive.
+func TestLoad_ZeroIdleTTLIsAllowed(t *testing.T) {
+	env := validEnv()
+	env["SANDBOX_IDLE_TTL"] = "0s"
+
+	cfg, err := load(t, env)
+	require.NoError(t, err)
+	assert.Zero(t, cfg.SandboxIdleTTL)
+}
+
 func TestLoad_PauseTTLDefaultsAreConservative(t *testing.T) {
 	cfg, err := load(t, validEnv())
 	require.NoError(t, err)
@@ -260,12 +288,12 @@ func TestLoad_PauseTTLDefaultsAreConservative(t *testing.T) {
 
 func TestLoad_PauseTTLOverridesAreApplied(t *testing.T) {
 	env := validEnv()
-	env["SANDBOX_PAUSE_TTL"] = "2m"
+	env["SANDBOX_PAUSE_TTL"] = "10m"
 
 	cfg, err := load(t, env)
 	require.NoError(t, err)
 
-	assert.Equal(t, 2*time.Minute, cfg.SandboxPauseTTL)
+	assert.Equal(t, 10*time.Minute, cfg.SandboxPauseTTL)
 }
 
 // A zero TTL is a deliberate "reaping disabled" sentinel, not an error -

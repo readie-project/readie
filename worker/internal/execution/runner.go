@@ -125,11 +125,18 @@ func NewRunner(
 // is strictly bounded - one retry, only on an OOM-shaped failure, only when
 // there is room to grow - because re-running is unsafe for a function with side
 // effects. The request body is buffered so it can be replayed on the retry.
+//
+// Never retried: a request naming an existing ContainerID (a session resume).
+// A failed attempt's container is always released as OutcomeFailure, which
+// destroys it in the background - so retrying against the same ID races that
+// teardown, and even a retry that wins the race cannot recover a session's
+// accumulated in-container state anyway. Growing memory only ever helps a
+// fresh container, which this always has room to create.
 func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
 	rec := &recordingSource{inner: src}
 
 	result, err := r.runOnce(ctx, req, rec, sink)
-	if err == nil || ctx.Err() != nil || !looksLikeOOM(err) {
+	if err == nil || ctx.Err() != nil || !looksLikeOOM(err) || req.ContainerID != "" {
 		return result, err
 	}
 
@@ -348,7 +355,20 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 
 // classify turns the various failure signals into one error, preferring the
 // most specific explanation available.
+//
+// ctx/execCtx are consulted only to explain an actual failure signal
+// (sendErr or waitErr), never as a failure signal by themselves: a caller
+// commonly ends its own context the moment it has fully received a response
+// (closing the stream right after its last message, or simply because
+// execCtx's deadline lapses a beat later), and by then the response has
+// already gone out. Treating that as a failure destroyed a container a
+// session meant to keep resuming - readable in the router as a fine
+// checkpoint restore immediately followed, seconds later while the container
+// only sat idle, by a request for a container that no longer existed.
 func (r *Runner) classify(ctx, execCtx context.Context, sendErr, waitErr error) error {
+	if sendErr == nil && waitErr == nil {
+		return nil
+	}
 	// A cancelled caller is the reason behind most downstream errors, so it is
 	// checked before them.
 	if ctx.Err() != nil {
@@ -360,10 +380,7 @@ func (r *Runner) classify(ctx, execCtx context.Context, sendErr, waitErr error) 
 	if sendErr != nil {
 		return fmt.Errorf("relay response: %w", sendErr)
 	}
-	if waitErr != nil {
-		return waitErr
-	}
-	return nil
+	return waitErr
 }
 
 // recordingSource buffers the request body so it can be replayed on a retry.

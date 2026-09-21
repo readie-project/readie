@@ -14,6 +14,7 @@ from readie_executor import protocol
 from readie_executor.codec import DecodeError, decode_call, encode_result
 from readie_executor.config import Settings
 from readie_executor.install import install_packages
+from readie_executor.network import ensure_dns
 
 if TYPE_CHECKING:
     from typing import Any
@@ -173,7 +174,8 @@ class ExecutorServer:
 
         Installing runs unconditionally, even for a package the rootfs already
         carries: every request restores a fresh container, so there is no warm
-        state to check an "already installed" claim against.
+        state to check an "already installed" claim against. DNS is bootstrapped
+        unconditionally too, before anything that might need it.
         """
         try:
             call = decode_call(raw)
@@ -181,6 +183,7 @@ class ExecutorServer:
             print(f"[executor] {exc}", file=sys.stderr, flush=True)
             return protocol.failure_envelope(exc, traceback.format_exc()), []
 
+        ensure_dns()
         output: list[str] = []
         if call.packages:
             print(f"[executor] installing packages: {sorted(call.packages)}", flush=True)
