@@ -45,6 +45,7 @@ class PackageFacts:
 
     dependencies: dict[str, str] = field(default_factory=dict)
     disk_size_mb: float = 0.0
+    memory_size_mb: float = 0.0
     import_time: float = 0.0
     """Seconds to import with its dependencies already resident. This is what a
     checkpoint saves, and what the planner maximises."""
@@ -75,6 +76,7 @@ class PackageFacts:
             distribution=str(raw.get("distribution") or ""),
             dependencies=dict(raw.get("dependencies") or {}),
             disk_size_mb=float(raw.get("disk_size_mb") or 0.0),
+            memory_size_mb=float(raw.get("memory_size_mb") or 0.0),
             # Both spellings accepted: the committed data uses import_time and
             # the previous writer emitted load_time.
             import_time=float(raw.get("import_time") or raw.get("load_time") or 0.0),
@@ -89,19 +91,22 @@ class PackageFacts:
         bare name ``type`` as a dict key, which is the *builtin*, so the field
         was never emitted at all.
 
-        Carries no ``error`` field, on the theory that an entry only reaches
-        this method at all when ``Metadata.to_json`` chooses to keep it (see
-        there) -- a package that could not be measured is dropped rather than
-        written down as broken.
+        Package errors are omitted because package analysis has historically
+        dropped unusable entries. Dataset errors stay in the file so a failed
+        Kaggle measurement is visible and distinguishable from missing data.
         """
-        return {
+        payload = {
             "base_import": self.base_import,
             "distribution": self.distribution,
             "dependencies": dict(self.dependencies),
             "disk_size_mb": round(self.disk_size_mb, 4),
+            "memory_size_mb": round(self.memory_size_mb, 4),
             "import_time": self.import_time,
             "resource_type": str(self.resource_type),
         }
+        if self.error and self.resource_type != ResourceType.PACKAGE:
+            payload["error"] = self.error
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,11 +121,17 @@ class Metadata:
 
     def __contains__(self, name: str) -> bool:
         """Whether a package has facts."""
-        return name in self.packages
+        return self.get(name) is not None
 
     def get(self, name: str) -> PackageFacts | None:
         """Facts for a package, or None."""
-        return self.packages.get(name)
+        return self.packages.get(self._bare_resource(name))
+
+    @staticmethod
+    def _bare_resource(name: str) -> str:
+        """Return the metadata key for a catalogue/planner resource name."""
+        _, separator, bare = name.partition(":")
+        return bare if separator else name
 
     def size_mb(self, name: str) -> float:
         """Disk cost, or zero when unknown.
@@ -129,13 +140,18 @@ class Metadata:
         it should just look free, and the planner's budget check still bounds
         the total.
         """
-        facts = self.packages.get(name)
+        facts = self.get(name)
         return facts.disk_size_mb if facts else 0.0
 
     def import_time(self, name: str) -> float:
         """Import cost in seconds, or zero when unknown."""
-        facts = self.packages.get(name)
+        facts = self.get(name)
         return facts.import_time if facts else 0.0
+
+    def memory_size_mb(self, name: str) -> float:
+        """Memory cost, or zero when unknown."""
+        facts = self.get(name)
+        return facts.memory_size_mb if facts else 0.0
 
     def _by_distribution(self) -> dict[str, str]:
         """PEP 503 canonical distribution name -> the import name it was analysed under.
@@ -169,7 +185,7 @@ class Metadata:
         installed, or analysis failed for it) falls back to its distribution
         name so it still shows up in a closure rather than vanishing silently.
         """
-        facts = self.packages.get(name)
+        facts = self.get(name)
         if facts is None:
             return frozenset()
         by_distribution = self._by_distribution()
@@ -196,7 +212,7 @@ class Metadata:
             if name in seen:
                 continue
             seen.add(name)
-            facts = self.packages.get(name)
+            facts = self.get(name)
             if facts is None:
                 continue
             for dist in facts.dependencies:
@@ -237,5 +253,5 @@ class Metadata:
         return {
             name: facts.to_json()
             for name, facts in sorted(self.packages.items())
-            if not facts.error
+            if not facts.error or facts.resource_type != ResourceType.PACKAGE
         }

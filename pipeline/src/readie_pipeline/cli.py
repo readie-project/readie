@@ -19,20 +19,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import shutil
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
 from readie_pipeline.capture.build import CaptureError, capture, measure_time
-from readie_pipeline.capture.spec import SpecError, build_config, runsc_version, ExecutorMode
+from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, runsc_version
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
-from readie_pipeline.config import ConfigError, CorpusSettings, Settings, ALPHA_PRECISION
+from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
 from readie_pipeline.corpus.models import Corpus, CorpusError
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
+from readie_pipeline.metadata.datasets import measure_datasets
 from readie_pipeline.metadata.models import Metadata, MetadataError
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
 
@@ -42,7 +43,7 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 
     ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
     """
-    from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415 - avoids an import cycle
+    from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415
 
     if name == "fixed":
         return FixedPlanner()
@@ -98,12 +99,18 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
             )
 
     metadata = analyze(packages, on_progress=progress)
+    corpus = Corpus.load(settings.corpus_path)
+    dataset_facts = measure_datasets(
+        sorted(corpus.resources().datasets),
+        on_progress=progress,
+    )
+    metadata = Metadata({**metadata.packages, **dataset_facts})
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
 
     usable = sum(1 for f in metadata.packages.values() if f.usable)
-    print(f"[*] {usable}/{len(metadata)} packages measured -> {settings.metadata_path}")
+    print(f"[*] {usable}/{len(metadata)} resources measured -> {settings.metadata_path}")
     return 0
 
 
@@ -166,6 +173,9 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     plans = [CheckpointPlan()] + [
         CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())
     ]
+    if any(plan.datasets for plan in plans):
+        msg = "dataset checkpoint capture is not implemented; do not build a plan with datasets yet"
+        raise ConfigError(msg)
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
     metadata = Metadata.load(settings.metadata_path)
@@ -217,7 +227,8 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
 
     computed_alpha = round(np.mean(computed_alphas), ALPHA_PRECISION)
     print(
-        f"\n[*] planned alpha value: {settings.alpha}, computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}"
+        f"\n[*] planned alpha value: {settings.alpha}, "
+        f"computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}"
     )
     # The catalogue the router selects from: every measured item's cost plus each
     # checkpoint's contents and precomputed size term.

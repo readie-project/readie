@@ -69,7 +69,23 @@ def _checkpoint_items(plan: CheckpointPlan, metadata: Metadata) -> list[str]:
     checkpoint, dependencies included, not just the trimmed executor-facing
     list (see ``_canonical_items`` for that one).
     """
-    return _keyed_items(metadata.closure(plan.imports), plan)
+    requested = list(plan.imports)
+    requested.extend(item_key(name, ResourceType.DATASET) for name in plan.datasets)
+    requested.extend(item_key(name, ResourceType.MODEL) for name in plan.models)
+    requested.extend(item_key(name, ResourceType.TOKENIZER) for name in plan.tokenizers)
+    closure = metadata.closure(requested)
+    packages = [name for name in closure if ":" not in name]
+    datasets = [name.partition(":")[2] for name in closure if name.startswith("dataset:")]
+    models = [name.partition(":")[2] for name in closure if name.startswith("model:")]
+    tokenizers = [name.partition(":")[2] for name in closure if name.startswith("tokenizer:")]
+    return _keyed_items(
+        packages,
+        CheckpointPlan(
+            datasets=tuple(datasets),
+            models=tuple(models),
+            tokenizers=tuple(tokenizers),
+        ),
+    )
 
 
 def _canonical_items(plan: CheckpointPlan) -> list[str]:
@@ -98,6 +114,7 @@ def build_catalogue(
     for name, facts in metadata.packages.items():
         entry: dict[str, Any] = {
             "size_mb": round(facts.disk_size_mb, 4),
+            "memory_size_mb": round(facts.memory_size_mb, 4),
             "load_time": facts.import_time,
             "resource_type": str(facts.resource_type),
         }

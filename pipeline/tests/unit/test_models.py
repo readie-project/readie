@@ -113,6 +113,20 @@ def test_import_time_is_read_from_the_key_the_data_actually_uses():
     assert facts.disk_size_mb == 41.4
 
 
+def test_memory_size_is_read_and_written_for_dataset_facts():
+    facts = PackageFacts.from_json(
+        "owner/data",
+        {
+            "resource_type": "dataset",
+            "disk_size_mb": 12.5,
+            "memory_size_mb": 24.75,
+        },
+    )
+
+    assert facts.memory_size_mb == 24.75
+    assert facts.to_json()["memory_size_mb"] == 24.75
+
+
 def test_the_older_load_time_spelling_is_still_accepted():
     # Measuring a package costs a subprocess; discarding data over a rename
     # would be worse than accepting both.
@@ -153,6 +167,20 @@ def test_an_errored_entry_is_dropped_from_the_written_metadata():
     payload = metadata.to_json()
     assert set(payload) == {"pandas"}
     assert "error" not in payload["pandas"]
+
+
+def test_an_errored_dataset_is_kept_with_its_error():
+    metadata = Metadata(
+        {
+            "owner/data": PackageFacts(
+                base_import="owner/data",
+                resource_type=ResourceType.DATASET,
+                error="download failed",
+            )
+        }
+    )
+
+    assert metadata.to_json()["owner/data"]["error"] == "download failed"
 
 
 # ---------------------------------------------------------------------------

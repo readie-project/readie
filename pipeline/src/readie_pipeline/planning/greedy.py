@@ -63,8 +63,8 @@ class GreedyPlanner:
         if not requests:
             return []
 
-        eligible_packages = self._eligible_packages(requests, metadata)
-        if not eligible_packages:
+        eligible_resources = self._eligible_resources(requests, metadata)
+        if not eligible_resources:
             return []
 
         remaining_budget = budget.size_mb
@@ -77,9 +77,10 @@ class GreedyPlanner:
 
             selected = self._select_checkpoint(
                 requests=remaining_requests,
-                eligible_packages=eligible_packages,
+                eligible_resources=eligible_resources,
                 metadata=metadata,
                 size_budget_mb=remaining_budget,
+                memory_budget_mb=budget.memory_mb,
             )
 
             if not selected:
@@ -105,7 +106,7 @@ class GreedyPlanner:
             next_requests = [
                 request
                 for request in remaining_requests
-                if not selected.issuperset(closures[request.top_level_imports])
+                if not selected.issuperset(closures[self._request_resources(request)])
             ]
 
             if len(next_requests) == len(remaining_requests):
@@ -132,12 +133,21 @@ class GreedyPlanner:
         """
         cache: dict[frozenset[str], frozenset[str]] = {}
         for request in requests:
-            imports = request.top_level_imports
+            imports = GreedyPlanner._request_resources(request)
             if imports not in cache:
                 cache[imports] = metadata.closure(imports)
         return cache
 
-    def _eligible_packages(
+    @staticmethod
+    def _request_resources(request: Request) -> frozenset[str]:
+        """Return package names and prefixed non-package resource names."""
+        resources = set(request.top_level_imports)
+        resources.update(f"dataset:{name}" for name in request.datasets)
+        resources.update(f"model:{name}" for name in request.models)
+        resources.update(f"tokenizer:{name}" for name in request.tokenizers)
+        return frozenset(resources)
+
+    def _eligible_resources(
         self,
         requests: Sequence[Request],
         metadata: Metadata,
@@ -146,8 +156,8 @@ class GreedyPlanner:
         users: dict[str, set[int]] = {}
 
         for index, request in enumerate(requests):
-            for name in closures[request.top_level_imports]:
-                if name in STDLIB:
+            for name in closures[self._request_resources(request)]:
+                if ":" not in name and name in STDLIB:
                     continue
 
                 users.setdefault(name, set()).add(index)
@@ -177,20 +187,23 @@ class GreedyPlanner:
             MIN_SIZE_MB,
         )
 
-    def _select_checkpoint(
+    def _select_checkpoint(  # noqa: PLR0915
         self,
         *,
         requests: Sequence[Request],
-        eligible_packages: set[str],
+        eligible_resources: set[str],
         metadata: Metadata,
         size_budget_mb: float,
+        memory_budget_mb: float | None,
     ) -> frozenset[str]:
         closures = self._closures(requests, metadata)
         normalized_requests: list[frozenset[str]] = []
 
         for request in requests:
             imports = frozenset(
-                name for name in closures[request.top_level_imports] if name in eligible_packages
+                name
+                for name in closures[self._request_resources(request)]
+                if name in eligible_resources
             )
 
             if imports:
@@ -221,6 +234,13 @@ class GreedyPlanner:
             ],
             dtype=float,
         )
+        all_facility_memory = np.asarray(
+            [
+                sum(metadata.memory_size_mb(resource) for resource in request)
+                for request in unique_requests
+            ],
+            dtype=float,
+        )
 
         def node_to_facility_distance(
             facility_idx: int,
@@ -231,7 +251,7 @@ class GreedyPlanner:
 
             residual = node_names.difference(facility_names)
 
-            return self._alpha * all_facility_sizes[facility_idx] + sum(
+            return float(self._alpha * all_facility_sizes[facility_idx]) + sum(
                 self._import_time(package, metadata) for package in residual
             )
 
@@ -248,6 +268,11 @@ class GreedyPlanner:
                 )
 
         feasible = np.where(all_facility_sizes <= size_budget_mb)[0]
+        if memory_budget_mb is not None:
+            feasible = np.asarray(
+                [index for index in feasible if all_facility_memory[index] <= memory_budget_mb],
+                dtype=int,
+            )
 
         selected: set[int] = set()
 
@@ -258,6 +283,7 @@ class GreedyPlanner:
         )
 
         current_total_size = 0.0
+        current_total_memory = 0.0
         current_cost = np.inf
 
         while True:
@@ -269,6 +295,10 @@ class GreedyPlanner:
                 for f in feasible
                 if int(f) not in selected
                 and current_total_size + all_facility_sizes[int(f)] <= size_budget_mb
+                and (
+                    memory_budget_mb is None
+                    or current_total_memory + all_facility_memory[int(f)] <= memory_budget_mb
+                )
             ]
 
             if not remaining:
@@ -295,11 +325,10 @@ class GreedyPlanner:
             if np.isinf(current_cost):
                 best_facility = candidate_facility
                 best_new_cost = candidate_cost
-            else:
+            elif candidate_cost < current_cost:
                 # Exact improvement check from the supplied implementation.
-                if candidate_cost < current_cost:
-                    best_facility = candidate_facility
-                    best_new_cost = candidate_cost
+                best_facility = candidate_facility
+                best_new_cost = candidate_cost
 
             if best_facility is None:
                 break
@@ -307,6 +336,7 @@ class GreedyPlanner:
             selected.add(best_facility)
 
             current_total_size += all_facility_sizes[best_facility]
+            current_total_memory += all_facility_memory[best_facility]
 
             best_dist = np.minimum(
                 best_dist,
@@ -315,12 +345,12 @@ class GreedyPlanner:
 
             current_cost = best_new_cost
 
-        selected_packages: set[str] = set()
+        selected_resources: set[str] = set()
 
         for facility_idx in selected:
-            selected_packages.update(unique_requests[facility_idx])
+            selected_resources.update(unique_requests[facility_idx])
 
-        return frozenset(selected_packages)
+        return frozenset(selected_resources)
 
     def _describe(
         self,
@@ -349,17 +379,41 @@ class GreedyPlanner:
         requested: set[str] = set()
 
         for request in requests:
-            overlap = selected.intersection(closures[request.top_level_imports])
+            overlap = selected.intersection(closures[self._request_resources(request)])
 
             if overlap:
                 served += 1
                 saved += sum(self._import_time(package, metadata) for package in overlap)
 
-            requested.update(request.top_level_imports)
+            requested.update(self._request_resources(request))
 
         return CheckpointPlan(
-            imports=tuple(sorted(selected.intersection(requested))),
+            imports=tuple(
+                sorted(name for name in selected.intersection(requested) if ":" not in name)
+            ),
+            datasets=tuple(
+                sorted(
+                    name.partition(":")[2]
+                    for name in selected.intersection(requested)
+                    if name.startswith("dataset:")
+                )
+            ),
+            models=tuple(
+                sorted(
+                    name.partition(":")[2]
+                    for name in selected.intersection(requested)
+                    if name.startswith("model:")
+                )
+            ),
+            tokenizers=tuple(
+                sorted(
+                    name.partition(":")[2]
+                    for name in selected.intersection(requested)
+                    if name.startswith("tokenizer:")
+                )
+            ),
             requests_served=served,
             seconds_saved=saved,
             size_mb=sum(self._size_mb(package, metadata) for package in selected),
+            memory_size_mb=sum(metadata.memory_size_mb(resource) for resource in selected),
         )

@@ -53,6 +53,7 @@ def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
     # Every measured item, keyed the way a request names it.
     assert doc["items"]["pandas"] == {
         "size_mb": 30.0,
+        "memory_size_mb": 0.0,
         "load_time": 0.25,
         "resource_type": "package",
     }
