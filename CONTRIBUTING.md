@@ -103,7 +103,7 @@ residual load time` - the same quantity, summed over the dependency closure of
 what is not already resident (not just the literally-requested items) on both
 sides. They are separate services, so the value
 lives in each config (`pipeline` `Settings.alpha` / `READIE_ALPHA`, `router`
-`Settings.alpha` / `catalogue.alpha`), defaulting to `0.01` on both, with a docstring on
+`Settings.alpha` / `catalogue.alpha`), defaulting to `0.005` on both, with a docstring on
 each pointing at the other. Changing one without the other makes the router
 select against a cost the checkpoints were not built for.
 
