@@ -67,7 +67,7 @@ READIE_ALPHA := 0.01
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
-        router-% pkg-% executor-% pipeline-% worker-% lint type test help \
+        router-% pkg-% executor-% pipeline-% worker-% evals-% lint type test help \
 		run-prod run-local shutdown
 
 all: protos lint type test ## Generate, check and test everything
@@ -78,6 +78,7 @@ install: ## Sync every Python virtualenv from its lockfile
 	@$(MAKE) --no-print-directory -C executor install
 	@$(MAKE) --no-print-directory -C pipeline install
 	@$(MAKE) --no-print-directory -C worker install
+	@$(MAKE) --no-print-directory -C evals install
 
 # ---------------------------------------------------------------------------
 # Protos
@@ -271,6 +272,12 @@ pipeline-%:
 
 worker-%:
 	@$(MAKE) --no-print-directory -C worker $*
+
+# The eval harness is developer tooling, kept out of the required lint/type/test
+# gate (it needs no API keys or network to test, but its checks run on demand):
+# `make evals-lint`, `make evals-test`, …
+evals-%:
+	@$(MAKE) --no-print-directory -C evals $*
 
 # ---------------------------------------------------------------------------
 # Fan-out

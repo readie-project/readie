@@ -1,0 +1,102 @@
+[project]
+name = "readie-evals"
+version = "0.1.0"
+description = "A Claude-driven (Azure AI Foundry) evaluation harness that measures Readie on real-world Python workloads"
+readme = "README.md"
+# Targets 3.12, not 3.13 like router/pipeline: this component imports the `readie`
+# client (pkg), whose floor is ~=3.12.0, so it must live on the same interpreter.
+requires-python = "~=3.12.0"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "readie",
+    "anthropic>=0.69",
+    "cloudpickle>=3.1",
+    "packaging>=24.0",
+]
+
+[project.optional-dependencies]
+# Fetching real code talks to Kaggle and HuggingFace. Both are network/authoring
+# concerns, kept out of the default install so the harness (and its tests, which
+# use fakes) install without them.
+fetch = [
+    "kaggle>=1.6",
+    "huggingface-hub>=0.24",
+]
+
+[project.scripts]
+readie-evals = "readie_evals.cli:main"
+
+[tool.uv.sources]
+# Editable so working-tree changes to the client (pkg/) are picked up without a
+# reinstall -- the harness tracks the client it measures.
+readie = { path = "../pkg", editable = true }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/readie_evals"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["F","E","W","I","N","UP","B","A","C4","DTZ","T20","PT","RET","SIM","ARG","PTH","ERA","PL","RUF","S","TID","D","TRY","EM","BLE","FBT"]
+ignore = [
+    "D107",    # __init__ docstring: the class docstring covers it
+    "D203",    # incompatible with D211
+    "D213",    # incompatible with D212
+    "PLR0913", # a config-heavy harness legitimately wires many collaborators
+    # This is a command-line tool whose output is its progress report. A logging
+    # framework here would add configuration for one consumer: a human watching a
+    # run that takes minutes.
+    "T201",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101", "D100", "D101", "D102", "D103", "D104", "PLR2004",
+    "ARG001", "ARG002", "PLC0415", "SLF001", "EM101", "TRY003", "TRY301",
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["anthropic.*", "kaggle.*", "huggingface_hub.*", "cloudpickle.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config -ra"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src/readie_evals"]

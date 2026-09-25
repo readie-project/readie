@@ -75,8 +75,17 @@ services:
             # produces is an OOM-killed sandbox mid-execution. Configured rather
             # than read from /proc/meminfo, which inside a container describes
             # the host and not this cgroup.
-            WORKER_MEM_TOTAL: ${READIE_WORKER_MEM_TOTAL:-4Gi}
-            WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-8}
+            WORKER_MEM_TOTAL: ${READIE_WORKER_MEM_TOTAL:-256Gi}
+            WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-64}
+            # How long a finished-but-warm (idle, left running -- see
+            # Manager.IdleTTL's doc comment) container holds its network slot
+            # and memory reservation before being destroyed. Shortened from the
+            # 5m default for local eval runs, which land many fresh-container
+            # requests within seconds of each other and exhaust both budgets
+            # long before a longer TTL would free anything. 10s was too
+            # aggressive: a session's container is idle between its own cells
+            # too, and got destroyed mid-session on any real inter-cell gap.
+            SANDBOX_IDLE_TTL: ${READIE_SANDBOX_IDLE_TTL:-30s}
         depends_on:
             router:
                 condition: service_healthy
