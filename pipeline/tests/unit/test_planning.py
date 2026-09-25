@@ -117,11 +117,11 @@ def test_it_stops_once_nothing_improves_on_what_is_already_planned():
 
 
 def test_stdlib_modules_are_never_selected():
-    # They install nothing and cost microseconds, but with no measured import
-    # time they fall back to a default that, multiplied across thousands of
-    # requests, outranks packages that matter. `json` won a slot this way.
+    # Given real, non-zero, attractively cheap facts here (rather than left
+    # unmeasured) specifically to prove the STDLIB filter itself excludes
+    # them on principle -- not just an accident of them measuring as free.
     corpus = Corpus.of([req("json", "collections", "pandas")] * 50)
-    metadata = facts(pandas=(40, 0.3))
+    metadata = facts(pandas=(40, 0.3), json=(1, 0.01), collections=(1, 0.01))
 
     plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=500))
 
@@ -138,12 +138,23 @@ def test_a_package_almost_nobody_uses_is_skipped():
 
 
 def test_a_package_with_no_measurement_ranks_below_a_measured_one():
-    # An unmeasured package is charged a nominal saving, so it is not treated as
-    # worthless -- but it must never outrank one that was actually profiled.
-    # Requested separately so each is its own facility: together they would
-    # exceed the budget (10 + 0.5 > 10), forcing a real choice.
+    # An unmeasured package costs and saves exactly 0 -- no nominal floor on
+    # either side -- so it never has anything to offer the objective over a
+    # package that was actually profiled and has real savings to show for it.
+    # `max_checkpoints=1` forces a single winner between the two facilities.
+    #
+    # "unmeasured" is given an explicit `resolved` entry but no facts (as a
+    # real analyze() run would record it if resolution succeeded but the
+    # profiling subprocess itself failed, or if it was folded into an
+    # already-measured ancestor's own closure and never independently
+    # remeasured -- see `metadata/analyze.py`'s `_visit`) -- distinct from a
+    # name that never resolved at all and is dropped before ever reaching
+    # the planner.
     corpus = Corpus.of([req("measured")] * 50 + [req("unmeasured")] * 50)
-    metadata = facts(measured=(10, 1.0))
+    metadata = Metadata(
+        facts(measured=(10, 1.0)).packages,
+        resolved={"measured": "measured", "unmeasured": "unmeasured"},
+    )
 
     # A budget that fits exactly one of them: the measured one has to win it.
     plans = GreedyPlanner(alpha=0.01).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
@@ -197,10 +208,14 @@ def test_a_selected_checkpoint_is_sized_and_charged_for_its_dependencies_too():
                 disk_size_mb=40,
                 memory_size_mb=40,
                 import_time=0.3,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"pandas", "numpy"}),
             ),
             "numpy": PackageFacts(
-                base_import="numpy", disk_size_mb=20, memory_size_mb=20, import_time=0.1
+                base_import="numpy",
+                disk_size_mb=20,
+                memory_size_mb=20,
+                import_time=0.1,
+                loaded_modules=frozenset({"numpy"}),
             ),
         }
     )
@@ -224,9 +239,14 @@ def test_reported_imports_are_only_what_a_request_actually_asked_for():
                 base_import="pandas",
                 disk_size_mb=40,
                 import_time=0.3,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"pandas", "numpy"}),
             ),
-            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20, import_time=0.1),
+            "numpy": PackageFacts(
+                base_import="numpy",
+                disk_size_mb=20,
+                import_time=0.1,
+                loaded_modules=frozenset({"numpy"}),
+            ),
         }
     )
 
@@ -248,17 +268,21 @@ def test_unrelated_requests_each_get_their_own_checkpoint_priced_independently()
                 disk_size_mb=40,
                 memory_size_mb=40,
                 import_time=0.3,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"pandas", "numpy"}),
             ),
             "scipy": PackageFacts(
                 base_import="scipy",
                 disk_size_mb=50,
                 memory_size_mb=50,
                 import_time=0.5,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"scipy", "numpy"}),
             ),
             "numpy": PackageFacts(
-                base_import="numpy", disk_size_mb=20, memory_size_mb=20, import_time=0.1
+                base_import="numpy",
+                disk_size_mb=20,
+                memory_size_mb=20,
+                import_time=0.1,
+                loaded_modules=frozenset({"numpy"}),
             ),
         }
     )

@@ -82,10 +82,14 @@ def test_catalogue_carries_a_packages_resolved_dependencies() -> None:
                 distribution="pandas",
                 disk_size_mb=30.0,
                 import_time=0.25,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"pandas", "numpy"}),
             ),
             "numpy": PackageFacts(
-                base_import="numpy", distribution="numpy", disk_size_mb=20.0, import_time=0.15
+                base_import="numpy",
+                distribution="numpy",
+                disk_size_mb=20.0,
+                import_time=0.15,
+                loaded_modules=frozenset({"numpy"}),
             ),
         }
     )
@@ -119,7 +123,7 @@ def test_catalogue_carries_the_closure_and_the_canonical_list_separately() -> No
                 disk_size_mb=30.0,
                 memory_size_mb=30.0,
                 import_time=0.25,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"pandas", "numpy"}),
             ),
             "numpy": PackageFacts(
                 base_import="numpy",
@@ -127,6 +131,7 @@ def test_catalogue_carries_the_closure_and_the_canonical_list_separately() -> No
                 disk_size_mb=20.0,
                 memory_size_mb=20.0,
                 import_time=0.15,
+                loaded_modules=frozenset({"numpy"}),
             ),
         }
     )

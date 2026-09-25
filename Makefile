@@ -22,6 +22,14 @@ STAGE := .build/proto-stage
 # produce fully independent artifact dirs and images, so one never clobbers the
 # other's checkpoints. Everything below hangs off FLAVOR.
 FLAVOR          ?= cpu
+# Packages `analyze` should skip entirely, and everything under them. Google's
+# own SDKs (Cloud, BigQuery magics, AI Platform, ...) bundled in a Kaggle/Colab
+# base image are individually enormous -- some of google.cloud.aiplatform's own
+# generated submodules alone cost 15-25s *each* to even attempt importing,
+# confirmed against a real run -- and there is no partial-progress checkpoint,
+# so this is the only way to bound a run once it would otherwise walk in.
+# Space-separated; override with `make analyze ANALYZE_EXCLUDE="google foo"`.
+ANALYZE_EXCLUDE ?= google
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
 ARTIFACTS_DIR   := pipeline/out/$(FLAVOR)
@@ -63,7 +71,7 @@ READIE_MAX_CHECKPOINTS := 15
 READIE_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
 # more than alpha*size. Default 0.01.
-READIE_ALPHA := 0.01
+READIE_ALPHA := 0.005
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
@@ -194,10 +202,18 @@ analyzer-image: ## Build the analyzer image (readie-pipeline on the base image i
 analyze: analyzer-image ## Measure every package the $(FLAVOR) base image installs
 	@echo "==> analysing $(FLAVOR) packages against $(ROOTFS_BASE_IMAGE)"
 	@mkdir -p pipeline/data/metadata
+	# --network none: a checkpoint's restore-time import must not depend on
+	# network reachability, and several bundled cloud SDKs (Google Cloud,
+	# BigQuery magics, etc.) probe for credentials/environment at import time
+	# -- with network access, that probe runs (slowly) instead of failing
+	# immediately, which turned individual packages into 30-100+ second
+	# hangs during analysis (confirmed against a real run).
 	docker run --rm \
+		--network none \
 		-e FLAVOR=$(FLAVOR) \
+		-e PYTHONUNBUFFERED=1 \
 		-v "$(CURDIR)/pipeline/data:/app/data" \
-		$(ANALYZER_IMAGE)
+		$(ANALYZER_IMAGE) analyze -v $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg))
 	@echo "==> wrote pipeline/data/metadata/$(FLAVOR).json"
 
 # One run, not two: `capture` plans and captures in the same container because

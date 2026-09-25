@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -105,8 +106,7 @@ def parse_batch(raw: str, *, on_skip: Callable[[str, str], None] | None = None) 
 
     requests: list[Request] = []
     for entry in entries:
-        name = str(entry.get("task_name", "<unnamed>")) if isinstance(
-            entry, dict) else "<unnamed>"
+        name = str(entry.get("task_name", "<unnamed>")) if isinstance(entry, dict) else "<unnamed>"
         try:
             facts = analyse(str(entry["code"]))
             requests.append(
@@ -125,6 +125,61 @@ def parse_batch(raw: str, *, on_skip: Callable[[str, str], None] | None = None) 
                 on_skip(name, f"{type(exc).__name__}: {exc}")
 
     return requests
+
+
+def reparse_requests(
+    requests: Sequence[Request], *, on_skip: Callable[[str, str], None] | None = None
+) -> list[Request]:
+    """Re-derive every request's facts from its already-generated ``code``.
+
+    Purely local re-analysis, no model call: whenever ``tree_parser.py``'s
+    extraction changes (e.g. a ``from x.y import z`` now records the deepest
+    candidate ``x.y.z`` instead of truncating to ``x.y``), the committed
+    corpus's ``imports`` -- computed once, at generation time, with whatever
+    the parser did *then* -- goes stale without this. Re-running the parser
+    over already-generated code is free (no hosted model, no network) and
+    deterministic, unlike a full corpus regeneration.
+
+    A request whose code no longer parses is kept with its existing facts
+    rather than dropped -- this should not happen (the exact same source
+    parsed fine when the corpus was first generated, and no AST grammar
+    changed), so silently shrinking the corpus over it would be a worse
+    outcome than surfacing the warning and moving on.
+    """
+    reparsed: list[Request] = []
+    for request in requests:
+        try:
+            facts = analyse(request.code)
+        except SyntaxError as exc:
+            if on_skip is not None:
+                on_skip(request.task_name, f"{type(exc).__name__}: {exc}")
+            reparsed.append(request)
+            continue
+
+        reparsed.append(
+            replace(
+                request,
+                imports=tuple(sorted(facts.imports)),
+                datasets=tuple(sorted(facts.datasets)),
+                models=tuple(sorted(facts.models)),
+                tokenizers=tuple(sorted(facts.tokenizers)),
+            )
+        )
+    return reparsed
+
+
+def reparse(corpus_path: Path, *, on_line: Callable[[str], None] = print) -> Corpus:
+    """Load, re-derive facts for every request, and save the corpus in place."""
+    corpus = Corpus.load(corpus_path)
+    updated = Corpus.of(
+        reparse_requests(
+            corpus.requests,
+            on_skip=lambda name, why: on_line(f"    could not reparse {name}, kept as-is: {why}"),
+        )
+    )
+    save(updated, corpus_path)
+    on_line(f"[*] reparsed {len(updated)} requests -> {corpus_path}")
+    return updated
 
 
 def save(corpus: Corpus, path: Path) -> None:
@@ -161,14 +216,12 @@ def generate(
             api_key=settings.api_key,
         )
 
-    corpus = Corpus.load(
-        corpus_path) if corpus_path.exists() else Corpus.of([])
+    corpus = Corpus.load(corpus_path) if corpus_path.exists() else Corpus.of([])
     wanted = tuple(categories or settings.categories or DEFAULT_CATEGORIES)
 
     for category in wanted:
         for batch in range(1, settings.batches_per_category + 1):
-            on_line(
-                f"[*] {category}: batch {batch}/{settings.batches_per_category}")
+            on_line(f"[*] {category}: batch {batch}/{settings.batches_per_category}")
 
             avoid = [r.task_name for r in corpus]
             response = client.chat.completions.create(
@@ -185,8 +238,7 @@ def generate(
             try:
                 fresh = parse_batch(
                     response.choices[0].message.content or "",
-                    on_skip=lambda name, why: on_line(
-                        f"    skipped {name}: {why}"),
+                    on_skip=lambda name, why: on_line(f"    skipped {name}: {why}"),
                 )
             except CorpusError as exc:
                 on_line(f"    batch failed: {exc}")

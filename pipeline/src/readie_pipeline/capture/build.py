@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import contextlib
-import queue
 import subprocess
-import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 
+from readie_pipeline.capture.spec import ExecutorMode
 from readie_pipeline.config import Settings
 from readie_pipeline.planning.ports import CheckpointPlan
-from readie_pipeline.capture.spec import ExecutorMode
 
 
 class CaptureError(Exception):
@@ -44,7 +42,7 @@ def capture(
     checkpoint_id: str,
     plan: CheckpointPlan,
     *,
-    write_spec: Callable[[str, ExecutorMode, str], None],
+    write_spec: Callable[[ExecutorMode, Path, str], None],
     on_line: Callable[[str], None] = print,
 ) -> Path:
     """Capture one checkpoint with a set of packages already imported.
@@ -54,7 +52,6 @@ def capture(
     rootfs and restored in a ``finally``, so a build killed in between left that
     tree mutated for the next run.
     """
-
     destination = settings.checkpoints_dir / checkpoint_id
     destination.mkdir(parents=True, exist_ok=True)
     write_spec("capture", destination, ",".join(plan.imports))
@@ -81,10 +78,9 @@ def measure_time(
     settings: Settings,
     checkpoint_id: str,
     *,
-    write_spec: Callable[[str, ExecutorMode, str], None],
+    write_spec: Callable[[ExecutorMode, Path, str], None],
 ) -> float:
     """Restore one checkpoint with a set of packages already imported and measure its time."""
-
     destination = settings.checkpoints_dir / checkpoint_id
     write_spec("measure", destination, "")
 
@@ -93,8 +89,13 @@ def measure_time(
 
     try:
         start_time = time.perf_counter()
-        # _runsc(settings, "create", f"--bundle={settings.bundle_dir}", checkpoint_id)
-        _runsc(settings, "restore", f"--bundle={settings.bundle_dir}", f"--image-path={destination}", checkpoint_id)
+        _runsc(
+            settings,
+            "restore",
+            f"--bundle={settings.bundle_dir}",
+            f"--image-path={destination}",
+            checkpoint_id,
+        )
         end_time = time.perf_counter()
         return end_time - start_time
     except subprocess.CalledProcessError as exc:

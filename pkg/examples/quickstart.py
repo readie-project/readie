@@ -11,10 +11,15 @@ import readie
 from readie import remote
 
 # Uncomment the below line to connect to a router running locally.
-# readie.configure(router_uri="localhost:50051", tls=False)  # no TLS for local
+readie.configure(router_uri="localhost:50051", tls=False)  # no TLS for local
 
 @remote
 def add(a: int, b: int) -> int:
+    import numpy as np
+    import transformers
+    # simulate some work
+    np.random.rand(1000, 1000) @ np.random.rand(1000, 1000)
+    print(f"transformers version: {transformers.__version__}")
     print(f"adding {a} and {b}")  # arrives as a log line on the client
     return a + b
 

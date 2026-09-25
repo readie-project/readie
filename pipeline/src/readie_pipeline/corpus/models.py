@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from readie_pipeline.metadata.models import Metadata
+
 
 class CorpusError(Exception):
     """The corpus on disk is not what this code expects."""
@@ -28,18 +30,16 @@ class Request:
     category: str
     code: str
     imports: tuple[str, ...] = field(default_factory=tuple)
+    """Raw dotted candidates exactly as AST extraction produced them (e.g.
+    ``sklearn.svm.LinearSVC`` for a ``from sklearn.svm import LinearSVC``) --
+    deliberately unresolved. Resolving a candidate to what it actually names
+    needs an environment with the target packages installed, and the corpus
+    must stay usable across every base-image flavor (see
+    ``Metadata.resolve_imports``, which every reader of this field should go
+    through instead of reading it raw)."""
     datasets: tuple[str, ...] = field(default_factory=tuple)
     models: tuple[str, ...] = field(default_factory=tuple)
     tokenizers: tuple[str, ...] = field(default_factory=tuple)
-
-    @property
-    def top_level_imports(self) -> frozenset[str]:
-        """Distribution-level names: ``sklearn.svm`` counts as ``sklearn``.
-
-        The planner reasons about what has to be installed and imported, and
-        that is the top-level package.
-        """
-        return frozenset(name.split(".")[0] for name in self.imports if name)
 
     @classmethod
     def from_json(cls, raw: Mapping[str, Any], *, index: int) -> Request:
@@ -118,15 +118,18 @@ class Corpus:
         """Build a corpus in memory. Mostly for tests."""
         return cls(tuple(requests))
 
-    def import_counts(self) -> dict[str, int]:
-        """How many requests use each top-level package, most common first.
+    def import_counts(self, metadata: Metadata) -> dict[str, int]:
+        """How many requests use each resolved import, most common first.
 
         Counted per *request*, not per import statement: two `import pandas`
-        lines in one snippet are one request that needs pandas.
+        lines in one snippet are one request that needs pandas. Needs
+        ``metadata`` because a raw candidate only resolves to a real module
+        against a specific environment's installed packages -- see
+        ``Metadata.resolve_imports``.
         """
         counts: dict[str, int] = {}
         for request in self.requests:
-            for name in request.top_level_imports:
+            for name in metadata.resolve_imports(request.imports):
                 counts[name] = counts.get(name, 0) + 1
         return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
@@ -137,10 +140,12 @@ class Corpus:
             counts[request.category] = counts.get(request.category, 0) + 1
         return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
-    def resources(self) -> Resources:
+    def resources(self, metadata: Metadata) -> Resources:
         """Every distinct resource the corpus refers to."""
         return Resources(
-            packages=frozenset().union(*(r.top_level_imports for r in self.requests))
+            packages=frozenset().union(
+                *(metadata.resolve_imports(r.imports) for r in self.requests)
+            )
             if self.requests
             else frozenset(),
             datasets=frozenset(d for r in self.requests for d in r.datasets),

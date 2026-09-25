@@ -19,17 +19,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import shutil
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
 from readie_pipeline.capture.build import CaptureError, capture, measure_time
-from readie_pipeline.capture.spec import SpecError, build_config, runsc_version, ExecutorMode
+from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, runsc_version
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
-from readie_pipeline.config import ConfigError, CorpusSettings, Settings, ALPHA_PRECISION
+from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
 from readie_pipeline.corpus.models import Corpus, CorpusError
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
@@ -42,7 +42,8 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 
     ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
     """
-    from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415 - avoids an import cycle
+    # Nested import avoids an import cycle.
+    from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415
 
     if name == "fixed":
         return FixedPlanner()
@@ -59,7 +60,13 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 # Stages
 # ---------------------------------------------------------------------------
 def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
-    """Generate request snippets."""
+    """Generate request snippets, or re-derive facts for already-generated ones."""
+    if args.reparse:
+        from readie_pipeline.corpus.generate import reparse  # noqa: PLC0415 - optional extra
+
+        reparse(settings.corpus_path)
+        return 0
+
     from readie_pipeline.corpus.generate import generate  # noqa: PLC0415 - optional extra
 
     corpus_settings = CorpusSettings.from_env()
@@ -73,15 +80,29 @@ def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
-    """Measure every package installed in this environment -- the base image.
+    """Measure every package installed here, plus every import the corpus uses.
 
-    Not the corpus's imports: a checkpoint restores into the base image, not
-    into whatever a sample of requests happens to reference, so that is the
-    universe the planner needs a real number for. Run this wherever that base
-    image's packages are actually importable (see ``installed_packages``).
+    ``installed_packages()`` alone only ever names top-level packages -- it
+    can never surface a specific dotted import like ``sklearn.svm``, since
+    nothing else would ask to resolve or measure one. The corpus's raw
+    ``imports`` are exactly those candidates (see ``Request.imports``), so
+    both are measured together: the base image's own universe (a checkpoint
+    restores into the base image, not into whatever a sample of requests
+    happens to reference, so the planner needs a real number for all of it,
+    corpus or not) plus whatever specific dotted names the corpus actually
+    references. Run this wherever that base image's packages are actually
+    importable (see ``installed_packages``).
     """
-    packages = installed_packages()
-    print(f"[*] analysing {len(packages)} packages installed in this environment")
+    packages = set(installed_packages())
+    if settings.corpus_path.exists():
+        corpus = Corpus.load(settings.corpus_path)
+        for request in corpus:
+            packages.update(request.imports)
+
+    exclude = list(args.exclude or ())
+    if exclude:
+        print(f"[*] excluding: {', '.join(exclude)}")
+    print(f"[*] analysing {len(packages)} candidate imports in this environment")
 
     def progress(name: str, facts: object) -> None:
         # An error is worth seeing on every run, verbose or not, because the
@@ -98,7 +119,7 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
                 f"{getattr(facts, 'import_time', 0.0):.3f} s"
             )
 
-    metadata = analyze(packages, on_progress=progress)
+    metadata = analyze(packages, exclude=exclude, on_progress=progress)
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
@@ -217,8 +238,10 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     ).write(settings.output_dir)
 
     computed_alpha = round(np.mean(computed_alphas), ALPHA_PRECISION)
+    drift = computed_alpha - settings.alpha
     print(
-        f"\n[*] planned alpha value: {settings.alpha}, computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}"
+        f"\n[*] planned alpha value: {settings.alpha}, "
+        f"computed alpha: {computed_alpha}, drift: {drift}"
     )
     # The catalogue the router selects from: every measured item's cost plus each
     # checkpoint's contents and precomputed size term.
@@ -277,11 +300,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     corpus = sub.add_parser("corpus", help="generate request snippets with a hosted model")
     corpus.add_argument("--category", action="append", help="restrict to a category; repeatable")
+    corpus.add_argument(
+        "--reparse",
+        action="store_true",
+        help="re-derive every request's imports/datasets/models/tokenizers from its "
+        "already-generated code, without calling the model again",
+    )
     corpus.set_defaults(handler=cmd_corpus)
 
     analyze_cmd = sub.add_parser("analyze", help="measure package sizes and import times")
     analyze_cmd.add_argument(
         "-v", "--verbose", action="store_true", help="also report each successful measurement"
+    )
+    analyze_cmd.add_argument(
+        "--exclude",
+        action="append",
+        help="skip a package, and everything under it; repeatable",
     )
     analyze_cmd.set_defaults(handler=cmd_analyze)
 

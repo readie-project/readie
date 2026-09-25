@@ -9,7 +9,29 @@ from readie_pipeline.corpus.tree_parser import analyse, clean
 
 def test_imports_are_extracted():
     facts = analyse("import numpy as np\nfrom collections import OrderedDict\n")
-    assert facts.imports == {"numpy", "collections"}
+    assert facts.imports == {"numpy", "collections.OrderedDict"}
+
+
+def test_a_from_import_records_the_deepest_candidate():
+    # `Image` might be a real submodule (PIL.Image is) or just an attribute of
+    # the module (sklearn.svm.LinearSVC is a class, not a submodule) -- that
+    # can only be told apart by actually importing it, which this AST-only
+    # pass cannot do. So it records the deepest candidate implied by the
+    # syntax and leaves resolving it to whatever runs in the target
+    # environment.
+    facts = analyse("from PIL import Image\nfrom sklearn.svm import LinearSVC\n")
+    assert facts.imports == {"PIL.Image", "sklearn.svm.LinearSVC"}
+
+
+def test_a_from_import_with_several_names_records_each_candidate():
+    facts = analyse("from os.path import join, exists\n")
+    assert facts.imports == {"os.path.join", "os.path.exists"}
+
+
+def test_a_star_import_records_just_the_module():
+    # There is no name to append a candidate onto.
+    facts = analyse("from os.path import *\n")
+    assert facts.imports == {"os.path"}
 
 
 def test_relative_imports_are_skipped_because_they_name_no_module():

@@ -17,27 +17,17 @@ from readie_pipeline.corpus.models import Corpus, Request
 from readie_pipeline.metadata.models import Metadata
 from readie_pipeline.planning.ports import Budget, CheckpointPlan
 
-#: Standard library modules are never worth a checkpoint slot. They install
-#: nothing, several are already imported before user code runs, and the rest
-#: cost microseconds -- but with no measured import time they fall back to the
-#: default below, which multiplied across thousands of requests outranks the
-#: packages that actually matter. `json` and `collections` won slots this way.
+#: Standard library modules are never worth a checkpoint slot regardless of
+#: what they measure at: they ship with the interpreter itself, are already
+#: available in every sandbox with nothing to preload, and several are
+#: already imported before user code runs anyway -- there is no scenario
+#: where holding one resident in a checkpoint saves anything.
 STDLIB = frozenset(sys.stdlib_module_names)
 
 #: A package used by fewer than this fraction of requests is not worth a
 #: checkpoint slot, however cheap it is: the tail of the corpus is
 #: mostly packages used once, and including them crowds out the ones that matter.
 MIN_COVERAGE = 0.002
-
-#: Packages with no measured import time still cost disk. Charging them a
-#: nominal saving keeps a package the analysis could not profile from being
-#: treated as literally worthless -- but small enough that a measured package
-#: always wins.
-UNMEASURED_IMPORT_TIME = 0.01
-
-#: Every package occupies at least this much of the budget, so a package
-#: reported as 0 MB cannot look free and be added without limit.
-MIN_SIZE_MB = 0.5
 
 
 class GreedyPlanner:
@@ -77,7 +67,7 @@ class GreedyPlanner:
         closures = self._closures(requests, metadata)
         requested: set[str] = set()
         for request in requests:
-            requested.update(request.top_level_imports)
+            requested.update(metadata.resolve_imports(request.imports))
 
         # A facility with no overlap with `requested` is nothing but shared
         # dependencies nobody ever asks for directly: the executor is told to
@@ -109,7 +99,7 @@ class GreedyPlanner:
         remaining_latency = 0.0
 
         for request in requests:
-            closure = closures[request.top_level_imports]
+            closure = closures[metadata.resolve_imports(request.imports)]
             baseline = self._cost(closure, frozenset(), 0.0, metadata)
             total_latency += baseline
 
@@ -162,7 +152,7 @@ class GreedyPlanner:
         """
         cache: dict[frozenset[str], frozenset[str]] = {}
         for request in requests:
-            imports = request.top_level_imports
+            imports = metadata.resolve_imports(request.imports)
             if imports not in cache:
                 cache[imports] = metadata.closure(imports)
         return cache
@@ -176,7 +166,7 @@ class GreedyPlanner:
         users: dict[str, set[int]] = {}
 
         for index, request in enumerate(requests):
-            for name in closures[request.top_level_imports]:
+            for name in closures[metadata.resolve_imports(request.imports)]:
                 if name in STDLIB:
                     continue
 
@@ -194,24 +184,36 @@ class GreedyPlanner:
         name: str,
         metadata: Metadata,
     ) -> float:
-        return metadata.import_time(name) or UNMEASURED_IMPORT_TIME
+        """Seconds to import, or 0 when unmeasured.
+
+        No nominal floor: a name with no measured time either genuinely costs
+        nothing to import (e.g. it was never independently remeasured because
+        its own ancestor's closure already covers it -- see
+        ``metadata/analyze.py``'s ``_visit``) or was never analysed at all, and
+        either way 0 is the right number to sum, not a guessed placeholder.
+        """
+        return metadata.import_time(name)
 
     @staticmethod
     def _size_mb(
         name: str,
         metadata: Metadata,
     ) -> float:
-        """Apply the old planner's minimum package size.
+        """Resident memory cost, or 0 when unmeasured.
 
-        Resident memory, not disk footprint: gVisor's checkpoint/restore
-        copies back whatever is resident when a sandbox is captured, and a
-        package's disk and memory footprints are not proportional to each
-        other -- see ``Metadata.memory_size_mb``.
+        Memory, not disk (``metadata.memory_size_mb``, not ``metadata.size_mb``):
+        gVisor's checkpoint/restore copies back whatever is resident when a
+        sandbox is captured, and a package's disk and memory footprints are
+        not proportional to each other -- see ``Metadata.memory_size_mb``.
+        Disk size is still measured and recorded (see
+        ``PackageFacts.disk_size_mb``), just not what this planner optimizes.
+
+        No nominal floor here either, for the same reason as ``_import_time``:
+        a name folded into an already-measured ancestor's closure (most of a
+        large package's own internal submodules) is correctly 0 on its own
+        account, not "unknown and therefore charged a placeholder."
         """
-        return max(
-            metadata.memory_size_mb(name),
-            MIN_SIZE_MB,
-        )
+        return metadata.memory_size_mb(name)
 
     def _cost(
         self,
@@ -253,7 +255,9 @@ class GreedyPlanner:
 
         for request in requests:
             imports = frozenset(
-                name for name in closures[request.top_level_imports] if name in eligible_packages
+                name
+                for name in closures[metadata.resolve_imports(request.imports)]
+                if name in eligible_packages
             )
 
             if imports:
@@ -294,8 +298,9 @@ class GreedyPlanner:
 
             residual = node_names.difference(facility_names)
 
-            return self._alpha * all_facility_sizes[facility_idx] + sum(
-                self._import_time(package, metadata) for package in residual
+            return float(
+                self._alpha * all_facility_sizes[facility_idx]
+                + sum(self._import_time(package, metadata) for package in residual)
             )
 
         dist = np.empty(
@@ -404,7 +409,9 @@ class GreedyPlanner:
         saved = sum(
             self._import_time(package, metadata)
             for request in assigned
-            for package in selected.intersection(closures[request.top_level_imports])
+            for package in selected.intersection(
+                closures[metadata.resolve_imports(request.imports)]
+            )
         )
 
         return CheckpointPlan(

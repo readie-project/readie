@@ -17,8 +17,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from packaging.utils import canonicalize_name
-
 
 class MetadataError(Exception):
     """The metadata on disk is not what this code expects."""
@@ -38,12 +36,23 @@ class PackageFacts:
     """What one package costs to have available."""
 
     base_import: str
-    """Top-level import name, e.g. ``sklearn``."""
+    """The resolved dotted import name, e.g. ``sklearn`` or ``sklearn.svm`` --
+    not necessarily top-level: there is no top-level collapse any more, so
+    ``sklearn`` and ``sklearn.svm`` are independent, separately-priced
+    entries."""
 
     distribution: str = ""
-    """PyPI distribution name, e.g. ``scikit-learn``. Often differs."""
+    """PyPI distribution name, e.g. ``scikit-learn``. Best-effort only --
+    resolved from the top-level segment of ``base_import`` via
+    ``packages_distributions()``, kept for diagnostics, not load-bearing."""
 
-    dependencies: dict[str, str] = field(default_factory=dict)
+    loaded_modules: frozenset[str] = frozenset()
+    """Every module actually found resident in ``sys.modules`` after
+    importing ``base_import`` in a clean process, dependencies included --
+    this package's full, empirically observed, already-transitive closure.
+    Replaces a walk over declared ``Requires-Dist`` metadata, which recorded
+    what a package might need, not what a specific import actually loads."""
+
     disk_size_mb: float = 0.0
     memory_size_mb: float = 0.0
     """Resident memory (RSS) this package adds once imported, with its
@@ -82,7 +91,7 @@ class PackageFacts:
         return cls(
             base_import=str(raw.get("base_import") or name),
             distribution=str(raw.get("distribution") or ""),
-            dependencies=dict(raw.get("dependencies") or {}),
+            loaded_modules=frozenset(raw.get("loaded_modules") or ()),
             disk_size_mb=float(raw.get("disk_size_mb") or 0.0),
             memory_size_mb=float(raw.get("memory_size_mb") or 0.0),
             # Both spellings accepted: the committed data uses import_time and
@@ -107,7 +116,7 @@ class PackageFacts:
         return {
             "base_import": self.base_import,
             "distribution": self.distribution,
-            "dependencies": dict(self.dependencies),
+            "loaded_modules": sorted(self.loaded_modules),
             "disk_size_mb": round(self.disk_size_mb, 4),
             "memory_size_mb": round(self.memory_size_mb, 4),
             "import_time": self.import_time,
@@ -120,6 +129,13 @@ class Metadata:
     """Facts for every package the corpus mentions."""
 
     packages: dict[str, PackageFacts] = field(default_factory=dict)
+
+    resolved: dict[str, str] = field(default_factory=dict)
+    """Raw corpus import string -> the resolved dotted name it actually names
+    (e.g. ``sklearn.svm.LinearSVC`` -> ``sklearn.svm``), populated by
+    ``analyze()``. A raw string with no entry here never resolved to anything
+    importable in the analysed environment (a hallucinated or uninstalled
+    name) and is dropped rather than guessed at."""
 
     def __len__(self) -> int:
         """How many packages are described."""
@@ -157,73 +173,64 @@ class Metadata:
         facts = self.packages.get(name)
         return facts.import_time if facts else 0.0
 
-    def _by_distribution(self) -> dict[str, str]:
-        """PEP 503 canonical distribution name -> the import name it was analysed under.
-
-        Canonicalized (lowercased, runs of ``-_.`` collapsed to one ``-``)
-        because the same distribution is spelled inconsistently across a real
-        base image: ``huggingface_hub`` records its own ``distribution`` as
-        ``huggingface_hub``, but ``transformers``, ``datasets`` and others
-        depend on it spelled ``huggingface-hub``. An exact-string map missed
-        that match entirely, so the unresolved literal ``huggingface-hub``
-        ended up in a checkpoint's ``imports`` and failed at restore time with
-        ``ModuleNotFoundError: No module named 'huggingface-hub'`` -- a name
-        with a hyphen was never importable to begin with.
-        """
-        return {
-            canonicalize_name(facts.distribution): name
-            for name, facts in self.packages.items()
-            if facts.distribution
-        }
-
     def direct_dependencies(self, name: str) -> frozenset[str]:
-        """A package's measured dependencies, resolved to their import names.
+        """Everything ``name``'s own import empirically loads, besides itself.
 
-        ``PackageFacts.dependencies`` is keyed by distribution name (e.g.
-        ``scikit-learn``), because that is what a requirement names; this
-        resolves each one back to whichever import name it was analysed under
-        (via that entry's own ``distribution`` field, PEP 503 canonicalized so
-        differing spellings of the same distribution still match -- see
-        ``_by_distribution``), which is the name the planner and catalogue key
-        everything else by. A dependency with no matching entry (never
-        installed, or analysis failed for it) falls back to its distribution
-        name so it still shows up in a closure rather than vanishing silently.
+        ``PackageFacts.loaded_modules`` is already ``name``'s full transitive
+        closure (a single ``sys.modules`` diff around importing it captures
+        its parent chain, internal submodules and external dependencies all
+        at once), so there is no separate "direct" vs "transitive" distinction
+        left to compute -- this is kept only as a convenience accessor for a
+        single package.
         """
         facts = self.packages.get(name)
         if facts is None:
             return frozenset()
-        by_distribution = self._by_distribution()
-        return frozenset(
-            by_distribution.get(canonicalize_name(dist), dist) for dist in facts.dependencies
-        )
+        return facts.loaded_modules - {name}
 
     def closure(self, names: Iterable[str]) -> frozenset[str]:
-        """Every name in ``names``, plus everything they transitively depend on.
+        """Every name in ``names``, plus everything each one empirically loads.
 
-        This is what a checkpoint actually has to hold resident for those
-        packages to import at their measured (dependencies-already-loaded)
-        cost: each dependency is walked once no matter how many packages in
-        the closure share it, via ``seen``. The distribution/import-name map is
-        built once per call rather than once per node -- this is walked once
-        per distinct request in a corpus of thousands, so that difference is
-        the one that matters.
+        Each ``PackageFacts.loaded_modules`` is already fully transitive (see
+        above), so this is a flat union, not a graph walk: nothing here can
+        discover a name that was not already resident in whichever node's own
+        ``sys.modules`` diff produced it.
         """
-        by_distribution = self._by_distribution()
-        seen: set[str] = set()
-        stack = list(names)
-        while stack:
-            name = stack.pop()
-            if name in seen:
-                continue
-            seen.add(name)
+        seen: set[str] = set(names)
+        for name in names:
             facts = self.packages.get(name)
-            if facts is None:
-                continue
-            for dist in facts.dependencies:
-                dep = by_distribution.get(canonicalize_name(dist), dist)
-                if dep not in seen:
-                    stack.append(dep)
+            if facts is not None:
+                seen |= facts.loaded_modules
         return frozenset(seen)
+
+    def resolve_imports(self, raw_imports: Iterable[str]) -> frozenset[str]:
+        """Raw corpus import strings, mapped to their resolved canonical names.
+
+        ``resolved`` is authoritative when present -- it is what ``analyze()``
+        actually observed a raw candidate to resolve to. When it has nothing
+        for a raw string (metadata built by hand, e.g. in a test, or written
+        by something that predates this mapping), that raw string is instead
+        used as its own name exactly when it already has usable facts under
+        that same key -- covering metadata that already keys packages by
+        their plain, correct name directly. A raw string with neither is
+        dropped rather than passed through unresolved and risking a
+        ``ModuleNotFoundError`` at restore time -- in particular, this is
+        also what makes an ``analyze()``-recorded resolution failure (an error
+        entry keyed by the raw string itself) drop out here rather than be
+        mistaken for an already-resolved name.
+        """
+        names: set[str] = set()
+        for raw in raw_imports:
+            if not raw:
+                continue
+            name = self.resolved.get(raw)
+            if name is None:
+                facts = self.packages.get(raw)
+                if facts is not None and facts.usable:
+                    name = raw
+            if name is not None:
+                names.add(name)
+        return frozenset(names)
 
     @classmethod
     def load(cls, path: Path) -> Metadata:
@@ -241,7 +248,16 @@ class Metadata:
             msg = f"metadata at {path} must be an object, got {type(raw).__name__}"
             raise MetadataError(msg)
 
-        return cls({name: PackageFacts.from_json(name, entry) for name, entry in raw.items()})
+        if "packages" in raw:
+            packages_raw, resolved_raw = raw["packages"], raw.get("resolved", {})
+        else:
+            # Predates the "resolved" map: a flat {name: facts} dict.
+            packages_raw, resolved_raw = raw, {}
+
+        return cls(
+            {name: PackageFacts.from_json(name, entry) for name, entry in packages_raw.items()},
+            resolved={str(k): str(v) for k, v in resolved_raw.items()},
+        )
 
     def to_json(self) -> dict[str, Any]:
         """Render back to the on-disk shape.
@@ -251,11 +267,14 @@ class Metadata:
         from "measured and broken" anyway (both cost 0.0, see ``size_mb`` and
         ``import_time`` above), so keeping it around on disk would only be
         clutter -- and, while analysing a real base image, actively misleading
-        clutter, since a dependency name guessed wrong by ``top_level_imports``
-        showed up here as if it were a real package that failed.
+        clutter, since a raw import string that never resolved to anything
+        would otherwise show up here as if it were a real package that failed.
         """
         return {
-            name: facts.to_json()
-            for name, facts in sorted(self.packages.items())
-            if not facts.error
+            "packages": {
+                name: facts.to_json()
+                for name, facts in sorted(self.packages.items())
+                if not facts.error
+            },
+            "resolved": dict(sorted(self.resolved.items())),
         }

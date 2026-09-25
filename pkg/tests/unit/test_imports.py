@@ -19,7 +19,7 @@ def test_imports_are_extracted_from_the_function_body() -> None:
 
     names = set(extract_imports(uses_libraries))
 
-    assert {"json", "statistics", "collections"} <= names
+    assert {"json", "statistics", "collections.OrderedDict"} <= names
 
 
 def test_aliases_report_the_real_module_name() -> None:
@@ -30,6 +30,29 @@ def test_aliases_report_the_real_module_name() -> None:
 def test_relative_imports_are_skipped_because_they_name_no_module() -> None:
     facts = analyse("from . import sibling\nfrom .pkg import thing")
     assert facts.imports == set()
+
+
+def test_a_from_import_records_the_deepest_candidate() -> None:
+    # `Image` might be a real submodule (PIL.Image is) or just an attribute of
+    # the module (sklearn.svm.LinearSVC is a class, not a submodule) -- that
+    # can only be told apart by actually importing it, which this AST-only
+    # pass cannot do. So it records the deepest candidate implied by the
+    # syntax and leaves resolving it to whatever runs in the target
+    # environment. Must match `pipeline`'s `corpus/tree_parser.py` exactly --
+    # see the module docstring's sync note.
+    facts = analyse("from PIL import Image\nfrom sklearn.svm import LinearSVC\n")
+    assert facts.imports == {"PIL.Image", "sklearn.svm.LinearSVC"}
+
+
+def test_a_from_import_with_several_names_records_each_candidate() -> None:
+    facts = analyse("from os.path import join, exists\n")
+    assert facts.imports == {"os.path.join", "os.path.exists"}
+
+
+def test_a_star_import_records_just_the_module() -> None:
+    # There is no name to append a candidate onto.
+    facts = analyse("from os.path import *\n")
+    assert facts.imports == {"os.path"}
 
 
 def test_from_pretrained_models_and_tokenizers_are_distinguished() -> None:

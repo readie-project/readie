@@ -35,7 +35,13 @@ class SpecError(Exception):
 type ExecutorMode = Literal["capture", "measure", "sandbox"]
 
 
-def build_config(settings: Settings, checkpoint_dir: Path | None = None, *, mode: ExecutorMode = "capture", preimport: str = "") -> str:
+def build_config(
+    settings: Settings,
+    checkpoint_dir: Path | None = None,
+    *,
+    mode: ExecutorMode = "capture",
+    preimport: str = "",
+) -> str:
     """Write ``<bundle>/config.json`` and return the spec fingerprint.
 
     ``preimport`` is the only thing that varies between the checkpoints of one
@@ -83,7 +89,7 @@ def build_config(settings: Settings, checkpoint_dir: Path | None = None, *, mode
     if mode == "capture" and checkpoint_dir:
         params["annotations"] = {
             "dev.gvisor.internal.checkpoint.enable": "true",
-            "dev.gvisor.internal.checkpoint.path": str(checkpoint_dir)
+            "dev.gvisor.internal.checkpoint.path": str(checkpoint_dir),
         }
 
     params_path = settings.bundle_dir / "ocispec-params.json"
