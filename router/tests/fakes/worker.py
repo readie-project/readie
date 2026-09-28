@@ -24,8 +24,7 @@ class RecordedCall:
     """One execution the fake worker was asked to run."""
 
     target: str
-    requests: list[execution_pb2.WorkerExecutionRequest] = field(
-        default_factory=list)
+    requests: list[execution_pb2.WorkerExecutionRequest] = field(default_factory=list)
     cancelled: bool = False
 
     @property

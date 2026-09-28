@@ -101,7 +101,7 @@ func newFixtureWith(t *testing.T, artifacts container.Artifacts) *fixture {
 }
 
 // newFixtureWithSpec is newFixtureWith with a caller-supplied Spec, so tests
-// exercising Spec-driven behaviour (such as PauseTTL) can override just that.
+// exercising Spec-driven behaviour (such as IdleTTL) can override just that.
 func newFixtureWithSpec(t *testing.T, artifacts container.Artifacts, spec container.Spec) *fixture {
 	t.Helper()
 	return newFixtureWithNetwork(t, artifacts, spec, nil)
@@ -374,10 +374,10 @@ func TestAcquire_CleansUpTheDirectoryWhenCreateFails(t *testing.T) {
 func TestAcquire_ResumesAnExistingContainer(t *testing.T) {
 	f := newFixture(t)
 	first := acquireNew(t, f)
-	// Pause directly: Release no longer leaves a container paused (see
-	// TestRelease_SuccessDestroysTheContainer), but resume must still work
-	// against whatever containers are left paused.
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, first.ID))
+	// A real session, or the release below would destroy rather than keep it
+	// running for reuse.
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, first, container.OutcomeSuccess))
 
 	second, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		ContainerID: first.ID,
@@ -398,7 +398,7 @@ func TestAcquire_ResumesAnExistingContainer(t *testing.T) {
 func TestAcquire_ReportsErrorWhenResumeFails(t *testing.T) {
 	f := newFixture(t)
 	first := acquireNew(t, f)
-	f.runtime.FailOn("Unpause", sandbox.ErrConflict)
+	f.runtime.FailOn("Update", sandbox.ErrConflict)
 
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: first.ID})
 	require.Error(t, err)
@@ -406,21 +406,39 @@ func TestAcquire_ReportsErrorWhenResumeFails(t *testing.T) {
 	assert.Contains(t, f.registry.StatusesFor(first.ID), pb.Status_STATUS_ERROR)
 }
 
-// Pause-on-success is disabled for now (see Manager.Release); a successful
-// execution destroys the container just like a failed one, until that's
-// uncommented.
-func TestRelease_SuccessDestroysTheContainer(t *testing.T) {
+func TestRelease_SuccessLeavesItRunningForReuse(t *testing.T) {
 	f := newFixture(t)
 	h := acquireNew(t, f)
 
-	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, h, container.OutcomeSuccess))
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.True(t, state.Removed)
+	// Left running, not suspended: see Manager.IdleTTL's doc comment for why
+	// (a race between an async release and an immediate same-session resume).
+	assert.False(t, state.Paused)
+	assert.False(t, state.Removed)
 
-	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_REMOVED}, f.registry.StatusesFor(h.ID))
-	assert.NoDirExists(t, f.layout.ContainerDir(h.ID))
+	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_READY}, f.registry.StatusesFor(h.ID))
+	assert.DirExists(t, f.layout.ContainerDir(h.ID), "a reusable container keeps its socket directory")
+}
+
+// A container acquired for a request with no session is always destroyed on
+// release, even on success: with no session, nothing can ever resume it by
+// ID, so keeping it running would just hold its memory until SANDBOX_IDLE_TTL
+// for no one.
+func TestRelease_SuccessWithNoSessionDestroysInstead(t *testing.T) {
+	f := newFixture(t)
+	h := acquireNew(t, f)
+
+	require.NoError(t, f.manager.Release(
+		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+
+	state, ok := f.runtime.Get(h.ID)
+	require.True(t, ok)
+	assert.False(t, state.Paused)
+	assert.True(t, state.Removed)
 }
 
 func TestRelease_FailureDestroysTheContainerAndItsDirectory(t *testing.T) {
@@ -514,9 +532,8 @@ func TestCleanupOrphans_SurfacesListFailures(t *testing.T) {
 	assert.ErrorIs(t, err, sandbox.ErrRuntimeUnavailable)
 }
 
-// newFixtureWithPauseTTL is newFixture with a nonzero Spec.PauseTTL, so the
-// reaper has something to expire.
-func newFixtureWithPauseTTL(t *testing.T, ttl time.Duration) *fixture {
+// newFixtureWithIdleTTL is newFixture with a nonzero Spec.IdleTTL.
+func newFixtureWithIdleTTL(t *testing.T, ttl time.Duration) *fixture {
 	t.Helper()
 	_, artifacts := buildArtifacts(t, "checkpoint_1")
 	return newFixtureWithSpec(t, artifacts, container.Spec{
@@ -526,105 +543,104 @@ func newFixtureWithPauseTTL(t *testing.T, ttl time.Duration) *fixture {
 		PidsLimit:    100,
 		CgroupParent: "/readie",
 		DirPerm:      0o777,
-		PauseTTL:     ttl,
+		IdleTTL:      ttl,
 	})
 }
 
-func TestReapExpiredPauses_DestroysAContainerPastItsTTL(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, time.Minute)
+func TestReapIdleContainers_DestroysAContainerPastItsIdleTTL(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, time.Minute)
 	h := acquireNew(t, f)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
 
 	f.clock.Advance(time.Minute)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.True(t, state.Removed)
+	assert.True(t, state.Removed, "past its IdleTTL, an idle container is destroyed")
 	assert.NoDirExists(t, f.layout.ContainerDir(h.ID))
 }
 
-func TestReapExpiredPauses_LeavesAContainerBeforeItsTTL(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, time.Minute)
+func TestReapIdleContainers_LeavesAContainerBeforeItsTTL(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, time.Minute)
 	h := acquireNew(t, f)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
 
 	f.clock.Advance(30 * time.Second)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.False(t, state.Removed)
-	assert.True(t, state.Paused)
+	assert.False(t, state.Removed, "left running while idle, not yet reaped")
 }
 
-func TestReapExpiredPauses_ResumingClearsTheTimer(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, time.Minute)
+func TestReapIdleContainers_ResumingClearsTheTimer(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, time.Minute)
 	h := acquireNew(t, f)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
 
 	f.clock.Advance(30 * time.Second)
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: h.ID})
 	require.NoError(t, err)
 
-	// More time has now passed since the original pause than the TTL, but the
-	// container was resumed in between and never re-paused.
+	// More time has now passed since the container was marked idle than the
+	// TTL, but it was resumed in between and never marked idle again.
 	f.clock.Advance(time.Minute)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.False(t, state.Removed, "a resumed container must not be reaped for its former pause")
+	assert.False(t, state.Removed, "a resumed container must not be reaped for its former idle period")
 }
 
-func TestReapExpiredPauses_RepausingResetsTheTimerToFullTTL(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, time.Minute)
+func TestReapIdleContainers_GoingIdleAgainResetsTheTimerToFullTTL(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, time.Minute)
 	h := acquireNew(t, f)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
 
 	f.clock.Advance(30 * time.Second)
 	_, err := f.manager.Acquire(context.Background(), container.AcquireRequest{ContainerID: h.ID})
 	require.NoError(t, err)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
 
-	// Only half the TTL has elapsed since the second pause, even though more
-	// than a full TTL has elapsed since the first.
+	// Only half the TTL has elapsed since the second idle mark, even though
+	// more than a full TTL has elapsed since the first.
 	f.clock.Advance(30 * time.Second)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.False(t, state.Removed, "the timer must have restarted at the second pause")
+	assert.False(t, state.Removed, "the timer must have restarted at the second idle mark")
 
 	f.clock.Advance(30 * time.Second)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 	state, ok = f.runtime.Get(h.ID)
 	require.True(t, ok)
-	assert.True(t, state.Removed, "the full TTL has now elapsed since the second pause")
+	assert.True(t, state.Removed, "the full TTL has now elapsed since the second idle mark")
 }
 
-func TestReapExpiredPauses_NonPositiveTTLDisablesReaping(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, 0)
+func TestReapIdleContainers_NonPositiveIdleTTLDisablesReaping(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, 0)
 	h := acquireNew(t, f)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID))
 
 	f.clock.Advance(24 * time.Hour)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 
 	state, ok := f.runtime.Get(h.ID)
 	require.True(t, ok)
 	assert.False(t, state.Removed)
 }
 
-func TestReapExpiredPauses_NoOpWhenNothingIsPaused(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, time.Minute)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+func TestReapIdleContainers_NoOpWhenNothingIsIdle(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, time.Minute)
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 }
 
-func TestReapExpiredPauses_DestroysOnlyTheExpiredOnes(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, time.Minute)
+func TestReapIdleContainers_DestroysOnlyTheExpiredOnes(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, time.Minute)
 
 	older := acquireNew(t, f)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, older.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, older.ID))
 
 	f.clock.Advance(45 * time.Second)
 
@@ -632,12 +648,12 @@ func TestReapExpiredPauses_DestroysOnlyTheExpiredOnes(t *testing.T) {
 		Alloc: memAlloc(1 << 20),
 	})
 	require.NoError(t, err)
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, newer.ID))
+	require.NoError(t, f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, newer.ID))
 
-	// 45s since older's pause, 15s since newer's - only older has crossed the
-	// one-minute TTL.
+	// 45s since older went idle, 15s since newer's - only older has crossed
+	// the one-minute TTL.
 	f.clock.Advance(15 * time.Second)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 
 	olderState, ok := f.runtime.Get(older.ID)
 	require.True(t, ok)
@@ -645,12 +661,11 @@ func TestReapExpiredPauses_DestroysOnlyTheExpiredOnes(t *testing.T) {
 
 	newerState, ok := f.runtime.Get(newer.ID)
 	require.True(t, ok)
-	assert.False(t, newerState.Removed)
-	assert.True(t, newerState.Paused)
+	assert.False(t, newerState.Removed, "left running while idle, not yet reaped")
 }
 
-func TestReapExpiredPauses_IsSafeUnderConcurrentPauseAndReap(t *testing.T) {
-	f := newFixtureWithPauseTTL(t, time.Millisecond)
+func TestReapIdleContainers_IsSafeUnderConcurrentIdleMarkingAndReap(t *testing.T) {
+	f := newFixtureWithIdleTTL(t, time.Millisecond)
 
 	var wg sync.WaitGroup
 	for range 16 {
@@ -663,14 +678,14 @@ func TestReapExpiredPauses_IsSafeUnderConcurrentPauseAndReap(t *testing.T) {
 			if err != nil {
 				return
 			}
-			_ = f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID)
-			_ = f.manager.ReapExpiredPauses(context.Background())
+			_ = f.manager.MarkIdle(context.Background(), registry.ExecutionRef{}, h.ID)
+			_ = f.manager.ReapIdleContainers(context.Background())
 		}()
 	}
 	wg.Wait()
 
 	f.clock.Advance(time.Hour)
-	require.NoError(t, f.manager.ReapExpiredPauses(context.Background()))
+	require.NoError(t, f.manager.ReapIdleContainers(context.Background()))
 }
 
 func TestInspect_ReportsTheAppliedAllocation(t *testing.T) {
@@ -705,43 +720,6 @@ func TestManager_TreatsRouterFailuresAsNonFatal(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, f.manager.Release(context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
-}
-
-// A paused container's processes are frozen and cannot act on SIGTERM, so
-// stopping one blocks for the whole stop timeout. Warm containers are left
-// paused, so shutdown must unpause before stopping or it stalls long enough
-// for the supervisor to SIGKILL the worker mid-cleanup.
-func TestDestroy_UnpausesBeforeStoppingAPausedContainer(t *testing.T) {
-	f := newFixture(t)
-	h := acquireNew(t, f)
-
-	// Leave it paused the way a completed execution does when pause-on-success
-	// is enabled (Release itself no longer pauses; see Manager.Release).
-	require.NoError(t, f.manager.Pause(context.Background(), registry.ExecutionRef{}, h.ID))
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	require.True(t, state.Paused)
-
-	require.NoError(t, f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID))
-
-	state, ok = f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.True(t, state.Removed)
-	assert.False(t, state.Paused)
-}
-
-// Unpausing a container that is not paused is a conflict, and must not be
-// treated as a failure of the destroy.
-func TestDestroy_TolerantOfAnUnpausableContainer(t *testing.T) {
-	f := newFixture(t)
-	h := acquireNew(t, f)
-	f.runtime.FailOn("Unpause", sandbox.ErrConflict)
-
-	require.NoError(t, f.manager.Destroy(context.Background(), registry.ExecutionRef{}, h.ID))
-
-	state, ok := f.runtime.Get(h.ID)
-	require.True(t, ok)
-	assert.True(t, state.Removed)
 }
 
 // The stop timeout must stay well inside a supervisor's shutdown grace period.
@@ -806,21 +784,17 @@ func TestLoad_DropsAContainerOnRelease(t *testing.T) {
 	assert.Zero(t, reserved)
 }
 
-// A paused container holds pages but is reserved for nobody. Counting it as
-// occupied would strand the warm containers the whole system exists to reuse.
-func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
-	// Pause-on-success is disabled for now (see Manager.Release), so Release
-	// no longer leaves an untracked-but-paused container behind for this test
-	// to exercise. Re-enable once that's uncommented.
-	t.Skip("pause-on-success is temporarily disabled; see Manager.Release")
-
+// A released, idle container is still running but reserved for nobody.
+// Counting it as occupied would strand the warm containers the whole system
+// exists to reuse.
+func TestLoad_ExcludesAReleasedContainerWaitingInTheWarmPool(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
 		Alloc: memAlloc(512 << 20),
 	})
 	require.NoError(t, err)
 	require.NoError(t, f.manager.Release(
-		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+		context.Background(), registry.ExecutionRef{SessionID: "sess-1"}, h, container.OutcomeSuccess))
 
 	// Resuming it makes it occupied again.
 	resumed, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
@@ -834,9 +808,8 @@ func TestLoad_ExcludesAPausedContainerWaitingInTheWarmPool(t *testing.T) {
 	assert.Equal(t, h.ID, resumed.ID)
 }
 
-// Release destroys on every outcome right now (see Manager.Release), and a
-// destroy that fails must not leave the container reserved forever - that
-// leaks capacity for the process's life.
+// Release runs on the failure path too, and a pause that fails must not leave
+// the container reserved forever - that leaks capacity for the process's life.
 func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	f := newFixture(t)
 	h, err := f.manager.Acquire(context.Background(), container.AcquireRequest{
@@ -844,9 +817,11 @@ func TestLoad_DropsAContainerEvenWhenReleaseFails(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// MarkIdle (the success + session path) no longer touches the runtime, so
+	// it cannot fail; Destroy (the no-session/failure path) still can.
 	f.runtime.FailOn("Stop", errors.New("runtime is wedged"))
 	require.Error(t, f.manager.Release(
-		context.Background(), registry.ExecutionRef{}, h, container.OutcomeSuccess))
+		context.Background(), registry.ExecutionRef{}, h, container.OutcomeFailure))
 
 	count, _ := f.manager.Load()
 	assert.Zero(t, count)

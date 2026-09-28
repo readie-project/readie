@@ -102,9 +102,12 @@ async def test_every_worker_is_probed(state: ClusterState, clock: FakeClock) -> 
     assert sorted(health.checked) == ["w0:50052", "w1:50052", "w2:50052"]
 
 
-async def test_evicting_a_worker_unpins_its_sessions(state: ClusterState, clock: FakeClock) -> None:
+async def test_evicting_a_worker_expires_its_sessions(
+    state: ClusterState, clock: FakeClock
+) -> None:
     state.apply_worker_status("w1", "w1:50052", STATUS_READY, clock.now())
     session = state.touch_session("sess-1", clock.now())
+    assert session is not None
     session.affinity = Affinity(worker_id="w1", container_id="c1", seq=1)
 
     health = ScriptedHealth({"w1:50052": False})
@@ -113,6 +116,7 @@ async def test_evicting_a_worker_unpins_its_sessions(state: ClusterState, clock:
         await probe.probe_once()
 
     assert state.worker("w1") is None
+    assert session.expired
     assert session.affinity is None
 
 

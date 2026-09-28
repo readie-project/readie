@@ -11,7 +11,7 @@ in the request path.
 ## Quick start
 
 ```sh
-make tools     # install pinned protoc plugins and golangci-lint
+make tools     # install pinned protoc, protoc plugins, and golangci-lint
 make test      # go test -race ./...
 make lint      # golangci-lint
 make build     # produce ./go-server and ./ocispec
@@ -179,14 +179,35 @@ runtime. That needs no listing flag and, more importantly, finds sandboxes
 whose runtime state was lost but whose bundle survives - exactly the case
 cleanup exists for, and one a runtime listing would not mention.
 
-Paused containers carry a TTL (`SANDBOX_PAUSE_TTL`, default 5m):
-`Manager.ReapExpiredPauses` runs on a fixed 30s ticker and destroys anything
-paused past it, and the timer restarts on every re-pause. Pause-on-success is
-currently disabled (see `Manager.Release`),
-so nothing reaches the warm pool through normal request completion today -
-the TTL machinery exists and is exercised by tests and by any caller that
-explicitly resumes and re-pauses a container, ready for when pause-on-success
-is re-enabled.
+A successful execution leaves its container running, marked idle for reuse,
+rather than destroying it (`Manager.Release` → `MarkIdle`) - unless the
+request carried no `session_id`, in which case it is destroyed regardless of
+outcome. An empty `session_id` means the router never established affinity
+for this container and never will (see the router README's Sessions
+section), so nothing could ever resume it by ID; leaving it running would
+just hold its memory for `SANDBOX_IDLE_TTL` for no caller to reuse.
+
+It is left *running*, not suspended, the moment it goes idle - on purpose:
+`Release` runs in the background after the RPC returns
+(`Runner.WaitPendingReleases`), specifically so a slow `Stop` cannot inflate
+response latency, but that also means a client can receive a response and
+fire its session's next request before this worker's own release goroutine
+has finished.
+
+An idle container is destroyed by `Manager.ReapIdleContainers`, on a fixed
+30s ticker, once it has sat idle past `SANDBOX_IDLE_TTL` (default 5m). The
+timer restarts from zero every time the container goes idle again after a
+resume, and it applies only to a session-bound container - one released with
+no session is destroyed immediately, on the first release, never left idle at
+all (see `Release`'s own comment). `SANDBOX_IDLE_TTL` set to 0 disables
+reaping.
+
+This is the *only* thing that ends a container's warm life on a successful
+path - the router has no session TTL or cap of its own (see the router
+README's Sessions section) and only retires a session once this reaper (or a
+lost-notification backstop on the router itself) reports the container gone,
+at which point reusing that session_id errors rather than silently
+cold-starting.
 
 ## Contracts
 
@@ -220,8 +241,8 @@ both test suites so the two cannot drift.
 
 A `{"ok": false}` envelope is _not_ a worker failure - the sandbox ran and the
 interpreter is healthy - so the execution is reported as a success and the
-container is paused for reuse. Only the client turns that envelope into an
-exception.
+container is left running, marked idle for reuse. Only the client turns that
+envelope into an exception.
 
 The manifest records `executor_protocol`, and `internal/artifact` refuses
 artifacts whose version this worker does not implement, at load rather than at
@@ -312,7 +333,7 @@ Optional: `WORKER_ID`, `RUNSC_BINARY`, `RUNSC_ROOT`,
 `APP_ENV`, plus duration overrides `EXECUTION_TIMEOUT`, `DIAL_TOTAL_TIMEOUT`,
 `RESPONSE_IDLE_TIMEOUT`, `SHUTDOWN_TIMEOUT`, `CLEANUP_TIMEOUT`,
 `CONTAINER_STOP_TIMEOUT`, `RUNSC_COMMAND_TIMEOUT`, `RESTORE_TIMEOUT`,
-`CHECKPOINT_TIMEOUT`, `STATS_INTERVAL`, `SANDBOX_PAUSE_TTL` (default 5m), and
+`CHECKPOINT_TIMEOUT`, `STATS_INTERVAL`, `SANDBOX_IDLE_TTL` (default 5m), and
 `STREAM_LOGS` / `STREAM_STATS`.
 
 Two settings are coupled and validated together: `SANDBOX_OVERLAY` must be a

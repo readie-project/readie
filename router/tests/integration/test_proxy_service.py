@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 import grpc
 import pytest
 
-from readie_router.proto import execution_pb2, proxy_pb2, resources_pb2
+from readie_router.proto import execution_pb2, proxy_pb2, registry_pb2, resources_pb2
 from tests.fakes.worker import FakeWorker
 from tests.integration.conftest import Harness
 
@@ -20,6 +20,7 @@ def header(
     imports: tuple[str, ...] = ("pandas", "numpy"),
     memory: int = 0,
     max_memory: int = 0,
+    disable_optimized_execution: bool = False,
 ) -> proxy_pb2.ClientExecutionRequest:
     """The first message a client must send."""
     budgets = []
@@ -33,7 +34,10 @@ def header(
         request_id=request_id,
         session_id=session_id,
         config=proxy_pb2.ExecutionConfig(
-            imports=list(imports), budgets=budgets),
+            imports=list(imports),
+            budgets=budgets,
+            disable_optimized_execution=disable_optimized_execution,
+        ),
     )
 
 
@@ -85,8 +89,7 @@ async def test_a_request_reaches_the_worker_and_the_result_comes_back(
 
     responses = await execute(harness, header(), chunk(b"pickled-"), chunk(b"payload"))
 
-    assert b"".join(r.payload for r in responses if r.HasField(
-        "payload")) == b"result"
+    assert b"".join(r.payload for r in responses if r.HasField("payload")) == b"result"
     assert len(harness.worker.calls) == 1
     assert harness.worker.calls[0].payload == b"pickled-payload"
 
@@ -121,8 +124,7 @@ async def test_logs_and_payload_are_demultiplexed(harness: Harness) -> None:
         "first line\n",
         "second line\n",
     ]
-    assert [r.payload for r in responses if r.HasField("payload")] == [
-        b"result"]
+    assert [r.payload for r in responses if r.HasField("payload")] == [b"result"]
 
 
 # ---------------------------------------------------------------------------
@@ -140,8 +142,7 @@ async def test_the_import_hints_reach_the_worker(harness: Harness) -> None:
 
     await execute(harness, header(imports=("torch", "pandas")), chunk(b"x"))
 
-    assert list(harness.worker.calls[0].header.resources) == [
-        "pandas", "torch"]
+    assert list(harness.worker.calls[0].header.resources) == ["pandas", "torch"]
 
 
 async def test_the_placement_is_stamped_on_the_first_worker_message(
@@ -212,13 +213,90 @@ async def test_an_empty_stream_is_rejected(harness: Harness) -> None:
     assert caught.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
 
-async def test_a_missing_session_id_is_rejected(harness: Harness) -> None:
+async def test_a_missing_session_id_is_accepted_as_not_part_of_any_session(
+    harness: Harness,
+) -> None:
+    """Unlike request_id, an empty session_id is valid input, not an error.
+
+    It is what every call without an explicit session sends - see
+    identity.py and Client._prepare - so the router must run it normally
+    and must not start tracking a session for it.
+    """
     await harness.register_worker()
 
-    with pytest.raises(grpc.aio.AioRpcError) as caught:
-        await execute(harness, header(session_id=""))
+    responses = await execute(harness, header(session_id=""))
 
-    assert caught.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert responses
+    assert harness.app.state.session("") is None
+
+
+async def test_reusing_an_expired_session_id_is_rejected_as_not_found(
+    harness: Harness,
+) -> None:
+    """Once a session's container is confirmed gone, its id is retired.
+
+    Distinct from an id the router has simply never seen, which must keep
+    cold-starting rather than erroring - see the "not part of any session"
+    test above.
+    """
+    await harness.register_worker()
+
+    responses = await execute(harness, header(session_id="sess-1"), chunk(b"body"))
+    container_id = next(r.container_id for r in responses if r.container_id)
+
+    await harness.registry.PostExecutorStatus(
+        registry_pb2.ExecutorStatus(
+            worker_id="worker-1",
+            container_id=container_id,
+            session_id="sess-1",
+            request_id="req-1",
+            status=registry_pb2.STATUS_REMOVED,
+        )
+    )
+
+    with pytest.raises(grpc.aio.AioRpcError) as caught:
+        await execute(harness, header(session_id="sess-1"), chunk(b"body"))
+
+    assert caught.value.code() == grpc.StatusCode.NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# Disable optimized execution
+# ---------------------------------------------------------------------------
+
+
+async def test_disable_optimized_execution_is_accepted_on_a_fresh_session(
+    harness: Harness,
+) -> None:
+    """No existing affinity to conflict with, so this is just an ordinary call."""
+    await harness.register_worker()
+
+    responses = await execute(
+        harness, header(session_id="sess-1", disable_optimized_execution=True), chunk(b"body")
+    )
+
+    assert responses
+    assert all(r.success for r in responses)
+
+
+async def test_disable_optimized_execution_conflicts_with_an_optimized_session(
+    harness: Harness,
+) -> None:
+    """The session's warm container was itself restored from a checkpoint."""
+    harness.worker.container_id = "container-a"
+    harness.worker.checkpoint_id = "c-data"
+    await harness.register_worker()
+
+    await execute(harness, header(session_id="sess-1"), chunk(b"body"))
+
+    with pytest.raises(grpc.aio.AioRpcError) as caught:
+        await execute(
+            harness,
+            header(session_id="sess-1", disable_optimized_execution=True),
+            chunk(b"body"),
+        )
+
+    assert caught.value.code() == grpc.StatusCode.FAILED_PRECONDITION
 
 
 # ---------------------------------------------------------------------------

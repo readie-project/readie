@@ -92,10 +92,53 @@ compared - see the gap under [What works](#what-works-and-what-does-not). It
 records no rootfs identity, because there is nothing to compare: the base image
 build is the only way to put a rootfs and checkpoints together.
 
+## Building checkpoints
+
+Offline, and separate from serving. One command captures checkpoints, bakes them
+into the base image beside the root filesystem, and puts a worker on top:
+
+```sh
+make generation                     # tags readie-worker:<timestamp> and :latest
+make generation TAG=my-experiment
+```
+
+Capture is its own phase because `docker build` cannot capture a checkpoint -
+runsc needs privileged namespace access that a stock BuildKit builder will not
+grant - so the pipeline runs privileged, and the base image is built around what
+it wrote.
+
+The result is a single deployable: the Go binary, runsc, the root filesystem and
+the checkpoints, all in one image, with nothing mounted. That costs ~35 GB per
+image and buys the guarantee that a running worker's artifacts are exactly the
+ones its tag names.
+
+Two Dockerfiles, split along what a checkpoint's validity depends on.
+[`pipeline/Dockerfile`](pipeline/Dockerfile) defines the rootfs, the capture tool
+and the base image carrying both runsc and the captured checkpoints - one file, so
+the tree a checkpoint is captured against and the tree it is restored into cannot
+drift, and the gVisor release is pinned exactly once.
+[`worker/Dockerfile`](worker/Dockerfile) adds the Go server and grpcurl, and
+nothing else.
+
+The 26 GB root filesystem is therefore _inherited_ by the worker image, never
+copied into it. `COPY --from=` produces a fresh layer every build - two identical
+worker builds were measured producing different digests for it - so inheriting is
+what lets a rebuilt worker share that layer instead of re-uploading it, and is why
+a worker rebuild takes seconds.
+
+`make analyze FLAVOR=cpu|gpu` measures every package a flavor's base image
+installs (disk size, import time), ahead of `plan`/`generation` - see
+[`pipeline/README.md`](pipeline/README.md) for what it writes and why it needs
+to run against the image, not just the request corpus.
+
+[`pipeline/`](pipeline/) has the planner's algorithm and the individual stages.
+
 ## Running it
 
 Docker Compose is the whole runtime story. No other tooling is needed to stand
 the system up. The router is always accessed through NGINX rather than being exposed directly.
+Complete [Building checkpoints](#building-checkpoints) before this step in order to serve
+requests using the optimal checkpoints, else every request falls back to a regular cold start.
 
 Run locally:
 
@@ -165,55 +208,18 @@ That is cheap because the worker image is only the Go server and grpcurl; the
 rootfs and the checkpoints are inherited from `readie-worker-base` untouched. See
 [`worker/README.md`](worker/README.md#the-two-images).
 
-## Building checkpoints
-
-Offline, and separate from serving. One command captures checkpoints, bakes them
-into the base image beside the root filesystem, and puts a worker on top:
-
-```sh
-make generation                     # tags readie-worker:<timestamp> and :latest
-make generation TAG=my-experiment
-```
-
-Capture is its own phase because `docker build` cannot capture a checkpoint -
-runsc needs privileged namespace access that a stock BuildKit builder will not
-grant - so the pipeline runs privileged, and the base image is built around what
-it wrote.
-
-The result is a single deployable: the Go binary, runsc, the root filesystem and
-the checkpoints, all in one image, with nothing mounted. That costs ~35 GB per
-image and buys the guarantee that a running worker's artifacts are exactly the
-ones its tag names.
-
-Two Dockerfiles, split along what a checkpoint's validity depends on.
-[`pipeline/Dockerfile`](pipeline/Dockerfile) defines the rootfs, the capture tool
-and the base image carrying both runsc and the captured checkpoints - one file, so
-the tree a checkpoint is captured against and the tree it is restored into cannot
-drift, and the gVisor release is pinned exactly once.
-[`worker/Dockerfile`](worker/Dockerfile) adds the Go server and grpcurl, and
-nothing else.
-
-The 26 GB root filesystem is therefore _inherited_ by the worker image, never
-copied into it. `COPY --from=` produces a fresh layer every build - two identical
-worker builds were measured producing different digests for it - so inheriting is
-what lets a rebuilt worker share that layer instead of re-uploading it, and is why
-a worker rebuild takes seconds.
-
-`make analyze FLAVOR=cpu|gpu` measures every package a flavor's base image
-installs (disk size, import time), ahead of `plan`/`generation` - see
-[`pipeline/README.md`](pipeline/README.md) for what it writes and why it needs
-to run against the image, not just the request corpus.
-
-[`pipeline/`](pipeline/) has the planner's algorithm and the individual stages.
-
 ## What works, and what does not
 
 Built and tested:
 
 - Session affinity, warm-container reuse, and the per-session serialisation it
-  forces.
+  forces. A session carries no TTL or cap of its own - the instant the
+  container backing it is gone (driven entirely by the worker's own pause
+  TTL), the router retires the id rather than deleting it, so reusing it
+  raises a clear "session expired" error instead of silently losing all its
+  state under a cold start.
 - Placement on real memory pressure, with liveness probed over `grpc.health.v1`
-  and TTL eviction for workers, containers and sessions.
+  and TTL eviction for workers and containers.
 - Checkpoint planning by greedy set cover over a request corpus and
   measured packages (each request's full dependency closure, not just its
   top-level imports), maximising import time saved per megabyte.

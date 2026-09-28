@@ -171,6 +171,34 @@ def test_gpu_defaults_to_false(rig: Rig) -> None:
     assert rig.sent.last[5] is False
 
 
+def test_disable_optimized_execution_reaches_the_transport(rig: Rig) -> None:
+    @remote(client=rig.client, disable_optimized_execution=True)
+    def f():
+        return None
+
+    f()
+    # Recorded tuple: (ref, payload, imports, budgets, timeout, gpu, disable_optimized_execution).
+    assert rig.sent.last[6] is True
+
+
+def test_disable_optimized_execution_defaults_to_false(rig: Rig) -> None:
+    @remote(client=rig.client)
+    def f():
+        return None
+
+    f()
+    assert rig.sent.last[6] is False
+
+
+def test_bind_carries_disable_optimized_execution_through(rig: Rig) -> None:
+    @remote(client=rig.client, disable_optimized_execution=True)
+    def f():
+        return None
+
+    f.bind(readie.Session("sess-x"))()
+    assert rig.sent.last[6] is True
+
+
 def test_packages_reach_the_payload_normalized_and_deduped(rig: Rig) -> None:
     # packages travel inside the pickled call itself, alongside func/args/kwargs
     # -- like the function body, the transport never sees them.

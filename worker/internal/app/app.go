@@ -387,7 +387,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 		// called on every request whether or not it needs a network - never
 		// has to. Pushed before "gRPC server" so Close runs last, after
 		// CleanupOrphans has released every container's slot.
-		if err := netProvisioner.WarmUp(ctx); err != nil {
+		if err = netProvisioner.WarmUp(ctx); err != nil {
 			return fail(fmt.Errorf("warm up sandbox network pool: %w", err))
 		}
 		app.push("sandbox network", func(ctx context.Context) error { return netProvisioner.Close(ctx) })
@@ -510,14 +510,13 @@ func (a *App) Run(ctx context.Context) error {
 		a.utilizationLoop(ctx)
 	}()
 
-	// Started alongside utilizationLoop. Nothing calls Manager.Pause today
-	// outside tests (see Manager.Release), so in normal operation this finds
-	// nothing to reap on every tick - it exists so the TTL machinery is
-	// exercised and correct for when a caller does pause a container.
-	pauseReapDone := make(chan struct{})
+	// Started alongside utilizationLoop. Release marks a container idle for
+	// every successful, session-bound execution, so this has real work
+	// whenever sessions are in use, not just in tests.
+	idleReapDone := make(chan struct{})
 	go func() {
-		defer close(pauseReapDone)
-		a.pauseReapLoop(ctx)
+		defer close(idleReapDone)
+		a.idleReapLoop(ctx)
 	}()
 
 	var runErr error
@@ -533,7 +532,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	shutdownErr := a.Shutdown(context.WithoutCancel(ctx))
 	<-utilizationDone
-	<-pauseReapDone
+	<-idleReapDone
 	return errors.Join(runErr, shutdownErr)
 }
 
@@ -575,19 +574,19 @@ func (a *App) utilizationLoop(ctx context.Context) {
 	}
 }
 
-// pauseReapInterval paces pauseReapLoop. Fixed rather than configurable: the
-// TTL itself (SANDBOX_PAUSE_TTL) is the only knob an operator needs, and this
-// only bounds how far a reap can lag behind it - 30s against a 5m default TTL
-// keeps worst-case over-retention to about 10% of it.
-const pauseReapInterval = 30 * time.Second
+// idleReapInterval paces idleReapLoop. Fixed rather than configurable:
+// SANDBOX_IDLE_TTL is the only knob an operator needs, and this only bounds
+// how far a reap can lag behind it - 30s against its 5m default keeps
+// worst-case over-retention to about 10%.
+const idleReapInterval = 30 * time.Second
 
-// pauseReapLoop destroys containers that have sat paused past their TTL,
-// until ctx is cancelled.
+// idleReapLoop destroys containers that have sat idle past their TTL, until
+// ctx is cancelled.
 //
 // Best-effort like utilizationLoop: a failed reap on one tick is retried on
 // the next, and must never disturb an in-flight execution.
-func (a *App) pauseReapLoop(ctx context.Context) {
-	ticker := time.NewTicker(pauseReapInterval)
+func (a *App) idleReapLoop(ctx context.Context) {
+	ticker := time.NewTicker(idleReapInterval)
 	defer ticker.Stop()
 
 	for {
@@ -595,8 +594,8 @@ func (a *App) pauseReapLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := a.manager.ReapExpiredPauses(ctx); err != nil && ctx.Err() == nil {
-				a.log.Warn("could not reap expired paused containers", logging.KeyError, err)
+			if err := a.manager.ReapIdleContainers(ctx); err != nil && ctx.Err() == nil {
+				a.log.Warn("could not reap idle containers", logging.KeyError, err)
 			}
 		}
 	}

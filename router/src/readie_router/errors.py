@@ -33,8 +33,7 @@ class NoCapacityError(SchedulingError):
     """Workers exist, but none can accept the request's allocation."""
 
     def __init__(self, *, candidates: int) -> None:
-        super().__init__(
-            f"none of the {candidates} healthy workers can accept this request")
+        super().__init__(f"none of the {candidates} healthy workers can accept this request")
         self.candidates = candidates
 
 
@@ -46,8 +45,38 @@ class SessionBusyError(SchedulingError):
     """
 
     def __init__(self, session_id: str, *, waited: float) -> None:
+        super().__init__(f"session {session_id} is still busy after {waited:g}s")
+        self.session_id = session_id
+
+
+class SessionExpiredError(SchedulingError):
+    """The session's container has been torn down and the id was retired.
+
+    Raised for a *known* session that has since expired - never for an id
+    that has simply never been seen, which cold-starts normally instead. The
+    id is not reusable: a caller must open a new session rather than retry
+    this one, since reusing it would otherwise look like a warm resume that
+    silently lost all of its state.
+    """
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"session {session_id} has expired")
+        self.session_id = session_id
+
+
+class OptimizedExecutionConflictError(SchedulingError):
+    """A request asked to disable optimized execution for an already-optimized session.
+
+    Session affinity always reuses the existing warm container regardless of
+    how it started; silently ignoring the checkpoint origin, or tearing down
+    an already-optimized session, would surprise the caller either way, so
+    this is rejected instead.
+    """
+
+    def __init__(self, session_id: str) -> None:
         super().__init__(
-            f"session {session_id} is still busy after {waited:g}s")
+            f"session {session_id} is already running on a checkpoint-restored container"
+        )
         self.session_id = session_id
 
 

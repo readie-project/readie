@@ -69,8 +69,7 @@ def configure(
 
 def get_logger(name: str, **initial: Any) -> structlog.stdlib.BoundLogger:
     """Return a logger bound to a component name and any initial context."""
-    logger: structlog.stdlib.BoundLogger = structlog.get_logger(
-        name).bind(**initial)
+    logger: structlog.stdlib.BoundLogger = structlog.get_logger(name).bind(**initial)
     return logger
 
 
@@ -81,8 +80,7 @@ def discard_logger() -> structlog.stdlib.BoundLogger:
     """
     logger: structlog.stdlib.BoundLogger = structlog.wrap_logger(
         None,
-        wrapper_class=structlog.make_filtering_bound_logger(
-            logging.CRITICAL + 1),
+        wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL + 1),
         processors=[],
     )
     return logger

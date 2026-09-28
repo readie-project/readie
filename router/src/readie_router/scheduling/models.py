@@ -66,6 +66,10 @@ class Demand:
     #: "cpu" or "gpu". A gpu demand may run only on gpu workers; a cpu demand
     #: prefers cpu workers but may spill to gpu workers when none are free.
     flavor: str = "cpu"
+    #: When true, skip checkpoint selection for this request and cold-start.
+    #: Session affinity still applies; the scheduler rejects this only when the
+    #: session's warm container was itself restored from a checkpoint.
+    disable_optimized_execution: bool = False
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""
@@ -158,12 +162,20 @@ class WorkerRecord:
 
 @dataclass(slots=True)
 class SessionRecord:
-    """A client session and the container it is pinned to."""
+    """A client session and the container it is pinned to.
+
+    ``expired`` is a tombstone, not a deletion: once the container backing a
+    session is confirmed gone, the record stays - kept forever, since only
+    genuine, opted-in sessions ever get one - so that a caller reusing the
+    same session_id is told it has expired instead of silently cold-starting
+    under an id that looks like it still carries warm state.
+    """
 
     session_id: str
     affinity: Affinity | None = None
     requests: set[str] = field(default_factory=set)
     last_seen: float = 0.0
+    expired: bool = False
 
     @property
     def is_idle(self) -> bool:

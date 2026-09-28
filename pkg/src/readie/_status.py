@@ -11,6 +11,7 @@ from readie.errors import (
     PermissionDeniedError,
     RemoteTimeoutError,
     ResourceExhaustedError,
+    SessionExpiredError,
     TransportError,
 )
 
@@ -24,6 +25,9 @@ _BY_CODE: dict[grpc.StatusCode, type[TransportError]] = {
     grpc.StatusCode.CANCELLED: ExecutionCancelledError,
     grpc.StatusCode.PERMISSION_DENIED: PermissionDeniedError,
     grpc.StatusCode.UNAUTHENTICATED: PermissionDeniedError,
+    # The router only ever sends this for a *known*, expired session - a
+    # session_id it has simply never seen cold-starts instead of erroring.
+    grpc.StatusCode.NOT_FOUND: SessionExpiredError,
 }
 
 

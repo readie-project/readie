@@ -42,7 +42,7 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 
     ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
     """
-    # Nested import avoids an import cycle.
+    # Both nested imports avoid an import cycle.
     from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415
 
     if name == "fixed":
