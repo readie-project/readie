@@ -182,7 +182,7 @@ def test_a_shared_dependency_is_only_ever_profiled_once(monkeypatch):
     assert ("numpy",) in [c[0] for c in calls if c[1] in ("pandas", "scipy")]
 
 
-def test_an_internal_submodule_owned_by_an_ancestor_is_never_independently_discovered(
+def test_an_internal_submodule_owned_by_an_ancestor_is_never_independently_measured(
     monkeypatch,
 ):
     # scipy.linalg's own internals (e.g. _solve_toeplitz) are always loaded as
@@ -191,10 +191,12 @@ def test_an_internal_submodule_owned_by_an_ancestor_is_never_independently_disco
     # load linalg, so scipy.linalg is not "covered" by scipy alone), its own
     # closure already accounts for _solve_toeplitz. sklearn's own closure also
     # contains _solve_toeplitz (Python registers every ancestor of anything it
-    # imports), but that must not earn it a second, wasted discover+profile
-    # pass just because it also happens to turn up there -- confirmed against
-    # a real base image, where exactly this caused dozens of redundant passes
-    # per large package.
+    # imports), but that must not earn it a second, wasted *profile* pass just
+    # because it also happens to turn up there -- confirmed against a real
+    # base image, where exactly this caused dozens of redundant passes per
+    # large package. It must never get an independent *measurement*, i.e.
+    # its own entry in ``metadata.packages``, no matter which node reaches
+    # it first.
     graph = {
         "sklearn": (
             "sklearn",
@@ -218,7 +220,6 @@ def test_an_internal_submodule_owned_by_an_ancestor_is_never_independently_disco
 
     metadata = analyze.analyze(["sklearn"])
 
-    assert "scipy.linalg._solve_toeplitz" not in discovered
     assert set(metadata.packages) == {"sklearn", "scipy", "scipy.linalg"}
 
 
@@ -308,7 +309,7 @@ def test_a_failed_resolution_is_never_cached_and_is_retried_every_time(monkeypat
     # must NOT be cached: a failure observed once is not reliably a property
     # of the candidate (see _visit's own docstring on cross-subprocess
     # filesystem contamination), so every independent path gets its own
-    # unbiased attempt, exactly as before this cache existed.
+    # unbiased attempt.
     calls = _counting_discover(
         monkeypatch,
         {
@@ -459,3 +460,200 @@ def test_an_excluded_name_discovered_via_someone_elses_closure_is_also_skipped(m
 
     assert "google.cloud.aiplatform.base" not in discovered
     assert set(metadata.packages) == {"some-package", "numpy"}
+
+
+def test_a_descendant_discovered_out_of_order_is_never_independently_measured(monkeypatch):
+    # "w" is alphabetically first, so it is visited before "x" -- and w's own
+    # closure happens to also transitively reach "x.y._z", a true descendant
+    # of "x" (Python always registers every ancestor of anything it imports).
+    # Descent-only pruning relative to whichever node is currently being
+    # measured cannot catch this: "x.y._z" is not a descendant of "w" itself,
+    # so it looks eligible for its own independent measurement -- even though
+    # it is unconditionally a descendant of "x", which this same run will
+    # also visit on its own regardless. Confirmed against real data: this
+    # produced a genuine double-count risk (sklearn.svm._libsvm_sparse got
+    # its own real entry, discovered before sklearn.svm was ever visited,
+    # and sklearn.svm's own later measurement then also, unavoidably,
+    # included the same cost again). This is exactly why the private-ancestor
+    # check must be structural (``_is_owned_by_a_private_ancestor``, checked
+    # against every eligible name regardless of who reaches it) rather than
+    # relative to whichever node is currently being measured.
+    graph = {
+        "w": ("w", frozenset({"w", "x.y._z"})),
+        "x": ("x", frozenset({"x", "x.y", "x.y._z"})),
+        "x.y._z": ("x.y._z", frozenset({"x", "x.y", "x.y._z"})),
+    }
+
+    def fake_discover(candidate: str) -> tuple[str | None, frozenset[str]]:
+        return graph.get(candidate, (None, frozenset()))
+
+    monkeypatch.setattr(analyze, "_discover", fake_discover)
+    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
+
+    metadata = analyze.analyze(["w", "x"])
+
+    assert set(metadata.packages) == {"w", "x"}
+
+
+def test_an_explicitly_requested_descendant_still_gets_its_own_measurement(monkeypatch):
+    # The flip side of the test above: a name that is itself explicitly
+    # requested (a raw top-level candidate, not just reached as someone
+    # else's closure member) always gets its own real measurement, even if
+    # it also happens to have an ancestor this run also visits.
+    graph = {
+        "w": ("w", frozenset({"w", "x.y._z"})),
+        "x": ("x", frozenset({"x", "x.y", "x.y._z"})),
+        "x.y._z": ("x.y._z", frozenset({"x", "x.y", "x.y._z"})),
+    }
+    discovered: list[str] = []
+
+    def fake_discover(candidate: str) -> tuple[str | None, frozenset[str]]:
+        discovered.append(candidate)
+        return graph.get(candidate, (None, frozenset()))
+
+    monkeypatch.setattr(analyze, "_discover", fake_discover)
+    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
+
+    metadata = analyze.analyze(["w", "x", "x.y._z"])
+
+    assert "x.y._z" in discovered
+    assert set(metadata.packages) == {"w", "x", "x.y._z"}
+
+
+def test_a_meaningful_non_underscore_name_is_never_folded_just_for_sharing_a_top_level(
+    monkeypatch,
+):
+    # A real regression, caught against real data: "sklearn.svm" is not a
+    # private implementation detail of "sklearn" -- it is one of the
+    # independent, separately-priced nodes the whole design exists to keep
+    # apart ("no top-level collapse": bare `import sklearn` does not
+    # necessarily load everything `sklearn.svm` does). But "sklearn" (bare)
+    # is *always* in `all_requested` (every top-level installed package is),
+    # so a version of the ancestor check that did not also require the
+    # leading-underscore condition treated every multi-segment name as
+    # foldable purely because its top-level segment is always requested too
+    # -- collapsing a real run from 6109 measured entries down to 1273.
+    # "sklearn.svm" itself is only ever *reached* here (never a raw request),
+    # exactly the shape that triggered the bug: it must still get its own
+    # entry despite that.
+    graph = {
+        "w": ("w", frozenset({"w", "sklearn.svm"})),
+        "sklearn": ("sklearn", frozenset({"sklearn"})),
+        "sklearn.svm": ("sklearn.svm", frozenset({"sklearn", "sklearn.svm"})),
+    }
+    discovered: list[str] = []
+
+    def fake_discover(candidate: str) -> tuple[str | None, frozenset[str]]:
+        discovered.append(candidate)
+        return graph.get(candidate, (None, frozenset()))
+
+    monkeypatch.setattr(analyze, "_discover", fake_discover)
+    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
+
+    metadata = analyze.analyze(["w", "sklearn"])
+
+    assert "sklearn.svm" in discovered
+    assert set(metadata.packages) == {"w", "sklearn", "sklearn.svm"}
+
+
+def test_a_private_name_rooted_in_the_standard_library_is_still_folded(monkeypatch):
+    # A real regression, caught against real data: stdlib packages (e.g.
+    # "email") are never in installed_packages() at all (it is built from
+    # importlib.metadata.packages_distributions(), a third-party-package API
+    # that does not enumerate the standard library), so a version of this
+    # check that required an ancestor to appear in all_requested silently
+    # never fired for anything stdlib-rooted -- "email._header_value_parser"
+    # got its own wrongly-separate entry even after the sklearn.svm fix,
+    # because "email" was never a member of all_requested to check against.
+    # The dotted-path-naming check does not depend on all_requested at all,
+    # so it is exactly as true here as for a third-party package.
+    graph = {
+        "w": ("w", frozenset({"w", "email", "email._header_value_parser"})),
+        "email": ("email", frozenset({"email"})),
+        "email._header_value_parser": (
+            "email._header_value_parser",
+            frozenset({"email", "email._header_value_parser"}),
+        ),
+    }
+
+    def fake_discover(candidate: str) -> tuple[str | None, frozenset[str]]:
+        return graph.get(candidate, (None, frozenset()))
+
+    monkeypatch.setattr(analyze, "_discover", fake_discover)
+    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
+
+    metadata = analyze.analyze(["w"])
+
+    assert set(metadata.packages) == {"w", "email"}
+
+
+def test_a_private_intermediate_segment_folds_its_own_non_underscore_leaf_too(
+    monkeypatch,
+):
+    # The deeper gap: "scipy._lib.array_api_compat" is not itself
+    # underscore-prefixed, but it lives inside "scipy._lib", an internal
+    # namespace -- so it is just as unconditionally private as a direct
+    # underscore-prefixed child would be. Checking only the last segment
+    # would miss this; checking every segment after the first catches it.
+    graph = {
+        "w": ("w", frozenset({"w", "scipy", "scipy._lib", "scipy._lib.array_api_compat"})),
+        "scipy": ("scipy", frozenset({"scipy"})),
+        "scipy._lib": ("scipy._lib", frozenset({"scipy", "scipy._lib"})),
+        "scipy._lib.array_api_compat": (
+            "scipy._lib.array_api_compat",
+            frozenset({"scipy", "scipy._lib", "scipy._lib.array_api_compat"}),
+        ),
+    }
+
+    def fake_discover(candidate: str) -> tuple[str | None, frozenset[str]]:
+        return graph.get(candidate, (None, frozenset()))
+
+    monkeypatch.setattr(analyze, "_discover", fake_discover)
+    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
+
+    metadata = analyze.analyze(["w", "scipy"])
+
+    assert set(metadata.packages) == {"w", "scipy"}
+
+
+def test_a_private_name_shared_by_two_unrelated_referrers_is_still_folded(monkeypatch):
+    # "shared._internal" is private (last segment starts with "_") and
+    # reached by two completely unrelated packages, "w1" and "w2" -- neither
+    # is an ancestor or descendant of the other, and neither is an ancestor
+    # or descendant of "shared._internal" itself. It is still never
+    # independently measured: both w1 and w2 also, unavoidably, reach
+    # "shared" (its own nearest non-private ancestor, guaranteed resident by
+    # Python's parent-before-child import rule), which is never itself
+    # private -- so "shared" alone is always independently measured exactly
+    # once and warms both w1 and w2, and "shared._internal"'s cost is
+    # already folded into it. Referrer count is irrelevant to safety here.
+    graph = {
+        "w1": ("w1", frozenset({"w1", "shared", "shared._internal"})),
+        "w2": ("w2", frozenset({"w2", "shared", "shared._internal"})),
+        "shared": ("shared", frozenset({"shared"})),
+        "shared._internal": ("shared._internal", frozenset({"shared", "shared._internal"})),
+    }
+
+    def fake_discover(candidate: str) -> tuple[str | None, frozenset[str]]:
+        return graph.get(candidate, (None, frozenset()))
+
+    profile_calls: dict[str, list[str]] = {}
+
+    def fake_profile(warm: list[str], target: str) -> dict[str, object]:
+        profile_calls[target] = sorted(warm)
+        return {"time": 0.1, "memory_mb": 1.0}
+
+    monkeypatch.setattr(analyze, "_discover", fake_discover)
+    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(analyze, "_profile", fake_profile)
+
+    metadata = analyze.analyze(["w1", "w2"])
+
+    assert set(metadata.packages) == {"w1", "w2", "shared"}
+    assert "shared" in profile_calls["w1"], "w1 must warm shared away, not capture its cost"
+    assert "shared" in profile_calls["w2"], "w2 must warm shared away, not capture its cost"

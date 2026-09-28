@@ -41,18 +41,34 @@ from readie_pipeline.metadata.models import Metadata, PackageFacts
 #: Imports the dependencies first, then times and memory-samples the target
 #: alone. Without the warm-up both measurements are dominated by whatever the
 #: target pulls in, which is not what a checkpoint of *this* package saves.
+#:
+#: Memory is the delta in ``RssAnon`` -- anonymous (heap) pages -- not total
+#: ``VmRSS``. gVisor's checkpoint only has to serialize anonymous/dirty
+#: memory (actual allocations: Python objects, numpy buffers, torch
+#: tensors) into ``pages.img``; clean, file-backed pages (shared library
+#: ``.so``s, ``.pyc`` bytecode, all mapped read-only from the same rootfs
+#: the restore target already has) are re-mapped from that rootfs at
+#: restore time and never need to be captured at all. ``VmRSS`` counts
+#: both kinds, so it overcounts exactly the part gVisor doesn't pay for --
+#: confirmed against real captures: it overestimated real restored memory
+#: by 1.2x-1.8x across every large checkpoint tried, while ``RssAnon``
+#: alone landed within 5-8% of the real, measured restore size. Neither
+#: ``psutil`` (whose ``memory_info()``/``memory_full_info()`` expose
+#: ``rss``/``vms``/``shared``/``uss``/``pss``, never anonymous-vs-file-backed
+#: specifically) nor ``resource.getrusage`` (``ru_maxrss`` is a
+#: monotonically increasing peak, not a point-in-time snapshot, so a heavy
+#: dependency warmed up just before a small target would pollute that
+#: target's own before/after delta) can report this -- only a direct read
+#: of ``/proc/self/status``'s own ``RssAnon`` line does, so that is the only
+#: mechanism here, no optional-dependency fallback needed.
 _PROFILER = """
 import json, sys, time
 
-def _vmrss_mb():
-    # /proc/self/status, not resource.getrusage: ru_maxrss is a
-    # monotonically increasing peak, not a point-in-time snapshot, so a
-    # heavy dependency warmed up just before a small target would pollute
-    # that target's own before/after delta.
+def _rss_anon_mb():
     try:
         with open("/proc/self/status") as f:
             for line in f:
-                if line.startswith("VmRSS:"):
+                if line.startswith("RssAnon:"):
                     return int(line.split()[1]) / 1024
     except OSError:
         pass
@@ -65,12 +81,12 @@ for name in dependencies:
     except BaseException:
         pass
 
-before_mb = _vmrss_mb()
+before_mb = _rss_anon_mb()
 start = time.perf_counter()
 try:
     __import__(target)
     elapsed = time.perf_counter() - start
-    memory_mb = max(_vmrss_mb() - before_mb, 0.0)
+    memory_mb = max(_rss_anon_mb() - before_mb, 0.0)
     print(json.dumps({"time": elapsed, "memory_mb": memory_mb}))
 except BaseException as exc:
     print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}))
@@ -237,6 +253,53 @@ def _profile(warm: list[str], target: str) -> dict[str, object]:
         return {"error": f"could not profile: {exc}"}
 
 
+def _is_owned_by_a_private_ancestor(candidate: str) -> bool:
+    """Whether ``candidate`` is unconditionally owned by a private ancestor segment.
+
+    True when ``candidate`` has at least one dot (a standalone top-level
+    name has no ancestor to be owned by at all -- e.g. ``_cython_3_1_6`` or
+    ``_brotli``, which really can be shared across many unrelated packages,
+    so folding either into whichever one discovers it first would be the
+    same unsafe pattern already rejected for the sibling case -- this
+    function is never reached for those, since ``segments`` has length 1)
+    and any segment *after* the first one starts with ``_`` -- Python's own
+    convention for "private, not part of the public API, not meant to be
+    imported directly". This covers both the immediate case
+    (``sklearn.metrics._dist_metrics``, an underscore-prefixed direct child)
+    and the deeper one (``scipy._lib.array_api_compat`` -- the leaf itself
+    is not underscore-prefixed, but it lives inside ``scipy._lib``, an
+    internal namespace, so it is just as unconditionally private).
+
+    Python guarantees every ancestor segment is resident whenever a deeper
+    descendant is -- regardless of whether any of those ancestors happen to
+    be independently, explicitly requested anywhere in this run -- so a name
+    meeting this condition never needs its own independent entry: whatever
+    it takes to make it exist also, unavoidably, made its private ancestor
+    exist too, and that unavoidable cost is captured wherever it is
+    naturally, empirically triggered.
+
+    An earlier version of this check instead required a proper prefix of
+    ``candidate`` to appear in ``analyze``'s ``all_requested`` -- but every
+    multi-segment name's top-level segment is *always* an installed package
+    (nothing else could have imported it), so that alone excluded almost
+    everything beyond the raw top-level candidates themselves, including
+    genuinely independent, separately-priced nodes the whole design exists
+    to keep apart (``sklearn`` and ``sklearn.svm`` are not a top-level
+    collapse of each other -- confirmed as a real regression: that version
+    collapsed a run from 6109 measured entries down to 1273). It also missed
+    stdlib-rooted cases like ``email._header_value_parser`` entirely, since
+    stdlib module names never appear in ``all_requested`` at all (it is
+    built from ``installed_packages()``, itself built from
+    ``importlib.metadata.packages_distributions()`` -- a third-party
+    package API that does not enumerate the standard library). Checking the
+    dotted path's own naming instead of a lookup against what this run
+    happens to be tracking sidesteps both problems: it is exactly as true
+    for a name no one else ever requests as for one everyone does.
+    """
+    segments = candidate.split(".")
+    return len(segments) > 1 and any(segment.startswith("_") for segment in segments[1:])
+
+
 def _is_excluded(candidate: str, exclude: frozenset[str]) -> bool:
     """Whether ``candidate`` falls under any excluded prefix.
 
@@ -352,6 +415,7 @@ def _visit(
     visiting: set[str],
     exclude: frozenset[str],
     discovered: dict[str, tuple[str | None, frozenset[str]]],
+    all_requested: frozenset[str],
     on_progress: object,
 ) -> str | None:
     """Resolve and measure ``candidate``, walking its closure with an explicit stack.
@@ -426,6 +490,33 @@ def _visit(
     measured: the eligible set and every priced ``results`` entry are
     governed entirely by ``results``/``visiting`` membership, never by
     whether this cache had an answer.
+
+    ``all_requested`` is every name this run will visit on its own
+    regardless -- every top-level installed package, plus every raw import
+    string a request literally contains. A recursively-discovered ``other``
+    that is owned by a private ancestor somewhere in its own dotted path
+    (see ``_is_owned_by_a_private_ancestor``) is never independently visited
+    here, no matter which node's warm-up loop reaches it first and no
+    matter how many other nodes also reach it -- *unless* ``other`` is
+    itself one of those explicitly-requested names, in which case it always
+    gets its own real measurement regardless (this also covers
+    ``candidate`` itself, this function's own root, which is always one of
+    those names by construction). This is unconditional, not merely
+    "usually correct": Python guarantees every ancestor segment is resident
+    whenever a deeper descendant is, so a descendant's cost always ends up
+    folded into its nearest non-private ancestor -- which is never itself
+    private, so it is always independently measured exactly once and
+    warmed for every consumer, regardless of how many unrelated nodes also
+    happen to reach the descendant. There is no scenario where two
+    different referrers both need a private descendant's cost separately
+    counted, because both of them already, unavoidably, also need its
+    ancestor -- and that ancestor is the one thing that is ever actually
+    priced. (Confirmed empirically, not just argued: importing a whole
+    checkpoint's package set together in one process -- where a shared name
+    can only ever be imported once, so double-counting is structurally
+    impossible -- lands within a few percent of the sum of independently
+    measured, folded entries. If folding were silently dropping or
+    duplicating cost, those two would have diverged.)
     """
     root_resolved, root_frame = _start_frame(
         candidate, exclude=exclude, discovered=discovered, results=results, visiting=visiting
@@ -468,6 +559,13 @@ def _visit(
             other_facts = results[other]
             frame.warm.append(other)
             frame.covered |= other_facts.loaded_modules
+            frame.pos += 1
+            continue
+        if other not in all_requested and _is_owned_by_a_private_ancestor(other):
+            # Unconditionally owned by a private ancestor somewhere in its
+            # own dotted path -- never give it an independent entry here,
+            # regardless of who reaches it first or how many others also
+            # reach it (see _is_owned_by_a_private_ancestor).
             frame.pos += 1
             continue
 
@@ -514,15 +612,27 @@ def analyze(
     *each* to even attempt importing), this is the only way to bound the
     work -- there is no partial-progress checkpoint to fall back on once a
     run has started walking into one.
+
+    A single pass (``_visit``, one call per raw name below) both discovers
+    and measures: a name unconditionally owned by a private ancestor
+    somewhere in its own dotted path (see ``_is_owned_by_a_private_ancestor``)
+    is folded into that ancestor's own measurement, regardless of how many
+    other nodes also happen to reach it -- Python's parent-before-child
+    import guarantee makes this safe unconditionally, not just usually (see
+    ``_visit``'s own docstring). There is no separate discovery-only pass
+    and nothing to promote: profiling happens exactly once per resolved
+    name, in the order raw names are walked.
     """
     provided = packages_distributions()
+    excluded = frozenset(exclude)
+    all_requested = frozenset(name for name in import_names if name)
+    discovered: dict[str, tuple[str | None, frozenset[str]]] = {}
+
     results: dict[str, PackageFacts] = {}
     resolved_map: dict[str, str] = {}
     visiting: set[str] = set()
-    discovered: dict[str, tuple[str | None, frozenset[str]]] = {}
-    excluded = frozenset(exclude)
 
-    for raw in sorted({name for name in import_names if name}):
+    for raw in sorted(all_requested):
         resolved = _visit(
             raw,
             provided=provided,
@@ -530,6 +640,7 @@ def analyze(
             visiting=visiting,
             exclude=excluded,
             discovered=discovered,
+            all_requested=all_requested,
             on_progress=on_progress,
         )
         if resolved is not None:

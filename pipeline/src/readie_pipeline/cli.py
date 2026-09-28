@@ -195,8 +195,8 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     print(f"[*] building {len(plans)} checkpoints with {version}")
 
     entries: list[tuple[str, CheckpointPlan]] = []
-    baseline_time = 0.0
-    computed_alphas: list[float] = []
+    sizes_mb: list[float] = []
+    restore_times: list[float] = []
     for index, plan in enumerate(plans):
         checkpoint_id = f"checkpoint_{index}"
         print(f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
@@ -223,11 +223,8 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
 
         restore_time = measure_time(settings, checkpoint_id, write_spec=write_spec)
         print(f"    restored in {restore_time}s")
-        if index == 0:
-            baseline_time = restore_time
-        computed_alphas.append(
-            (restore_time - baseline_time) / plan.size_mb if plan.size_mb else 0.0
-        )
+        sizes_mb.append(plan.size_mb)
+        restore_times.append(restore_time)
 
     Manifest(
         runsc_version=version,
@@ -237,7 +234,26 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         network=settings.sandbox_network,
     ).write(settings.output_dir)
 
-    computed_alpha = round(np.mean(computed_alphas), ALPHA_PRECISION)
+    # alpha is the seconds-per-MB *slope* of restore_time vs. size_mb -- a
+    # linear relationship, but not one that passes through the origin: even
+    # the empty checkpoint (index 0, size_mb == 0) takes real, nonzero time
+    # to restore (a fixed gVisor sandbox-startup cost, unrelated to size).
+    # Fitting a per-checkpoint ratio (restore_time - baseline_time) / size_mb
+    # and averaging those, as this used to, implicitly forces that fixed
+    # cost to be treated as part of the size-proportional term -- for a
+    # checkpoint whose size_mb is small relative to the fixed cost, that
+    # ratio is dominated by the fixed cost alone and blows up (confirmed
+    # against real data: a 10MB checkpoint produced a ratio 15x every other
+    # checkpoint's, dragging the unweighted mean far above what the other,
+    # larger checkpoints actually showed). A single ordinary-least-squares
+    # fit across every (size_mb, restore_time) pair separates the two
+    # unavoidably-confounded terms properly: its slope is alpha, robust to
+    # small checkpoints since they just become low-leverage points near the
+    # intercept instead of a division problem; its intercept is the fixed
+    # cost itself, discarded here since it never affects which checkpoint
+    # the router or planner ends up choosing (the same constant added to
+    # every candidate never changes an argmin).
+    computed_alpha = round(float(np.polyfit(sizes_mb, restore_times, 1)[0]), ALPHA_PRECISION)
     drift = computed_alpha - settings.alpha
     print(
         f"\n[*] planned alpha value: {settings.alpha}, "

@@ -22,13 +22,8 @@ STAGE := .build/proto-stage
 # produce fully independent artifact dirs and images, so one never clobbers the
 # other's checkpoints. Everything below hangs off FLAVOR.
 FLAVOR          ?= cpu
-# Packages `analyze` should skip entirely, and everything under them. Google's
-# own SDKs (Cloud, BigQuery magics, AI Platform, ...) bundled in a Kaggle/Colab
-# base image are individually enormous -- some of google.cloud.aiplatform's own
-# generated submodules alone cost 15-25s *each* to even attempt importing,
-# confirmed against a real run -- and there is no partial-progress checkpoint,
-# so this is the only way to bound a run once it would otherwise walk in.
-# Space-separated; override with `make analyze ANALYZE_EXCLUDE="google foo"`.
+# Packages `analyze` should skip entirely, and everything under them. 
+# Space-separated; e.g. `make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"`.
 ANALYZE_EXCLUDE ?= google
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
@@ -71,7 +66,7 @@ READIE_MAX_CHECKPOINTS := 15
 READIE_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
 # more than alpha*size. Default 0.005.
-READIE_ALPHA := 0.005
+READIE_ALPHA := 0.006
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
