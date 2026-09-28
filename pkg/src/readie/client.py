@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import Any
 
+from readie._compat import check_python_version
 from readie.budget import Budget
 from readie.codec import CloudpickleCodec, ResultCodec
 from readie.config import Settings
@@ -91,6 +92,7 @@ class Client:
         async_transport: AsyncTransport | None = None,
         log_sink: Callable[[str], None] | None = None,
     ) -> None:
+        check_python_version()
         self.settings = settings or Settings()
         self._codec = codec or CloudpickleCodec()
         self._log_sink = log_sink if log_sink is not None else _default_log_sink
