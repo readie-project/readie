@@ -16,6 +16,12 @@ from readie import remote
 
 @remote
 def add(a: int, b: int) -> int:
+    import numpy as np
+    import transformers
+
+    # simulate some work
+    np.random.rand(1000, 1000) @ np.random.rand(1000, 1000)
+    print(f"transformers version: {transformers.__version__}")
     print(f"adding {a} and {b}")  # arrives as a log line on the client
     return a + b
 

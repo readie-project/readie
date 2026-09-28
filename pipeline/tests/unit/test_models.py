@@ -16,6 +16,17 @@ def request(**kwargs: object) -> Request:
     return Request(**{**base, **kwargs})  # type: ignore[arg-type]
 
 
+def _metadata_for(*names: str) -> Metadata:
+    """Metadata where each of ``names`` has usable facts keyed by itself.
+
+    ``Metadata.resolve_imports`` falls back to a raw string's own name when
+    ``resolved`` has nothing for it and that name already has usable facts --
+    this is what lets metadata built by hand, without ever running the real
+    resolver, still resolve its own plain package names.
+    """
+    return Metadata({name: PackageFacts(base_import=name) for name in names})
+
+
 # ---------------------------------------------------------------------------
 # Corpus
 # ---------------------------------------------------------------------------
@@ -31,13 +42,6 @@ def test_a_missing_field_names_the_entry_and_the_field():
         Request.from_json({"task_name": "t"}, index=7)
 
 
-def test_imports_are_reduced_to_their_top_level_package():
-    # The planner reasons about what must be installed, which is the
-    # distribution-level name.
-    r = request(imports=("sklearn.svm", "sklearn.metrics", "numpy"))
-    assert r.top_level_imports == {"sklearn", "numpy"}
-
-
 def test_a_string_where_a_list_belongs_is_rejected():
     with pytest.raises(CorpusError, match="list of strings"):
         Request.from_json(
@@ -46,9 +50,15 @@ def test_a_string_where_a_list_belongs_is_rejected():
 
 
 def test_import_counts_count_requests_not_import_statements():
-    # Two `import pandas` lines in one snippet are one request that needs pandas.
+    # Two import strings that resolve to the same package are one request
+    # that needs it, not two -- `pandas` and `pandas.io` both resolving to
+    # `pandas` here, exactly as analyze() would record it.
+    metadata = Metadata(
+        {"pandas": PackageFacts(base_import="pandas"), "numpy": PackageFacts(base_import="numpy")},
+        resolved={"pandas": "pandas", "pandas.io": "pandas", "numpy": "numpy"},
+    )
     corpus = Corpus.of([request(imports=("pandas", "pandas.io")), request(imports=("numpy",))])
-    assert corpus.import_counts() == {"numpy": 1, "pandas": 1}
+    assert corpus.import_counts(metadata) == {"numpy": 1, "pandas": 1}
 
 
 def test_import_counts_are_ordered_most_used_first_then_by_name():
@@ -60,7 +70,7 @@ def test_import_counts_are_ordered_most_used_first_then_by_name():
             request(imports=("c",)),
         ]
     )
-    assert list(corpus.import_counts()) == ["b", "a", "c"]
+    assert list(corpus.import_counts(_metadata_for("a", "b", "c"))) == ["b", "a", "c"]
 
 
 def test_resources_collects_every_distinct_reference():
@@ -70,7 +80,7 @@ def test_resources_collects_every_distinct_reference():
             request(imports=("numpy",), tokenizers=("t1",)),
         ]
     )
-    resources = corpus.resources()
+    resources = corpus.resources(_metadata_for("pandas", "numpy"))
 
     assert resources.packages == {"pandas", "numpy"}
     assert resources.datasets == {"d1"}
@@ -79,7 +89,7 @@ def test_resources_collects_every_distinct_reference():
 
 
 def test_an_empty_corpus_has_no_resources():
-    assert Corpus.of([]).resources().packages == frozenset()
+    assert Corpus.of([]).resources(Metadata({})).packages == frozenset()
 
 
 def test_a_missing_corpus_says_how_to_make_one(tmp_path: Path):
@@ -142,8 +152,8 @@ def test_an_errored_entry_is_not_usable():
 def test_an_errored_entry_is_dropped_from_the_written_metadata():
     # Nothing downstream distinguishes "never seen" from "measured and
     # broken" (both cost 0.0), so writing the error down is pure clutter --
-    # and, for a dependency name top_level_imports guessed wrong, actively
-    # misleading clutter, since it then looks like a real package that failed.
+    # and, for a raw import string that never resolved, actively misleading
+    # clutter, since it then looks like a real package that failed.
     metadata = Metadata(
         {
             "pandas": PackageFacts(base_import="pandas", import_time=0.3),
@@ -151,56 +161,31 @@ def test_an_errored_entry_is_dropped_from_the_written_metadata():
         }
     )
     payload = metadata.to_json()
-    assert set(payload) == {"pandas"}
-    assert "error" not in payload["pandas"]
+    assert set(payload["packages"]) == {"pandas"}
+    assert "error" not in payload["packages"]["pandas"]
 
 
 # ---------------------------------------------------------------------------
 # Dependency closures
 # ---------------------------------------------------------------------------
-def test_direct_dependencies_resolves_distribution_names_to_import_names():
-    # `dependencies` is keyed by distribution name (what a requirement names);
-    # the planner and catalogue key everything else by import name.
+# `loaded_modules` is populated from an empirical `sys.modules` diff around
+# actually importing a package (see metadata/analyze.py), not from parsing
+# declared `Requires-Dist` metadata -- so it is already every module that
+# package's own import loads, dependencies included, in one shot. A whole
+# category of bug the old distribution-name-based walk had -- resolving a
+# dependency's distribution name (e.g. "huggingface-hub") back to the import
+# name it was measured under, and getting it wrong across a hyphen/underscore
+# spelling mismatch -- cannot happen here at all: there is no distribution
+# name in the loop any more, only real, already-canonical module names as
+# Python itself reports them.
+def test_direct_dependencies_is_everything_a_package_loads_besides_itself():
     metadata = Metadata(
         {
             "pandas": PackageFacts(
-                base_import="pandas", distribution="pandas", dependencies={"numpy": ">=1.20"}
+                base_import="pandas", loaded_modules=frozenset({"pandas", "numpy"})
             ),
-            "numpy": PackageFacts(base_import="numpy", distribution="numpy"),
+            "numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"})),
         }
-    )
-    assert metadata.direct_dependencies("pandas") == {"numpy"}
-
-
-def test_direct_dependencies_resolves_across_a_hyphen_underscore_spelling_mismatch():
-    # Real-world bug: huggingface_hub's own `distribution` was recorded as
-    # "huggingface_hub" (underscore), but transformers/datasets/gradio depend
-    # on it spelled "huggingface-hub" (hyphen) -- the same PyPI project, and
-    # PEP 503 treats the two spellings as identical, but an exact-string match
-    # did not, so "huggingface-hub" landed unresolved in a checkpoint's
-    # imports and failed at restore time: ModuleNotFoundError, since a name
-    # with a hyphen was never importable to begin with.
-    metadata = Metadata(
-        {
-            "transformers": PackageFacts(
-                base_import="transformers",
-                distribution="transformers",
-                dependencies={"huggingface-hub": ">=0.34.0"},
-            ),
-            "huggingface_hub": PackageFacts(
-                base_import="huggingface_hub", distribution="huggingface_hub"
-            ),
-        }
-    )
-    assert metadata.direct_dependencies("transformers") == {"huggingface_hub"}
-
-
-def test_direct_dependencies_falls_back_to_the_distribution_name_when_unresolved():
-    # A dependency that was never itself analysed (not installed, or its
-    # analysis failed) has no entry to resolve to; it must still show up in a
-    # closure rather than vanishing silently.
-    metadata = Metadata(
-        {"pandas": PackageFacts(base_import="pandas", dependencies={"numpy": ">=1.20"})}
     )
     assert metadata.direct_dependencies("pandas") == {"numpy"}
 
@@ -209,35 +194,43 @@ def test_direct_dependencies_of_an_unmeasured_package_is_empty():
     assert Metadata({}).direct_dependencies("unknown") == frozenset()
 
 
-def test_closure_includes_the_starting_names_and_their_dependencies():
+def test_closure_includes_the_starting_names_and_everything_they_load():
     metadata = Metadata(
         {
-            "pandas": PackageFacts(base_import="pandas", dependencies={"numpy": ">=1.20"}),
-            "numpy": PackageFacts(base_import="numpy"),
+            "pandas": PackageFacts(
+                base_import="pandas", loaded_modules=frozenset({"pandas", "numpy"})
+            ),
+            "numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"})),
         }
     )
     assert metadata.closure(["pandas"]) == {"pandas", "numpy"}
 
 
-def test_closure_walks_transitively_to_a_package_with_no_dependencies():
+def test_closure_is_a_flat_union_not_a_graph_walk():
+    # `a`'s own loaded_modules is already fully transitive -- a single
+    # sys.modules diff around importing `a` captures `b` and `c` in one shot,
+    # exactly as a real analysis would record it -- so closure() only ever
+    # needs to union each starting name's own set, never walk further.
     metadata = Metadata(
         {
-            "a": PackageFacts(base_import="a", dependencies={"b": "(any)"}),
-            "b": PackageFacts(base_import="b", distribution="b", dependencies={"c": "(any)"}),
-            "c": PackageFacts(base_import="c", distribution="c"),
+            "a": PackageFacts(base_import="a", loaded_modules=frozenset({"a", "b", "c"})),
+            "b": PackageFacts(base_import="b", loaded_modules=frozenset({"b", "c"})),
+            "c": PackageFacts(base_import="c", loaded_modules=frozenset({"c"})),
         }
     )
     assert metadata.closure(["a"]) == {"a", "b", "c"}
 
 
 def test_closure_visits_a_shared_dependency_once_despite_two_paths_to_it():
-    # A cycle would otherwise recurse forever; visiting each name once is also
-    # what makes a shared dependency's cost countable exactly once.
     metadata = Metadata(
         {
-            "pandas": PackageFacts(base_import="pandas", dependencies={"numpy": ">=1.20"}),
-            "scipy": PackageFacts(base_import="scipy", dependencies={"numpy": ">=1.20"}),
-            "numpy": PackageFacts(base_import="numpy"),
+            "pandas": PackageFacts(
+                base_import="pandas", loaded_modules=frozenset({"pandas", "numpy"})
+            ),
+            "scipy": PackageFacts(
+                base_import="scipy", loaded_modules=frozenset({"scipy", "numpy"})
+            ),
+            "numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"})),
         }
     )
     assert metadata.closure(["pandas", "scipy"]) == {"pandas", "scipy", "numpy"}
@@ -245,26 +238,6 @@ def test_closure_visits_a_shared_dependency_once_despite_two_paths_to_it():
 
 def test_closure_of_a_package_with_no_metadata_is_just_itself():
     assert Metadata({}).closure(["unknown"]) == {"unknown"}
-
-
-def test_closure_resolves_across_a_hyphen_underscore_spelling_mismatch():
-    # Same real-world bug as direct_dependencies above, but this is the path
-    # that actually fed a checkpoint's `imports`: the unresolved literal
-    # "huggingface-hub" ending up in a closure is what got selected into a
-    # plan and failed to import at restore time.
-    metadata = Metadata(
-        {
-            "transformers": PackageFacts(
-                base_import="transformers",
-                distribution="transformers",
-                dependencies={"huggingface-hub": ">=0.34.0"},
-            ),
-            "huggingface_hub": PackageFacts(
-                base_import="huggingface_hub", distribution="huggingface_hub"
-            ),
-        }
-    )
-    assert metadata.closure(["transformers"]) == {"transformers", "huggingface_hub"}
 
 
 def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
@@ -277,8 +250,20 @@ def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
     path = tmp_path / "metadata.json"
     path.write_text(json.dumps(metadata.to_json()))
 
-    assert list(json.loads(path.read_text())) == ["abc", "zlib"]
+    assert list(json.loads(path.read_text())["packages"]) == ["abc", "zlib"]
     assert Metadata.load(path).import_time("abc") == 0.2
+
+
+def test_metadata_still_loads_the_old_flat_format_predating_resolved(tmp_path: Path):
+    # Before `resolved` existed, the whole file was just {name: facts} with no
+    # wrapper -- a metadata.json written by an older run, or hand-written in a
+    # test, must still load.
+    path = tmp_path / "metadata.json"
+    path.write_text(json.dumps({"pandas": {"base_import": "pandas", "import_time": 0.3}}))
+
+    metadata = Metadata.load(path)
+    assert metadata.import_time("pandas") == 0.3
+    assert metadata.resolved == {}
 
 
 def test_a_missing_metadata_file_says_how_to_make_one(tmp_path: Path):
@@ -294,8 +279,9 @@ DATA = Path(__file__).parents[2] / "data"
 
 def test_the_committed_corpus_loads():
     corpus = Corpus.load(DATA / "datasets" / "cpu.json")
+    metadata = Metadata.load(DATA / "metadata" / "cpu.json")
     assert len(corpus) > 9000
-    assert "pandas" in corpus.import_counts()
+    assert "pandas" in corpus.import_counts(metadata)
 
 
 def test_every_common_third_party_package_has_metadata():
@@ -303,6 +289,16 @@ def test_every_common_third_party_package_has_metadata():
     # scoring most of the corpus on defaults. Stdlib modules are excluded
     # because they install nothing -- and the planner skips them for the same
     # reason.
+    #
+    # The committed metadata.json predates this file's resolver/closure
+    # redesign (no `resolved` map, package keys are top-level names only), so
+    # this can only confirm what it always could: a raw import string whose
+    # own bare spelling already has metadata resolves via the fallback in
+    # `Metadata.resolve_imports`. A raw string that needs real resolution
+    # (e.g. a submodule candidate with no exact top-level match) is dropped by
+    # that same fallback rather than surfacing here as "missing" -- catching
+    # that requires re-running `readie-pipeline analyze` against a real base
+    # image with the new resolver, which this suite cannot do.
     import sys
 
     corpus = Corpus.load(DATA / "datasets" / "cpu.json")
@@ -310,7 +306,7 @@ def test_every_common_third_party_package_has_metadata():
 
     common = [
         name
-        for name, count in corpus.import_counts().items()
+        for name, count in corpus.import_counts(metadata).items()
         if count > 50 and name not in sys.stdlib_module_names
     ]
     missing = [name for name in common if name not in metadata]

@@ -13,7 +13,7 @@ def _document(flavor: str = "cpu", **overrides: Any) -> dict[str, Any]:
     document: dict[str, Any] = {
         "version": CATALOGUE_VERSION,
         "flavor": flavor,
-        "alpha": 0.002,
+        "alpha": 0.005,
         "items": {
             "pandas": {"size_mb": 30.0, "load_time": 0.25, "resource_type": "package"},
             "numpy": {"size_mb": 20.0, "load_time": 0.15, "resource_type": "package"},
@@ -31,8 +31,8 @@ def _document(flavor: str = "cpu", **overrides: Any) -> dict[str, Any]:
 def test_select_picks_the_lowest_cost_checkpoint() -> None:
     catalogue = Catalogue.from_document(_document())
 
-    # c-data covers pandas+numpy: cost 0.002*50 + 0 = 0.1.
-    # c-torch: 0.002*800 + (0.25+0.15) = 1.6+0.4 = 2.0.  cold: 0.4.
+    # c-data covers pandas+numpy: cost 0.005*50 + 0 = 0.25.
+    # c-torch: 0.005*800 + (0.25+0.15) = 4.0+0.4 = 4.4.  cold: 0.4.
     assert catalogue.select(["pandas", "numpy"]) == "c-data"
 
 
@@ -103,8 +103,8 @@ def test_select_prices_a_required_items_dependency_even_when_not_named_directly(
     # already carries numpy should be credited for that even though the
     # request never names numpy itself.
     #
-    # A higher alpha than the module default: at 0.002 a dedicated 20 MB
-    # checkpoint for just numpy would be worth it (0.04+0.25=0.29 < cold 0.4),
+    # A higher alpha than the module default: at 0.005 a dedicated 20 MB
+    # checkpoint for just numpy would be worth it (0.1+0.25=0.35 < cold 0.4),
     # which would demonstrate the opposite of what this test is for.
     catalogue = Catalogue.from_document(_document_with_dependencies(alpha=0.01))
 

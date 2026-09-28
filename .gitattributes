@@ -1,25 +1,23 @@
 # Normalise line endings on the way in, LF in the working tree.
 * text=auto eol=lf
-
 # Generated stubs. Marking them keeps them out of language statistics and
 # collapses them by default in review, where a regenerated descriptor otherwise
 # buries the two lines that actually changed.
 worker/proto/*.pb.go              linguist-generated=true
 router/src/readie_router/proto/*    linguist-generated=true
 pkg/src/readie/_proto/*             linguist-generated=true
-
 # Lockfiles are generated and reviewed for their diff summary, not line by line.
 uv.lock                           linguist-generated=true
 **/uv.lock                        linguist-generated=true
 worker/go.sum                     linguist-generated=true
-
 # Corpus and analysis data. Machine-written, and large enough that a diff is
 # never the useful view.
 pipeline/data/*.json              linguist-generated=true -diff
-
 # Binary, so git must never try to merge or diff them as text.
 *.png    binary
 *.jpg    binary
 *.gz     binary
 *.tar    binary
 *.whl    binary
+pipeline/data/metadata/* filter=lfs diff=lfs merge=lfs -text
+catalogues/* filter=lfs diff=lfs merge=lfs -text

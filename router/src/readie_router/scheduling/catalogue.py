@@ -94,7 +94,7 @@ class Catalogue:
     def from_document(cls, document: Mapping[str, object]) -> Catalogue:
         """Build a catalogue from a parsed ``catalogue.json`` document."""
         raw_items = document.get("items")
-        alpha = float(document.get("alpha", 0.01))  # type: ignore[arg-type]  # JSON value, narrowed at runtime by float()
+        alpha = float(document.get("alpha", 0.005))  # type: ignore[arg-type]  # JSON value, narrowed at runtime by float()
         items = raw_items if isinstance(raw_items, Mapping) else {}
         load_times = {
             str(key): float(entry.get("load_time", 0.0))

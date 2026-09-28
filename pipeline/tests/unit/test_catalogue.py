@@ -19,11 +19,16 @@ from readie_pipeline.planning.ports import CheckpointPlan
 def _metadata() -> Metadata:
     return Metadata(
         {
-            "pandas": PackageFacts(base_import="pandas", disk_size_mb=30.0, import_time=0.25),
-            "numpy": PackageFacts(base_import="numpy", disk_size_mb=20.0, import_time=0.15),
+            "pandas": PackageFacts(
+                base_import="pandas", disk_size_mb=30.0, memory_size_mb=30.0, import_time=0.25
+            ),
+            "numpy": PackageFacts(
+                base_import="numpy", disk_size_mb=20.0, memory_size_mb=20.0, import_time=0.15
+            ),
             "gpt2": PackageFacts(
                 base_import="gpt2",
                 disk_size_mb=500.0,
+                memory_size_mb=500.0,
                 import_time=2.0,
                 resource_type=ResourceType.MODEL,
             ),
@@ -41,14 +46,14 @@ def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
     plan = CheckpointPlan(imports=("pandas", "numpy"), models=("gpt2",))
     doc = build_catalogue(
         flavor="cpu",
-        alpha=0.01,
+        alpha=0.005,
         metadata=_metadata(),
         entries=[("checkpoint_1", plan)],
     )
 
     assert doc["version"] == CATALOGUE_VERSION
     assert doc["flavor"] == "cpu"
-    assert doc["alpha"] == 0.01
+    assert doc["alpha"] == 0.005
 
     # Every measured item, keyed the way a request names it.
     assert doc["items"]["pandas"] == {
@@ -77,16 +82,20 @@ def test_catalogue_carries_a_packages_resolved_dependencies() -> None:
                 distribution="pandas",
                 disk_size_mb=30.0,
                 import_time=0.25,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"pandas", "numpy"}),
             ),
             "numpy": PackageFacts(
-                base_import="numpy", distribution="numpy", disk_size_mb=20.0, import_time=0.15
+                base_import="numpy",
+                distribution="numpy",
+                disk_size_mb=20.0,
+                import_time=0.15,
+                loaded_modules=frozenset({"numpy"}),
             ),
         }
     )
     doc = build_catalogue(
         flavor="cpu",
-        alpha=0.01,
+        alpha=0.005,
         metadata=metadata,
         entries=[("checkpoint_1", CheckpointPlan(imports=("pandas", "numpy")))],
     )
@@ -112,17 +121,23 @@ def test_catalogue_carries_the_closure_and_the_canonical_list_separately() -> No
                 base_import="pandas",
                 distribution="pandas",
                 disk_size_mb=30.0,
+                memory_size_mb=30.0,
                 import_time=0.25,
-                dependencies={"numpy": ">=1.20"},
+                loaded_modules=frozenset({"pandas", "numpy"}),
             ),
             "numpy": PackageFacts(
-                base_import="numpy", distribution="numpy", disk_size_mb=20.0, import_time=0.15
+                base_import="numpy",
+                distribution="numpy",
+                disk_size_mb=20.0,
+                memory_size_mb=20.0,
+                import_time=0.15,
+                loaded_modules=frozenset({"numpy"}),
             ),
         }
     )
     doc = build_catalogue(
         flavor="cpu",
-        alpha=0.01,
+        alpha=0.005,
         metadata=metadata,
         entries=[("checkpoint_1", CheckpointPlan(imports=("pandas",)))],
     )
@@ -137,7 +152,7 @@ def test_catalogue_carries_the_closure_and_the_canonical_list_separately() -> No
 def test_catalogue_round_trips_through_a_file(tmp_path) -> None:
     doc = build_catalogue(
         flavor="gpu",
-        alpha=0.01,
+        alpha=0.005,
         metadata=_metadata(),
         entries=[("checkpoint_1", CheckpointPlan(imports=("pandas",)))],
     )
