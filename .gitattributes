@@ -1,6 +1,5 @@
 # Normalise line endings on the way in, LF in the working tree.
 * text=auto eol=lf
-
 # Generated stubs. Marking them keeps them out of language statistics and
 # collapses them by default in review, where a regenerated descriptor otherwise
 # buries the two lines that actually changed.
@@ -20,5 +19,5 @@ pipeline/data/*.json              linguist-generated=true -diff
 *.gz     binary
 *.tar    binary
 *.whl    binary
-catalogues/* filter=lfs diff=lfs merge=lfs -text
 pipeline/data/metadata/* filter=lfs diff=lfs merge=lfs -text
+catalogues/* filter=lfs diff=lfs merge=lfs -text
