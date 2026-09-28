@@ -15,7 +15,7 @@ def check_python_version(version: tuple[int, ...] | None = None) -> None:
     major, minor = (version or tuple(sys.version_info[:2]))[:2]
     if (major, minor) != REQUIRED_PYTHON:
         msg = (
-            f"readie requires Python {REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]} to match the "
-            f"remote executor, but this is Python {major}.{minor}"
+            f"Readie requires Python {REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]}, "
+            f"found Python {major}.{minor}"
         )
         raise IncompatiblePythonError(msg)
