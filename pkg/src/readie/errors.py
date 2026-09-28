@@ -13,6 +13,15 @@ class ReadieError(Exception):
     """Base class for everything this package raises."""
 
 
+class IncompatiblePythonError(ReadieError):
+    """The local Python is not the minor version the workers run.
+
+    Functions are cloudpickled here and unpickled by the sandbox interpreter, and
+    pickled bytecode is only portable within one minor version. Raised when the
+    client is constructed, before any call can produce an opaque decode failure.
+    """
+
+
 class ConfigurationError(ReadieError):
     """The client was configured with something unusable.
 

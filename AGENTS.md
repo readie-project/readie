@@ -66,6 +66,13 @@ Most tests use fakes and run anywhere (see gVisor note below).
 - **The two Python floors are deliberate:** `pkg` and `executor` target 3.12
   because they have to be the same and also be compatible with the rootfs Python version; `router` and `pipeline` target 3.13
   control their own images.
+- **`pkg` enforces the executor's Python at runtime.** Functions are cloudpickled
+  client-side and unpickled in the sandbox, and that is only safe within one minor
+  version. `readie.Client()` calls `check_python_version()` (`pkg/src/readie/_compat.py`)
+  and raises `IncompatiblePythonError` unless the local interpreter is exactly
+  `REQUIRED_PYTHON` (3.12). If the executor's Python changes, update
+  `REQUIRED_PYTHON`, `requires-python` in `pkg/pyproject.toml` and the
+  executor's together.
 
 ## Conventions
 
