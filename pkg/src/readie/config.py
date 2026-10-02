@@ -59,7 +59,7 @@ class Settings:
     def __post_init__(self) -> None:
         """Reject settings that would fail later, and more confusingly."""
         if not self.router_uri:
-            msg = "router_uri is required; set READIE_ROUTER_URI or pass it explicitly"
+            msg = "router_uri is required; pass it to readie.configure(router_uri=...)"
             raise ConfigurationError(msg)
         if self.chunk_size <= 0:
             msg = f"chunk_size must be positive, got {self.chunk_size}"

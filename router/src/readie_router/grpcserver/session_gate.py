@@ -1,10 +1,10 @@
 """Per-session mutual exclusion.
 
-A session maps to one paused container holding one Python process behind one
-unix socket. The worker resumes it with Unpause followed by Update, and drives
-it through a single executor session. Two concurrent requests for one session
-would race on all three, and would interleave in one interpreter's global state
-even if they did not.
+A session maps to one idle container holding one Python process behind one
+unix socket. The worker resumes it with an Update (the container is left
+running while idle, not paused) and drives it through a single executor
+session. Two concurrent requests for one session would race on both, and would
+interleave in one interpreter's global state even if they did not.
 
 The router is the only component that knows the session-to-container mapping,
 so it is the only component that can prevent this.

@@ -1,6 +1,19 @@
-# readie-client
+# readie
 
-Run a Python function on a remote checkpoint-restore worker by decorating it.
+`readie` is the Python client for Readie, a service that runs Python functions
+in gVisor sandboxes restored from checkpoints. Decorate a function with
+`@remote`, and calls to it run on a Readie worker instead of in your process.
+
+```sh
+pip install readie
+```
+
+The client requires Python 3.12. See [Python version](#python-version).
+
+For guides, concepts, and the SDK reference, see the documentation at
+[readie.org](https://readie.org).
+
+## Quick example
 
 ```python
 from readie import remote
@@ -22,72 +35,85 @@ async def add_async(a, b):
 print(asyncio.run(add_async(1, 2)))  # from an event loop
 ```
 
-The decorated function is serialised with `cloudpickle` and executed by a Python
-interpreter inside a gVisor sandbox, so it must be picklable and its imports must
-exist in the worker's image.
+The client serializes the decorated function with `cloudpickle`, and a Python
+interpreter inside a gVisor sandbox runs it. The function must therefore be
+picklable, and its imports must exist in the worker's image or be declared with
+`packages` (see [Packages](#packages)).
+
+## Python version
+
+The client and the sandbox must run the same Python minor version, because a
+pickled function is portable only within one minor version. The sandbox runs
+Python 3.12, so `readie.Client()` raises `IncompatiblePythonError` unless the
+local interpreter is Python 3.12.
+
+## Authentication
+
+If the service requires a bearer token, set the `READIE_AUTH_TOKEN` environment
+variable before creating the client. If the variable is unset, the client sends
+no token.
 
 ## Resource budgets
 
 Declare how much memory a function needs on the decorator. Each budget takes a
-byte count or a size string (`"512Mi"`, `"4Gi"`); an unset budget falls back to
-the cluster default.
+byte count or a size string such as `"512Mi"` or `"4Gi"`. An unset budget falls
+back to the cluster default.
 
 ```python
 @remote(gpu=True, memory="2Gi", max_memory="8Gi")
 def train(rows): ...
 ```
 
-`memory` is the container's initial limit and `max_memory` the ceiling the
-worker may auto-expand to when the function needs more; `gpu_memory` /
-`max_gpu_memory` are the same for GPU device memory. `gpu=True` sends the call to
-a GPU worker (a `gpu_memory` budget implies it too). The client also statically
-extracts the function's imports and forwards them so the router can pick a
-checkpoint that already imported them - this is automatic and needs no
-configuration.
+`memory` is the container's initial limit, and `max_memory` is the ceiling that
+the worker can expand to when the function needs more. `gpu_memory` and
+`max_gpu_memory` set the same limits for GPU device memory. `gpu=True` sends the
+call to a GPU worker, and a `gpu_memory` budget implies it.
+
+The client also extracts the function's imports statically and forwards them, so
+that the router can pick a checkpoint that already imported them. This is
+automatic and needs no configuration.
 
 ## Packages
 
-Declare PyPI requirements a function needs beyond what the checkpoint's rootfs
-already carries. The executor installs them with `uv` before every call:
+Declare the PyPI requirements that a function needs beyond what the checkpoint's
+root filesystem already contains. The executor installs them with `uv` before
+every call:
 
 ```python
 @remote(packages=["numpy==1.26.0", "requests"])
 def fetch(url): ...
 ```
 
-Entries are requirement strings (a bare name or a full spec like
-`"numpy==1.26.0"`), normalized and deduped by distribution name at decoration
-time - `"Requests"` and `"requests"` collapse to one entry. Installation is
-unconditional: it runs on every call, even when the package looks already
-present, since each call restores a fresh, isolated container with nothing to
-check that claim against.
+Each entry is a requirement string, either a bare name or a full spec such as
+`"numpy==1.26.0"`. The client normalizes the entries and removes duplicates by
+distribution name when the function is decorated, so `"Requests"` and
+`"requests"` collapse to one entry.
 
-```sh
-make install   # sync the virtualenv from the lockfile
-make test      # unit + in-process gRPC integration tests
-make lint type # ruff + mypy --strict
-```
+Installation is unconditional. It runs on every call, even when the package
+appears to be present, because each call restores a fresh, isolated container
+and there is nothing to verify the claim against.
 
-Configuration options:
+## Client options
+
+The module-level client is created on first use. To change its options, call
+`readie.configure` before the first remote call:
 
 ```python
 import readie
 
-readie.configure(
-    router_uri="localhost:50051", timeout=120.0, chunk_size=64 * 1024, stream_logs=True, tls=False
-)
+readie.configure(timeout=120.0, chunk_size=64 * 1024, stream_logs=True)
 ```
 
-The following are configurable only from the environment:
-
-|                                                          |                                                               |
-| -------------------------------------------------------- | ------------------------------------------------------------- |
-| `READIE_AUTH_TOKEN`                                      | bearer token for a router that requires one; unset sends none |
-| `READIE_TLS_CA`                                          | connect over TLS; a CA path verifies the nginx server, else system roots. TLS is required for HTTPS router URIs |
+| Option | Description |
+| --- | --- |
+| `timeout` | Deadline for a whole call, in seconds. The default is no deadline. |
+| `chunk_size` | Payload bytes per stream message. The default is 1 MiB. |
+| `stream_logs` | If true, print the function's output as it arrives instead of only on failure. The default is true. |
 
 ## When a remote function raises
 
-You get the real traceback, from the process that raised it:
+If the remote function raises, the client raises `readie.RemoteExecutionError`
+with the traceback from the process that raised:
 
 ```python
 try:
@@ -98,18 +124,19 @@ except readie.RemoteExecutionError as error:
     print(error.worker_id, error.container_id)
 ```
 
-The exception _object_ is not reconstructed. Unpickling it would need its class
-importable here, and for a library that exists only in the worker image the
-resulting `ImportError` would replace the real error with a confusing one.
+The client does not reconstruct the exception object. Unpickling it would
+require its class to be importable locally, and for a library that exists only in
+the worker image, the resulting `ImportError` would replace the real error with a
+misleading one.
 
-`EmptyResultError` means something else entirely: the worker returned nothing at
-all, so the executor died before it could report an outcome. A function that
-returns `None` returns a value and does not land there.
+`EmptyResultError` indicates a different failure: the worker returned nothing at
+all, which means the executor died before it could report an outcome. A function
+that returns `None` returns a value and does not raise `EmptyResultError`.
 
 ## Sessions
 
-By default every call is independent and gets a fresh container. To reuse a warm
-container - and the Python state it holds - open a session:
+By default, every call is independent and gets a fresh container. To reuse a warm
+container and the Python state it holds, open a session:
 
 ```python
 with readie.default_client().session() as s:
@@ -117,51 +144,53 @@ with readie.default_client().session() as s:
     train.bind(s)()  # resumes the same interpreter
 ```
 
-Calls inside one session are **serialised by the router**: a session maps to one
-container running one interpreter behind one socket, so they cannot safely run at
-once. Unrelated sessions stay fully parallel.
+The router serializes calls within one session. A session maps to one container
+that runs one interpreter behind one socket, so its calls cannot run at the same
+time. Unrelated sessions run in parallel.
 
-`client.session()` is a convenience wrapper - `Session` itself is a plain,
-constructible class, so you are not limited to the context-manager form:
+`client.session()` is a convenience wrapper. `Session` is a plain class that you
+can construct directly, so the context-manager form is optional:
 
 ```python
 s = readie.Session()
 load_data.bind(s)()
 train.bind(s)()
-# ... later, maybe in another function ...
+# ... later, possibly in another function
 s.close()
 ```
 
-There are three equivalent ways to run a call inside a session - decoration
-time, a bound copy, or per-call:
+A call can run inside a session in three equivalent ways: at decoration time,
+through a bound copy, or per call.
 
 ```python
 @remote(session=s)  # every call through this name uses s
 def f(): ...
 
 
-g = train.bind(s)  # a copy of an existing @remote bound to s
-# (the original is untouched, since it is
-# module-level and shared)
+g = train.bind(s)  # a copy of an existing @remote bound to s; the original
+# is module-level and shared, so it is left unchanged
 
-readie.default_client().call(train.func, session=s)  # one-off, via the client directly
+readie.default_client().call(train.func, session=s)  # one call, through the client directly
 ```
 
-`Session()` also accepts an explicit id (`Session(session_id="sess-...")`), so
-a session can be reconstructed - in another process, or after this one
-restarts - as long as its container hasn't since been torn down (below).
+`Session` also accepts an explicit id, for example `Session(session_id="sess-...")`.
+This lets you reconstruct a session in another process, or after the current
+process restarts, as long as the session's container still exists.
 
-**Closing a session is purely local.** It just stops this client using the
-id; no message reaches the router. The router, in turn, never removes a
-session on a timer or a cap of its own - only once the container behind it
-is actually gone (typically the *worker's* own pause TTL reclaiming it; see
-the worker README) does it retire the id. So a session can safely outlive
-`close()`, but the two cases that follow are not the same:
+### Closing and expiry
 
-- A `session_id` the router has genuinely never seen (including a brand-new
-  `Session()`) is not an error - the call just cold-starts, exactly like a
-  call with no session at all.
-- Reusing a `session_id` whose container the router has already reclaimed
-  raises `readie.SessionExpiredError` instead of silently cold-starting under
-  an id that looks like it should still carry warm state. Open a new
-  `Session` rather than retrying the old one.
+Closing a session is a local operation. It stops this client from using the id,
+and no message reaches the router. The router never removes a session on a timer
+or a cap of its own. It retires a session id only after the container behind the
+session is gone, typically because the worker removed the container after its
+idle timeout.
+
+A session can therefore outlive `close()`. The following two cases differ:
+
+- A `session_id` that the router has never seen, including the id of a new
+  `Session()`, is not an error. The call cold-starts, exactly like a call with no
+  session.
+- A `session_id` whose container the router has already reclaimed raises
+  `readie.SessionExpiredError`. The router raises the error instead of
+  cold-starting under an id that appears to carry warm state. Open a new
+  `Session` instead of retrying the expired one.

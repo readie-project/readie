@@ -296,7 +296,9 @@ def add_planner_flags(parser: argparse.ArgumentParser) -> None:
     """Attach the planner's knobs, shared by `plan` and `capture`."""
     parser.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
     parser.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
-    parser.add_argument("--size-budget-mb", type=float, help="per-checkpoint size budget")
+    parser.add_argument(
+        "--size-budget-mb", type=float, help="total size budget across all checkpoints, in MB"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

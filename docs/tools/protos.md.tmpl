@@ -1,0 +1,39 @@
+---
+title: Protobuf contracts
+sidebar_position: 9
+description: The gRPC services and messages that connect the client, router, and worker.
+---
+
+
+:::note Generated page
+This page is generated from the comments in [`protos/`](https://github.com/illinoisdata/readie/tree/main/protos). To change it, edit the `.proto` files and run `make docs-protos`.
+:::
+
+The protos declare no `package`, so service names are bare on the wire, for example `/ProxyService/RequestExecution`. Changes are additive only: new fields use new numbers, and numbers are never reused or renumbered. See [Changing protos](/docs/contributing/changing-protos).
+{{range .Files}}
+## `{{.Name}}`
+{{range .Services}}
+### Service `{{.Name}}`
+
+{{.Description}}
+
+| Method | Request | Response | Description |
+| ------ | ------- | -------- | ----------- |
+{{range .Methods}}| `{{.Name}}` | `{{if .RequestStreaming}}stream {{end}}{{replace "." "" .RequestLongType}}` | `{{if .ResponseStreaming}}stream {{end}}{{replace "." "" .ResponseLongType}}` | {{nobr .Description}} |
+{{end}}{{end}}{{range .Messages}}
+### Message `{{.LongName}}`
+
+{{.Description}}
+{{if .HasFields}}
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+{{range .Fields}}| `{{.Name}}` | `{{if .Label}}{{.Label}} {{end}}{{replace "." "" .LongType}}` | {{nobr .Description}} |
+{{end}}{{end}}{{end}}{{range .Enums}}
+### Enum `{{.LongName}}`
+
+{{.Description}}
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+{{range .Values}}| `{{.Name}}` | {{.Number}} | {{nobr .Description}} |
+{{end}}{{end}}{{end}}

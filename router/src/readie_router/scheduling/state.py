@@ -112,7 +112,7 @@ class ClusterState:
         """Delete a container and expire any session pinned to it.
 
         This is a session's only expiry path: once the container backing it
-        is gone - torn down by the worker's own pause TTL and reported as
+        is gone - torn down by the worker's own idle TTL and reported as
         STATUS_REMOVED, or reclaimed here after a lost removal notification -
         the session is retired rather than lingering under a TTL or cap of its
         own. It is kept, not deleted: a later request reusing the same

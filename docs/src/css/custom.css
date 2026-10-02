@@ -1,0 +1,35 @@
+/* Readie theme: a calm teal on neutral grounds, readable in light and dark. */
+
+:root {
+  --ifm-color-primary: #0f766e;
+  --ifm-color-primary-dark: #0d6b64;
+  --ifm-color-primary-darker: #0d655e;
+  --ifm-color-primary-darkest: #0a524c;
+  --ifm-color-primary-light: #118279;
+  --ifm-color-primary-lighter: #128880;
+  --ifm-color-primary-lightest: #16a89d;
+  --ifm-code-font-size: 92%;
+  --ifm-line-height-base: 1.65;
+  --docusaurus-highlighted-code-line-bg: rgba(15, 118, 110, 0.12);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #2dd4bf;
+  --ifm-color-primary-dark: #1fcdb7;
+  --ifm-color-primary-darker: #1dc2ad;
+  --ifm-color-primary-darkest: #18a08e;
+  --ifm-color-primary-light: #4adbc8;
+  --ifm-color-primary-lighter: #58ddcc;
+  --ifm-color-primary-lightest: #7ee6d8;
+  --docusaurus-highlighted-code-line-bg: rgba(45, 212, 191, 0.15);
+}
+
+.navbar__title {
+  letter-spacing: 0.04em;
+}
+
+/* Wide diagrams and tables scroll inside their own box, never the page. */
+.markdown table {
+  display: block;
+  overflow-x: auto;
+}

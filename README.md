@@ -1,13 +1,21 @@
-# READIE: Rapid Execution via ADaptive checkpoInted Environments
+# Readie: Rapid Execution via ADaptive checkpoInted Environments
 
-Run a Python function on a remote sandbox that has already imported the
-libraries it needs.
+Readie is a serverless runtime that runs a Python function on a remote sandbox
+that has already imported the libraries the function needs. Offline, it runs an
+executor with a chosen set of packages imported, checkpoints the live process
+with gVisor, and restores that image to serve a request, so the restored process
+is already past its imports. A cold start is otherwise dominated by imports:
+`import pandas` alone costs about a quarter of a second, and `torch` several
+seconds.
 
-A serverless cold start is dominated by imports - `import pandas` alone costs a
-quarter of a second, `torch` several. This platform pays that cost once, offline:
-it runs an executor with a chosen set of packages imported, checkpoints the live
-process with gVisor, and restores that image to serve a request. The restored
-process is already past its imports.
+## Documentation
+
+The documentation site at [readie.org](https://readie.org) covers installation,
+the quickstart, concepts, architecture, and the contributor guides. Its source
+is in [`docs/`](docs/). This README summarizes the repository layout and the
+commands for building, running, and developing the system.
+
+## Example
 
 ```python
 from readie import remote
@@ -26,119 +34,130 @@ async def add_async(a, b):
 print(asyncio.run(add_async(1, 2)))  # from an event loop
 ```
 
-The decorated function is serialised with `cloudpickle` and executed inside the
-sandbox, so it must be picklable and its imports must exist in the worker's
-image. See [`pkg/`](pkg/) for sessions, error handling and the async surface.
+The client serializes the decorated function with `cloudpickle` and executes it
+inside the sandbox, so the function must be picklable and its imports must exist
+in the worker's image. For sessions, error handling, and the async interface,
+see [`pkg/`](pkg/) and the
+[SDK reference](https://readie.org/docs/reference/sdk).
 
 ## How a request flows
 
 <img width="1093" height="386" alt="image" src="https://github.com/user-attachments/assets/32480429-caee-49c0-a9c9-30da6d77dec6" />
 
-The client cloudpickles `{func, args, kwargs}` and streams it to the router,
-which decides where it runs and relays it to a worker. The worker acquires a
-container - resuming a paused one, restoring a checkpoint, or starting cold -
-and writes the payload over a unix socket to the executor inside it. The
-executor unpickles the call, makes it, and sends back a result envelope, which
-the worker relays to the router and the router to the client, alongside anything
-the function printed.
+The client pickles `{func, args, kwargs}` with cloudpickle and streams it to the
+router, which decides where the call runs and relays it to a worker. The worker
+acquires a container by reusing an idle one, restoring a checkpoint, or starting
+cold. It then writes the payload over a Unix socket to the executor inside the
+container. The executor unpickles the call, runs it, and sends back a result
+envelope, together with anything the function printed. The worker relays the
+envelope to the router, and the router relays it to the client.
 
-A container serves one execution at a time: it is a single Python interpreter
-behind a single socket. That is why a client session pins to a container and why
-the router serialises the calls within one.
+A container serves one execution at a time, because it is a single Python
+interpreter behind a single socket. For this reason a client session pins to a
+container, and the router serializes the calls within a session. For the
+details, see [Request lifecycle](https://readie.org/docs/architecture/request-lifecycle).
 
 ## Components
 
-|                          | Language     |                                                                           |
-| ------------------------ | ------------ | ------------------------------------------------------------------------- |
-| [`nginx/`](nginx/)       | NGINX        | Client-facing proxy                                                       |
-| [`router/`](router/)     | Python 3.13  | Placement, the cluster registry                                           |
-| [`worker/`](worker/)     | Go           | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
-| [`executor/`](executor/) | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
-| [`pkg/`](pkg/)           | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
-| [`pipeline/`](pipeline/) | Python 3.13  | Offline: corpus, package analysis, checkpoint planning and capture        |
+|                          | Language    |                                                                           |
+| ------------------------ | ----------- | ------------------------------------------------------------------------- |
+| [`nginx/`](nginx/)       | NGINX       | Client-facing proxy                                                       |
+| [`router/`](router/)     | Python 3.13 | Placement, the cluster registry                                           |
+| [`worker/`](worker/)     | Go          | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
+| [`executor/`](executor/) | Python 3.12 | Runs _inside_ every sandbox; unpickles and calls the function             |
+| [`pkg/`](pkg/)           | Python 3.12 | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
+| [`pipeline/`](pipeline/) | Python 3.13 | Offline: corpus, package analysis, checkpoint planning and capture        |
 
-[`protos/`](protos/) is the single source of truth for every wire contract, and
-[`pipeline/Dockerfile`](pipeline/Dockerfile) for everything a checkpoint is bound
-to: the root filesystem it is captured against, the pinned gVisor release, and the
-base image it ships in.
+[`protos/`](protos/) is the single source of truth for every wire contract.
+[`pipeline/Dockerfile`](pipeline/Dockerfile) is the single source of truth for
+everything a checkpoint is bound to: the root filesystem it is captured against,
+the pinned gVisor release, and the base image it ships in.
 
 The two Python floors are deliberate. `pkg` and `executor` are installed into
-someone else's process - a user's script and the sandbox image - so they must
-work on whatever is already there. `router` and `pipeline` control their own
-images and pin.
+someone else's process (a user's script and the sandbox image), so they must work
+on whatever is already there. `router` and `pipeline` control their own images
+and pin their versions. For the roles of the components, see
+[Components](https://readie.org/docs/concepts/components).
 
-## The contracts
+## Contracts
 
-Three things hold the components together, and each is enforced rather than
-documented and hoped for.
+Three contracts hold the components together, and each is enforced by tooling.
 
-**The gRPC services** in `protos/`, shared by three languages: `ProxyService`
-(client↔router), `ExecutionService` (router↔worker), `RegistryService`
-(worker→router). `buf lint` and `buf breaking` run in CI, and a job fails if the
-committed stubs are stale. The protos declare no `package`, so service names are
-bare - the compose healthcheck's grpcurl and the worker both depend on that.
+The gRPC services in `protos/` are shared by three languages: `ProxyService`
+(client to router), `ExecutionService` (router to worker), and `RegistryService`
+(worker to router). `buf lint` and `buf breaking` run in CI, and a CI job fails
+if the committed stubs are stale. The protos declare no `package`, so service
+names are bare. The compose healthcheck's `grpcurl` and the worker both depend on
+that.
 
-**The executor socket protocol**, implemented twice: `executor/` in Python and
-`worker/internal/executor` in Go. Length-prefixed chunks terminated by a
-zero-length one, carrying cloudpickle in both directions. A fixture generated by
-the Python side and decoded by the Go tests keeps them from drifting.
+The executor socket protocol is implemented twice: in `executor/` in Python and
+in `worker/internal/executor` in Go. It uses length-prefixed chunks terminated by
+a zero-length chunk, and carries cloudpickle in both directions. A fixture
+generated by the Python side and decoded by the Go tests keeps the two
+implementations from drifting. See
+[Executor protocol](https://readie.org/docs/architecture/executor-protocol).
 
-**The generation manifest**, written by `pipeline/` and read by `worker/`. It
-records the runsc version, the OCI spec fingerprint and the executor protocol
-version. The protocol is the one field a worker checks against its own compiled-in
-truth, and it refuses the whole generation at _load_ rather than failing opaquely
-minutes into a request. The runsc version and the fingerprint are recorded but not
-compared - see the gap under [What works](#what-works-and-what-does-not). It
-records no rootfs identity, because there is nothing to compare: the base image
-build is the only way to put a rootfs and checkpoints together.
+The generation manifest is written by `pipeline/` and read by `worker/`. It
+records the runsc version, the OCI spec fingerprint, and the executor protocol
+version. The worker refuses a whole generation at load time if the executor
+protocol version differs from the one compiled into the worker, instead of
+failing partway through a request. The runsc version and the spec fingerprint
+are checked separately at startup, as described under
+[Current limitations](#current-limitations). The manifest records no rootfs
+identity, because there is nothing to compare: the base image build is the only
+way to put a rootfs and checkpoints together.
 
 ## Building checkpoints
 
-Offline, and separate from serving. One command captures checkpoints, bakes them
-into the base image beside the root filesystem, and puts a worker on top:
+Checkpoint capture is an offline step, separate from serving. One command
+captures checkpoints, bakes them into the base image beside the root filesystem,
+and builds a worker on top:
 
 ```sh
 make generation                     # tags readie-worker:<timestamp> and :latest
 make generation TAG=my-experiment
 ```
 
-Capture is its own phase because `docker build` cannot capture a checkpoint -
-runsc needs privileged namespace access that a stock BuildKit builder will not
-grant - so the pipeline runs privileged, and the base image is built around what
-it wrote.
+Capture is a separate phase because `docker build` cannot capture a checkpoint.
+runsc needs privileged namespace access that a stock BuildKit builder does not
+grant, so the pipeline runs privileged and the base image is built around what
+the pipeline wrote.
 
-The result is a single deployable: the Go binary, runsc, the root filesystem and
-the checkpoints, all in one image, with nothing mounted. That costs ~35 GB per
-image and buys the guarantee that a running worker's artifacts are exactly the
-ones its tag names.
+The result is a single deployable image that holds the Go binary, runsc, the root
+filesystem, and the checkpoints, with nothing mounted. Each image occupies tens of
+GB (about 40 GB for a recent CPU build, depending on how many checkpoints it
+holds). In exchange, the artifacts of a running worker are exactly the ones its
+tag names.
 
-Two Dockerfiles, split along what a checkpoint's validity depends on.
-[`pipeline/Dockerfile`](pipeline/Dockerfile) defines the rootfs, the capture tool
-and the base image carrying both runsc and the captured checkpoints - one file, so
-the tree a checkpoint is captured against and the tree it is restored into cannot
-drift, and the gVisor release is pinned exactly once.
-[`worker/Dockerfile`](worker/Dockerfile) adds the Go server and grpcurl, and
-nothing else.
+Two Dockerfiles divide the build along what a checkpoint's validity depends on.
+[`pipeline/Dockerfile`](pipeline/Dockerfile) defines the root filesystem, the
+capture tool, and the base image that carries both runsc and the captured
+checkpoints. Keeping them in one file means the tree a checkpoint is captured
+against and the tree it is restored into cannot drift, and the gVisor release is
+pinned exactly once. [`worker/Dockerfile`](worker/Dockerfile) adds the Go server
+and `grpcurl`, and nothing else.
 
-The 26 GB root filesystem is therefore _inherited_ by the worker image, never
-copied into it. `COPY --from=` produces a fresh layer every build - two identical
-worker builds were measured producing different digests for it - so inheriting is
-what lets a rebuilt worker share that layer instead of re-uploading it, and is why
-a worker rebuild takes seconds.
+The worker image inherits the 26 GB root filesystem and never copies it.
+`COPY --from=` produces a fresh layer on every build (two identical worker builds
+were measured producing different digests for it), whereas inheriting lets a
+rebuilt worker share the layer instead of re-uploading it. For this reason a
+worker rebuild takes seconds.
 
-`make analyze FLAVOR=cpu|gpu` measures every package a flavor's base image
-installs (disk size, import time), ahead of `plan`/`generation` - see
-[`pipeline/README.md`](pipeline/README.md) for what it writes and why it needs
-to run against the image, not just the request corpus.
+`make analyze FLAVOR=cpu|gpu` measures every package that a flavor's base image
+installs (disk size and import time). Run it before `plan` or `generation`. See
+[`pipeline/README.md`](pipeline/README.md) for what it writes and why it must run
+against the image and not only against the request corpus. That file also
+describes the planner's algorithm and the individual stages. For the
+procedure, see
+[Build checkpoints](https://readie.org/docs/contributing/build-checkpoints).
 
-[`pipeline/`](pipeline/) has the planner's algorithm and the individual stages.
+## Running
 
-## Running it
-
-Docker Compose is the whole runtime story. No other tooling is needed to stand
-the system up. The router is always accessed through NGINX rather than being exposed directly.
-Complete [Building checkpoints](#building-checkpoints) before this step in order to serve
-requests using the optimal checkpoints, else every request falls back to a regular cold start.
+Docker Compose runs the system, and no other tooling is needed. Clients reach the
+router through NGINX, and the router is not exposed directly. Complete
+[Building checkpoints](#building-checkpoints) first. Without a generation, every
+request falls back to a regular cold start instead of using an optimal
+checkpoint.
 
 Run locally:
 
@@ -146,45 +165,50 @@ Run locally:
 make run-local
 ```
 
-Run production application:
+Run the production configuration:
 
 ```sh
 make run-prod
 ```
 
-Shutting down:
+Shut down:
+
 ```sh
 make shutdown
 ```
 
-Logs:
+Follow the logs:
+
 ```sh
 docker compose logs -f router
 docker compose logs -f worker
 ```
 
-See `nginx/README.md` for the NGINX configuration, TLS certificates, DNS setup, and troubleshooting.
+For the NGINX configuration, TLS certificates, DNS setup, and troubleshooting,
+see [`nginx/README.md`](nginx/README.md). To reach a locally running router, set
+the client's `router_uri` to `localhost:50051`. See
+[Run the stack](https://readie.org/docs/contributing/run-the-stack) for the full
+procedure.
 
-Point the client's `router_uri` at `localhost:50051` and it will reach
-the router when running locally.
+The router has no image prerequisite, but the worker does. The worker is built
+`FROM readie-worker-base-<flavor>:latest`, the image that carries runsc, the root
+filesystem, and the checkpoints. That image must be present or pullable, so
+`make worker-base` must have run once on the machine. `make generation` runs it
+for you. Whether a worker has checkpoints to restore is a property of the base
+image, not of the worker image.
 
-One prerequisite the router does not have: the worker is built `FROM
-readie-worker-base:latest`, the image carrying runsc, the root filesystem and the
-checkpoints. It has to be present or pullable, so `make worker-base` must have run
-once on the machine - `make generation` does it for you. Whether a worker has
-checkpoints to restore is a property of that base, not of the worker image.
+Compose and `make generation` both tag `readie-worker-<flavor>:latest`, so
+`docker compose up -d` runs the image that the generation just built.
 
-Both compose and `make generation` tag `readie-worker:latest`, which is what makes
-`docker compose up -d` run the image the generation just built.
+Only `router` and `worker` are Compose services. The `executor` runs inside a
+sandbox that the worker creates, `pkg` is a library that you install into your
+own program, and `pipeline` is an offline tool.
 
-Only `router` and `worker` are services. `executor` runs _inside_ a sandbox the
-worker creates, `pkg` is a library you install into your own program, and
-`pipeline` is an offline tool - none of them belong in Compose.
+## Developing
 
-## Developing it
-
-`make` covers what Compose cannot: linting, type-checking and running the tests
-across five components in two languages, without building an image per change.
+`make` covers what Compose does not: linting, type-checking, and running the
+tests across five components in two languages, without building an image for each
+change.
 
 ```sh
 make install          # sync every Python virtualenv from its lockfile
@@ -193,113 +217,120 @@ make protos           # regenerate every stub (generated code is committed)
 make help             # every target
 ```
 
-Per component, `make -C router test`, or the passthrough `make router-test`.
-Each component's Makefile takes the same verbs - `install`, `fmt`, `lint`,
-`type`, `test` - so you never have to remember which tool a directory uses.
+To run one component, use `make -C router test` or the passthrough
+`make router-test`. Each component's Makefile takes the same verbs: `install`,
+`fmt`, `lint`, `type`, and `test`.
 
-To redeploy a worker code change, without recapturing anything:
+To redeploy a worker code change without recapturing anything:
 
 ```sh
 make worker-image        # a Go build on top of the base; seconds
-docker compose up -d     # recreates the worker on the new readie-worker:latest
+docker compose up -d     # recreates the worker on the new readie-worker-<flavor>:latest
 ```
 
-That is cheap because the worker image is only the Go server and grpcurl; the
-rootfs and the checkpoints are inherited from `readie-worker-base` untouched. See
-[`worker/README.md`](worker/README.md#the-two-images).
+This is fast because the worker image contains only the Go server and `grpcurl`.
+The root filesystem and the checkpoints are inherited unchanged from
+`readie-worker-base`. See
+[`worker/README.md`](worker/README.md#the-two-images). For setup and
+conventions, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## What works, and what does not
+## Implemented features
 
-Built and tested:
+The following features are built and tested.
 
-- Session affinity, warm-container reuse, and the per-session serialisation it
-  forces. A session carries no TTL or cap of its own - the instant the
-  container backing it is gone (driven entirely by the worker's own pause
-  TTL), the router retires the id rather than deleting it, so reusing it
-  raises a clear "session expired" error instead of silently losing all its
-  state under a cold start.
-- Placement on real memory pressure, with liveness probed over `grpc.health.v1`
-  and TTL eviction for workers and containers.
-- Checkpoint planning by greedy set cover over a request corpus and
-  measured packages (each request's full dependency closure, not just its
-  top-level imports), maximising import time saved per megabyte.
-- Capture and restore through gVisor, with the sandbox spec generated from the
-  worker's own code on both sides so the two cannot drift by hand.
+- Session affinity, warm-container reuse, and the per-session serialization that
+  they require. A session has no TTL or cap of its own. When the container that
+  backs a session is gone (this is driven entirely by the worker's own idle TTL,
+  `SANDBOX_IDLE_TTL`), the router retires the session id instead of deleting it.
+  Reusing the id then raises a "session expired" error and does not silently lose
+  the session state under a cold start.
+- Placement based on real memory pressure, with liveness probed over
+  `grpc.health.v1` and TTL eviction for workers and containers.
+- Checkpoint planning by greedy set cover over a request corpus and measured
+  packages. The planner uses each request's full dependency closure and not only
+  its top-level imports, and maximizes import time saved per megabyte.
+- Capture and restore through gVisor. The sandbox spec is generated from the
+  worker's own code on both sides, so the two cannot drift by hand.
 - Per-function resource budgets set on the decorator
-  (`@remote(memory="2Gi", max_memory="8Gi", gpu_memory=…)`), defaulted when
+  (`@remote(memory="2Gi", max_memory="8Gi", gpu_memory=...)`), with defaults when
   unset, forwarded through the router as an extensible `ResourceBudget` set. The
-  worker enforces the memory budget and auto-expands it - a live `memory.max`
-  raise before an OOM, plus a one-shot retry with a larger container when a hard
-  OOM slips through. GPU memory rides the same seam; it is not cgroup-enforceable
-  through runsc, so for GPU auto-expand is the retry alone.
-- **A heterogeneous CPU/GPU fleet.** A worker is `cpu` or `gpu` (`WORKER_FLAVOR`,
-  advertised on every status). A GPU request - `@remote(gpu=True)` or any
-  `gpu_memory` budget - routes only to gpu workers; a cpu request prefers cpu
-  workers and spills to gpu only when none are free. GPU workers run an
-  independently-generated image (Kaggle GPU rootfs, `runsc --nvproxy`) whose
-  checkpoints are fingerprint-incompatible with cpu ones. Placement respects both
-  system- and GPU-memory headroom. `make generation FLAVOR=cpu|gpu` builds each
-  without touching the other.
-- **Request-time checkpoint selection.** The pipeline emits a per-flavor
-  `catalogue.json`; the router loads it and, for each cold start, picks the
-  checkpoint minimising `alpha·size + Σ load_time(closure of required items not
-  in it)` against a cold-start baseline (the dual of the planner's objective,
-  sharing one `alpha`). Datasets, models and tokenizers price in alongside
-  packages.
-- Graceful shutdown on both sides: the router drains in-flight calls, the worker
-  deregisters before draining and reclaims its sandboxes.
+  worker enforces the memory budget and expands it automatically: a live
+  `memory.max` raise before an OOM, plus a one-shot retry with a larger container
+  when a hard OOM occurs anyway. GPU memory uses the same mechanism, but runsc
+  cannot enforce it through cgroups, so for GPU memory auto-expand is the retry
+  alone.
+- A heterogeneous CPU and GPU fleet. A worker is `cpu` or `gpu`
+  (`WORKER_FLAVOR`, advertised on every status). A GPU request (`@remote(gpu=True)`
+  or any `gpu_memory` budget) routes only to gpu workers. A cpu request prefers
+  cpu workers and spills to gpu workers only when no cpu worker is free. GPU
+  workers run an independently generated image (Kaggle GPU rootfs,
+  `runsc --nvproxy`) whose checkpoints are fingerprint-incompatible with cpu ones.
+  Placement respects both system-memory and GPU-memory headroom.
+  `make generation FLAVOR=cpu|gpu` builds each image without touching the other.
+- Request-time checkpoint selection. The pipeline emits a per-flavor
+  `catalogue.json`. For each cold start, the router loads it and picks the
+  checkpoint that minimizes `alpha·size + Σ load_time(closure of required items
+  not in it)` against a cold-start baseline. This is the dual of the planner's
+  objective, and both share one `alpha`. Datasets, models, and tokenizers are
+  priced alongside packages. See
+  [Cost model](https://readie.org/docs/concepts/cost-model).
+- Graceful shutdown on both sides: the router drains in-flight calls, and the
+  worker deregisters before draining and reclaims its sandboxes.
 
-Not built. Each of these is a real gap, not an oversight:
+## Current limitations
 
-- **Measured metadata for datasets, models and tokenizers.** The cost model and
+Each of the following is a known gap and not an oversight.
+
+- Measured metadata for datasets, models, and tokenizers. The cost model and the
   catalogue treat them exactly like packages, but nothing measures their size and
-  load time yet - the measured metadata is packages-only, so today they price as free.
-  The measurement (a `from_pretrained` / `load_dataset` profiler, per the
-  `ResourceType` scaffolding) needs a network and, for GPU models, a GPU host.
-- **Checkpoint/worker compatibility is checked at startup, but coarsely.** A
-  baked checkpoint restores only into the exact sandbox it was captured under, so
-  the worker now computes its own `spec_fingerprint` (from `container.CanonicalSpec`
-  through `runsc.Fingerprint`) and reads its live `runsc --version`, and compares
-  both to the manifest (`verifyCheckpointCompat` in `worker/internal/app/app.go`).
-  On a mismatch - a worker change touching `internal/runsc/spec.go` or
-  `container.createSpec`, or a deployment changing `SANDBOX_OVERLAY` /
-  `SANDBOX_NETWORK` / the CPU or pids limits, or an upgraded runsc - a strict
-  worker (`CHECKPOINT_STRICT_COMPAT`, the default) drops every checkpoint and
-  serves cold starts only, logging the reasons loudly; a tolerant one just warns.
-  What is still missing is _granularity_: it is all-or-nothing per worker, not
-  per-checkpoint, and it cannot catch a rootfs whose contents drifted without the
-  spec changing.
-- **Swapping checkpoints without a new image.** Artifacts are baked in and read
-  once at startup, so new checkpoints mean a new base image and a new container.
-  That is the trade taken deliberately - one deployable, nothing mounted - but it
-  does mean a ~40 GB base per capture, and rolling one out drains warm containers.
-  A worker _code_ change is cheap; a checkpoint change is not.
-- **Persistence.** Router state is in memory. A restart loses sessions - their
-  containers are then reclaimed by the workers' own TTLs - and workers
+  load time yet. The measured metadata covers packages only, so these items are
+  currently priced as free. The measurement (a `from_pretrained` or
+  `load_dataset` profiler, per the `ResourceType` scaffolding) needs network
+  access and, for GPU models, a GPU host. These items are carried through the
+  corpus schema and the plan, but only packages are pre-imported. Loading a model
+  into the captured process changes what a checkpoint costs to store.
+- Coarse checkpoint and worker compatibility checking. A baked checkpoint
+  restores only into the exact sandbox it was captured under. At startup, the
+  worker computes its own `spec_fingerprint` (from `container.CanonicalSpec`
+  through `runsc.Fingerprint`), reads its live `runsc --version`, and compares
+  both to the manifest (`verifyCheckpointCompat` in
+  `worker/internal/app/app.go`). A mismatch can result from a worker change that
+  touches `internal/runsc/spec.go` or `container.createSpec`, from a deployment
+  that changes `SANDBOX_OVERLAY`, `SANDBOX_NETWORK`, or the CPU or pids limits, or
+  from an upgraded runsc. On a mismatch, a strict worker
+  (`CHECKPOINT_STRICT_COMPAT`, the default) drops every checkpoint, serves cold
+  starts only, and logs the reasons. A tolerant worker only logs a warning. The
+  check is all-or-nothing per worker and not per checkpoint, and it cannot detect
+  a rootfs whose contents drifted without a change to the spec.
+- Swapping checkpoints without a new image. Artifacts are baked in and read once
+  at startup, so new checkpoints require a new base image and a new container.
+  This trade-off is deliberate (one deployable, nothing mounted), but it means a
+  base of about 40 GB per capture, and rolling it out drains warm containers.
+  Changing worker code is cheap, and changing checkpoints is not.
+- Persistence. Router state is in memory. A router restart loses sessions, the
+  workers reclaim their containers through their own TTLs, and workers
   re-register on their next status report.
-- **Authentication and transport security are opt-in, and off by default.** The
-  router can require a bearer token on `ProxyService` (the only path that runs
-  code) - set `AUTH_TOKEN` on the router and the matching `READIE_AUTH_TOKEN` on
-  the client. Unset, everything is with no auth, so anything that can reach port
-  50051 can run code. The router↔worker mesh and the worker's own server stay
-  plaintext by design and must run on a private network. See [SECURITY.md](SECURITY.md).
-- **Datasets, models and tokenizers.** Carried through the corpus schema and the
-  plan, but only packages are pre-imported. Loading a model into the captured
-  process changes what a checkpoint costs to store.
-- **Storage tiering.** Generations are read from a local directory. There is no
+- Authentication and transport security. Both are opt-in and off by default. The
+  router can require a bearer token on `ProxyService`, the only path that runs
+  code. Set `AUTH_TOKEN` on the router and the matching `READIE_AUTH_TOKEN` on the
+  client. When no token is set, the router performs no authentication, and
+  anything that can reach port 50051 can run code. The router-to-worker mesh and
+  the worker's own server remain plaintext by design and must run on a private
+  network. See [SECURITY.md](SECURITY.md).
+- Storage tiering. Generations are read from a local directory. There is no
   remote store and no cache hierarchy.
 
 ## Platform
 
-gVisor is amd64-only and works by intercepting syscalls, which is exactly what
-emulation sits in the middle of. On Apple Silicon and in CI the router↔worker
-gRPC path, the executor framing and the planner are all exercisable; capturing a
-checkpoint and executing a function are not.
+gVisor is amd64-only and works by intercepting syscalls, which emulation
+interferes with. On Apple Silicon and in CI, the router-to-worker gRPC path, the
+executor framing, and the planner can be exercised, but capturing a checkpoint
+and executing a function cannot.
 
-## More
+## More information
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) - how to build and test each component, the
-  conventions, and what is deliberately not done
-- [SECURITY.md](SECURITY.md) - the trust boundaries, including why the client
-  unpickling cluster-supplied bytes is inherent rather than a defect
-- [LICENSE](LICENSE) - Apache-2.0
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to build and test each component, the
+  conventions, and what is deliberately not done.
+- [SECURITY.md](SECURITY.md): the trust boundaries, including why the client
+  unpickling cluster-supplied bytes is inherent and not a defect.
+- [LICENSE](LICENSE): Apache-2.0.

@@ -1,9 +1,14 @@
 # readie-executor
 
-The program that runs inside a checkpoint-restore sandbox. It pre-imports a
-planned set of modules, announces that it is worth checkpointing, and then
-serves execution requests from the worker over a unix socket: unpickle a call,
-make it, pickle the result back.
+The executor is the program that runs inside every checkpoint-restore sandbox.
+In capture mode, it pre-imports a planned set of modules and triggers the gVisor
+checkpoint. It then serves execution requests from the worker over a unix socket:
+it unpickles a call, runs it, and pickles the result back.
+
+For the protocol specification on the documentation site, see
+[Executor wire protocol](https://readie.org/docs/architecture/executor-protocol).
+For the procedure to change the protocol, see
+[Changing the executor protocol](https://readie.org/docs/contributing/changing-executor-protocol).
 
 ```sh
 make install   # sync the virtualenv from the lockfile
@@ -14,23 +19,35 @@ make help      # list every target
 
 ## Startup order
 
-The order is the design, not a detail:
+The order of startup is part of the design. A checkpoint freezes the process
+part-way through startup, so each step must run before or after that point for a
+specific reason.
 
 ```
 capture mode only:
-  preimport READIE_PREIMPORT   →  the reason a checkpoint is worth taking
+  preimport READIE_PREIMPORT       →  the reason a checkpoint is worth taking
   write to /proc/gvisor/checkpoint →  trigger gVisor checkpoint internally
+
+after a restore:
+  re-read the environment given to the new sandbox
+
+measure mode only: exit
 
 bind $EXECUTOR_DIR/executor.sock
 accept, serve, repeat
 ```
 
+The executor binds the socket after the checkpoint. A socket bound earlier would
+be part of the checkpoint image, and a restored sandbox would hold a socket
+attached to a worker that no longer exists.
+
 An ordinary worker does not enable capture mode, so its terminal stream contains
-only output from the called function and errors.
+only output from the called function and errors. If `EXECUTOR_DIR` is unset, the
+executor exits with code 2.
 
-## The wire protocol
+## Wire protocol
 
-Version 2. The worker dials; the executor is the server.
+The protocol is at version 2. The worker dials, and the executor is the server.
 
 ```
 message:   ([8-byte big-endian length][chunk])* [8 zero bytes]
@@ -38,69 +55,84 @@ message:   ([8-byte big-endian length][chunk])* [8 zero bytes]
 request:   one message, the cloudpickle of {func, args, kwargs, packages}
 response:  one message, the cloudpickle of a result envelope
 
-envelope = {"ok": True,  "value": <return value>}
-         | {"ok": False, "exc_type": str, "message": str, "traceback": str}
+envelope = {"ok": True,  "value": <return value>, "output": [str, ...]}
+         | {"ok": False, "exc_type": str, "message": str, "traceback": str,
+            "output": [str, ...]}
 ```
 
-``packages`` is optional and defaults to empty: PyPI requirement specs the
-executor installs with `uv pip install` before invoking `func`. It rides with
-the call itself rather than through a separate channel, so an older client
-that never sends it still decodes fine.
+`packages` is optional and defaults to empty. It holds PyPI requirement specs
+that the executor installs with `uv pip install` before it invokes `func`. The
+specs travel with the call instead of through a separate channel, so a client
+that never sends them still decodes correctly. `output` holds text captured from
+the function's stdout and stderr, plus the package install log.
 
-Framed per chunk rather than once per message so a sender can stream without
-knowing the total size. The worker relays request bytes straight from a gRPC
-stream and learns the length only when that stream ends; a single prefix would
-force it to buffer an entire payload - possibly hundreds of megabytes - purely
-to count it.
+A sender splits a message into chunks so that it can stream without knowing the
+total size. The worker relays request bytes directly from a gRPC stream and
+learns the length only when that stream ends. A single length prefix would force
+the worker to buffer the entire payload, which can be hundreds of megabytes, only
+to count it. Receivers check the limits before allocating memory: a chunk is at
+most 64 MiB and a message is at most 4 GiB.
 
 The Go counterpart is `worker/internal/executor`. The two are separate
-implementations of one format, and `tests/data/frames.golden.json` is generated
-here and decoded there, so they cannot drift apart silently. Regenerate it with
-`uv run python tests/generate_golden.py`.
+implementations of one format. The fixture `tests/data/frames.golden.json` is
+generated here and decoded there, so the implementations cannot drift apart
+silently. To regenerate the fixture, run:
 
-`protocol.py` is pure - it operates on a two-method `Reader`/`Writer` seam and
-opens nothing - so every framing case is a unit test with no socket: a frame
-delivered one byte at a time, a stream that ends mid-body, a length prefix large
-enough to exhaust memory.
+```sh
+uv run python tests/generate_golden.py
+```
 
-### What version 1 could not express
+`protocol.py` is pure. It operates on a two-method `Reader`/`Writer` seam and
+opens nothing, so every framing case is a unit test with no socket. The cases
+include a frame delivered one byte at a time, a stream that ends mid-body, and a
+length prefix large enough to exhaust memory.
 
-The previous format ended a request with the unframed literal bytes `EOF` and a
-response by closing the connection.
+### Failed calls
 
-- **A body could not contain its own terminator.** Pickle always ends with the
-  STOP opcode, so this never fired - luck, not design.
-- **A truncated response was indistinguishable from a short one.** An executor
-  killed mid-write was reported as a success.
-- **A raising function sent nothing at all.** Every remote exception surfaced as
-  an empty response, and the traceback had to be scraped out of captured stderr.
+An envelope with `ok: False` is deliberately not a worker failure. The sandbox
+ran, the interpreter is healthy, and the container remains reusable. The worker
+therefore reports success and keeps the container for reuse. Only the client
+turns the envelope into a `RemoteExecutionError`, which carries the traceback
+from the process that raised.
 
-`ok: False` is deliberately _not_ a worker failure. The sandbox ran, the
-interpreter is healthy, and the container is still reusable - so the worker
-reports success and pauses it for reuse. Only the client turns the envelope into
-a `RemoteExecutionError`, carrying the traceback from the process that raised.
+If the envelope itself cannot be pickled, for example because the return value is
+not picklable, the executor sends an `ok: False` envelope that describes the
+problem.
 
-A generation records `executor_protocol` in its manifest, and a worker refuses
-one whose version it does not implement rather than dialing an executor that
-will never send a terminator it recognises.
+### Version check
+
+A generation records `executor_protocol` in its manifest. A worker refuses a
+generation whose version it does not implement, instead of dialing an executor
+that never sends a terminator the worker recognizes. A manifest without the field
+counts as version 1.
+
+Version 1 used a literal `EOF` and a connection close. It could not distinguish
+a short message from a truncated one, and a function that raised sent nothing
+back. Version 2 fixes both.
 
 ## Configuration
 
-|                        |                                                                                                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EXECUTOR_DIR`         | **Required.** Directory to bind the socket in; set by the sandbox spec                                                                                                                          |
-| `READIE_PREIMPORT`     | Comma-separated modules to import before the checkpoint                                                                                                                                         |
-| `EXECUTOR_MODE`        | If set to `capture`, enables the offline pre-import, ready signal, and capture window; unset or set to `sandbox` in ordinary workers, while setting to setting to `measure` disables the server |
-| `EXECUTOR_CHUNK_SIZE`  | Read/write granularity, default 1 MiB                                                                                                                                                           |
-| `EXECUTOR_SOCKET_NAME` | Default `executor.sock`                                                                                                                                                                         |
+| Variable | Description |
+| --- | --- |
+| `EXECUTOR_DIR` | Required. Directory in which to bind the socket. The sandbox spec sets it. |
+| `READIE_PREIMPORT` | Comma-separated modules to import before the checkpoint. |
+| `EXECUTOR_MODE` | `capture` enables the offline pre-import and the checkpoint trigger. `measure` restores and then exits without starting the server. Unset, `sandbox`, or any unrecognized value selects ordinary serving, which is the default for workers. |
+| `EXECUTOR_CHUNK_SIZE` | Read/write granularity. Default 1 MiB. |
+| `EXECUTOR_SOCKET_NAME` | Socket file name. Default `executor.sock`. |
 
-A failed pre-import is reported and skipped rather than fatal. One bad name in a
-planned set should leave a checkpoint that is missing a module, not a sandbox
-that exited - and the pipeline can only tell those apart if this keeps going and
-says so.
+The executor serves one connection at a time, because a sandbox contains one
+interpreter and runs one call at a time.
+
+In capture mode, a module that fails to import is reported on stderr and the
+exception propagates, so the pre-import stops at the first failure and the
+executor does not reach the checkpoint.
 
 ## Trust
 
-This process runs arbitrary code by design; that is its entire job. Containment
-is gVisor, no network, and a read-only shared rootfs with a per-sandbox overlay.
-See [SECURITY.md](../SECURITY.md).
+The executor runs arbitrary code by design; that is its entire job. Containment
+comes from gVisor and from a shared rootfs that is never written, because each
+sandbox gets an in-memory overlay.
+
+The worker's `SANDBOX_NETWORK` setting defaults to `sandbox`, which gives the
+sandbox a routed network. Set it to `none` for network isolation. For the
+deployment posture, see [SECURITY.md](../SECURITY.md).

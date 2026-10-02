@@ -1,9 +1,8 @@
 """Installing packages with ``uv`` before a call runs.
 
-Every request restores a fresh, isolated container (warm reuse is currently
-disabled worker-side), so there is nothing to check an "already installed"
-package against -- this always shells out, even for a package the rootfs
-already carries.
+A request runs in a freshly restored container, or in a session's idle one
+when the worker reuses it. Either way this keeps no record of earlier installs,
+so it always shells out, even for a package the rootfs already carries.
 """
 
 from __future__ import annotations

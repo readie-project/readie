@@ -1,127 +1,131 @@
 # Security
 
-This is a research platform for running untrusted Python on shared
-infrastructure. Two of its trust boundaries are inherent to that job rather than
-defects, and are documented here so nobody mistakes them for oversights - and so
-nobody mistakes the boundaries that _are_ defects for design.
+Readie is a research platform for running untrusted Python on shared
+infrastructure. Two of its trust boundaries are inherent to that purpose and are
+not defects. They are documented here so that they are not mistaken for
+oversights, and so that the boundaries that are defects are not mistaken for
+design. The documentation site describes the same model in
+[Security model](https://readie.org/docs/architecture/security-model) and
+[Security](https://readie.org/docs/architecture/security).
 
 ## Reporting a vulnerability
 
-Open a private security advisory through GitHub's **Security → Report a
-vulnerability** on this repository. Please do not open a public issue for
-anything exploitable.
+Report a vulnerability privately through a GitHub security advisory on this
+repository: select **Security**, then **Report a vulnerability**. Do not open a
+public issue for anything exploitable.
 
-Include what you did, what happened, and which component. A proof of concept
-helps; a working exploit is not required.
+Include what you did, what happened, and which component is affected. A proof of
+concept helps, but a working exploit is not required.
 
 ## The trust model
 
-```
-user's process          router            worker              sandbox
-┌────────────┐        ┌────────┐        ┌────────┐        ┌────────────┐
-│ readie-client│──gRPC─▶│ router │──gRPC─▶│ worker │──uds──▶│  executor  │
-│            │◀───────│        │◀───────│        │◀───────│ user code  │
-└────────────┘        └────────┘        └────────┘        └────────────┘
-      ▲                                                          │
-      └──────────── boundary 1 ──────────────────────────────────┘
-                                          └─── boundary 2 ───────┘
+```text
+user's process            router            worker              sandbox
+┌──────────────┐        ┌────────┐        ┌────────┐        ┌────────────┐
+│readie-client │──gRPC─▶│ router │──gRPC─▶│ worker │──uds──▶│  executor  │
+│              │◀───────│        │◀───────│        │◀───────│ user code  │
+└──────────────┘        └────────┘        └────────┘        └────────────┘
+       ▲                                                           │
+       └─────────────────────── boundary 1 ────────────────────────┘
+                                                └── boundary 2 ────┘
 ```
 
-### Boundary 1 - the client unpickles what the cluster sends it
+### Boundary 1: the client unpickles what the cluster sends
 
 `readie.CloudpickleCodec.decode_result` calls `cloudpickle.loads` on bytes that
 arrived over the wire. Unpickling executes arbitrary code by design. A
-compromised router or worker can therefore run code **in the user's own
-process**, with that user's filesystem and credentials.
+compromised router or worker can therefore run code in the user's own process,
+with that user's filesystem and credentials.
 
-This cannot be fixed by validating the payload - it is what shipping live Python
-objects means. It is confined rather than hidden: `ResultCodec`
+Validating the payload cannot prevent this, because returning live Python objects
+is the feature. The risk is confined to one place. `ResultCodec`
 (`pkg/src/readie/codec.py`) is a `Protocol`, so a deployment that cannot accept
-this boundary can supply a codec restricted to a safe format and lose only the
-ability to return arbitrary objects.
+this boundary can supply a codec restricted to a safe format. The cost is that the
+client can no longer return arbitrary objects.
 
-**Only point a client at a router you trust as much as you trust your own
-laptop.**
+Point a client only at a router that you trust as much as the machine the client
+runs on.
 
-### Boundary 2 - the sandbox runs arbitrary user code
+### Boundary 2: the sandbox runs arbitrary user code
 
-That is the product. Containment is gVisor: the executor runs under `runsc`,
-which intercepts syscalls in userspace rather than passing them to the host
-kernel. Layered on top:
+Running arbitrary user code is the product. Containment is gVisor: the executor
+runs under `runsc`, which handles syscalls in userspace and does not pass them to
+the host kernel. The worker adds the following controls:
 
-- **Network access by default, for `@remote(packages=...)`.** The worker
-  passes `SANDBOX_NETWORK` straight through to `runsc --network`, defaulting
-  to `sandbox` when unset - a deployment gets real, routed network access out
-  of the box, because installing packages at request time (`uv pip install`
-  reaching PyPI) is the common case this project is built around. Set
-  `SANDBOX_NETWORK=none` explicitly for the strict, network-isolated posture
-  this section otherwise describes; that trade is a deliberate opt-out, not
-  the default. Whatever value is in effect includes whatever supply-chain risk
-  an unpinned or typosquatted package name carries when packages are
-  installed. Prefer `sandbox` over `host` when network access is needed at all: `host`
-  shares this worker's own network namespace directly with sandboxed code,
-  where `sandbox` keeps gVisor's own netstack isolation. Setting
-  `SANDBOX_NETWORK=sandbox` is itself what makes the worker provision a real
-  network namespace for it to join (see `worker/README.md`'s "Sandbox
-  networking") - there is no separate opt-in beyond that value, so choosing
-  `sandbox` at all means real, routed network access, not a quietly
-  loopback-only one. Provisioning excludes the worker's own Docker-network
-  subnet and link-local (`169.254.0.0/16`, where cloud metadata endpoints
-  live) from a sandbox's egress - real network access is for reaching PyPI,
-  not a path back to the router (unauthenticated by default, see below) or
-  sibling containers.
-- **A read-only shared rootfs** with a per-sandbox copy-on-write overlay, so one
+- Network access is on by default, for `@remote(packages=...)`. The worker passes
+  `SANDBOX_NETWORK` straight through to `runsc --network` and defaults to
+  `sandbox` when the variable is unset. A deployment therefore gets real, routed
+  network access by default, because installing packages at request time (`uv pip
+  install` reaching PyPI) is the common case this project is built around. Set
+  `SANDBOX_NETWORK=none` explicitly for the strict, network-isolated posture;
+  `none` is a deliberate opt-out and not the default. In every mode, packages
+  installed at request time carry the supply-chain risk of an unpinned or
+  mistyped package name. When network access is needed, prefer `sandbox` over
+  `host`: `host` shares the worker's own network namespace with sandboxed code,
+  whereas `sandbox` keeps gVisor's own netstack isolation. Setting
+  `SANDBOX_NETWORK=sandbox` is what makes the worker provision a real network
+  namespace for the sandbox to join (see "Sandbox networking" in
+  [`worker/README.md`](worker/README.md)). There is no separate opt-in, so
+  choosing `sandbox` means real, routed network access and not a loopback-only
+  network. Provisioning excludes the worker's own Docker-network subnet and
+  link-local addresses (`169.254.0.0/16`, where cloud metadata endpoints live)
+  from a sandbox's egress. The network access exists to reach PyPI, and it is not
+  a path back to the router (unauthenticated by default, see below) or to sibling
+  containers.
+- A read-only shared rootfs with a per-sandbox copy-on-write overlay, so that one
   execution cannot alter what the next one starts from. The worker rejects an
-  `all:` overlay (it would hide the executor's socket) and any `:self` overlay
-  (it would write into the tree every sandbox shares).
-- **CPU, memory and PID limits** per container, from the router's estimate.
-- **One socket, one interpreter, one execution at a time**, so two users' code is
-  never co-resident in one address space.
+  `all:` overlay, because it would hide the executor's socket, and any `:self`
+  overlay, because it would write into the tree that every sandbox shares.
+- CPU, memory, and PID limits per container. The memory limit comes from the
+  request's resource budget. The CPU limit (half a core) and the PID limit (100)
+  are fixed values in the worker.
+- One socket, one interpreter, and one execution at a time, so that the code of
+  two users is never co-resident in one address space.
 
 The residual risk is a gVisor escape. `runsc` is pinned by release in one place,
-`pipeline/Dockerfile`'s `runsc` stage: the capture tool copies it from there, and
-the worker inherits it through `readie-worker-base`. Floating that pin would also
-silently invalidate every checkpoint, since the save format is not stable across
-releases. Track
+the `runsc` stage of `pipeline/Dockerfile`. The capture tool copies it from there,
+and the worker inherits it through `readie-worker-base`. Floating that pin would
+also silently invalidate every checkpoint, because the save format is not stable
+across releases. Track
 [gVisor's advisories](https://github.com/google/gvisor/security/advisories) and
-bump it together with regenerating the checkpoints - which also means a worker
-rebuilt on a _new_ base picks up a patched runsc, while `make worker-image` alone
-does not.
+update the pin together with regenerating the checkpoints. A worker rebuilt on a
+new base picks up a patched `runsc`, whereas `make worker-image` alone does not.
 
 ## Deployment expectations
 
-By default the router and worker speak **plaintext gRPC with no authentication** -
-opt-in security keeps local runs, tests and the compose healthchecks working
-without certs. Configure both before exposing the router:
+By default, the router and worker speak plaintext gRPC with no authentication.
+Security is opt-in so that local runs, tests, and the compose healthchecks work
+without certificates. Configure both controls before exposing the router:
 
-- **Authorization (bearer token).** Set the router's `AUTH_TOKEN` and give the
-  same token to clients (`READIE_AUTH_TOKEN`). The router
-  then requires it on **`ProxyService`** - the only path that runs code - so
-  reaching the port is no longer enough to execute on the cluster. The check is a
-  server interceptor over a pluggable `Authenticator` (`grpcserver/auth.py`), so a
-  deployment can swap the shared token for JWT or per-tenant validation. Health,
-  reflection and `RegistryService` (workers) stay exempt.
-- **Transport (TLS).** Handled by NGINX (see `nginx/README.md`).
+- Authorization (bearer token). Set the router's `AUTH_TOKEN` and give the same
+  token to clients as `READIE_AUTH_TOKEN`. The router then requires the token on
+  `ProxyService`, the only path that runs code, so reaching the port is no longer
+  enough to execute code on the cluster. The check is a server interceptor over a
+  pluggable `Authenticator` (`grpcserver/auth.py`), so a deployment can replace the
+  shared token with JWT or per-tenant validation. Health checks, reflection, and
+  `RegistryService` (workers) are exempt.
+- Transport (TLS). NGINX terminates TLS. See [`nginx/README.md`](nginx/README.md).
 
-What is **not** secured, by design (the "external only" boundary): the
-router→worker call (`ExecutionService`) and the worker's own server stay
-plaintext with no auth. Run the router<->worker mesh on a private network, and do
-not expose the worker's port. Do not expose the router's port to anything you
-would not hand a shell to.
+The router-to-worker call (`ExecutionService`) and the worker's own server are not
+secured, by design (the "external only" boundary). They remain plaintext with no
+authentication. Run the router-to-worker mesh on a private network, and do not
+expose the worker's port. Do not expose the router's port to anyone you would not
+give a shell to.
 
 ## Non-vulnerabilities
 
-- **A remote function reading its own container's filesystem.** It is a sandbox
-  with a shared read-only base and a private overlay; that is the intended
-  surface.
-- **Resource exhaustion by a submitted function.** Bounded by the container
-  limits and the execution deadline, both configurable. Denial of service by an
-  authenticated user is an operational concern, not a vulnerability.
-- **Reading `pipeline/data/**/*.json`.** Generated corpus data, not secrets.
+- A remote function reading its own container's filesystem. The sandbox has a
+  shared read-only base and a private overlay, and this is the intended surface.
+- Resource exhaustion by a submitted function. The container limits and the
+  execution deadline bound it, and both are configurable. Denial of service by an
+  authenticated user is an operational concern and not a vulnerability.
+- Reading `pipeline/data/**/*.json`. This is generated corpus data and contains no
+  secrets.
 
 ## Secrets
 
-`pipeline` reads `AZURE_API_KEY` and `AZURE_ENDPOINT` for corpus generation. They
-are read from the environment or a `.env` file, both git-ignored, and are never
-written to the corpus, the manifests, or a log line. Corpus generation is an
-offline authoring step and is not part of the serving path.
+`pipeline` reads `AZURE_API_KEY` and `AZURE_ENDPOINT` for corpus generation. It
+reads them from the environment or from a `.env` file, both of which are
+git-ignored, and never writes them to the corpus, the manifests, or a log line.
+Corpus generation is an offline authoring step and is not part of the serving
+path.

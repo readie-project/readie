@@ -45,7 +45,7 @@ that actually produced it.
 
 Note what the envelope deliberately does *not* imply. ``ok: False`` is not a
 worker failure - the sandbox ran, the interpreter is healthy, and the container
-is still reusable. The worker keeps reporting success and pauses it for reuse;
+is still reusable. The worker keeps reporting success and keeps it for reuse;
 only the client turns the envelope into an exception.
 """
 
