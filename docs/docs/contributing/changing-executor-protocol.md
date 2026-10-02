@@ -4,7 +4,7 @@ sidebar_position: 4
 description: How the worker and executor frame bytes over a socket, and the files to update together when that format changes.
 ---
 
-The worker (Go) and the [executor](/docs/guides/glossary) (Python) communicate over a unix socket inside each sandbox. The framing format is implemented once in each language, so a change must land in both implementations at the same time. This page applies only to changes in how requests or results are framed on that socket. For gRPC messages, see [Change protos](/docs/contributing/changing-protos).
+The worker (Go) and the [executor](/docs/concepts/glossary) (Python) communicate over a unix socket inside each sandbox. The framing format is implemented once in each language, so a change must land in both implementations at the same time. This page applies only to changes in how requests or results are framed on that socket. For gRPC messages, see [Change protos](/docs/contributing/changing-protos).
 
 ## Current format
 

@@ -1,6 +1,6 @@
 ---
 title: Errors
-sidebar_position: 2
+sidebar_position: 3
 description: Exceptions raised by the Readie client, with the condition that triggers each and the recommended action.
 ---
 
@@ -54,4 +54,4 @@ An `ExecutionError` indicates that the call ran but produced no usable result. T
 
 - [Sessions and errors](/docs/getting-started/sessions-and-errors)
 - [Troubleshooting](/docs/guides/troubleshooting)
-- [SDK reference](/docs/reference/sdk)
+- [SDK reference](/docs/guides/sdk)

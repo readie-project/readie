@@ -25,7 +25,7 @@ Solid lines show the path of one call. Dotted lines show files produced ahead of
 
 The client lives in `pkg/` and is imported as `readie`. It is the only component that users install. A user decorates a function with `@remote`. When the function is called, the client pickles the function and its arguments with cloudpickle, a library that serializes Python functions. It splits the bytes into 1 MiB chunks and streams them to the router with the `ProxyService` call.
 
-The client also sends hints: the modules the function uses, memory and GPU limits, and a session ID when one is used. It reassembles the reply, unpickles it, and returns the value or raises the remote error. See [SDK reference](/docs/reference/sdk).
+The client also sends hints: the modules the function uses, memory and GPU limits, and a session ID when one is used. It reassembles the reply, unpickles it, and returns the value or raises the remote error. See [SDK reference](/docs/guides/sdk).
 
 ## NGINX
 

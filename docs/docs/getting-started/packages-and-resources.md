@@ -83,7 +83,7 @@ For GPU memory, the router uses the budget when it chooses a worker. This page d
 
 ## Pickling limits
 
-The function, its arguments, and its return value cross the network as pickles created by [cloudpickle](/docs/guides/glossary). Most Python objects serialize, with the following limits.
+The function, its arguments, and its return value cross the network as pickles created by [cloudpickle](/docs/concepts/glossary). Most Python objects serialize, with the following limits.
 
 Objects that serialize include plain functions and lambdas, classes, closures over ordinary values, NumPy arrays, pandas frames, and dataclasses.
 

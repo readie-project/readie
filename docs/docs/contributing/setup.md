@@ -86,7 +86,7 @@ The common verbs are `install`, `fmt`, `lint`, `type`, and `test`. The `fmt` ver
 
 ## What runs without a gVisor host
 
-[gVisor](/docs/guides/glossary) (`runsc`) runs only on Linux on amd64. It does not work on Apple Silicon or on CI runners that emulate another CPU.
+[gVisor](/docs/concepts/glossary) (`runsc`) runs only on Linux on amd64. It does not work on Apple Silicon or on CI runners that emulate another CPU.
 
 | Command | gVisor host required |
 | --- | --- |

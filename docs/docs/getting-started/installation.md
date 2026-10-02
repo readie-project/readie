@@ -11,7 +11,7 @@ The Readie client is a Python package that sends functions decorated with `@remo
 - Python 3.12. The client requires this minor version.
 - A package installer: `pip` or `uv`.
 
-The client requires Python 3.12 because the function is serialized locally with [cloudpickle](/docs/guides/glossary) and unpickled by the Python interpreter inside the sandbox, which runs Python 3.12. Pickled bytecode is portable only within one minor version of Python.
+The client requires Python 3.12 because the function is serialized locally with [cloudpickle](/docs/concepts/glossary) and unpickled by the Python interpreter inside the sandbox, which runs Python 3.12. Pickled bytecode is portable only within one minor version of Python.
 
 The client checks the interpreter version when it creates a `Client`, which `@remote` does on first use. On any other minor version, the check fails with the following error:
 
@@ -43,7 +43,7 @@ The package metadata also declares `requires-python = "~=3.12.0"`, so `pip` refu
    export READIE_AUTH_TOKEN="<your-token>"
    ```
 
-   The client sends the token as an `authorization: Bearer ...` header on every call. If the variable is empty, the client sends no header. A wrong or missing token raises `PermissionDeniedError`. See [errors](/docs/reference/errors).
+   The client sends the token as an `authorization: Bearer ...` header on every call. If the variable is empty, the client sends no header. A wrong or missing token raises `PermissionDeniedError`. See [errors](/docs/guides/errors).
 
    The client reads `READIE_AUTH_TOKEN` when its `Settings` object is created. The value cannot be passed to `configure`.
 
@@ -55,7 +55,7 @@ The package metadata also declares `requires-python = "~=3.12.0"`, so `pip` refu
    readie.configure(timeout=120.0, stream_logs=False)
    ```
 
-   `configure` accepts `timeout`, `chunk_size`, and `stream_logs`. See the [SDK reference](/docs/reference/sdk) for each parameter.
+   `configure` accepts `timeout`, `chunk_size`, and `stream_logs`. See the [SDK reference](/docs/guides/sdk) for each parameter.
 
 ## Verify
 
@@ -88,4 +88,4 @@ The token is missing or wrong. Set `READIE_AUTH_TOKEN` before the client is crea
 ## What's next
 
 - [Quickstart](/docs/getting-started/quickstart): run a first function remotely.
-- [SDK reference](/docs/reference/sdk): all client settings and parameters.
+- [SDK reference](/docs/guides/sdk): all client settings and parameters.

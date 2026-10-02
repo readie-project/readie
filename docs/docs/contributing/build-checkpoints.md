@@ -4,7 +4,7 @@ sidebar_position: 8
 description: Measure packages, capture checkpoints, and build a worker image that contains them.
 ---
 
-Use this procedure to build checkpoints and a worker image from them. For the internals of the pipeline, see [Building checkpoints](/docs/architecture/building-checkpoints). The [glossary](/docs/guides/glossary) defines the terms used here.
+Use this procedure to build checkpoints and a worker image from them. For the internals of the pipeline, see [Building checkpoints](/docs/architecture/building-checkpoints). The [glossary](/docs/concepts/glossary) defines the terms used here.
 
 A worker without checkpoints still works, but every start is a cold start. Build checkpoints to obtain fast restores, and rebuild them when the package set, the base image, the gVisor version, or the executor changes.
 

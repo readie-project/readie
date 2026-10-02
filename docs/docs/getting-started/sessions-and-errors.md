@@ -46,7 +46,7 @@ For the internals, see [Sessions](/docs/concepts/sessions).
 
 ## Exceptions
 
-Every SDK exception is a `ReadieError`, so `except readie.ReadieError` catches all of them. For the complete table, see the [errors reference](/docs/reference/errors). The following sections cover the most common exceptions.
+Every SDK exception is a `ReadieError`, so `except readie.ReadieError` catches all of them. For the complete table, see the [errors reference](/docs/guides/errors). The following sections cover the most common exceptions.
 
 ### Function failures
 
@@ -94,5 +94,5 @@ If a call is interrupted with Ctrl-C, or the asyncio task that awaits it is canc
 ## What's next
 
 - [Troubleshooting](/docs/guides/troubleshooting): match an error message to its cause and fix.
-- [Errors reference](/docs/reference/errors): every exception class.
+- [Errors reference](/docs/guides/errors): every exception class.
 - [Sessions](/docs/concepts/sessions): how sessions work inside the cluster.

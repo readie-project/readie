@@ -77,7 +77,7 @@ An empty payload is encoded as the last line only: eight zero bytes.
 
 ### Request
 
-A request is one message that contains a [cloudpickle](/docs/guides/glossary) of a dictionary:
+A request is one message that contains a [cloudpickle](/docs/concepts/glossary) of a dictionary:
 
 ```python
 {"func": <callable>, "args": (...), "kwargs": {...}, "packages": ["..."]}
@@ -96,7 +96,7 @@ A response is one message that contains a cloudpickle of an envelope:
 
 `output` is a list of text captured from the function's stdout and stderr, plus the package install log. If the envelope itself cannot be pickled, for example because the return value is not picklable, the executor sends an `ok: False` envelope that describes the problem instead of closing the connection silently.
 
-An `ok: False` envelope is not a worker failure. The sandbox worked and remains reusable, the worker reports success, and the client library turns the envelope into an exception. The worker never decodes the envelope. It passes the bytes to the router, and the [client](/docs/reference/sdk) unpickles them.
+An `ok: False` envelope is not a worker failure. The sandbox worked and remains reusable, the worker reports success, and the client library turns the envelope into an exception. The worker never decodes the envelope. It passes the bytes to the router, and the [client](/docs/guides/sdk) unpickles them.
 
 ## Version checking
 

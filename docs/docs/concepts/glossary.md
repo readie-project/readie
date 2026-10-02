@@ -1,6 +1,6 @@
 ---
 title: Glossary
-sidebar_position: 3
+sidebar_position: 8
 description: Definitions of the terms used across the Readie documentation, in alphabetical order.
 ---
 
@@ -152,4 +152,4 @@ A Go service that starts sandboxes, restores checkpoints, communicates with the 
 
 ### `@remote`
 
-A decorator from the `readie` package that marks a function to run on a Readie cluster instead of locally. It accepts options for memory, GPU, packages, and more. See the [SDK reference](/docs/reference/sdk) and the [Quickstart](/docs/getting-started/quickstart).
+A decorator from the `readie` package that marks a function to run on a Readie cluster instead of locally. It accepts options for memory, GPU, packages, and more. See the [SDK reference](/docs/guides/sdk) and the [Quickstart](/docs/getting-started/quickstart).

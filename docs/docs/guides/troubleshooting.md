@@ -1,10 +1,10 @@
 ---
 title: Troubleshooting
-sidebar_position: 2
+sidebar_position: 4
 description: Match an error raised by the Readie client to its cause and fix.
 ---
 
-Find the error in the following table. Each row links to a longer explanation. Every exception class is listed in the [errors reference](/docs/reference/errors).
+Find the error in the following table. Each row links to a longer explanation. Every exception class is listed in the [errors reference](/docs/guides/errors).
 
 | Symptom | Likely cause | Section |
 | --- | --- | --- |

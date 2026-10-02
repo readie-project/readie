@@ -1,35 +1,657 @@
-/* Readie theme: a calm teal on neutral grounds, readable in light and dark. */
 
+/*
+ * Readie design tokens.
+ *
+ * Calm, low-glare palette. Light mode is a soft off-white with slate ink; dark mode is
+ * a lifted slate, not black. One muted blue-teal accent carries links, buttons and the
+ * restore color. Amber (time spent on imports) is the only other hue, kept desaturated.
+ */
 :root {
-  --ifm-color-primary: #0f766e;
-  --ifm-color-primary-dark: #0d6b64;
-  --ifm-color-primary-darker: #0d655e;
-  --ifm-color-primary-darkest: #0a524c;
-  --ifm-color-primary-light: #118279;
-  --ifm-color-primary-lighter: #128880;
-  --ifm-color-primary-lightest: #16a89d;
-  --ifm-code-font-size: 92%;
-  --ifm-line-height-base: 1.65;
-  --docusaurus-highlighted-code-line-bg: rgba(15, 118, 110, 0.12);
+  /* Palette */
+  --rd-bg: #fafbfc;
+  --rd-surface: #ffffff;
+  --rd-sunken: #f1f4f6;
+  --rd-band: #f3f5f7;
+  --rd-line: #e1e6ea;
+  --rd-ink: #2a3138;
+  --rd-ink-2: #56626c;
+  --rd-accent: #25788a;
+  --rd-accent-strong: #1b5f6e;
+  --rd-accent-tint: rgba(37, 120, 138, 0.1);
+  --rd-on-accent: #ffffff;
+  --rd-time: #e6bf7a;
+  --rd-time-ink: #7a5416;
+  --rd-time-tint: rgba(230, 191, 122, 0.22);
+  --rd-muted-fill: #a4aeb5;
+
+  /* Type: the Docusaurus defaults (Infima system font stacks), which read well at length. */
+  --rd-font-display: var(--ifm-font-family-base);
+  --rd-font-body: var(--ifm-font-family-base);
+  --rd-font-mono: var(--ifm-font-family-monospace);
+
+  /* Infima bindings */
+  --ifm-color-primary: var(--rd-accent);
+  --ifm-color-primary-dark: #227083;
+  --ifm-color-primary-darker: #206c7e;
+  --ifm-color-primary-darkest: #1a5967;
+  --ifm-color-primary-light: #288197;
+  --ifm-color-primary-lighter: #2a869c;
+  --ifm-color-primary-lightest: #309ab4;
+  --ifm-background-color: var(--rd-bg);
+  --ifm-background-surface-color: var(--rd-surface);
+  --ifm-font-color-base: var(--rd-ink);
+  --ifm-font-color-secondary: var(--rd-ink-2);
+  --ifm-heading-color: var(--rd-ink);
+  --ifm-link-color: var(--rd-accent);
+  --ifm-link-hover-color: var(--rd-accent-strong);
+  --ifm-toc-border-color: var(--rd-line);
+  --ifm-color-emphasis-200: var(--rd-line);
+  --ifm-color-emphasis-300: var(--rd-line);
+  --ifm-font-size-base: 100%;
+  --ifm-line-height-base: 1.7;
+  --ifm-code-font-size: 88%;
+  --ifm-global-radius: 12px;
+  --ifm-code-border-radius: 6px;
+  --ifm-navbar-height: 3.75rem;
+  --ifm-navbar-shadow: none;
+  --ifm-navbar-background-color: transparent;
+  --ifm-navbar-link-hover-color: var(--rd-ink);
+  --ifm-menu-color: var(--rd-ink);
+  --ifm-menu-color-active: var(--rd-accent);
+  --ifm-menu-color-background-active: var(--rd-accent-tint);
+  --ifm-menu-color-background-hover: var(--rd-sunken);
+  --ifm-table-stripe-background: transparent;
+  --ifm-table-border-color: var(--rd-line);
+  --ifm-table-head-background: var(--rd-sunken);
+  --ifm-table-cell-padding: 0.55rem 0.8rem;
+  --ifm-hr-border-color: var(--rd-line);
+  --ifm-pre-background: var(--rd-sunken);
+  --docusaurus-highlighted-code-line-bg: var(--rd-accent-tint);
 }
 
-[data-theme='dark'] {
-  --ifm-color-primary: #2dd4bf;
-  --ifm-color-primary-dark: #1fcdb7;
-  --ifm-color-primary-darker: #1dc2ad;
-  --ifm-color-primary-darkest: #18a08e;
-  --ifm-color-primary-light: #4adbc8;
-  --ifm-color-primary-lighter: #58ddcc;
-  --ifm-color-primary-lightest: #7ee6d8;
-  --docusaurus-highlighted-code-line-bg: rgba(45, 212, 191, 0.15);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --rd-bg: #20262b;
+    --rd-surface: #272e34;
+    --rd-sunken: #181d21;
+    --rd-band: #1c2227;
+    --rd-line: #353e46;
+    --rd-ink: #e3e7ea;
+    --rd-ink-2: #a3aeb7;
+    --rd-accent: #62b4c6;
+    --rd-accent-strong: #8ccbd9;
+    --rd-accent-tint: rgba(98, 180, 198, 0.14);
+    --rd-on-accent: #11222a;
+    --rd-time: #d6a95e;
+    --rd-time-ink: #e8c48a;
+    --rd-time-tint: rgba(214, 169, 94, 0.18);
+    --rd-muted-fill: #6d7a85;
+    --ifm-color-primary-dark: #4ea9bd;
+    --ifm-color-primary-darker: #45a3b8;
+    --ifm-color-primary-darkest: #378a9d;
+    --ifm-color-primary-light: #78bfd0;
+    --ifm-color-primary-lighter: #86c6d5;
+    --ifm-color-primary-lightest: #a3d5e0;
+  }
 }
 
-.navbar__title {
-  letter-spacing: 0.04em;
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --rd-bg: #20262b;
+  --rd-surface: #272e34;
+  --rd-sunken: #181d21;
+  --rd-band: #1c2227;
+  --rd-line: #353e46;
+  --rd-ink: #e3e7ea;
+  --rd-ink-2: #a3aeb7;
+  --rd-accent: #62b4c6;
+  --rd-accent-strong: #8ccbd9;
+  --rd-accent-tint: rgba(98, 180, 198, 0.14);
+  --rd-on-accent: #11222a;
+  --rd-time: #d6a95e;
+  --rd-time-ink: #e8c48a;
+  --rd-time-tint: rgba(214, 169, 94, 0.18);
+  --rd-muted-fill: #6d7a85;
+  --ifm-color-primary-dark: #4ea9bd;
+  --ifm-color-primary-darker: #45a3b8;
+  --ifm-color-primary-darkest: #378a9d;
+  --ifm-color-primary-light: #78bfd0;
+  --ifm-color-primary-lighter: #86c6d5;
+  --ifm-color-primary-lightest: #a3d5e0;
 }
 
-/* Wide diagrams and tables scroll inside their own box, never the page. */
+html,
+body {
+  background: var(--rd-bg);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------------------------------------------ Headings */
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--rd-font-display);
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+.markdown h1:first-child {
+  font-size: 2.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.markdown h2 {
+  font-size: 1.75rem;
+  margin-top: 3rem;
+}
+
+.markdown h3 {
+  font-size: 1.2rem;
+  margin-top: 1.9rem;
+}
+
+/* The lead paragraph states what the page is; give it a little more air. */
+.markdown > header + p {
+  font-size: 1.1rem;
+  line-height: 1.65;
+}
+
+/* ------------------------------------------------------------------- Content */
+
+.markdown a:not(.button):not(.hash-link) {
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in srgb, var(--rd-accent) 40%, transparent);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.markdown a:not(.button):not(.hash-link):hover {
+  text-decoration-color: currentColor;
+}
+
+/* Inline code only: block code keeps the theme's own padding. */
+:not(pre) > code {
+  font-family: var(--rd-font-mono);
+  background: var(--rd-sunken);
+  border: 1px solid var(--rd-line);
+  color: var(--rd-ink);
+  padding: 0.08em 0.38em;
+}
+
+pre code {
+  font-family: var(--rd-font-mono);
+}
+
 .markdown table {
   display: block;
   overflow-x: auto;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--rd-line);
+  border-radius: 16px;
+  font-size: 0.93rem;
+}
+
+.markdown table th {
+  font-family: var(--rd-font-display);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rd-ink-2);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.markdown table th,
+.markdown table td {
+  border: 0;
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.markdown table tr:last-child td {
+  border-bottom: 0;
+}
+
+.markdown table tr {
+  background: transparent;
+}
+
+[class*='codeBlockContainer'] {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.admonition {
+  border-radius: 16px;
+  box-shadow: none;
+  border: 0;
+  padding: 1rem 1.25rem;
+  background: var(--rd-sunken);
+}
+
+.alert--info,
+.alert--secondary,
+.alert--success {
+  --ifm-alert-background-color: var(--rd-accent-tint);
+}
+
+.alert--warning,
+.alert--danger {
+  --ifm-alert-background-color: var(--rd-time-tint);
+}
+
+/* ------------------------------------------------------------------- Navbar */
+
+.navbar {
+  background: color-mix(in srgb, var(--rd-bg) 84%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.navbar__brand {
+  margin-right: 1.6rem;
+}
+
+.navbar__logo {
+  height: 1.7rem;
+}
+
+.navbar__title {
+  font-family: var(--rd-font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--rd-ink);
+}
+
+.navbar__link {
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--rd-ink-2);
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+}
+
+.navbar__link:hover {
+  color: var(--rd-ink);
+  background: var(--rd-sunken);
+}
+
+.navbar__link--active {
+  color: var(--rd-accent);
+  font-weight: 600;
+  background: var(--rd-accent-tint);
+}
+
+.navbar__items--right {
+  flex: 1;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.navbar__link {
+  border-radius: 999px;
+}
+
+.navbar__link--active {
+  border-radius: 999px;
+}
+
+/* Icon-only GitHub link. */
+.navbar-github {
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navbar-github::before {
+  content: '';
+  width: 1.2rem;
+  height: 1.2rem;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.1c-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .5Z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.1c-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .5Z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+.navbar-github svg {
+  display: none;
+}
+
+/* Search box (docusaurus-search-local). */
+.navbar__search-input {
+  background-color: var(--rd-sunken);
+  border: 0;
+  border-radius: 999px;
+  height: 2.5rem;
+  color: var(--rd-ink);
+  font-family: var(--rd-font-body);
+  font-size: 0.88rem;
+}
+
+.navbar__search-input::placeholder {
+  color: var(--rd-ink-2);
+}
+
+/* ------------------------------------------------------------------ Sidebar */
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--rd-line) !important;
+}
+
+.menu {
+  padding: 1.1rem 0.9rem !important;
+}
+
+.menu__link {
+  font-size: 0.92rem;
+  font-weight: 500;
+  border-radius: 10px;
+  padding: 0.5rem 0.8rem;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+}
+
+.table-of-contents {
+  font-size: 0.84rem;
+  border-left: 1px solid var(--rd-line);
+}
+
+.table-of-contents__link--active {
+  color: var(--rd-accent);
+  font-weight: 600;
+}
+
+.breadcrumbs__link {
+  background: transparent;
+  color: var(--rd-accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 0.25rem;
+}
+
+.breadcrumbs__item:first-child {
+  display: none;
+}
+
+.breadcrumbs__item--active .breadcrumbs__link {
+  background: transparent;
+  color: var(--rd-ink-2);
+}
+
+.pagination-nav__link {
+  border: 1px solid var(--rd-line);
+  border-radius: var(--ifm-global-radius);
+  background: var(--rd-surface);
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--rd-accent);
+}
+
+.pagination-nav__label {
+  font-family: var(--rd-font-display);
+}
+
+/* ------------------------------------------------------------------ Buttons */
+
+.button {
+  border-radius: 999px;
+  padding: 0.6rem 1.5rem;
+}
+
+.button--primary {
+  background: var(--rd-accent);
+  border-color: var(--rd-accent);
+  color: var(--rd-on-accent);
+  font-family: var(--rd-font-display);
+  font-weight: 700;
+}
+
+.button--primary:hover {
+  background: var(--rd-accent-strong);
+  border-color: var(--rd-accent-strong);
+  color: var(--rd-on-accent);
+}
+
+.button--secondary {
+  background: transparent;
+  border: 1px solid var(--rd-ink-2);
+  color: var(--rd-ink);
+  font-family: var(--rd-font-display);
+  font-weight: 700;
+}
+
+.button--secondary:hover {
+  background: var(--rd-sunken);
+  border-color: var(--rd-ink-2);
+  color: var(--rd-ink);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--rd-accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ Diagrams */
+
+/* Mermaid computes its own colors; map its SVG parts onto the site tokens so the
+   diagrams follow the light and dark themes. */
+.docusaurus-mermaid-container svg .node rect,
+.docusaurus-mermaid-container svg .node polygon,
+.docusaurus-mermaid-container svg .node circle,
+.docusaurus-mermaid-container svg .node ellipse,
+.docusaurus-mermaid-container svg .node path {
+  fill: var(--rd-surface) !important;
+  stroke: var(--rd-ink-2) !important;
+  stroke-width: 1px !important;
+}
+
+.docusaurus-mermaid-container svg .cluster rect {
+  fill: var(--rd-sunken) !important;
+  stroke: var(--rd-line) !important;
+}
+
+.docusaurus-mermaid-container svg .nodeLabel,
+.docusaurus-mermaid-container svg .label,
+.docusaurus-mermaid-container svg .cluster-label,
+.docusaurus-mermaid-container svg .cluster-label span,
+.docusaurus-mermaid-container svg .edgeLabel {
+  color: var(--rd-ink) !important;
+  fill: var(--rd-ink) !important;
+}
+
+.docusaurus-mermaid-container svg .edgeLabel,
+.docusaurus-mermaid-container svg .edgeLabel rect,
+.docusaurus-mermaid-container svg .labelBkg {
+  background-color: var(--rd-bg) !important;
+  fill: var(--rd-bg) !important;
+}
+
+.docusaurus-mermaid-container svg .flowchart-link,
+.docusaurus-mermaid-container svg .edgePath path,
+.docusaurus-mermaid-container svg path.path {
+  stroke: var(--rd-ink-2) !important;
+}
+
+.docusaurus-mermaid-container svg marker path,
+.docusaurus-mermaid-container svg .arrowheadPath {
+  fill: var(--rd-ink-2) !important;
+  stroke: var(--rd-ink-2) !important;
+}
+
+/* Sequence diagrams. */
+.docusaurus-mermaid-container svg rect.actor {
+  fill: var(--rd-surface) !important;
+  stroke: var(--rd-ink-2) !important;
+}
+
+.docusaurus-mermaid-container svg text.actor,
+.docusaurus-mermaid-container svg text.actor > tspan,
+.docusaurus-mermaid-container svg .messageText,
+.docusaurus-mermaid-container svg .loopText,
+.docusaurus-mermaid-container svg .noteText {
+  fill: var(--rd-ink) !important;
+  stroke: none !important;
+}
+
+.docusaurus-mermaid-container svg .actor-line,
+.docusaurus-mermaid-container svg .messageLine0,
+.docusaurus-mermaid-container svg .messageLine1 {
+  stroke: var(--rd-ink-2) !important;
+}
+
+.docusaurus-mermaid-container svg .note {
+  fill: var(--rd-time-tint) !important;
+  stroke: var(--rd-time) !important;
+}
+
+.docusaurus-mermaid-container svg .loopLine {
+  stroke: var(--rd-ink-2) !important;
+}
+
+.docusaurus-mermaid-container svg .edgeLabel p,
+.docusaurus-mermaid-container svg .edgeLabel div,
+.docusaurus-mermaid-container svg .edgeLabel span {
+  background-color: var(--rd-bg) !important;
+}
+
+/* Code inside headings and the table of contents is part of the text, not a chip. */
+h1 code,
+h2 code,
+h3 code,
+h4 code,
+.table-of-contents code {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+/* Block code sits on the site's own sunken surface in both themes. */
+.prism-code,
+[class*='codeBlockContent'] pre {
+  background-color: var(--rd-sunken) !important;
+}
+
+[class*='codeBlockTitle'] {
+  background: var(--rd-surface);
+  border-bottom: 1px solid var(--rd-line);
+  color: var(--rd-ink-2);
+}
+
+/* Navbar layout, after react.dev: logo, a wide search pill, then the section links. */
+.navbar__link {
+  white-space: nowrap;
+}
+
+/* Wide pill only on desktop widths; on phones the search collapses to an icon. */
+@media (min-width: 997px) {
+  .navbar__items--right > [class*='navbarSearchContainer'] {
+    order: -1;
+    flex: 1 1 auto;
+    width: auto;
+    margin: 0 1.25rem 0 0.5rem;
+    padding: 0;
+  }
+
+  .navbar__items--right > [class*='navbarSearchContainer'] .navbar__search {
+    width: 100%;
+  }
+
+  .navbar__items--right > [class*='navbarSearchContainer'] .navbar__search-input {
+    width: 100%;
+  }
+
+}
+
+.navbar-github {
+  margin-left: 0.25rem;
+}
+
+/* The logo group keeps its own width so the right group (search and links) gets the rest. */
+.navbar__inner > .navbar__items:not(.navbar__items--right) {
+  flex: 0 0 auto;
+}
+
+/* Section labels, after react.dev. The page's <html> class carries the section
+   (docs-doc-id-<section>/<page>), so no component needs swizzling. */
+.theme-doc-sidebar-menu::before,
+.theme-doc-breadcrumbs nav::before,
+nav.theme-doc-breadcrumbs::before {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.theme-doc-sidebar-menu::before {
+  display: block;
+  padding: 0.15rem 0.8rem 0.6rem;
+  color: var(--rd-ink-2);
+}
+
+nav.theme-doc-breadcrumbs {
+  display: flex;
+  align-items: baseline;
+}
+
+nav.theme-doc-breadcrumbs::before {
+  color: var(--rd-accent);
+  margin-right: 0.5rem;
+  padding-left: 0;
+}
+
+nav.theme-doc-breadcrumbs .breadcrumbs {
+  margin: 0;
+}
+
+nav.theme-doc-breadcrumbs .breadcrumbs__item--active::before {
+  content: '\203A';
+  margin-right: 0.45rem;
+  color: var(--rd-accent);
+}
+
+html[class*='docs-doc-id-getting-started/'] .theme-doc-sidebar-menu::before,
+html[class*='docs-doc-id-getting-started/'] nav.theme-doc-breadcrumbs::before {
+  content: 'Get started';
+}
+
+html[class*='docs-doc-id-guides/'] .theme-doc-sidebar-menu::before,
+html[class*='docs-doc-id-guides/'] nav.theme-doc-breadcrumbs::before {
+  content: 'Guides';
+}
+
+html[class*='docs-doc-id-concepts/'] .theme-doc-sidebar-menu::before,
+html[class*='docs-doc-id-concepts/'] nav.theme-doc-breadcrumbs::before {
+  content: 'Concepts';
+}
+
+html[class*='docs-doc-id-architecture/'] .theme-doc-sidebar-menu::before,
+html[class*='docs-doc-id-architecture/'] nav.theme-doc-breadcrumbs::before {
+  content: 'Architecture';
+}
+
+html[class*='docs-doc-id-contributing/'] .theme-doc-sidebar-menu::before,
+html[class*='docs-doc-id-contributing/'] nav.theme-doc-breadcrumbs::before {
+  content: 'Contribute';
 }

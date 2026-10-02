@@ -1,101 +1,363 @@
+/* Landing page, after react.dev: a centered hero, then soft bands with centered headings.
+   Colors and type come from the tokens in custom.css. */
+
+/* ---------------------------------------------------------------- Hero */
+
 .hero {
-  padding: 4rem 0 3rem;
-  text-align: left;
-  background: var(--ifm-background-surface-color);
-  border-bottom: 1px solid var(--ifm-toc-border-color);
+  padding-block: 4.5rem 4.5rem;
+  text-align: center;
 }
 
-.heroGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 2.5rem;
+.heroInner {
+  display: flex;
+  flex-direction: column;
   align-items: center;
 }
 
+.mark {
+  margin-bottom: 1rem;
+}
+
 .title {
-  font-size: 3rem;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.25rem;
+  font-size: clamp(2.6rem, 6vw, 3.75rem);
+  line-height: 1.1;
+  margin: 0 0 1rem;
 }
 
 .tagline {
-  font-size: 1.35rem;
-  font-weight: 600;
-  color: var(--ifm-color-primary);
-  margin-bottom: 0.75rem;
+  font-size: clamp(1.25rem, 2.4vw, 1.6rem);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--rd-ink-2);
+  margin: 0;
+  max-width: 40rem;
+  text-wrap: balance;
 }
 
-.lead {
-  font-size: 1.1rem;
-  max-width: 34rem;
+.install {
+  width: 100%;
+  max-width: 18rem;
+  margin-top: 1.75rem;
+  text-align: left;
 }
 
-.buttons {
+.install :global(.theme-code-block) {
+  margin: 0;
+}
+
+.actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.75rem;
-  margin-top: 1.5rem;
+  margin-top: 1.75rem;
+}
+
+/* ------------------------------------------------------------ Sections */
+
+.section {
+  padding-block: 4rem;
+}
+
+.band {
+  background: var(--rd-band);
+  border-block: 1px solid var(--rd-line);
+}
+
+.last {
+  padding-bottom: 5rem;
+  border-bottom: 0;
+}
+
+/* Two bands in a row read as one tinted area, so skip the doubled rule between them. */
+.band + .band {
+  border-top: 0;
+}
+
+.wide {
+  max-width: 66rem;
+}
+
+.section h2 {
+  font-size: clamp(1.7rem, 3.5vw, 2.2rem);
+  margin: 0 0 1rem;
+}
+
+/* Title and description, then two columns: the code to run and its timeline. */
+.intro {
+  max-width: 44rem;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+}
+
+.intro p {
+  color: var(--rd-ink-2);
+  font-size: 1.05rem;
+  margin: 0 0 1rem;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: stretch;
 }
 
 .code {
   min-width: 0;
 }
 
-.section {
-  padding: 3rem 0;
+.code :global(.theme-code-block) {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-.alt {
-  background: var(--ifm-background-surface-color);
-  border-top: 1px solid var(--ifm-toc-border-color);
+/* The code area grows to the card's height so its background fills the card. */
+.code :global([class*='codeBlockContent']) {
+  flex: 1;
+  display: flex;
 }
 
-.steps,
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+.code :global([class*='codeBlockContent']) pre {
+  flex: 1;
+}
+
+.code :global(code) {
+  font-size: 0.84rem;
+}
+
+/* On the gray band the code block is a white card, like the timeline beside it. */
+.code :global(.prism-code),
+.code :global([class*='codeBlockContent']) pre {
+  background-color: var(--rd-surface) !important;
+}
+
+.more {
+  margin: 1.5rem 0 0 !important;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ Timeline */
+
+/* Shares the code card's geometry: a title bar, then 1rem of padding, so the two
+   columns line up edge to edge and the content starts at the same left inset. */
+.timeline {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--rd-surface);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.timelineTitle {
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: var(--rd-ink-2);
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.timelineBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   gap: 1.25rem;
-  margin: 1.5rem 0;
+  padding: 1.25rem 1rem 1rem;
+}
+
+.groupTitle {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
 }
 
 .step {
-  padding: 1.25rem;
-  border-left: 4px solid var(--ifm-color-primary);
-  background: var(--ifm-background-surface-color);
+  display: grid;
+  grid-template-columns: 13.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
 }
 
-.step h3,
-.card h3 {
-  margin-bottom: 0.4rem;
+.stepLabel {
+  font-family: var(--rd-font-mono);
+  font-size: 0.76rem;
+  color: var(--rd-ink);
+  white-space: nowrap;
+}
+
+.track {
+  position: relative;
+  display: block;
+  height: 1.4rem;
+  /* A faint rail so each bar reads as a position on the shared scale. */
+  background: linear-gradient(var(--rd-line), var(--rd-line)) center / 100% 1px no-repeat;
+}
+
+.fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--offset);
+  width: var(--span);
+  border-radius: 5px;
+  /* Each bar is drawn at its own start time and for as long as its step takes, so the
+     restored group finishes first. The resting state is fully drawn. */
+  animation: draw var(--dur) linear var(--delay) both;
+}
+
+@keyframes draw {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.start {
+  background: var(--rd-muted-fill);
+}
+
+.import {
+  background: var(--rd-time);
+}
+
+.restore {
+  background: var(--rd-accent);
+}
+
+.run {
+  background: var(--rd-surface);
+  box-shadow: inset 0 0 0 1.5px var(--rd-ink-2);
+}
+
+.axis {
+  display: grid;
+  grid-template-columns: 13.25rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: -0.25rem;
+  font-family: var(--rd-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rd-ink-2);
+}
+
+.axisLine {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.axisLine::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rd-ink-2);
+  opacity: 0.5;
+}
+
+.caption {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--rd-ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------- Documentation */
+
+.centered {
+  text-align: center;
+  margin-bottom: 2rem !important;
+}
+
+/* Every card has the same width: three per row, and the last row is centered. */
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
 }
 
 .card {
-  display: block;
-  padding: 1.25rem;
-  border: 1px solid var(--ifm-toc-border-color);
-  border-radius: var(--ifm-global-radius);
-  color: inherit;
-  background: var(--ifm-background-color);
-  transition: border-color 0.15s ease;
+  flex: 0 0 calc((100% - 2rem) / 3);
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--rd-surface);
+  border-radius: 16px;
+  color: var(--rd-ink);
+  text-decoration: none;
 }
 
 .card:hover {
-  border-color: var(--ifm-color-primary);
   text-decoration: none;
-  color: inherit;
+  color: var(--rd-ink);
+  box-shadow: inset 0 0 0 1px var(--rd-accent);
 }
 
-.card p,
-.step p {
-  margin: 0;
+.cardTitle {
+  font-weight: 700;
+  color: var(--rd-accent);
 }
 
-@media (max-width: 900px) {
-  .heroGrid {
+.cardText {
+  color: var(--rd-ink-2);
+}
+
+/* -------------------------------------------------------------- Narrow */
+
+@media (max-width: 996px) {
+  .columns {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .title {
-    font-size: 2.4rem;
+  /* Two per row, still the same width; the odd fifth card is centered. */
+  .card {
+    flex-basis: calc((100% - 1rem) / 2);
   }
+}
+
+@media (max-width: 560px) {
+  .step,
+  .axis {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+
+  .axis > span:first-child {
+    display: none;
+  }
+
+  .stepLabel {
+    font-size: 0.72rem;
+  }
+
+  .card {
+    flex-basis: 100%;
+  }
+
+  .hero {
+    padding-block: 3rem;
+  }
+
 }

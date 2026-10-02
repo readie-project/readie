@@ -6,7 +6,7 @@ description: The states of a sandbox container inside a worker, from creation th
 
 A container is the sandbox that a worker creates to run a function call. The worker keeps one container per running call. When a call succeeds and belongs to a session, the worker leaves the container running and idle so that the next call in the session can reuse it. If no call returns within five minutes, the worker removes the container.
 
-This page follows one container through the Go worker. It assumes familiarity with [sandboxes](/docs/concepts/sandboxes) and [checkpoints](/docs/concepts/checkpoints). For definitions of terms such as session, see the [glossary](/docs/guides/glossary).
+This page follows one container through the Go worker. It assumes familiarity with [sandboxes](/docs/concepts/sandboxes) and [checkpoints](/docs/concepts/checkpoints). For definitions of terms such as session, see the [glossary](/docs/concepts/glossary).
 
 ## States
 

@@ -79,7 +79,7 @@ The client (`pkg`) and the executor require exactly Python 3.12 (`requires-pytho
 - Users on other versions receive a clear error up front instead of a confusing failure inside the sandbox.
 - If the sandbox Python version changes, three places must change together: `REQUIRED_PYTHON` in `pkg/src/readie/_compat.py` and the `requires-python` fields in `pkg` and `executor`.
 
-See [Errors](/docs/reference/errors).
+See [Errors](/docs/guides/errors).
 
 ## 5. One alpha trades checkpoint size against import time
 

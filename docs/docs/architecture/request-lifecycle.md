@@ -86,7 +86,7 @@ An exception inside the function is data in the envelope and not a failure of th
 
 The worker streams the envelope back in chunks. Each message repeats the request, session, worker, container, and checkpoint IDs and is marked successful. The router forwards the messages. The client collects the chunks and unpickles the envelope. It then either returns the value or raises `RemoteExecutionError` with the remote traceback.
 
-Errors from the router (no capacity, session busy, session expired, deadline) arrive as gRPC status codes and become the matching client exception. See [Errors](/docs/reference/errors).
+Errors from the router (no capacity, session busy, session expired, deadline) arrive as gRPC status codes and become the matching client exception. See [Errors](/docs/guides/errors).
 
 ## Output and logs
 

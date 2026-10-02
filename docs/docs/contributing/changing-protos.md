@@ -4,7 +4,7 @@ sidebar_position: 3
 description: Rules for editing the gRPC contracts, the commands that regenerate the committed stubs, and a worked example of adding a field.
 ---
 
-The `.proto` files in `protos/` define every message that crosses a process boundary. A [protobuf](/docs/guides/glossary) file describes messages and gRPC services, and a code generator turns it into Python and Go classes. The generated files are committed, so a fresh checkout builds without the generator. A single edit changes Python and Go code at once, so follow the rules and steps on this page.
+The `.proto` files in `protos/` define every message that crosses a process boundary. A [protobuf](/docs/concepts/glossary) file describes messages and gRPC services, and a code generator turns it into Python and Go classes. The generated files are committed, so a fresh checkout builds without the generator. A single edit changes Python and Go code at once, so follow the rules and steps on this page.
 
 ## Prerequisites
 

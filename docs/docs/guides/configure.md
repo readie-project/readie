@@ -4,7 +4,7 @@ sidebar_position: 1
 description: Settings for memory, sessions, timeouts, output, and snapshot restore on functions and on the client.
 ---
 
-Readie works with its default settings. This page covers the settings that are most often changed, and the complete list is in the [SDK reference](/docs/reference/sdk). Settings apply in two places:
+Readie works with its default settings. This page covers the settings that are most often changed, and the complete list is in the [SDK reference](/docs/guides/sdk). Settings apply in two places:
 
 - **On the function:** arguments to `@remote(...)`, such as `memory`, `timeout`, and `packages`.
 - **For the whole program:** `readie.configure(...)`, called once before the first remote call, and the `READIE_AUTH_TOKEN` environment variable if the service requires a token.
@@ -69,6 +69,6 @@ def baseline(...): ...
 
 ## See also
 
-- [SDK reference](/docs/reference/sdk): every option.
+- [SDK reference](/docs/guides/sdk): every option.
 - [Packages and resources](/docs/getting-started/packages-and-resources): memory units and GPU budgets.
 - [Troubleshooting](/docs/guides/troubleshooting): errors and fixes.

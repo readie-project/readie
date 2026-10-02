@@ -1,6 +1,6 @@
 ---
 title: SDK reference
-sidebar_position: 1
+sidebar_position: 2
 description: Signatures, parameters, and behavior of the readie decorator, Client, Session, Settings, and configure.
 ---
 
@@ -134,11 +134,11 @@ Only `Settings` fields that take part in `__init__` can be passed to `configure`
 
 - A successful call returns the function's return value, unpickled on the local machine. `None` is a valid value.
 - If the function raises, the call raises `RemoteExecutionError` locally, with the type, message, and traceback as strings. The original exception object is not rebuilt.
-- Every other failure is a `ReadieError` subclass. See [Errors](/docs/reference/errors).
+- Every other failure is a `ReadieError` subclass. See [Errors](/docs/guides/errors).
 - With `stream_logs=True`, text that the function printed is sent to the log sink after the call completes. Output produced before a failure is attached to the error as `logs`.
 
 ## See also
 
-- [Errors](/docs/reference/errors)
+- [Errors](/docs/guides/errors)
 - [Sessions](/docs/concepts/sessions)
 - [Packages and resources](/docs/getting-started/packages-and-resources)

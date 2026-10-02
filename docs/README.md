@@ -18,10 +18,9 @@ make docs-serve     # build, then serve the result
 | Path                    | What it holds                                                              |
 | ----------------------- | -------------------------------------------------------------------------- |
 | `docs/getting-started/` | Install the SDK, run a first function, FAQ                                 |
-| `docs/concepts/`        | The ideas behind Readie                                                    |
+| `docs/concepts/`        | The ideas behind Readie, and the glossary                                  |
 | `docs/architecture/`    | How the pieces fit together, design decisions, security                    |
-| `docs/guides/`          | Tuning calls, fixing errors, glossary - for people using the SDK           |
-| `docs/reference/`       | SDK and error reference                                                    |
+| `docs/guides/`          | Tuning calls, SDK and error reference, troubleshooting                     |
 | `docs/contributing/`    | Developer and operator material: setup, running the stack, deployment      |
 | `src/pages/index.tsx`   | The landing page                                                           |
 | `tools/`                | Template for the generated protobuf reference                              |
@@ -54,9 +53,10 @@ reference, or a tutorial.
 - Do not state numbers that change, such as the `alpha` weight. Check claims
   against the code, not only the READMEs. Draw diagrams as Mermaid code fences.
 
-User-facing sections (Get started, Concepts, Guides, Reference) assume the client
-uses the hosted service. Development and operator material belongs under
-Contribute.
+Get started and Guides are client-focused: they assume the client uses the
+hosted service and carry no development or operator detail. Concepts,
+Architecture and Contribute are for contributors and developers; development and
+operator procedures belong under Contribute.
 
 ## Publishing
 

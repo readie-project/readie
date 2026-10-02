@@ -106,10 +106,12 @@ the source of truth: fix the doc, and say so in the commit body.
 There are three kinds of documentation, each with one audience:
 
 - **The site in `docs/`** (readie.org). Written for people who use, understand or
-  contribute to Readie. Sections: Get started, Concepts, Guides and Reference are
-  for SDK users and assume the hosted service, so they contain no router address,
-  TLS setup, `router_uri`, or operator and development steps. Architecture
-  explains the design. Contribute holds development and operator material.
+  contribute to Readie. Two groups: Get started and Guides are client-focused,
+  for SDK users, and assume the hosted service, so they contain no router address,
+  TLS setup, `router_uri`, or operator and development steps. Concepts,
+  Architecture and Contribute are for contributors and developers: Concepts and
+  Architecture explain the system and its design, and Contribute holds development
+  and operator material (the glossary lives in Concepts).
 - **Component READMEs** (`router/`, `worker/`, `executor/`, `pkg/`, `pipeline/`,
   `nginx/`, `protos/`, `catalogues/`). Written for maintainers of that directory:
   layout, internals, configuration, how to test. `pkg/README.md` is the PyPI page
@@ -124,7 +126,7 @@ There are three kinds of documentation, each with one audience:
 | A `.proto` file | `make protos` and `make docs-protos`; `protos/README.md` if a rule changes |
 | The executor wire protocol | `executor/README.md`; site `architecture/executor-protocol` and `contributing/changing-executor-protocol` |
 | A setting or environment variable (router, worker, executor, pipeline) | The component README; site `contributing/configuration-reference` and `contributing/configure-services` |
-| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md`; site `reference/sdk`, `reference/errors`, and the Get started pages that mention it |
+| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md`; site `guides/sdk`, `guides/errors`, and the Get started pages that mention it |
 | A Makefile target or variable | Its `##` help text; site `contributing/make-targets` |
 | The catalogue format or how the router selects a checkpoint | `catalogues/README.md`; site `concepts/flavors-and-catalogues`, `concepts/cost-model`, `architecture/placement` |
 | Sandbox or container behavior (network, limits, idle timeout, lifecycle) | `worker/README.md`; site `concepts/sandboxes`, `architecture/container-lifecycle` |
@@ -132,7 +134,7 @@ There are three kinds of documentation, each with one audience:
 | Trust boundaries, auth, TLS or network defaults | `SECURITY.md`; site `architecture/security-model`, `architecture/security`, `contributing/deploy-with-tls` |
 | CI jobs or the PR checklist | `CONTRIBUTING.md`; site `contributing/pull-requests` |
 | A Python version floor | This file, `CONTRIBUTING.md`, site `getting-started/installation`, `getting-started/faq`, `guides/troubleshooting` |
-| An error message users see | Site `guides/troubleshooting` and `reference/errors` |
+| An error message users see | Site `guides/troubleshooting` and `guides/errors` |
 
 If a change adds a page to the site, add it to the right folder in `docs/docs/`,
 give it a `sidebar_position`, and link to it from a neighboring page.

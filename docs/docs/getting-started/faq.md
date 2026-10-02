@@ -16,7 +16,7 @@ The function is pickled on the local machine and unpickled by the Python interpr
 
 ### Which objects cannot be sent to a remote function?
 
-Any object that `cloudpickle` cannot serialize. Typical cases are open files, sockets, database connections, locks, and threads. Create these objects inside the function instead of passing them in. The return value must also be picklable, because it travels back the same way. If the function or its arguments cannot be encoded, the client raises `SerializationError`. See the [errors reference](/docs/reference/errors).
+Any object that `cloudpickle` cannot serialize. Typical cases are open files, sockets, database connections, locks, and threads. Create these objects inside the function instead of passing them in. The return value must also be picklable, because it travels back the same way. If the function or its arguments cannot be encoded, the client raises `SerializationError`. See the [errors reference](/docs/guides/errors).
 
 ### How do I use a package that is not in the sandbox?
 
@@ -36,7 +36,7 @@ Pass `memory` and `max_memory` to `@remote`, for example `@remote(memory="2Gi", 
 
 ### How do I turn off checkpoint restore for one function?
 
-Use `@remote(disable_optimized_execution=True)`. The router then starts that function cold. See the [SDK reference](/docs/reference/sdk).
+Use `@remote(disable_optimized_execution=True)`. The router then starts that function cold. See the [SDK reference](/docs/guides/sdk).
 
 ## How it works
 
@@ -56,7 +56,7 @@ Yes, if the interpreter is Python 3.12. The function runs remotely in a Linux sa
 
 ### Is Readie secure?
 
-User code runs inside a [gVisor](/docs/guides/glossary) sandbox with a shared read-only filesystem, a private writable layer, and limits on CPU, memory, and processes. The client unpickles the result that it receives, so connect only to a Readie service that you trust. See [Security](/docs/architecture/security) and [Security model](/docs/architecture/security-model).
+User code runs inside a [gVisor](/docs/concepts/glossary) sandbox with a shared read-only filesystem, a private writable layer, and limits on CPU, memory, and processes. The client unpickles the result that it receives, so connect only to a Readie service that you trust. See [Security](/docs/architecture/security) and [Security model](/docs/architecture/security-model).
 
 ## Getting help
 

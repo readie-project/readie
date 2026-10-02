@@ -40,7 +40,7 @@ flowchart LR
 
 A call proceeds from left to right:
 
-1. The code calls a function decorated with `@remote`. The client pickles the call and sends it over [gRPC](/docs/guides/glossary).
+1. The code calls a function decorated with `@remote`. The client pickles the call and sends it over [gRPC](/docs/concepts/glossary).
 2. NGINX forwards the call to the router.
 3. The router selects a worker and forwards the call.
 4. The worker restores a [checkpoint](/docs/concepts/checkpoints) into a [sandbox](/docs/concepts/sandboxes), or reuses a warm sandbox.

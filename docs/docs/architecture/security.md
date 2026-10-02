@@ -34,7 +34,7 @@ Validating the data first cannot prevent this, because sending live Python objec
 
 ### Boundary 2: the sandbox runs arbitrary code
 
-Running user code is the purpose of the product, and [gVisor](/docs/guides/glossary) contains it. gVisor handles the system calls of the code in user space and does not pass them directly to the host kernel. The following controls apply in addition:
+Running user code is the purpose of the product, and [gVisor](/docs/concepts/glossary) contains it. gVisor handles the system calls of the code in user space and does not pass them directly to the host kernel. The following controls apply in addition:
 
 - The root filesystem is shared and read-only. Each sandbox has a private writable layer, so one run cannot change the state from which the next run starts.
 - CPU, memory, and process limits apply to each container.

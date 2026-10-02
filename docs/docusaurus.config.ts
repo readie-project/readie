@@ -46,15 +46,17 @@ const config: Config = {
 
   themes: [
     '@docusaurus/theme-mermaid',
-    [
-      '@easyops-cn/docusaurus-search-local',
-      {
-        hashed: true,
-        indexBlog: false,
-        docsRouteBasePath: '/docs',
-        highlightSearchTermsOnTargetPage: true,
-      },
-    ],
+    // Search is switched off for now. To bring it back, uncomment this entry; the
+    // package (@easyops-cn/docusaurus-search-local) is still installed.
+    // [
+    //   '@easyops-cn/docusaurus-search-local',
+    //   {
+    //     hashed: true,
+    //     indexBlog: false,
+    //     docsRouteBasePath: '/docs',
+    //     highlightSearchTermsOnTargetPage: true,
+    //   },
+    // ],
   ],
 
   presets: [
@@ -85,51 +87,38 @@ const config: Config = {
         src: 'img/logo.svg',
       },
       items: [
-        {type: 'docSidebar', sidebarId: 'gettingStarted', position: 'left', label: 'Get started'},
-        {type: 'docSidebar', sidebarId: 'concepts', position: 'left', label: 'Concepts'},
-        {type: 'docSidebar', sidebarId: 'architecture', position: 'left', label: 'Architecture'},
-        {type: 'docSidebar', sidebarId: 'guides', position: 'left', label: 'Guides'},
-        {type: 'docSidebar', sidebarId: 'reference', position: 'left', label: 'Reference'},
-        {type: 'docSidebar', sidebarId: 'contributing', position: 'left', label: 'Contribute'},
-        {href: repoUrl, label: 'GitHub', position: 'right'},
+        {type: 'docSidebar', sidebarId: 'gettingStarted', position: 'right', label: 'Get started'},
+        {type: 'docSidebar', sidebarId: 'guides', position: 'right', label: 'Guides'},
+        {type: 'docSidebar', sidebarId: 'concepts', position: 'right', label: 'Concepts'},
+        {type: 'docSidebar', sidebarId: 'architecture', position: 'right', label: 'Architecture'},
+        {type: 'docSidebar', sidebarId: 'contributing', position: 'right', label: 'Contribute'},
+        {
+          href: repoUrl,
+          label: 'GitHub',
+          position: 'right',
+          className: 'navbar-github',
+          'aria-label': 'Readie on GitHub',
+        },
       ],
     },
     footer: {
-      style: 'dark',
+      style: 'light',
       links: [
-        {
-          title: 'Learn',
-          items: [
-            {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
-            {label: 'How it works', to: '/docs/architecture/overview'},
-            {label: 'Glossary', to: '/docs/guides/glossary'},
-          ],
-        },
-        {
-          title: 'Build with Readie',
-          items: [
-            {label: 'Using @remote', to: '/docs/reference/sdk'},
-            {label: 'Troubleshooting', to: '/docs/guides/troubleshooting'},
-            {label: 'Contribute', to: '/docs/contributing/setup'},
-          ],
-        },
-        {
-          title: 'Project',
-          items: [
-            {label: 'GitHub', href: repoUrl},
-            {label: 'Report an issue', href: `${repoUrl}/issues`},
-            {label: 'Security policy', to: '/docs/architecture/security'},
-          ],
-        },
+        {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
+        {label: 'Architecture', to: '/docs/architecture/overview'},
+        {label: 'SDK reference', to: '/docs/guides/sdk'},
+        {label: 'Contribute', to: '/docs/contributing/setup'},
+        {label: 'Security', to: '/docs/architecture/security'},
+        {label: 'GitHub', href: repoUrl},
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} The Readie authors. Apache-2.0 licensed. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} The Readie authors. Apache-2.0 licensed.`,
     },
     mermaid: {
       theme: {light: 'neutral', dark: 'dark'},
     },
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+      theme: prismThemes.oneLight,
+      darkTheme: prismThemes.oneDark,
       additionalLanguages: ['bash', 'go', 'protobuf', 'toml', 'yaml', 'docker', 'nginx'],
     },
   } satisfies Preset.ThemeConfig,

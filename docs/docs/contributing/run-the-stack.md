@@ -14,7 +14,7 @@ On a host without gVisor, the test suites still run, because they use fakes in p
 
 ## Containers
 
-Compose defines the following containers. The [glossary](/docs/guides/glossary) defines the terms router, worker, and sandbox.
+Compose defines the following containers. The [glossary](/docs/concepts/glossary) defines the terms router, worker, and sandbox.
 
 | Container | Role | Port inside the network | Published on the host |
 | --- | --- | --- | --- |

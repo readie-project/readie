@@ -41,7 +41,7 @@ The risk is confined to one place. The result decoder is a `ResultCodec` protoco
 
 ### Boundary 2: the sandbox runs untrusted code
 
-Running arbitrary code is the purpose of the product. Containment comes from [gVisor](/docs/guides/glossary), whose runtime `runsc` handles the program's system calls in user space instead of passing them to the host kernel. A sandbox built this way exposes a much smaller surface than an ordinary container.
+Running arbitrary code is the purpose of the product. Containment comes from [gVisor](/docs/concepts/glossary), whose runtime `runsc` handles the program's system calls in user space instead of passing them to the host kernel. A sandbox built this way exposes a much smaller surface than an ordinary container.
 
 The worker adds the following controls, verified in the code:
 

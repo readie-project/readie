@@ -38,7 +38,7 @@ The client serializes the decorated function with `cloudpickle` and executes it
 inside the sandbox, so the function must be picklable and its imports must exist
 in the worker's image. For sessions, error handling, and the async interface,
 see [`pkg/`](pkg/) and the
-[SDK reference](https://readie.org/docs/reference/sdk).
+[SDK reference](https://readie.org/docs/guides/sdk).
 
 ## How a request flows
 
