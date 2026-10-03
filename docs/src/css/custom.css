@@ -221,15 +221,41 @@ pre code {
   font-family: var(--rd-font-mono);
 }
 
+/* A real table box, so the rows span the full bordered width. With display: block the rows
+   shrink to their content and the border extends past them. */
 .markdown table {
-  display: block;
-  overflow-x: auto;
+  display: table;
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   border: 1px solid var(--rd-line);
   border-radius: 16px;
   font-size: 0.93rem;
+}
+
+/* The table box cannot clip its corners, so round the corner cells to match its border. */
+.markdown table > thead > tr:first-child > :first-child {
+  border-top-left-radius: 15px;
+}
+
+.markdown table > thead > tr:first-child > :last-child {
+  border-top-right-radius: 15px;
+}
+
+.markdown table > tbody > tr:last-child > :first-child {
+  border-bottom-left-radius: 15px;
+}
+
+.markdown table > tbody > tr:last-child > :last-child {
+  border-bottom-right-radius: 15px;
+}
+
+/* On narrow screens fall back to a scrolling block so wide tables stay inside the page. */
+@media (max-width: 600px) {
+  .markdown table {
+    display: block;
+    overflow-x: auto;
+  }
 }
 
 .markdown table th {
