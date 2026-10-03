@@ -48,10 +48,12 @@ WORKER_IMAGE    := readie-worker-$(FLAVOR)
 # A gpu generation uses the Kaggle GPU rootfs and captures under nvproxy with the
 # host's GPUs attached; a cpu generation uses the plain image and no devices.
 ifeq ($(FLAVOR),gpu)
-ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python
+# Kaggle GPU v170, which uses Python 3.12.
+ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461
 CAPTURE_GPU_FLAGS := --gpus all
 else
-ROOTFS_BASE_IMAGE := gcr.io/kaggle-images/python
+# Kaggle v170, which uses Python 3.12, matching the client/executor:
+ROOTFS_BASE_IMAGE := gcr.io/kaggle-images/python@sha256:dafd4ce5668bbf1ad422e4c109e0f18c9623c3a7c7f48b0235f13142755c40b9
 CAPTURE_GPU_FLAGS :=
 endif
 # Overridable so an experiment can be tagged something meaningful.
