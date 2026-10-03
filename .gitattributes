@@ -13,6 +13,11 @@ worker/go.sum                     linguist-generated=true
 # Corpus and analysis data. Machine-written, and large enough that a diff is
 # never the useful view.
 pipeline/data/*.json              linguist-generated=true -diff
+# Linguist skips docs/ as documentation by default. The docs site is a Docusaurus
+# app, so its TypeScript and CSS count as source in the language statistics.
+docs/src/**                       linguist-documentation=false
+docs/docusaurus.config.ts         linguist-documentation=false
+docs/sidebars.ts                  linguist-documentation=false
 # Binary, so git must never try to merge or diff them as text.
 *.png    binary
 *.jpg    binary
