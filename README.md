@@ -1,4 +1,4 @@
-# Readie: Rapid Execution via ADaptive checkpoInted Environments
+# Readie
 
 Readie is a serverless runtime that runs a Python function on a remote sandbox
 that has already imported the libraries the function needs. Offline, it runs an
@@ -198,7 +198,7 @@ for you. Whether a worker has checkpoints to restore is a property of the base
 image, not of the worker image.
 
 Compose and `make generation` both tag `readie-worker-<flavor>:latest`, so
-`docker compose up -d` runs the image that the generation just built.
+`docker compose up -d` runs the image that the generation built.
 
 Only `router` and `worker` are Compose services. The `executor` runs inside a
 sandbox that the worker creates, `pkg` is a library that you install into your

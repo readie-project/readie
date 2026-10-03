@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Orientation for coding agents working in this repository. It is intentionally
-short: it maps the tree, lists the commands you will actually run, and flags the
-rules that are easy to violate. For setup, rationale, and the full conventions,
+short: it maps the tree, lists the commands you run most often, and flags the
+rules that are frequently violated. For setup, rationale, and the full conventions,
 read [`CONTRIBUTING.md`](CONTRIBUTING.md) and each component's `README.md`.
 
 ## What this is
@@ -33,16 +33,16 @@ router catalogues), `docker-compose.yml`, and the umbrella root `Makefile`.
 
 Run these from the repo root; the root `Makefile` fans out to every component.
 
-- `make install` - sync every Python venv (via `uv`) and `go mod download`.
-- `make lint type test` - the full gate, mirroring CI. (`type` covers the four
-  Python components; the Go worker has no `type` target - its lint includes vet.)
+- `make install`: sync every Python venv with `uv`, and run `go mod download`.
+- `make lint type test`: the full gate, mirroring CI. (`type` covers the four
+  Python components; the Go worker has no `type` target, and its lint includes vet.)
 - Per-component passthroughs: `make worker-test`, `make router-lint`,
-  `make pkg-type`, `make pipeline-test`, … (equivalently `make -C <component> <verb>`).
-- `make protos` - regenerate all gRPC stubs after editing `protos/*.proto`.
-- `make docs-protos` - regenerate the docs site's protobuf reference page after
+  `make pkg-type`, `make pipeline-test`, and so on (equivalently `make -C <component> <verb>`).
+- `make protos`: regenerate all gRPC stubs after editing `protos/*.proto`.
+- `make docs-protos`: regenerate the docs site's protobuf reference page after
   the same edit (needs `protoc-gen-doc`; see `make docs-tools`). The `docs`
   workflow fails on drift.
-- `make help` - list annotated targets.
+- `make help`: list annotated targets.
 
 The Go worker runs under the race detector: `make worker-test` is `go test -race`.
 Most tests use fakes and run anywhere (see gVisor note below).
@@ -54,25 +54,26 @@ Most tests use fakes and run anywhere (see gVisor note below).
   worker, and a router test depend on it, and `buf.yaml` enforces it. Do not add a
   package declaration.
 - **Generated code is committed.** After changing `protos/*.proto`, run
-  `make protos` and commit the diff - CI (`protos` job) and the `proto-stubs-current`
+  `make protos` and commit the diff. CI (`protos` job) and the `proto-stubs-current`
   pre-commit hook fail on drift. `proxy.proto` is Python-only (not generated for Go).
-- **Proto changes are additive-only** - new field numbers, never reuse or
-  renumber. `buf breaking` runs against `main` on PRs.
+- **Proto changes are additive-only.** Use new field numbers, and never reuse or
+  renumber one. `buf breaking` runs against `main` on PRs.
 - **gVisor/runsc is amd64-only.** `make generation` and the worker's
-  `make test-e2e` need a real amd64 gVisor host and won't run on Apple Silicon or
+  `make test-e2e` need a real amd64 gVisor host and do not run on Apple Silicon or
   in CI. Regular `make test` substitutes fakes and runs anywhere.
-- **The `alpha` cost constant is shared through the catalogue.** The pipeline
+- **Alpha is shared through the catalogue.** The pipeline
   plans with `READIE_ALPHA` and writes the measured value into `catalogue.json`;
   the router has no `alpha` setting and reads it from that file. Deploy a new
   generation and its catalogue together.
-- **The executor wire protocol is dual-implemented** - Python (`executor/`) and Go
-  (worker) - and locked by a cross-language golden fixture
-  (`executor/tests/data/frames.golden.json`). Change both sides and regenerate the
-  golden; the `golden` CI job checks for drift.
-- **The two Python floors are deliberate:** `pkg` and `executor` target 3.12
-  because they have to be the same and also be compatible with the rootfs Python version; `router` and `pipeline` target 3.13
-  control their own images.
-- **`pkg` enforces the executor's Python at runtime.** Functions are cloudpickled
+- **The executor protocol has two implementations.** Python (`executor/`) and Go
+  (worker) both implement it, and a cross-language golden fixture
+  (`executor/tests/data/frames.golden.json`) locks them together. Change both sides
+  and regenerate the golden; the `golden` CI job checks for drift.
+- **The Python floors are deliberate.** `pkg` and `executor` target 3.12 because the
+  client and the sandbox must run the same minor version, and the sandbox rootfs
+  ships Python 3.12. `router` and `pipeline` target 3.13 because they control their
+  own images.
+- **`pkg` checks the Python version.** Functions are cloudpickled
   client-side and unpickled in the sandbox, and that is only safe within one minor
   version. `readie.Client()` calls `check_python_version()` (`pkg/src/readie/_compat.py`)
   and raises `IncompatiblePythonError` unless the local interpreter is exactly
@@ -173,9 +174,9 @@ The ones that matter most:
 
 ## Where to read more
 
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) - setup, conventions, and "what is
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): setup, conventions, and "what is
   deliberately not done".
-- [`SECURITY.md`](SECURITY.md) - trust boundaries and deployment posture.
-- Each component's `README.md` - its internals and configuration, including `protos/` and `catalogues/`.
-- [`docs/README.md`](docs/README.md) - the documentation site and its writing style.
-- `worker/README.md` (Testing section) - the four Go test tiers and their seams.
+- [`SECURITY.md`](SECURITY.md): trust boundaries and deployment posture.
+- Each component's `README.md`: its internals and configuration, including `protos/` and `catalogues/`.
+- [`docs/README.md`](docs/README.md): the documentation site and its writing style.
+- `worker/README.md` (Testing section): the four Go test tiers and their seams.

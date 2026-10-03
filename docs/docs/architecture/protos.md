@@ -5,7 +5,7 @@ description: The gRPC services and messages that connect the client, router, and
 ---
 
 
-:::note Generated page
+:::note[Generated page]
 This page is generated from the comments in [`protos/`](https://github.com/illinoisdata/readie/tree/main/protos). To change it, edit the `.proto` files and run `make docs-protos`.
 :::
 
@@ -153,9 +153,7 @@ Message used for posting worker status
 | `worker_id` | `string` |  |
 | `worker_uri` | `string` |  |
 | `status` | `Status` |  |
-| `mem_total` | `int64` | Capacity, stamped on every status so a router that restarts relearns it from the next report rather than scheduling blind until the worker happens to re-register.
-
-bytes this worker will hand out to executors |
+| `mem_total` | `int64` | Capacity, stamped on every status so a router that restarts relearns it from the next report rather than scheduling blind until the worker happens to re-register. bytes this worker will hand out to executors |
 | `max_executors` | `int32` | concurrent containers, 0 meaning unbounded |
 | `flavor` | `string` | "cpu" (CPU-only) or "gpu" (CPU + GPU). The router routes GPU requests only to gpu workers and prefers cpu workers for CPU requests. |
 | `gpu_mem_total` | `int64` | GPU device memory, in bytes, this worker offers |
@@ -171,9 +169,7 @@ Message used for posting worker utilization
 | `cpu_total` | `int64` |  |
 | `gpu_util` | `int64` |  |
 | `gpu_total` | `int64` |  |
-| `mem_used` | `int64` | Memory is what actually bounds how many executors fit on a worker, so the scheduler scores on it. Until these existed the worker sent only executor utilization and worker-level load did not exist at all.
-
-bytes reserved by live executors |
+| `mem_used` | `int64` | Memory is what actually bounds how many executors fit on a worker, so the scheduler scores on it. Until these existed the worker sent only executor utilization and worker-level load did not exist at all. bytes reserved by live executors |
 | `mem_total` | `int64` | bytes available to executors |
 | `executor_count` | `int32` | live containers right now |
 | `gpu_mem_used` | `int64` | GPU device memory, so the router can place GPU requests on headroom the same way it does system memory. |

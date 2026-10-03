@@ -8,21 +8,32 @@
  */
 :root {
   /* Palette */
-  --rd-bg: #fafbfc;
+  --rd-bg: #ffffff;
   --rd-surface: #ffffff;
-  --rd-sunken: #f1f4f6;
-  --rd-band: #f3f5f7;
-  --rd-line: #e1e6ea;
+  --rd-sunken: #f6f7f9;
+  --rd-band: #f6f7f9;
+  --rd-line: #e4e7eb;
   --rd-ink: #2a3138;
   --rd-ink-2: #56626c;
-  --rd-accent: #25788a;
-  --rd-accent-strong: #1b5f6e;
-  --rd-accent-tint: rgba(37, 120, 138, 0.1);
+  --rd-accent: #2a5db8;
+  --rd-accent-strong: #1f4a96;
+  --rd-accent-tint: rgba(42, 93, 184, 0.1);
   --rd-on-accent: #ffffff;
   --rd-time: #e6bf7a;
   --rd-time-ink: #7a5416;
   --rd-time-tint: rgba(230, 191, 122, 0.22);
   --rd-muted-fill: #a4aeb5;
+  --rd-nav-ring: rgba(0, 0, 0, 0.08);
+  --rd-ring: rgba(0, 0, 0, 0.08);
+  --rd-card: #ebecf0;
+  --rd-card-head: #ffffff;
+  --rd-stage: #ebecf0;
+  --rd-stage-card: #ffffff;
+  --rd-stage-head: #f6f7f9;
+  --rd-stage-edge: rgba(0, 0, 0, 0.1);
+  --rd-stage-hairline: rgba(0, 0, 0, 0.05);
+  --rd-stage-text: #5e687e;
+  --rd-nav-drop: rgba(0, 0, 0, 0.1);
 
   /* Type: the Docusaurus defaults (Infima system font stacks), which read well at length. */
   --rd-font-display: var(--ifm-font-family-base);
@@ -31,12 +42,12 @@
 
   /* Infima bindings */
   --ifm-color-primary: var(--rd-accent);
-  --ifm-color-primary-dark: #227083;
-  --ifm-color-primary-darker: #206c7e;
-  --ifm-color-primary-darkest: #1a5967;
-  --ifm-color-primary-light: #288197;
-  --ifm-color-primary-lighter: #2a869c;
-  --ifm-color-primary-lightest: #309ab4;
+  --ifm-color-primary-dark: #2757ac;
+  --ifm-color-primary-darker: #2654a5;
+  --ifm-color-primary-darkest: #214a93;
+  --ifm-color-primary-light: #2e65c9;
+  --ifm-color-primary-lighter: #316ad0;
+  --ifm-color-primary-lightest: #4579d5;
   --ifm-background-color: var(--rd-bg);
   --ifm-background-surface-color: var(--rd-surface);
   --ifm-font-color-base: var(--rd-ink);
@@ -72,53 +83,75 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --rd-bg: #20262b;
-    --rd-surface: #272e34;
-    --rd-sunken: #181d21;
-    --rd-band: #1c2227;
-    --rd-line: #353e46;
+    --rd-bg: #23272f;
+    --rd-surface: #343a46;
+    --rd-sunken: #16181d;
+    --rd-band: #16181d;
+    --rd-line: #343a46;
     --rd-ink: #e3e7ea;
     --rd-ink-2: #a3aeb7;
-    --rd-accent: #62b4c6;
-    --rd-accent-strong: #8ccbd9;
-    --rd-accent-tint: rgba(98, 180, 198, 0.14);
-    --rd-on-accent: #11222a;
+    --rd-accent: #8db0f8;
+    --rd-accent-strong: #b4cbfa;
+    --rd-accent-tint: rgba(141, 176, 248, 0.14);
+    --rd-on-accent: #14181f;
     --rd-time: #d6a95e;
     --rd-time-ink: #e8c48a;
     --rd-time-tint: rgba(214, 169, 94, 0.18);
     --rd-muted-fill: #6d7a85;
-    --ifm-color-primary-dark: #4ea9bd;
-    --ifm-color-primary-darker: #45a3b8;
-    --ifm-color-primary-darkest: #378a9d;
-    --ifm-color-primary-light: #78bfd0;
-    --ifm-color-primary-lighter: #86c6d5;
-    --ifm-color-primary-lightest: #a3d5e0;
+    --rd-nav-ring: rgba(255, 255, 255, 0.06);
+    --rd-ring: rgba(255, 255, 255, 0.08);
+    --rd-card: #343a46;
+    --rd-card-head: #404756;
+      --rd-stage: #404756;
+      --rd-stage-card: #16181d;
+      --rd-stage-head: #23272f;
+      --rd-stage-edge: rgba(255, 255, 255, 0.05);
+      --rd-stage-hairline: rgba(255, 255, 255, 0.05);
+      --rd-stage-text: #99a1b3;
+    --rd-nav-drop: rgba(0, 0, 0, 0.35);
+    --ifm-color-primary-dark: #7fa6f7;
+    --ifm-color-primary-darker: #77a1f7;
+    --ifm-color-primary-darkest: #6292f5;
+    --ifm-color-primary-light: #a0bdf9;
+    --ifm-color-primary-lighter: #aac4fa;
+    --ifm-color-primary-lightest: #c2d5fb;
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --rd-bg: #20262b;
-  --rd-surface: #272e34;
-  --rd-sunken: #181d21;
-  --rd-band: #1c2227;
-  --rd-line: #353e46;
+  --rd-bg: #23272f;
+  --rd-surface: #343a46;
+  --rd-sunken: #16181d;
+  --rd-band: #16181d;
+  --rd-line: #343a46;
   --rd-ink: #e3e7ea;
   --rd-ink-2: #a3aeb7;
-  --rd-accent: #62b4c6;
-  --rd-accent-strong: #8ccbd9;
-  --rd-accent-tint: rgba(98, 180, 198, 0.14);
-  --rd-on-accent: #11222a;
+  --rd-accent: #8db0f8;
+  --rd-accent-strong: #b4cbfa;
+  --rd-accent-tint: rgba(141, 176, 248, 0.14);
+  --rd-on-accent: #14181f;
   --rd-time: #d6a95e;
   --rd-time-ink: #e8c48a;
   --rd-time-tint: rgba(214, 169, 94, 0.18);
   --rd-muted-fill: #6d7a85;
-  --ifm-color-primary-dark: #4ea9bd;
-  --ifm-color-primary-darker: #45a3b8;
-  --ifm-color-primary-darkest: #378a9d;
-  --ifm-color-primary-light: #78bfd0;
-  --ifm-color-primary-lighter: #86c6d5;
-  --ifm-color-primary-lightest: #a3d5e0;
+  --rd-nav-ring: rgba(255, 255, 255, 0.06);
+  --rd-ring: rgba(255, 255, 255, 0.08);
+  --rd-card: #343a46;
+  --rd-card-head: #404756;
+  --rd-stage: #404756;
+  --rd-stage-card: #16181d;
+  --rd-stage-head: #23272f;
+  --rd-stage-edge: rgba(255, 255, 255, 0.05);
+  --rd-stage-hairline: rgba(255, 255, 255, 0.05);
+  --rd-stage-text: #99a1b3;
+  --rd-nav-drop: rgba(0, 0, 0, 0.35);
+  --ifm-color-primary-dark: #7fa6f7;
+  --ifm-color-primary-darker: #77a1f7;
+  --ifm-color-primary-darkest: #6292f5;
+  --ifm-color-primary-light: #a0bdf9;
+  --ifm-color-primary-lighter: #aac4fa;
+  --ifm-color-primary-lightest: #c2d5fb;
 }
 
 html,
@@ -142,7 +175,7 @@ h4 {
 }
 
 .markdown h1:first-child {
-  font-size: 2.75rem;
+  font-size: 2.5rem;
   margin-bottom: 1.25rem;
 }
 
@@ -178,8 +211,8 @@ h4 {
 /* Inline code only: block code keeps the theme's own padding. */
 :not(pre) > code {
   font-family: var(--rd-font-mono);
-  background: var(--rd-sunken);
-  border: 1px solid var(--rd-line);
+  background: rgba(153, 161, 179, 0.1);
+  border: 0;
   color: var(--rd-ink);
   padding: 0.08em 0.38em;
 }
@@ -256,7 +289,17 @@ pre code {
   background: color-mix(in srgb, var(--rd-bg) 84%, transparent);
   -webkit-backdrop-filter: saturate(1.4) blur(12px);
   backdrop-filter: saturate(1.4) blur(12px);
-  border-bottom: 1px solid var(--rd-line);
+  border-bottom: 0;
+}
+
+.navbar {
+  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* After react.dev: no line at the top of the page; a soft shadow and a hairline ring appear
+   only once the page has scrolled (navbarScroll.ts sets the attribute). */
+html[data-scrolled] .navbar {
+  box-shadow: 0 16px 32px -16px var(--rd-nav-drop), 0 0 0 1px var(--rd-nav-ring);
 }
 
 .navbar__brand {
@@ -270,7 +313,7 @@ pre code {
 .navbar__title {
   font-family: var(--rd-font-display);
   font-size: 1.15rem;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--rd-ink);
 }
 
@@ -424,7 +467,7 @@ pre code {
   border-color: var(--rd-accent);
   color: var(--rd-on-accent);
   font-family: var(--rd-font-display);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .button--primary:hover {
@@ -438,7 +481,7 @@ pre code {
   border: 1px solid var(--rd-ink-2);
   color: var(--rd-ink);
   font-family: var(--rd-font-display);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .button--secondary:hover {
@@ -625,10 +668,17 @@ nav.theme-doc-breadcrumbs .breadcrumbs {
   margin: 0;
 }
 
+/* The separator is a thick, round-capped chevron sized to the label text, not a thin glyph. */
 nav.theme-doc-breadcrumbs .breadcrumbs__item--active::before {
-  content: '\203A';
-  margin-right: 0.45rem;
-  color: var(--rd-accent);
+  content: '';
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin: 0 0.35rem 0 0.1rem;
+  vertical-align: -0.1em;
+  background: var(--rd-accent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 html[class*='docs-doc-id-getting-started/'] .theme-doc-sidebar-menu::before,
@@ -654,4 +704,19 @@ html[class*='docs-doc-id-architecture/'] nav.theme-doc-breadcrumbs::before {
 html[class*='docs-doc-id-contributing/'] .theme-doc-sidebar-menu::before,
 html[class*='docs-doc-id-contributing/'] nav.theme-doc-breadcrumbs::before {
   content: 'Contribute';
+}
+
+/* Type names and identifiers in table cells stay on one line instead of splitting into two chips. */
+.markdown table td code {
+  white-space: nowrap;
+  font-size: 0.82em;
+}
+
+.markdown table td {
+  vertical-align: top;
+}
+
+/* The last column is usually the description: keep it from collapsing to one word per line. */
+.markdown table td:last-child {
+  min-width: 9.5rem;
 }

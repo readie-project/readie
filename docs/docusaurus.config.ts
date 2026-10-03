@@ -8,7 +8,7 @@ const repoUrl = 'https://github.com/illinoisdata/readie';
 
 const config: Config = {
   title: 'Readie',
-  tagline: 'Checkpoint and restore for serverless Python.',
+  tagline: 'Rapid code execution for Python via adaptive checkpointed environments',
   favicon: 'img/favicon.ico',
   headTags: [
     // Browsers that support SVG icons use the logo directly; the .ico above is the fallback.
@@ -58,6 +58,8 @@ const config: Config = {
     //   },
     // ],
   ],
+
+  clientModules: ['./src/clientModules/navbarScroll.ts'],
 
   presets: [
     [

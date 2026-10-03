@@ -1,6 +1,6 @@
 /* Slim footer: one row, light surface, no column headings. */
 .footer {
-  --ifm-footer-background-color: var(--ifm-background-surface-color);
+  --ifm-footer-background-color: var(--rd-band);
   --ifm-footer-color: var(--ifm-font-color-secondary);
   --ifm-footer-link-color: var(--ifm-font-color-secondary);
   --ifm-footer-link-hover-color: var(--ifm-color-primary);

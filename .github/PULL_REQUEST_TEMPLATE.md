@@ -24,5 +24,5 @@
 
 - [ ] Proto field added (new number, nothing renumbered or reused)
 - [ ] Executor protocol version bumped, both ends and the golden fixture updated
-- [ ] Generation manifest changed - existing artifacts need regenerating
+- [ ] Generation manifest changed: existing artifacts need regenerating
 - [ ] Configuration variable added or renamed, and documented in the component README

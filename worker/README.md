@@ -243,7 +243,7 @@ therefore give each worker a distinct id. `WORKER_ID` defaults to `worker-1`
 because a single-worker stack needs no configuration.
 
 The first response carries `worker_id`, `container_id`, `checkpoint_id`, and the
-resource `budgets` that the container actually ran with.
+resource `budgets` that the container ran with.
 
 Capacity is reported, not discovered. `WORKER_MEM_TOTAL` and
 `WORKER_MAX_EXECUTORS` accompany every `PostWorkerStatus`. A

@@ -23,7 +23,7 @@ flowchart LR
 
 The router has no TLS settings. TLS is configured only in NGINX.
 
-:::warning Keep the router private
+:::warning[Keep the router private]
 Workers register with the router over plaintext, with no token. The token guards only the client-facing service. Do not expose ports `50051` or `50052` to the internet.
 :::
 

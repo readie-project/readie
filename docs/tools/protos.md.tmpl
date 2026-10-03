@@ -5,7 +5,7 @@ description: The gRPC services and messages that connect the client, router, and
 ---
 
 
-:::note Generated page
+:::note[Generated page]
 This page is generated from the comments in [`protos/`](https://github.com/illinoisdata/readie/tree/main/protos). To change it, edit the `.proto` files and run `make docs-protos`.
 :::
 
@@ -19,7 +19,7 @@ The protos declare no `package`, so service names are bare on the wire, for exam
 
 | Method | Request | Response | Description |
 | ------ | ------- | -------- | ----------- |
-{{range .Methods}}| `{{.Name}}` | `{{if .RequestStreaming}}stream {{end}}{{replace "." "" .RequestLongType}}` | `{{if .ResponseStreaming}}stream {{end}}{{replace "." "" .ResponseLongType}}` | {{nobr .Description}} |
+{{range .Methods}}| `{{.Name}}` | `{{if .RequestStreaming}}stream {{end}}{{replace "." "" .RequestLongType}}` | `{{if .ResponseStreaming}}stream {{end}}{{replace "." "" .ResponseLongType}}` | {{replace "|" "\\|" (replace "\n" " " (replace "\n\n" " " .Description))}} |
 {{end}}{{end}}{{range .Messages}}
 ### Message `{{.LongName}}`
 
@@ -27,7 +27,7 @@ The protos declare no `package`, so service names are bare on the wire, for exam
 {{if .HasFields}}
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-{{range .Fields}}| `{{.Name}}` | `{{if .Label}}{{.Label}} {{end}}{{replace "." "" .LongType}}` | {{nobr .Description}} |
+{{range .Fields}}| `{{.Name}}` | `{{if .Label}}{{.Label}} {{end}}{{replace "." "" .LongType}}` | {{replace "|" "\\|" (replace "\n" " " (replace "\n\n" " " .Description))}} |
 {{end}}{{end}}{{end}}{{range .Enums}}
 ### Enum `{{.LongName}}`
 
@@ -35,5 +35,5 @@ The protos declare no `package`, so service names are bare on the wire, for exam
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-{{range .Values}}| `{{.Name}}` | {{.Number}} | {{nobr .Description}} |
+{{range .Values}}| `{{.Name}}` | {{.Number}} | {{replace "|" "\\|" (replace "\n" " " (replace "\n\n" " " .Description))}} |
 {{end}}{{end}}{{end}}

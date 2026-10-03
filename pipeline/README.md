@@ -113,7 +113,7 @@ the total size across every checkpoint selected.
 ### imports
 
 `imports` lists what the executor pre-imports. It contains only the packages
-that some request actually asked for, not their full dependency closure. The
+that some request asked for, not their full dependency closure. The
 planner still scores a dependency's load time and disk size, because a package's
 measured import time assumes that its dependencies are already resident, so a
 checkpoint must carry them to deliver that saving. The executor does not need

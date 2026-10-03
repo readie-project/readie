@@ -32,6 +32,19 @@ const restored: Step[] = [
   {label: 'Run function', units: 14, kind: 'run'},
 ];
 
+// A small finish flag: a solid triangular pennant on a pole, tilted slightly to the right.
+function FinishFlag(): ReactNode {
+  return (
+    <svg className={styles.flag} viewBox="0 0 16 16" role="img" aria-label="Finish">
+      <title>Finish</title>
+      <g transform="rotate(14 4.5 15)">
+        <line className={styles.flagPole} x1={4.5} y1={1} x2={4.5} y2={15} />
+        <polygon className={styles.flagShape} points="4.5,1.6 13.8,4.9 4.5,8.2" />
+      </g>
+    </svg>
+  );
+}
+
 function Group({title, steps}: {title: string; steps: Step[]}): ReactNode {
   let elapsed = 0;
   return (
@@ -51,6 +64,7 @@ function Group({title, steps}: {title: string; steps: Step[]}): ReactNode {
               <span className={styles.stepLabel}>{step.label}</span>
               <span className={styles.track}>
                 <span className={clsx(styles.fill, styles[step.kind])} />
+                {step.kind === 'run' && <FinishFlag />}
               </span>
             </li>
           );
@@ -63,7 +77,6 @@ function Group({title, steps}: {title: string; steps: Step[]}): ReactNode {
 function Timeline(): ReactNode {
   return (
     <figure className={styles.timeline}>
-      <div className={styles.timelineTitle}>Startup timeline</div>
       <div className={styles.timelineBody}>
         <Group title="Cold start" steps={coldStart} />
         <Group title="Restored from a checkpoint" steps={restored} />
@@ -125,10 +138,10 @@ function Hero(): ReactNode {
           <CodeBlock language="bash">pip install readie</CodeBlock>
         </div>
         <div className={styles.actions}>
-          <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart">
+          <Link className={clsx("button button--primary", styles.cta)} to="/docs/getting-started/quickstart">
             Quickstart
           </Link>
-          <Link className="button button--secondary button--lg" to="/docs/architecture/overview">
+          <Link className={clsx("button button--secondary", styles.cta)} to="/docs/architecture/overview">
             How it works
           </Link>
         </div>
@@ -146,16 +159,19 @@ function HowItWorks(): ReactNode {
           <p>
             Importing libraries is most of a serverless cold start. Readie moves that work ahead of
             time. A pipeline starts Python with common packages already imported and saves the
-            process as a checkpoint. When a call arrives, the router picks a worker and the
-            checkpoint that holds the packages the function needs, and the worker restores that
-            checkpoint in a gVisor sandbox and runs the function.
+            process as a checkpoint.
+          </p>
+          <p>
+            When a call arrives, the router picks a worker and the checkpoint that holds the
+            packages the function needs. The worker restores that checkpoint in a gVisor sandbox
+            and runs the function.
           </p>
           <p className={styles.more}>
             <Link to="/docs/architecture/request-lifecycle">Read the request lifecycle</Link>
           </p>
         </div>
-        <div className={styles.columns}>
-          <div className={styles.code}>
+        <div className={styles.stage}>
+          <div className={styles.codeCard}>
             <CodeBlock language="python" title="app.py">
               {sample}
             </CodeBlock>
@@ -169,7 +185,7 @@ function HowItWorks(): ReactNode {
 
 function Documentation(): ReactNode {
   return (
-    <section className={clsx(styles.section, styles.band, styles.last)}>
+    <section className={clsx(styles.section, styles.last)}>
       <div className={clsx('container', styles.wide)}>
         <Heading as="h2" className={styles.centered}>
           Documentation
@@ -190,7 +206,7 @@ function Documentation(): ReactNode {
 export default function Home(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
   return (
-    <Layout title="Documentation" description={siteConfig.tagline}>
+    <Layout description={siteConfig.tagline}>
       <Hero />
       <main>
         <HowItWorks />

@@ -6,7 +6,7 @@ description: Start the NGINX proxy, router, and worker on one machine with Docke
 
 Use this procedure to start a full Readie stack on one machine: an NGINX proxy, the router, and one worker. The stack runs under Docker Compose, and `make run-local` wraps the commands.
 
-:::warning Worker requires a gVisor host
+:::warning[Worker requires a gVisor host]
 The worker runs sandboxes with gVisor (`runsc`). gVisor works only on an amd64 Linux host and fails under emulation, so the worker does not run on Apple Silicon. The router and NGINX run anywhere Docker runs.
 
 On a host without gVisor, the test suites still run, because they use fakes in place of gVisor. See [Run the tests without gVisor](#run-the-tests-without-gvisor).
