@@ -111,6 +111,7 @@ const config: Config = {
         {label: 'SDK reference', to: '/docs/guides/sdk'},
         {label: 'Contribute', to: '/docs/contributing/setup'},
         {label: 'Security', to: '/docs/architecture/security'},
+        {label: 'PyPI', href: 'https://pypi.org/project/readie'},
         {label: 'GitHub', href: repoUrl},
       ],
       copyright: `Copyright © ${new Date().getFullYear()} The Readie authors. Apache-2.0 licensed.`,
