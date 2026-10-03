@@ -22,8 +22,9 @@ startup. It is the whole input to request-time checkpoint selection:
   ``planning/greedy.py``'s ``_describe``).
 
 The router picks the checkpoint minimising ``alpha * size + Σ load_time(closure
-of required items not in it)``, applying its own ``alpha`` to the raw size. The
-``alpha`` the planner built these under is recorded here for reference.
+of required items not in it)``, applying the catalogue's ``alpha`` to the raw size. The
+``alpha`` recorded here is the one measured after capture; the router has no
+``alpha`` setting of its own.
 
 Items are keyed the way the client names them in a request's required set:
 packages by their resolved dotted import name (not necessarily top-level --

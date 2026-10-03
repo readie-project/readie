@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # -- Session serialisation -------------------------------------------
     #: How long a request will wait for its session's turn.
     #:
-    #: A session maps to one paused container holding one Python process behind
+    #: A session maps to one idle container holding one Python process behind
     #: one socket, so concurrent requests for a session must be serialised.
     #: This bounds the resulting queue.
     session_wait_timeout: float = Field(default=60.0, gt=0)

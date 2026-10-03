@@ -22,6 +22,8 @@ exist in the worker's image.
 
 from __future__ import annotations
 
+import importlib.metadata as _metadata
+
 from readie.budget import Budget, ResourceKind
 from readie.client import Client, Session
 from readie.codec import CloudpickleCodec, ResultCodec
@@ -50,7 +52,11 @@ from readie.errors import (
 from readie.protocol import CallRef, Outcome
 from readie.transport import AsyncTransport, Transport
 
-__version__ = "0.1.0"
+try:
+    # pyproject.toml is the one place the version is written.
+    __version__ = _metadata.version("readie")
+except _metadata.PackageNotFoundError:  # running from a tree that is not installed
+    __version__ = "0+unknown"
 
 __all__ = [
     "AsyncTransport",

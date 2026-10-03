@@ -33,6 +33,16 @@ updates:
       - dependency-name: grpcio-health-checking
       - dependency-name: grpcio-reflection
 
+  # The docs site. Docusaurus packages are released in lockstep, so one group
+  # keeps them from being bumped to mismatched versions.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    groups:
+      docs-dependencies:
+        patterns: ["*"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

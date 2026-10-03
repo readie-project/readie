@@ -32,7 +32,7 @@
 //
 // A false "ok" is *not* a worker failure. The sandbox ran, the interpreter is
 // healthy, and the container is still reusable - so the execution is reported
-// as a success and the container is paused for reuse. Only the client turns
+// as a success and the container is kept for reuse. Only the client turns
 // that envelope into an exception.
 //
 // # What version 1 could not express

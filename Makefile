@@ -67,13 +67,15 @@ READIE_MAX_CHECKPOINTS := 15
 # Total size budget, in MB.
 READIE_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
-# more than alpha*size. Default 0.005.
+# more than alpha*size. Tuned over time; the pipeline measures the real value
+# after capture and writes it into the catalogue the router reads.
 READIE_ALPHA := 0.006
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
         router-% pkg-% executor-% pipeline-% worker-% lint type test help \
-		run-prod run-local shutdown
+		run-prod run-local shutdown \
+        docs-install docs-tools docs-protos docs-build docs-start docs-serve
 
 all: protos lint type test ## Generate, check and test everything
 
@@ -307,6 +309,32 @@ test: ## Test every component
 	@$(MAKE) --no-print-directory -C executor test
 	@$(MAKE) --no-print-directory -C pipeline test
 	@$(MAKE) --no-print-directory -C worker test
+
+# ---------------------------------------------------------------------------
+# Documentation site (Docusaurus, in docs/; Node version pinned in docs/.nvmrc)
+# ---------------------------------------------------------------------------
+docs-install: ## Install the docs site's npm dependencies
+	cd docs && npm ci
+
+# Pinned so the generated page is byte-identical locally and in CI. protoc itself
+# comes from `make -C worker tools`.
+PROTOC_GEN_DOC_VERSION := v1.5.1
+
+docs-tools: ## Install protoc-gen-doc into GOBIN
+	go install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@$(PROTOC_GEN_DOC_VERSION)
+
+docs-protos: ## Regenerate the protobuf reference page (needs protoc-gen-doc on PATH)
+	protoc -I $(PROTO_SRC) --doc_out=docs/docs/architecture \
+		--doc_opt=docs/tools/protos.md.tmpl,protos.md $(PROTO_SRC)/*.proto
+
+docs-build: ## Build the docs site; fails on any broken link
+	cd docs && npm run build
+
+docs-start: ## Run the docs site with live reload
+	cd docs && npm start
+
+docs-serve: docs-build ## Build the docs site and serve the result
+	cd docs && npm run serve
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) \
