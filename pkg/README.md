@@ -84,10 +84,12 @@ every call:
 def fetch(url): ...
 ```
 
-Each entry is a requirement string, either a bare name or a full spec such as
-`"numpy==1.26.0"`. The client normalizes the entries and removes duplicates by
-distribution name when the function is decorated, so `"Requests"` and
-`"requests"` collapse to one entry.
+Entries are requirement strings (a bare name or a full spec like
+`"numpy==1.26.0"`), normalized and deduped by distribution name at decoration
+time - `"Requests"` and `"requests"` collapse to one entry. Installation is
+unconditional: it runs on every call, even when the package looks already
+present. Independent calls get fresh containers; session calls reuse their warm
+interpreter, but installation is not cached.
 
 Installation is unconditional. It runs on every call, even when the package
 appears to be present, because each call restores a fresh, isolated container
@@ -147,6 +149,134 @@ with readie.default_client().session() as s:
 The router serializes calls within one session. A session maps to one container
 that runs one interpreter behind one socket, so its calls cannot run at the same
 time. Unrelated sessions run in parallel.
+
+### Shared globals
+
+By default, sessions share one globals dictionary across their remotely called
+**plain Python functions** (`Client(session_globals=True)`). Initialize persistent
+state remotely using `global`:
+
+```python
+@remote
+def initialize():
+    global counter, items
+    counter = 0
+    items = []
+
+
+@remote
+def increment():
+    global counter
+    counter += 1
+    items.append(counter)
+    return counter
+
+
+with readie.Session() as s:
+    initialize.bind(s)()
+    assert increment.bind(s)() == 1
+    assert increment.bind(s)() == 2
+```
+
+To reuse a warm container without replacing the submitted callable's globals,
+disable session globals for that client:
+
+```python
+with readie.Client(session_globals=False) as client, client.session() as s:
+    client.call(train.func, session=s)
+```
+
+The option applies to both blocking and async calls, including remote functions
+using that client. Session IDs, routing, serial execution, and container reuse
+remain unchanged. Calls keep their ordinary cloudpickle globals/callable behavior
+and do not require a session-globals acknowledgment or generate ignored-globals
+warnings. Disabling does not clear previously initialized shared session state;
+unscoped calls are unaffected regardless of the option. For default `@remote`
+calls, install the opted-out client with
+`readie.configure(client=readie.Client(session_globals=False))`.
+
+**With session globals enabled, client globals are discarded on every session
+call, even the first.** This
+includes constants, imports, helpers, and a function's own name; nothing is
+seeded from the client or automatically registered under the submitted function's
+name. A missing name raises `NameError`. Import inside the function; use `global`
+for an import or value that later functions should access. Unscoped calls retain
+their existing globals behavior.
+
+**Methods decorated with `@remote` are supported in sessions.** The SDK submits
+the underlying Python function and passes `self` as an argument, so that function
+uses the same session globals as other remote functions. The receiver's instance
+attributes are not automatically persisted across calls.
+
+With session globals enabled, submitting a raw bound method directly through
+`Client.call(obj.method, session=s)` is not supported. Partials, callable objects,
+and built-ins are also unsupported as session-call targets in that mode. Setting
+`session_globals=False` retains support for those ordinary callable types.
+
+Discarded bindings produce `readie.IgnoredGlobalsWarning`, even with
+`stream_logs=False`. Standard module scaffolding does not trigger a warning.
+Filter it using Python's warning controls:
+
+```python
+import warnings
+
+warnings.filterwarnings("ignore", category=readie.IgnoredGlobalsWarning)
+```
+
+Warnings are emitted after execution, including on remote failures. Promoting one
+to an error does not undo the remote call. Structured diagnostics also travel in
+the result envelope's optional `warnings` field.
+
+Rebindings, object mutations, and deletions persist; locals do not. Assignments
+made before a function raises or its result fails to serialize remain in place.
+Closures and defaults still use ordinary per-call cloudpickle semantics: they are
+not merged into the session namespace, and functions captured there retain their
+own globals. Incoming globals are serialized/unpickled before being discarded,
+so they can still cause serialization failures.
+
+State is **in memory only**, for the warm sandbox's lifetime. Restarting or losing
+the sandbox loses its state; this does not isolate imported-module caches or
+provide background-thread synchronization or durable storage.
+
+### Testing session globals against a real stack
+
+Ordinary integration tests use an in-process fake router. Global-persistence tests
+also have an opt-in real-stack suite, parametrized over checkpoint-enabled and
+cold-start execution:
+
+```sh
+# From pkg/, with a freshly started CPU stack:
+READIE_TEST_ROUTER_URI=localhost:50051 uv run pytest -m real_stack -v
+```
+
+Without `READIE_TEST_ROUTER_URI`, these tests skip. Set `READIE_TEST_TLS=true` for a
+TLS endpoint; the usual `READIE_AUTH_TOKEN` and `READIE_TLS_CA` settings still apply.
+An explicitly configured but unreachable stack fails rather than skips. The
+checkpoint-enabled cases exercise normal placement, but cannot guarantee a restore
+rather than fallback; confirm that in worker logs. The sandbox image/checkpoints
+must include the executor implementation under test, not an older baked version.
+Session closure is local, so their containers remain until the worker reaps them;
+use a fresh stack with capacity for six 256 MiB session containers plus one
+unscoped call (the default CPU worker's eight slots suffice).
+
+### Compatibility and deployment
+
+Custom `ResultCodec.encode_call` implementations used with session globals enabled
+must accept keyword-only `session_globals: bool = False` and serialize the optional
+`session_globals: True` request field. Unscoped and opted-out calls keep the old
+invocation. Successful responses with session globals enabled must acknowledge
+`session_globals_applied: True`;
+otherwise the SDK raises `ConfigurationError`. That call may already have run,
+so do not retry it automatically. Older clients retain their original behavior.
+
+Deploy the SDK with the matching executor. Rebuild the baked executor rootfs and
+regenerate checkpoints/base images with the repository's generation workflow;
+rebuilding only the Go worker does not update the executor. Existing warm
+sessions are not migrated: reopen them on the updated deployment.
+
+Calls inside one session are **serialised by the router**: a session maps to one
+container running one interpreter behind one socket, so they cannot safely run at
+once. Unrelated sessions stay fully parallel.
 
 `client.session()` is a convenience wrapper. `Session` is a plain class that you
 can construct directly, so the context-manager form is optional:

@@ -110,6 +110,52 @@ Version 1 used a literal `EOF` and a connection close. It could not distinguish
 a short message from a truncated one, and a function that raised sent nothing
 back. Version 2 fixes both.
 
+## Session globals
+
+Requests may include optional `session_globals: true` (false when
+absent). The SDK enables it by default for session calls;
+`Client(session_globals=False)` opts out without changing session affinity or
+container reuse. One `ExecutorServer` owns one namespace, initialized after
+checkpoint restoration with built-ins and minimal module scaffolding. Existing router affinity and serial execution provide its
+session lifetime; the socket protocol needs no session ID.
+
+Flagged calls must target a plain Python function. The executor reconstructs it
+against the shared dictionary because `__globals__` is read-only. Its original
+globals are discarded on every call, never merged, and never mutated. Closures,
+defaults, annotations, and function metadata are preserved. Unflagged requests
+retain the original callable behavior.
+
+Methods decorated with `@remote` also satisfy this requirement: the SDK submits
+their underlying Python function with `self` in the arguments. Raw bound-method
+objects submitted directly do not. Instance attributes are ordinary serialized
+argument state, not automatically persisted session globals.
+
+Initialize shared values inside remote functions with `global`. Reads, rebindings,
+mutations, imports bound globally, and deletion persist until the sandbox is gone.
+Locals do not. The function is not registered under its own name automatically;
+missing constants/helpers/imports and recursive self-bindings raise `NameError`.
+State is not transactional: user exceptions and result-serialization failures
+leave earlier mutations intact. Captured functions are not recursively rebound,
+and client globals still pass through cloudpickle before being discarded.
+
+After successful binding, responses include `session_globals_applied: true`, on
+both success and subsequent failures. Discarded bindings other than standard
+module scaffolding generate optional structured diagnostics:
+
+```python
+{"warnings": [{"code": "ignored_globals", "message": "...", "names": ["counter"]}]}
+```
+
+Only names, never values, are reported. Diagnostics and captured output survive
+package/DNS setup failures, user exceptions, and result-serialization fallback.
+The SDK emits `IgnoredGlobalsWarning` independently of log streaming.
+
+These are additive pickle payload fields, not changes to protocol-2 framing or
+protobufs. Deploy with the matching SDK and regenerate the baked rootfs and
+checkpoints; rebuilding the worker alone leaves the old executor in place.
+Existing sessions cannot be migrated and must be reopened. This feature is not
+durable persistence, module-cache isolation, or a security boundary.
+
 ## Configuration
 
 | Variable | Description |

@@ -21,22 +21,41 @@ def add(a: int, b: int) -> int:
     return a + b
 
 
-def call(func: object, *args: object, packages: list[str] | None = None, **kwargs: object) -> bytes:
+def call(
+    func: object,
+    *args: object,
+    packages: list[str] | None = None,
+    session_globals: bool = False,
+    **kwargs: object,
+) -> bytes:
     return bytes(
         cloudpickle.dumps(
-            {"func": func, "args": args, "kwargs": kwargs, "packages": packages or []}
+            {
+                "func": func,
+                "args": args,
+                "kwargs": kwargs,
+                "packages": packages or [],
+                "session_globals": session_globals,
+            }
         )
     )
 
 
-def exchange(request: bytes, *, settings: Settings | None = None) -> dict[str, object]:
+def exchange(
+    request: bytes,
+    *,
+    settings: Settings | None = None,
+    executor: ExecutorServer | None = None,
+) -> dict[str, object]:
     """Drive one handle() over a socketpair and return the decoded envelope.
 
     A socketpair rather than a mock: the framing bugs worth catching are about
     real recv boundaries, and a mock cannot produce them.
     """
     server_side, client_side = socket.socketpair()
-    executor = ExecutorServer(settings or Settings(socket_dir="/unused", chunk_size=CHUNK))
+    executor = executor or ExecutorServer(
+        settings or Settings(socket_dir="/unused", chunk_size=CHUNK)
+    )
 
     def serve() -> None:
         # serve_forever wraps each connection in `with conn`; handle() alone

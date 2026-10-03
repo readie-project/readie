@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 import io
 import socket
 import sys
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
 from readie_executor import protocol
-from readie_executor.codec import DecodeError, decode_call, encode_result
+from readie_executor.codec import Call, decode_call, encode_result
 from readie_executor.config import Settings
+from readie_executor.globals import bind_session_globals
 from readie_executor.install import install_packages
 from readie_executor.network import ensure_dns
 
@@ -62,6 +65,13 @@ class ExecutorServer:
         self._settings = settings
         self._socket: socket.socket | None = None
         self._closed = False
+        # One executor belongs to one warm session; construction occurs after
+        # checkpoint restoration, so no user's globals enter a base checkpoint.
+        self._session_globals: dict[str, Any] = {
+            "__builtins__": vars(builtins).copy(),
+            "__name__": "__readie_session__",
+            "__package__": None,
+        }
 
     @property
     def path(self) -> str:
@@ -154,9 +164,11 @@ class ExecutorServer:
         except Exception as exc:  # noqa: BLE001 - cloudpickle raises broadly
             # The value came back but will not travel. Report *that* rather than
             # closing silently, which would look identical to a crash.
-            payload = encode_result(
-                protocol.failure_envelope(exc, traceback.format_exc()),
-            )
+            failure = protocol.failure_envelope(exc, traceback.format_exc())
+            for key in ("output", "warnings", "session_globals_applied"):
+                if key in envelope:
+                    failure[key] = envelope[key]
+            payload = encode_result(failure)
 
         try:
             protocol.write_message(conn, payload, chunk_size=self._settings.chunk_size)
@@ -166,28 +178,30 @@ class ExecutorServer:
             print(f"[executor] could not send response: {exc}", file=sys.stderr, flush=True)
 
     def _run(self, raw: bytes) -> tuple[dict[str, Any], list[str]]:
-        """Decode, install packages, and invoke, turning any failure into a response.
-
-        Every path returns an envelope. Version 1 returned nothing when the
-        function raised, so the caller saw an empty response and had to infer
-        what happened from log lines; that inference is what this removes.
-
-        Installing runs unconditionally, even for a package the rootfs already
-        carries: every request restores a fresh container, so there is no warm
-        state to check an "already installed" claim against. DNS is bootstrapped
-        unconditionally too, before anything that might need it.
-        """
+        """Decode and bind the call, retaining diagnostics on every outcome."""
+        metadata: dict[str, Any] = {}
         try:
             call = decode_call(raw)
-        except DecodeError as exc:
+            if call.session_globals:
+                func, warnings = bind_session_globals(call.func, self._session_globals)
+                call = replace(call, func=func)
+                metadata["session_globals_applied"] = True
+                if warnings:
+                    metadata["warnings"] = warnings
+            envelope, output = self._execute(call)
+        except Exception as exc:  # noqa: BLE001 - bad requests must not kill a warm executor
             print(f"[executor] {exc}", file=sys.stderr, flush=True)
-            return protocol.failure_envelope(exc, traceback.format_exc()), []
+            envelope, output = protocol.failure_envelope(exc, traceback.format_exc()), []
+        envelope.update(metadata)
+        return envelope, output
 
-        ensure_dns()
+    def _execute(self, call: Call) -> tuple[dict[str, Any], list[str]]:
+        """Install packages and invoke, capturing output and user exceptions."""
         output: list[str] = []
         if call.packages:
             print(f"[executor] installing packages: {sorted(call.packages)}", flush=True)
         try:
+            ensure_dns()
             install_output = install_packages(list(call.packages))
         except Exception as exc:  # noqa: BLE001 - any install failure must produce a response, not a crash
             print(f"[executor] {exc}", file=sys.stderr, flush=True)

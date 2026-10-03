@@ -56,7 +56,7 @@ ban-relative-imports = "all"
 convention = "google"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 files = ["src", "tests"]
@@ -88,6 +88,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--strict-markers --strict-config -ra"
+markers = ["real_stack: opt-in tests requiring a running Readie stack (including gVisor)"]
 filterwarnings = ["error"]
 
 [tool.coverage.run]

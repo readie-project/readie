@@ -124,5 +124,9 @@ def test_every_module_has_a_docstring() -> None:
 def test_every_public_error_descends_from_the_base() -> None:
     for name in readie.__all__:
         value = getattr(readie, name)
-        if isinstance(value, type) and issubclass(value, Exception):
+        if (
+            isinstance(value, type)
+            and issubclass(value, Exception)
+            and not issubclass(value, Warning)
+        ):
             assert issubclass(value, readie.ReadieError), name

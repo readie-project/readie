@@ -51,6 +51,7 @@ from readie.errors import (
 )
 from readie.protocol import CallRef, Outcome
 from readie.transport import AsyncTransport, Transport
+from readie.warnings import IgnoredGlobalsWarning
 
 try:
     # pyproject.toml is the one place the version is written.
@@ -71,6 +72,7 @@ __all__ = [
     "EmptyResultError",
     "ExecutionCancelledError",
     "ExecutionError",
+    "IgnoredGlobalsWarning",
     "IncompatiblePythonError",
     "InvalidPackageError",
     "InvalidRequestError",

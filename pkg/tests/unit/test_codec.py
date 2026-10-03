@@ -26,6 +26,15 @@ def test_the_encoded_call_matches_what_the_executor_unpickles() -> None:
     assert loaded["func"](*loaded["args"], **loaded["kwargs"]) == 3
 
 
+def test_session_globals_are_an_opt_in_payload_key() -> None:
+    import cloudpickle
+
+    codec = CloudpickleCodec()
+    assert "session_globals" not in cloudpickle.loads(codec.encode_call(add, (), {}))
+    loaded = cloudpickle.loads(codec.encode_call(add, (), {}, session_globals=True))
+    assert loaded["session_globals"] is True
+
+
 def test_packages_ride_along_as_a_fourth_key() -> None:
     # The executor installs from this key before invoking func; the worker and
     # router never see it, exactly like the function body itself.
