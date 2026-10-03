@@ -444,7 +444,8 @@ html[data-scrolled] .navbar {
 .pagination-nav__link {
   border: 1px solid var(--rd-line);
   border-radius: var(--ifm-global-radius);
-  background: var(--rd-surface);
+  background: var(--rd-bg);
+  color: var(--rd-ink);
 }
 
 .pagination-nav__link:hover {
