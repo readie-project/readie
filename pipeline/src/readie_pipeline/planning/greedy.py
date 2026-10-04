@@ -157,6 +157,12 @@ class GreedyPlanner:
 
         for index, request in enumerate(requests):
             for name in closures[self._request_resources(request)]:
+                # Dataset measurements are useful for analysis and future
+                # planning, but capture does not load dataset frames yet.
+                # Selecting one here would produce a plan that build cannot
+                # materialize into a checkpoint.
+                if name.startswith("dataset:"):
+                    continue
                 if ":" not in name and name in STDLIB:
                     continue
 

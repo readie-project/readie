@@ -73,7 +73,7 @@ def test_it_prefers_import_time_over_popularity():
     assert plans[0].imports == ("slow",)
 
 
-def test_it_selects_measured_datasets_alongside_packages():
+def test_it_does_not_select_datasets_before_capture_support_exists():
     corpus = Corpus.of(
         [
             Request(task_name="t", category="c", code="", datasets=("owner/data",)),
@@ -98,10 +98,7 @@ def test_it_selects_measured_datasets_alongside_packages():
         Budget(max_checkpoints=1, size_mb=20, memory_mb=30),
     )
 
-    assert plans[0].datasets == ("owner/data",)
-    assert plans[0].imports == ()
-    assert plans[0].size_mb == pytest.approx(12)
-    assert plans[0].memory_size_mb == pytest.approx(24)
+    assert plans == []
 
 
 def test_a_dataset_over_the_memory_budget_is_not_selected():

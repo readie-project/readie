@@ -38,6 +38,21 @@ SIGFPE, `import pandas` included, not just whatever the extra reach was for.
 top of the base image itself, so there is only one libc - and runs it. The
 result lands on the host at `data/metadata/<flavor>.json`.
 
+Corpus dataset measurements first use KaggleHub's download operation to
+enumerate every file, including nested files, then pass each file through
+KaggleHub's pandas adapter. The download is inventory only; format conversion
+and loader-specific options (for example JSONL, Excel, and SQLite handling)
+remain owned by KaggleHub rather than being duplicated in the pipeline. If the
+adapter detects a checksum mismatch from a stale partial cache entry, the
+measurement retries that file once with KaggleHub's forced refresh before
+reporting the dataset as unusable.
+
+Corpus references are validated before download. Kaggle competition URLs
+(``/c/``) and ownerless dataset URLs are reported as unsupported or malformed
+entries instead of being sent to KaggleHub as dataset handles. A valid dataset
+reference has an owner and name, such as ``uciml/iris`` or
+``https://www.kaggle.com/datasets/uciml/iris``.
+
 `capture` is the image's default command and exists because those two stages have
 to share a container: `plan` writes the bundle's `config.json` under `$BASE_DIR`,
 which lives inside the image and is not mounted out, so a second `docker run`
