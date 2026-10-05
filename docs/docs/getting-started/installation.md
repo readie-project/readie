@@ -23,7 +23,7 @@ The package metadata also declares `requires-python = "~=3.12.0"`, so `pip` refu
 
 ## Steps
 
-1. Install the package. The package is named `readie` and is imported as `readie`.
+1. Install the package from [PyPI](https://pypi.org/project/readie). The package is named `readie` and is imported as `readie`.
 
    ```bash
    pip install readie
