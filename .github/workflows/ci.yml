@@ -37,6 +37,11 @@ jobs:
         working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pipeline/data/metadata/* is stored in Git LFS and the pipeline tests
+          # load it. Without this the checkout holds pointer files and they fail
+          # with "not valid JSON". Other packages do not need the download.
+          lfs: ${{ matrix.package == 'pipeline' }}
 
       - uses: astral-sh/setup-uv@v5
         with:
