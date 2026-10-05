@@ -73,7 +73,7 @@ READIE_ALPHA := 0.006
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
-        router-% pkg-% executor-% pipeline-% worker-% lint type test help \
+        router-% pkg-% executor-% pipeline-% playground-% worker-% lint type test help \
 		run-prod run-local shutdown \
         docs-install docs-tools docs-protos docs-build docs-start docs-serve
 
@@ -84,6 +84,7 @@ install: ## Sync every Python virtualenv from its lockfile
 	@$(MAKE) --no-print-directory -C pkg install
 	@$(MAKE) --no-print-directory -C executor install
 	@$(MAKE) --no-print-directory -C pipeline install
+	@$(MAKE) --no-print-directory -C playground install
 	@$(MAKE) --no-print-directory -C worker install
 
 # ---------------------------------------------------------------------------
@@ -284,6 +285,9 @@ executor-%:
 pipeline-%:
 	@$(MAKE) --no-print-directory -C pipeline $*
 
+playground-%:
+	@$(MAKE) --no-print-directory -C playground $*
+
 worker-%:
 	@$(MAKE) --no-print-directory -C worker $*
 
@@ -295,6 +299,7 @@ lint: protos-lint ## Lint every component
 	@$(MAKE) --no-print-directory -C pkg lint
 	@$(MAKE) --no-print-directory -C executor lint
 	@$(MAKE) --no-print-directory -C pipeline lint
+	@$(MAKE) --no-print-directory -C playground lint
 	@$(MAKE) --no-print-directory -C worker lint
 
 type: ## Type-check the Python components
@@ -302,12 +307,14 @@ type: ## Type-check the Python components
 	@$(MAKE) --no-print-directory -C pkg type
 	@$(MAKE) --no-print-directory -C executor type
 	@$(MAKE) --no-print-directory -C pipeline type
+	@$(MAKE) --no-print-directory -C playground type
 
 test: ## Test every component
 	@$(MAKE) --no-print-directory -C router test
 	@$(MAKE) --no-print-directory -C pkg test
 	@$(MAKE) --no-print-directory -C executor test
 	@$(MAKE) --no-print-directory -C pipeline test
+	@$(MAKE) --no-print-directory -C playground test
 	@$(MAKE) --no-print-directory -C worker test
 
 # ---------------------------------------------------------------------------

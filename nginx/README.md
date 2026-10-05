@@ -70,6 +70,13 @@ certificate. Let's Encrypt certificates expire after 90 days, so the file must
 be replaced on renewal, and a deployment under a different hostname must replace
 it with its own chain. The local configuration does not use it.
 
+## Playground route
+
+The configurations also forward `/playground/` to the playground service, when it is
+running, and keep every other path for gRPC. The playground itself calls the Readie server
+that the client uses by default, like any other client. See
+[`playground/README.md`](../playground/README.md).
+
 ## Local development
 
 Local development needs no domain name and no TLS certificate. The local

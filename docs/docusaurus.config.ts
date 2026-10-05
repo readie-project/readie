@@ -29,6 +29,11 @@ const config: Config = {
   organizationName: 'illinoisdata',
   projectName: 'readie',
 
+  // The playground service the playground on the landing page posts to. Empty disables the Run button.
+  customFields: {
+    playgroundUrl: process.env.PLAYGROUND_URL ?? '',
+  },
+
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
 
@@ -94,6 +99,8 @@ const config: Config = {
         {type: 'docSidebar', sidebarId: 'concepts', position: 'right', label: 'Concepts'},
         {type: 'docSidebar', sidebarId: 'architecture', position: 'right', label: 'Architecture'},
         {type: 'docSidebar', sidebarId: 'contributing', position: 'right', label: 'Contribute'},
+        // A section of the landing page, not a page: never shown as the current page.
+        {to: '/#playground', label: 'Playground', position: 'right', activeBaseRegex: '^$'},
         {
           href: repoUrl,
           label: 'GitHub',
@@ -108,7 +115,7 @@ const config: Config = {
       links: [
         {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
         {label: 'Architecture', to: '/docs/architecture/overview'},
-        {label: 'SDK reference', to: '/docs/guides/sdk'},
+        {label: 'Playground', to: '/#playground'},
         {label: 'Contribute', to: '/docs/contributing/setup'},
         {label: 'Security', to: '/docs/architecture/security'},
         {label: 'PyPI', href: 'https://pypi.org/project/readie'},
