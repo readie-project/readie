@@ -185,6 +185,8 @@ services:
                 nofile:
                     soft: 65536
                     hard: 65536
+        image: readie-playground:latest
+        container_name: playground
         runtime: runsc
         read_only: true
         tmpfs:
