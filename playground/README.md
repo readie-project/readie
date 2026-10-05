@@ -85,7 +85,7 @@ curl -N -X POST localhost:50051/playground/run \
 ```
 
 nginx routes `/playground/` to the service and everything else to the router. The
-workers need enough memory for two 4 GiB sandboxes per request, for example
+workers need enough memory for two 1 GiB sandboxes per request, for example
 `READIE_WORKER_MEM_TOTAL=24Gi`.
 
 ## Deploy

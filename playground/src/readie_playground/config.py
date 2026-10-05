@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 # The playground's resource budget is fixed, not user-selectable: every run asks for
 # the same initial and maximum memory, so a visitor cannot request more.
-MEMORY = "4Gi"
+MEMORY = "1Gi"
 
 
 @dataclass(frozen=True, slots=True)
