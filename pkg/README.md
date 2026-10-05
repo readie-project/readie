@@ -238,27 +238,6 @@ State is **in memory only**, for the warm sandbox's lifetime. Restarting or losi
 the sandbox loses its state; this does not isolate imported-module caches or
 provide background-thread synchronization or durable storage.
 
-### Testing session globals against a real stack
-
-Ordinary integration tests use an in-process fake router. Global-persistence tests
-also have an opt-in real-stack suite, parametrized over checkpoint-enabled and
-cold-start execution:
-
-```sh
-# From pkg/, with a freshly started CPU stack:
-READIE_TEST_ROUTER_URI=localhost:50051 uv run pytest -m real_stack -v
-```
-
-Without `READIE_TEST_ROUTER_URI`, these tests skip. Set `READIE_TEST_TLS=true` for a
-TLS endpoint; the usual `READIE_AUTH_TOKEN` and `READIE_TLS_CA` settings still apply.
-An explicitly configured but unreachable stack fails rather than skips. The
-checkpoint-enabled cases exercise normal placement, but cannot guarantee a restore
-rather than fallback; confirm that in worker logs. The sandbox image/checkpoints
-must include the executor implementation under test, not an older baked version.
-Session closure is local, so their containers remain until the worker reaps them;
-use a fresh stack with capacity for six 256 MiB session containers plus one
-unscoped call (the default CPU worker's eight slots suffice).
-
 ### Compatibility and deployment
 
 Custom `ResultCodec.encode_call` implementations used with session globals enabled

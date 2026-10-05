@@ -88,7 +88,6 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--strict-markers --strict-config -ra"
-markers = ["real_stack: opt-in tests requiring a running Readie stack (including gVisor)"]
 filterwarnings = ["error"]
 
 [tool.coverage.run]

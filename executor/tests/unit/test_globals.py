@@ -122,3 +122,92 @@ def test_non_function_callables_are_rejected(func):
     with pytest.raises(TypeError, match="plain Python functions only"):
         bind_session_globals(func, state)
     assert set(state) == {"__builtins__", "__name__"}
+
+
+def test_falsy_globals_remain_present_and_readable():
+    state = namespace()
+    reader, _ = bind_session_globals(
+        function("""
+        def task():
+            return "saved" in globals(), saved
+    """),
+        state,
+    )
+    values: tuple[object, ...] = (None, False, 0, "", [])
+    for value in values:
+        state["saved"] = value
+        present, returned = reader()
+        assert present is True
+        assert returned is value
+
+
+def test_global_imports_are_shared_and_deletion_removes_the_binding():
+    state = namespace()
+    importer, _ = bind_session_globals(
+        function("""
+        def task():
+            global session_math
+            import math as session_math
+    """),
+        state,
+    )
+    reader, _ = bind_session_globals(
+        function("""
+        def task():
+            return session_math.isqrt(81)
+    """),
+        state,
+    )
+    deleter, _ = bind_session_globals(
+        function("""
+        def task():
+            global session_math
+            del session_math
+    """),
+        state,
+    )
+    importer()
+    assert reader() == 9
+    deleter()
+    assert "session_math" not in state
+
+
+def test_locals_and_the_submitted_function_name_do_not_enter_session_globals():
+    state = namespace()
+    bound, _ = bind_session_globals(
+        function("""
+        def task():
+            local_value = 42
+            return local_value
+    """),
+        state,
+    )
+    assert "task" not in state
+    assert bound() == 42
+    assert "local_value" not in state
+    assert "task" not in state
+
+
+def test_a_published_helper_reads_subsequent_updates_to_the_shared_namespace():
+    state = namespace()
+    publisher, _ = bind_session_globals(
+        function("""
+        def task():
+            global helper, saved
+            saved = 42
+            def helper():
+                return saved
+    """),
+        state,
+    )
+    update, _ = bind_session_globals(
+        function("""
+        def task():
+            global saved
+            saved += 1
+            return helper()
+    """),
+        state,
+    )
+    publisher()
+    assert update() == 43

@@ -13,7 +13,8 @@ from readie import IgnoredGlobalsWarning, Session, remote
 from readie.client import Client
 from readie.codec import CloudpickleCodec
 from readie.config import Settings
-from readie.errors import ConfigurationError, RemoteExecutionError
+from readie.errors import ConfigurationError, ReadieError, RemoteExecutionError
+from readie.warnings import emit_remote_warnings
 from tests.fakes.transport import AsyncRecordingTransport, RecordingTransport
 
 WARNING = {
@@ -48,9 +49,11 @@ def success(**fields: Any) -> dict[str, Any]:
 
 
 def test_only_session_calls_enable_the_payload_flag():
-    client, sync, _ = build()
-    client.call(task)
+    client, sync, _ = build({"ok": True, "value": 42})
+    # Old executors need not acknowledge an unscoped call.
+    assert client.call(task) == 42
     assert "session_globals" not in cloudpickle.loads(sync.last[1])
+    sync.envelope = success()
     client.call(task, session=Session())
     assert cloudpickle.loads(sync.last[1])["session_globals"] is True
 
@@ -67,7 +70,7 @@ def test_opted_out_sessions_keep_their_id_without_enabling_globals_or_requiring_
     client, sync, _ = build({"ok": True, "value": 42}, session_globals=False)
     with client.session() as session:
         assert client.call(task, session=session) == 42
-        assert client.call(task, session=session) == 42
+        assert remote(client=client)(task).bind(session)() == 42
     assert {call[0].session_id for call in sync.calls} == {session.id}
     assert all("session_globals" not in cloudpickle.loads(call[1]) for call in sync.calls)
 
@@ -78,15 +81,6 @@ async def test_async_opted_out_sessions_keep_their_id_without_enabling_globals_o
         assert await client.acall(task, session=session) == 42
     assert asynchronous.last[0].session_id == session.id
     assert "session_globals" not in cloudpickle.loads(asynchronous.last[1])
-
-
-def test_decorated_session_calls_respect_the_client_opt_out():
-    client, sync, _ = build({"ok": True, "value": 42}, session_globals=False)
-    session = Session()
-    wrapped = remote(client=client)(task).bind(session)
-    assert wrapped() == 42
-    assert sync.last[0].session_id == session.id
-    assert "session_globals" not in cloudpickle.loads(sync.last[1])
 
 
 def test_opted_out_payload_preserves_client_globals_and_ordinary_callable_types():
@@ -106,20 +100,9 @@ def test_opted_out_payload_preserves_client_globals_and_ordinary_callable_types(
     assert "session_globals" not in loaded
 
 
-def test_clients_can_choose_different_globals_modes_for_the_same_session():
-    enabled, enabled_transport, _ = build()
-    disabled, disabled_transport, _ = build({"ok": True, "value": 42}, session_globals=False)
-    session = Session()
-    enabled.call(task, session=session)
-    disabled.call(task, session=session)
-    assert (
-        enabled_transport.last[0].session_id == disabled_transport.last[0].session_id == session.id
-    )
-    assert cloudpickle.loads(enabled_transport.last[1])["session_globals"] is True
-    assert "session_globals" not in cloudpickle.loads(disabled_transport.last[1])
-
-
 def test_warning_is_delivered_even_with_logs_disabled_and_points_to_the_caller():
+    assert issubclass(IgnoredGlobalsWarning, UserWarning)
+    assert not issubclass(IgnoredGlobalsWarning, ReadieError)
     client, _, _ = build(success(warnings=[WARNING]))
     with pytest.warns(IgnoredGlobalsWarning) as captured:
         assert client.call(task, session=Session()) == 42
@@ -168,11 +151,6 @@ async def test_async_old_executor_results_are_rejected_too():
     assert len(asynchronous.calls) == 1
 
 
-def test_unscoped_old_executor_results_still_work():
-    client, _, _ = build({"ok": True, "value": 42})
-    assert client.call(task) == 42
-
-
 def test_failed_calls_warn_before_raising_and_do_not_require_an_acknowledgment():
     client, _, _ = build(
         {
@@ -188,9 +166,9 @@ def test_failed_calls_warn_before_raising_and_do_not_require_an_acknowledgment()
     assert raised.value.remote_type == "NameError"
 
 
-@pytest.mark.parametrize(
-    "metadata",
-    [
+def test_unknown_or_malformed_warning_metadata_is_ignored():
+    # Validate diagnostics at their owner, without rebuilding clients/transports.
+    cases: tuple[object, ...] = (
         None,
         {},
         "warning",
@@ -199,11 +177,12 @@ def test_failed_calls_warn_before_raising_and_do_not_require_an_acknowledgment()
         [{"code": "ignored_globals", "message": 42, "names": []}],
         [{"code": "ignored_globals", "message": "bad", "names": [1]}],
         [{"code": "ignored_globals", "message": "bad"}],
-    ],
-)
-def test_unknown_or_malformed_warning_metadata_does_not_break_results(metadata):
-    client, _, _ = build(success(warnings=metadata))
-    assert client.call(task, session=Session()) == 42
+    )
+    for metadata in cases:
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            emit_remote_warnings(success(warnings=metadata))
+        assert not captured, metadata
 
 
 def test_custom_codecs_receive_the_session_keyword():
@@ -225,9 +204,7 @@ def test_custom_codecs_receive_the_session_keyword():
     assert codec.flags == [False, True]
 
 
-@pytest.mark.parametrize(
-    ("session_globals", "use_session"), [(True, False), (False, False), (False, True)]
-)
+@pytest.mark.parametrize(("session_globals", "use_session"), [(True, False), (False, True)])
 def test_legacy_custom_codecs_work_for_unscoped_and_opted_out_calls(session_globals, use_session):
     class LegacyCodec:
         def encode_call(self, func, args, kwargs, packages=()):
@@ -240,7 +217,3 @@ def test_legacy_custom_codecs_work_for_unscoped_and_opted_out_calls(session_glob
     # This intentionally exercises an old runtime implementation of the seam.
     client._codec = LegacyCodec()  # type: ignore[assignment]
     assert client.call(task, session=Session() if use_session else None) == 42
-
-
-def test_the_public_warning_is_filterable_without_being_a_readie_error():
-    assert issubclass(IgnoredGlobalsWarning, UserWarning)

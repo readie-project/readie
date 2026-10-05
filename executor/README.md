@@ -17,6 +17,11 @@ make lint type # ruff + mypy --strict
 make help      # list every target
 ```
 
+Session-global unit tests cover namespace behavior and function reconstruction.
+Socket integration tests cover serialization, persistence across requests,
+executor isolation, and diagnostics on success and failure. They use the real
+codec and socket protocol, without routing or gVisor.
+
 ## Startup order
 
 The order of startup is part of the design. A checkpoint freezes the process
