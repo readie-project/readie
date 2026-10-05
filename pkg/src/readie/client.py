@@ -13,19 +13,23 @@ from readie._compat import check_python_version
 from readie.budget import Budget
 from readie.codec import CloudpickleCodec, ResultCodec
 from readie.config import Settings
-from readie.errors import BlockingCallInEventLoopError, ClientClosedError
+from readie.errors import BlockingCallInEventLoopError, ClientClosedError, ConfigurationError
 from readie.identity import new_request_id, new_session_id
 from readie.protocol import CallRef, Outcome, function_output, unwrap_envelope
 from readie.resources import extract_imports
 from readie.transport import AsyncGrpcTransport, AsyncTransport, GrpcTransport, Transport
+from readie.warnings import emit_remote_warnings
 
 
 class Session:
     """A handle on one warm container's Python state.
 
     Calls made under one session are routed to the same container, so state left
-    behind by an earlier call -- an imported module, a loaded model, a fitted
-    estimator -- is still there for the next.
+    behind in the session's shared globals dictionary is available to the next
+    plain Python function by default. Incoming client globals are discarded;
+    initialize persistent values inside a remote function using ``global``.
+    ``Client(session_globals=False)`` disables namespace sharing while retaining
+    warm-container reuse. Closures and defaults retain per-call serialization.
 
     **Calls within a session run one at a time.** A container is a single Python
     interpreter behind a single unix socket and cannot serve two executions at
@@ -81,6 +85,10 @@ class Client:
     Every collaborator is injected and defaulted, so a test supplies a fake
     transport and exercises the real client, and a deployment supplies its own
     codec without subclassing anything.
+
+    ``session_globals`` defaults to true. Set it to false to keep each submitted
+    callable's original globals, even when using a session. Session routing and
+    warm-container reuse remain unchanged; independent calls are unaffected.
     """
 
     def __init__(
@@ -91,10 +99,12 @@ class Client:
         transport: Transport | None = None,
         async_transport: AsyncTransport | None = None,
         log_sink: Callable[[str], None] | None = None,
+        session_globals: bool = True,
     ) -> None:
         check_python_version()
         self.settings = settings or Settings()
         self._codec = codec or CloudpickleCodec()
+        self._session_globals = session_globals
         self._log_sink = log_sink if log_sink is not None else _default_log_sink
         self._closed = False
 
@@ -151,7 +161,7 @@ class Client:
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
-        return self._finish(outcome)
+        return self._finish(outcome, session_globals=self._session_globals and session is not None)
 
     async def acall(
         self,
@@ -178,7 +188,7 @@ class Client:
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
-        return self._finish(outcome)
+        return self._finish(outcome, session_globals=self._session_globals and session is not None)
 
     # -- lifecycle ---------------------------------------------------------
     def close(self) -> None:
@@ -242,12 +252,31 @@ class Client:
         # going to be resumed anyway.
         session_id = session.id if session is not None else ""
         ref = CallRef(request_id=new_request_id(), session_id=session_id)
-        payload = self._codec.encode_call(func, args, kwargs or {}, packages)
+        if self._session_globals and session is not None:
+            payload = self._codec.encode_call(
+                func, args, kwargs or {}, packages, session_globals=True
+            )
+        else:
+            # Preserve the original invocation for independent and opted-out
+            # calls, including codecs predating the session-globals keyword.
+            payload = self._codec.encode_call(func, args, kwargs or {}, packages)
         imports = extract_imports(func)
         return ref, payload, imports
 
-    def _finish(self, outcome: Outcome) -> Any:
+    def _finish(self, outcome: Outcome, *, session_globals: bool = False) -> Any:
         envelope = self._codec.decode_result(outcome.payload)
+        if (
+            session_globals
+            and isinstance(envelope, dict)
+            and envelope.get("ok")
+            and envelope.get("session_globals_applied") is not True
+        ):
+            raise ConfigurationError(
+                "The executor did not acknowledge session globals. Update the executor "
+                "rootfs/checkpoints and reopen the session. The call may already have "
+                "executed; do not retry automatically."
+            )
+        emit_remote_warnings(envelope)
         if self.settings.stream_logs:
             for text in function_output(envelope):
                 self._log_sink(text)

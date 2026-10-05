@@ -99,6 +99,7 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
                         "message": str(exc),
                         "traceback": traceback.format_exc(),
                     }
+                envelope["session_globals_applied"] = call.get("session_globals") is True
             result = (
                 self.raw_payload if self.raw_payload is not None else cloudpickle.dumps(envelope)
             )

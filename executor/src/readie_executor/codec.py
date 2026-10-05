@@ -9,6 +9,10 @@ call shape or nothing runs. That shape is::
 sends it still decodes, since it names PyPI requirements to install with
 ``uv`` before invoking ``func`` rather than anything the call itself needs.
 
+``session_globals`` is an optional boolean, defaulting to false. The server
+reconstructs flagged plain Python functions against its session-owned namespace;
+unflagged calls preserve their original globals and callable behavior.
+
 # Trust
 
 ``decode_call`` unpickles bytes the worker handed it, and unpickling executes
@@ -40,6 +44,7 @@ class Call:
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
     packages: tuple[str, ...] = ()
+    session_globals: bool = False
 
     def invoke(self) -> Any:
         """Call the function. Any exception it raises propagates."""
@@ -79,13 +84,20 @@ def decode_call(raw: bytes) -> Call:
         msg = f"request 'func' is not callable, it is {type(func).__name__}"
         raise DecodeError(msg)
 
+    session_globals = payload.get("session_globals", False)
+    if not isinstance(session_globals, bool):
+        msg = "request 'session_globals' must be a boolean"
+        raise DecodeError(msg)
+
     args, kwargs = tuple(payload["args"]), dict(payload["kwargs"])
     packages = tuple(payload.get("packages", ()))
     print(
         f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}, packages={packages}",
         flush=True,
     )
-    return Call(func=func, args=args, kwargs=kwargs, packages=packages)
+    return Call(
+        func=func, args=args, kwargs=kwargs, packages=packages, session_globals=session_globals
+    )
 
 
 def encode_result(value: Any) -> bytes:

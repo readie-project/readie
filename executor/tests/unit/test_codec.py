@@ -85,6 +85,21 @@ def test_packages_default_to_empty_when_absent():
     assert decode_call(raw).packages == ()
 
 
+def test_session_globals_default_to_false_for_older_clients():
+    assert decode_call(encode({"func": add, "args": (), "kwargs": {}})).session_globals is False
+
+
+def test_session_globals_are_read_when_enabled():
+    call = decode_call(encode({"func": add, "args": (), "kwargs": {}, "session_globals": True}))
+    assert call.session_globals is True
+
+
+@pytest.mark.parametrize("flag", [None, 0, 1, "true", [], {}])
+def test_non_boolean_session_globals_are_rejected(flag):
+    with pytest.raises(DecodeError, match="must be a boolean"):
+        decode_call(encode({"func": add, "args": (), "kwargs": {}, "session_globals": flag}))
+
+
 def test_a_user_exception_propagates_out_of_invoke():
     def explode() -> None:
         raise ValueError("boom")

@@ -46,13 +46,17 @@ class RecordingTransport:
         for line in self.logs:
             if on_log is not None:
                 on_log(line)
+        envelope = self.envelope
+        if envelope is None:
+            envelope = {"ok": True, "value": self.result}
+            if ref.session_id:
+                # A canned acknowledgment, not evidence of sandbox persistence.
+                envelope["session_globals_applied"] = True
         return Outcome(
             # Wrapped: the executor sends a result envelope, and the client
             # unwraps one. A fake returning a bare value would let the client's
             # unwrap path rot untested.
-            payload=cloudpickle.dumps(
-                self.envelope if self.envelope is not None else {"ok": True, "value": self.result}
-            ),
+            payload=cloudpickle.dumps(envelope),
             logs=self.logs,
             attribution=Attribution(worker_id="worker-fake", container_id="ctr-fake"),
         )

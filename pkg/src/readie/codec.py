@@ -33,6 +33,8 @@ class ResultCodec(Protocol):
         args: Sequence[Any],
         kwargs: Mapping[str, Any],
         packages: Sequence[str] = (),
+        *,
+        session_globals: bool = False,
     ) -> bytes:
         """Serialise a call for the executor."""
         ...
@@ -52,6 +54,8 @@ class CloudpickleCodec:
     installs with ``uv`` before invoking ``func``, so a caller's requested
     packages travel with the call itself rather than through a separate
     channel router and worker would otherwise have to know about.
+    ``session_globals: True`` is another optional key, enabled only for session
+    calls to request replacement of the submitted function's global namespace.
     """
 
     def encode_call(
@@ -60,6 +64,8 @@ class CloudpickleCodec:
         args: Sequence[Any],
         kwargs: Mapping[str, Any],
         packages: Sequence[str] = (),
+        *,
+        session_globals: bool = False,
     ) -> bytes:
         """Pickle the function object together with its arguments."""
         # Print the Python interpreter version
@@ -68,16 +74,15 @@ class CloudpickleCodec:
         print(f"cloudpickle version: {cloudpickle.__version__}")  # noqa: T201
 
         try:
-            return bytes(
-                cloudpickle.dumps(
-                    {
-                        "func": func,
-                        "args": tuple(args),
-                        "kwargs": dict(kwargs),
-                        "packages": list(packages),
-                    }
-                )
-            )
+            payload = {
+                "func": func,
+                "args": tuple(args),
+                "kwargs": dict(kwargs),
+                "packages": list(packages),
+            }
+            if session_globals:
+                payload["session_globals"] = True
+            return bytes(cloudpickle.dumps(payload))
         except Exception as exc:
             name = getattr(func, "__qualname__", repr(func))
             msg = f"cannot serialise call to {name}: {exc}"
