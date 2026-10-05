@@ -23,6 +23,7 @@ offline. Everything talks gRPC over contracts in `protos/`.
 | `executor/` | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
 | `pkg/`      | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
 | `pipeline/` | Python 3.13  | Offline: corpus, package analysis, checkpoint planning and capture        |
+| `playground/` | Python 3.12 | FastAPI service behind the docs playground; runs visitor code under gVisor; calls Readie like any client |
 | `protos/`   | protobuf     | Wire contracts: `execution`, `proxy`, `registry`, `resources`             |
 | `docs/`     | Docusaurus   | Docs site (readie.org); Node pinned in `.nvmrc`                           |
 
@@ -34,7 +35,7 @@ router catalogues), `docker-compose.yml`, and the umbrella root `Makefile`.
 Run these from the repo root; the root `Makefile` fans out to every component.
 
 - `make install`: sync every Python venv with `uv`, and run `go mod download`.
-- `make lint type test`: the full gate, mirroring CI. (`type` covers the four
+- `make lint type test`: the full gate, mirroring CI. (`type` covers the five
   Python components; the Go worker has no `type` target, and its lint includes vet.)
 - Per-component passthroughs: `make worker-test`, `make router-lint`,
   `make pkg-type`, `make pipeline-test`, and so on (equivalently `make -C <component> <verb>`).
@@ -113,8 +114,10 @@ There are three kinds of documentation, each with one audience:
   Architecture and Contribute are for contributors and developers: Concepts and
   Architecture explain the system and its design, and Contribute holds development
   and operator material (the glossary lives in Concepts).
+  The site does not describe the playground (its architecture, concepts or
+  deployment). That material lives in `playground/README.md` and `SECURITY.md`.
 - **Component READMEs** (`router/`, `worker/`, `executor/`, `pkg/`, `pipeline/`,
-  `nginx/`, `protos/`, `catalogues/`). Written for maintainers of that directory:
+  `playground/`, `nginx/`, `protos/`, `catalogues/`). Written for maintainers of that directory:
   layout, internals, configuration, how to test. `pkg/README.md` is the PyPI page
   and is written for SDK users.
 - **Root files** (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, this file). Short,
@@ -132,6 +135,7 @@ There are three kinds of documentation, each with one audience:
 | The catalogue format or how the router selects a checkpoint | `catalogues/README.md`; site `concepts/flavors-and-catalogues`, `concepts/cost-model`, `architecture/placement` |
 | Sandbox or container behavior (network, limits, idle timeout, lifecycle) | `worker/README.md`; site `concepts/sandboxes`, `architecture/container-lifecycle` |
 | Pipeline stages, outputs or commands | `pipeline/README.md`; site `architecture/building-checkpoints`, `contributing/build-checkpoints` |
+| The playground service, its settings or its deployment | `playground/README.md` and `SECURITY.md`. The site does not describe the playground's architecture or concepts |
 | Trust boundaries, auth, TLS or network defaults | `SECURITY.md`; site `architecture/security-model`, `architecture/security`, `contributing/deploy-with-tls` |
 | CI jobs or the PR checklist | `CONTRIBUTING.md`; site `contributing/pull-requests` |
 | A Python version floor | This file, `CONTRIBUTING.md`, site `getting-started/installation`, `getting-started/faq`, `guides/troubleshooting` |

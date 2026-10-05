@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -30,12 +30,18 @@ jobs:
           - { package: router, python: "3.13" }
           - { package: pipeline, python: "3.13" }
           - { package: pkg, python: "3.12" }
+          - { package: playground, python: "3.12" }
           - { package: executor, python: "3.12" }
     defaults:
       run:
         working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pipeline/data/metadata/* is stored in Git LFS and the pipeline tests
+          # load it. Without this the checkout holds pointer files and they fail
+          # with "not valid JSON". Other packages do not need the download.
+          lfs: ${{ matrix.package == 'pipeline' }}
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -113,8 +119,14 @@ jobs:
       # The contracts are additive by policy: new field numbers, never reused or
       # renumbered ones. A renumbered field silently reinterprets every message
       # already in flight, which no test would catch.
+      #
+      # buf clones .git to read main, and that clone runs the LFS smudge filter on
+      # catalogues/cpu.json. This checkout did not fetch LFS objects, so the clone
+      # fails. The protos do not need them, so skip the smudge.
       - name: Breaking changes
         if: github.event_name == 'pull_request'
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1"
         run: buf breaking --against '.git#branch=main'
 
   protos:
@@ -176,7 +188,6 @@ jobs:
 
   images:
     name: images build
-    if: false # temporarily disabled
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -112,6 +112,27 @@ authentication. Run the router-to-worker mesh on a private network, and do not
 expose the worker's port. Do not expose the router's port to anyone you would not
 give a shell to.
 
+### The playground service
+
+The docs playground (`playground/`) accepts visitor code over HTTPS, builds it into a
+`@remote` function in a generated module, and calls Readie through the client, as any
+user would. Importing that module runs only a decorator and a `def`; the visitor's
+statements run on Readie, in the worker's sandbox. The service still handles
+visitor-derived input, so it is contained:
+
+- It runs under gVisor (`runtime: runsc`) as a non-root user, with all capabilities
+  dropped, no-new-privileges, a read-only root filesystem, a small `noexec` tmpfs, and
+  pid and memory limits.
+- nginx is the only published container. It forwards `/playground/` to the service. The
+  service calls the Readie server that the client uses by default, over TLS, through that
+  server's nginx like any other client. It sits on the normal compose network and has
+  outbound network access, so a compromise could reach other hosts.
+- It holds a Readie token that only the playground uses, so a compromise exposes a
+  token with no other use. Run the playground against a dedicated Readie server with
+  `SANDBOX_NETWORK=none` on its workers where possible.
+- Readie has no quotas, so nginx (`limit_req`, body size) and the service (rate limit,
+  size, output and concurrency caps) add their own.
+
 ## Non-vulnerabilities
 
 - A remote function reading its own container's filesystem. The sandbox has a

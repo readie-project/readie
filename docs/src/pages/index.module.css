@@ -71,6 +71,11 @@
   border-block: 1px solid var(--rd-line);
 }
 
+.anchored {
+  /* Keep the section's title below the sticky navbar when a link jumps to it. */
+  scroll-margin-top: var(--ifm-navbar-height);
+}
+
 .last {
   padding-bottom: 5rem;
   border-bottom: 0;
@@ -92,6 +97,10 @@
   max-width: 52rem;
   margin: 0 auto 2.5rem;
   text-align: center;
+}
+
+.introFull {
+  max-width: none;
 }
 
 .intro p {

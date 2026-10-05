@@ -1,0 +1,82 @@
+[project]
+name = "readie-playground"
+version = "0.1.0"
+description = "HTTP service behind the docs playground: forwards visitor code to Readie, never runs it"
+readme = "README.md"
+requires-python = "~=3.12.0"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "cloudpickle>=3.1",
+    "fastapi>=0.115",
+    "readie",
+    "uvicorn>=0.32",
+]
+
+[tool.uv.sources]
+readie = { path = "../pkg", editable = true }
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/readie_playground"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "F", "E", "W", "I", "N", "UP", "B", "A", "C4", "DTZ", "T20", "PT", "RET",
+    "SIM", "ARG", "PTH", "ERA", "PL", "RUF", "ASYNC", "S", "TID", "D",
+]
+ignore = [
+    "D107",    # __init__ docstring: the class docstring covers it
+    "D203",    # incompatible with D211
+    "D213",    # incompatible with D212
+    "PLR0913", # constructor injection legitimately takes many arguments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "D100", "D101", "D102", "D103", "D104", "PLR2004", "ARG001", "ARG002"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_unused_ignores = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--strict-markers --strict-config -ra"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src/readie_playground"]
+
+[[tool.mypy.overrides]]
+# cloudpickle ships no type information.
+module = ["cloudpickle.*"]
+ignore_missing_imports = true
