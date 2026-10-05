@@ -10,7 +10,7 @@ carries the same material in task form: see
 
 ## Components
 
-The repository has six components. The five code components each have their own
+The repository has seven components. The six code components each have their own
 build, their own tests, and their own entry in CI. The `nginx/` component is
 configuration only. The root `Makefile` is an umbrella over all of them and owns
 the one thing they share.
@@ -23,6 +23,7 @@ the one thing they share.
 | [`executor/`](executor/) | Python 3.12 | Runs _inside_ every sandbox; unpickles and calls the function             |
 | [`pkg/`](pkg/)           | Python 3.12 | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
 | [`pipeline/`](pipeline/) | Python 3.13 | Offline: corpus, package analysis, checkpoint planning and capture        |
+| [`playground/`](playground/) | Python 3.12 | FastAPI service behind the docs playground; runs visitor code under gVisor; calls Readie like any client |
 
 `protos/` is the single source of truth for every wire contract.
 `pipeline/Dockerfile` is the single source of truth for everything a checkpoint is
@@ -158,7 +159,7 @@ Write the commit subject in the imperative mood, under about 72 characters, with
 no trailing period. The body explains what was broken and why the fix has its
 shape, because the diff already shows what changed.
 
-CI must be green. It checks lint, types, and tests for all five components,
+CI must be green. It checks lint, types, and tests for all six components,
 `go test -race` for the worker, `buf` for the protos, no generated-stub drift,
 and that the images still build. The router and worker images are built in full,
 and the worker is built against a stub base because it embeds no rootfs. The

@@ -3,9 +3,11 @@ import clsx from 'clsx';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import useBaseUrl from '@docusaurus/useBaseUrl';
+import useBrokenLinks from '@docusaurus/useBrokenLinks';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import CodeBlock from '@theme/CodeBlock';
+import Playground from '../components/Playground';
 
 import styles from './index.module.css';
 
@@ -141,8 +143,8 @@ function Hero(): ReactNode {
           <Link className={clsx("button button--primary", styles.cta)} to="/docs/getting-started/quickstart">
             Quickstart
           </Link>
-          <Link className={clsx("button button--secondary", styles.cta)} to="/docs/architecture/overview">
-            How it works
+          <Link className={clsx("button button--secondary", styles.cta)} to="/#playground">
+            Try Readie
           </Link>
         </div>
       </div>
@@ -167,7 +169,7 @@ function HowItWorks(): ReactNode {
             and runs the function.
           </p>
           <p className={styles.more}>
-            <Link to="/docs/architecture/request-lifecycle">Read the request lifecycle</Link>
+            <Link to="/docs/architecture/overview">Read about Readie's architecture</Link>
           </p>
         </div>
         <div className={styles.stage}>
@@ -183,9 +185,25 @@ function HowItWorks(): ReactNode {
   );
 }
 
+function TryIt(): ReactNode {
+  // The navbar links to this section, so the build must know that the anchor exists.
+  useBrokenLinks().collectAnchor('playground');
+  return (
+    <section id="playground" className={clsx(styles.section, styles.anchored)}>
+      <div className={clsx('container', styles.wide)}>
+        <div className={clsx(styles.intro, styles.introFull)}>
+          <Heading as="h2">Try Readie</Heading>
+          <p>Pick an example or write your own, and see the difference.</p>
+        </div>
+        <Playground />
+      </div>
+    </section>
+  );
+}
+
 function Documentation(): ReactNode {
   return (
-    <section className={clsx(styles.section, styles.last)}>
+    <section className={clsx(styles.section, styles.band, styles.last)}>
       <div className={clsx('container', styles.wide)}>
         <Heading as="h2" className={styles.centered}>
           Documentation
@@ -210,6 +228,7 @@ export default function Home(): ReactNode {
       <Hero />
       <main>
         <HowItWorks />
+        <TryIt />
         <Documentation />
       </main>
     </Layout>

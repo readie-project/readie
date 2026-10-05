@@ -163,6 +163,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Smooth scrolling for anchor links and the scroll buttons, except for visitors who ask their
+   system for less motion. */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 /* ------------------------------------------------------------------ Headings */
 
 h1,
