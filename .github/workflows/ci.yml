@@ -177,7 +177,6 @@ jobs:
 
   images:
     name: images build
-    if: false # temporarily disabled
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
