@@ -120,7 +120,10 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
                 f"{getattr(facts, 'import_time', 0.0):.3f} s"
             )
 
-    metadata = analyze(packages, exclude=exclude, on_progress=progress)
+    if exclude:
+        metadata = analyze(packages, exclude=exclude, on_progress=progress)
+    else:
+        metadata = analyze(packages, on_progress=progress)
     if settings.corpus_path.exists():
         corpus = Corpus.load(settings.corpus_path)
         dataset_facts = measure_datasets(
