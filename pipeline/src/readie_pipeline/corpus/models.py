@@ -41,11 +41,6 @@ class Request:
     models: tuple[str, ...] = field(default_factory=tuple)
     tokenizers: tuple[str, ...] = field(default_factory=tuple)
 
-    @property
-    def top_level_imports(self) -> frozenset[str]:
-        """Compatibility view used by planners that need package roots."""
-        return frozenset(name.split(".")[0] for name in self.imports if name)
-
     @classmethod
     def from_json(cls, raw: Mapping[str, Any], *, index: int) -> Request:
         """Build a request, naming the offending entry when it cannot."""

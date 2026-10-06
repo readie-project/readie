@@ -101,36 +101,10 @@ def test_it_does_not_select_datasets_before_capture_support_exists():
     plans = GreedyPlanner(alpha=0.01).plan(
         corpus,
         metadata,
-        Budget(max_checkpoints=1, size_mb=20, memory_mb=30),
+        Budget(max_checkpoints=1, size_mb=20),
     )
 
     assert plans == []
-
-
-def test_a_dataset_over_the_memory_budget_is_not_selected():
-    corpus = Corpus.of(
-        [Request(task_name="t", category="c", code="", datasets=("owner/data",))] * 10
-    )
-    metadata = Metadata(
-        {
-            "owner/data": PackageFacts(
-                base_import="owner/data",
-                disk_size_mb=12,
-                memory_size_mb=40,
-                import_time=1.5,
-                resource_type=ResourceType.DATASET,
-            )
-        }
-    )
-
-    assert (
-        GreedyPlanner(alpha=0.01).plan(
-            corpus,
-            metadata,
-            Budget(max_checkpoints=1, size_mb=20, memory_mb=30),
-        )
-        == []
-    )
 
 
 def test_it_prefers_the_cheaper_of_two_equally_useful_packages():

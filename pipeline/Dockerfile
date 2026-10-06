@@ -184,8 +184,7 @@ COPY pipeline/data ./data
 # use). Resolving readie-pipeline's own requirement here could upgrade the
 # base image's copy before measuring it -- exactly the kind of interference
 # `rootfs` above avoids for the executor with the same flag.
-RUN pip install --no-cache-dir --no-deps . \
-    && pip install --no-cache-dir kagglehub
+RUN pip install --no-cache-dir .
 
 ENV READIE_DATA_DIR="/app/data"
 

@@ -21,7 +21,6 @@ class Budget:
 
     max_checkpoints: int = 8
     size_mb: float = 2048.0
-    memory_mb: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
