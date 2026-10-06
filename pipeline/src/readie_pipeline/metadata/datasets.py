@@ -26,7 +26,6 @@ from readie_pipeline.metadata.models import PackageFacts, ResourceType
 _MB = 1024 * 1024
 _DATASET_PATH_PARTS = 3
 _OWNER_DATASET_PARTS = 2
-_DEPENDENCIES = {"pandas": "(any)", "kagglehub": "(any)"}
 _RATE_LIMIT_RETRIES = 3
 _RATE_LIMIT_DELAYS = (30.0, 60.0, 120.0)
 
@@ -260,7 +259,6 @@ def _measure_dataset_once(
 
         facts = PackageFacts(
             base_import=slug,
-            dependencies=dict(_DEPENDENCIES),
             disk_size_mb=disk_size / _MB,
             memory_size_mb=memory_size / _MB,
             import_time=load_time,
@@ -283,7 +281,6 @@ def _measure_dataset_once(
         return DatasetMeasurement(
             facts=PackageFacts(
                 base_import=slug,
-                dependencies=dict(_DEPENDENCIES),
                 resource_type=ResourceType.DATASET,
                 error=f"could not measure dataset: {exc}",
             ),

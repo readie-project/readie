@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # -- Session serialisation -------------------------------------------
     #: How long a request will wait for its session's turn.
     #:
-    #: A session maps to one paused container holding one Python process behind
+    #: A session maps to one idle container holding one Python process behind
     #: one socket, so concurrent requests for a session must be serialised.
     #: This bounds the resulting queue.
     session_wait_timeout: float = Field(default=60.0, gt=0)
@@ -82,8 +82,6 @@ class Settings(BaseSettings):
     worker_ttl: float = Field(default=30.0, gt=0)
     executor_ttl: float = Field(default=600.0, gt=0)
     executor_error_ttl: float = Field(default=60.0, gt=0)
-    session_ttl: float = Field(default=1800.0, gt=0)
-    max_sessions: int = Field(default=10_000, gt=0)
 
     # -- Security ---------------------------------------------------------
     # All opt-in: unset means plaintext with no auth, the documented default.

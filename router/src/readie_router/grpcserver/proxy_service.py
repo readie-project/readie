@@ -89,10 +89,17 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         )
 
         try:
-            # Serialise per session before placing: the placement decision reads
-            # the session's affinity, and a concurrent request must not observe
-            # it mid-flight.
-            async with self._gate.hold(header.session_id):
+            # An empty session_id means "not part of any session" - there is
+            # no affinity to read and no one else who could ever share this
+            # key, so gating it would only make every such call queue behind
+            # every other one on the same "" lock for nothing.
+            if header.session_id:
+                # Serialise per session before placing: the placement decision
+                # reads the session's affinity, and a concurrent request must
+                # not observe it mid-flight.
+                async with self._gate.hold(header.session_id):
+                    await self._run(header, request_iterator, context, log)
+            else:
                 await self._run(header, request_iterator, context, log)
         except BaseExceptionGroup as group:
             # The relay runs its two pumps under a TaskGroup, which reports any
@@ -127,8 +134,8 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         if header.WhichOneof("data") != "config":
             msg = "the first message must carry the execution config"
             raise InvalidRequestError(msg)
-        if not header.request_id or not header.session_id:
-            msg = "request_id and session_id are required"
+        if not header.request_id:
+            msg = "request_id is required"
             raise InvalidRequestError(msg)
         return header
 
@@ -148,7 +155,11 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             )
         )
         log = log.bind(
-            **{KEY_WORKER_ID: placement.worker_id, KEY_CHECKPOINT_ID: placement.checkpoint_id, KEY_CONTAINER_ID: placement.container_id},
+            **{
+                KEY_WORKER_ID: placement.worker_id,
+                KEY_CHECKPOINT_ID: placement.checkpoint_id,
+                KEY_CONTAINER_ID: placement.container_id,
+            },
             warm=placement.warm,
         )
         log.info("execution placed")
@@ -283,6 +294,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             budgets=tuple(budgets),
             resources=imports,
             flavor="gpu" if gpu else "cpu",
+            disable_optimized_execution=config.disable_optimized_execution,
         )
 
 

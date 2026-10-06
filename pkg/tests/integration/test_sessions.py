@@ -28,15 +28,17 @@ async def test_calls_in_one_session_all_carry_its_id(
     assert set(harness.router.session_ids) == {session.id}
 
 
-async def test_calls_without_a_session_never_share_one(
+async def test_calls_without_a_session_send_no_session_id(
     client: Client,
     harness: RouterHarness,
 ) -> None:
     await asyncio.gather(*(client.acall(add, (i, i)) for i in range(8)))
 
-    # Eight independent calls must be eight sessions, or the router serialises
-    # them all onto one container.
-    assert len(set(harness.router.session_ids)) == 8
+    # Independent calls send no session_id at all - the router treats an
+    # empty id as "not part of any session" and never tracks or serialises on
+    # it, rather than each call getting its own throwaway session just to
+    # avoid contention.
+    assert set(harness.router.session_ids) == {""}
 
 
 async def test_request_ids_are_unique_across_concurrent_calls(

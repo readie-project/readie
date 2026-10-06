@@ -183,10 +183,13 @@ type pipeDialer struct {
 	replyDelay            time.Duration
 	holdOpen              bool
 	stallBeforeTerminator bool
-	dialErr               error
-	stop                  chan struct{}
-	mu                    sync.Mutex
-	requestBody           []byte
+	// noReply closes the connection right after reading the request, before
+	// writing anything - the executor produced no response at all.
+	noReply     bool
+	dialErr     error
+	stop        chan struct{}
+	mu          sync.Mutex
+	requestBody []byte
 }
 
 func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
@@ -237,6 +240,9 @@ func (d *pipeDialer) serve(conn executor.Conn) {
 	d.requestBody = body
 	d.mu.Unlock()
 
+	if d.noReply {
+		return
+	}
 	if d.replyDelay > 0 {
 		select {
 		case <-time.After(d.replyDelay):
@@ -606,6 +612,21 @@ func TestRun_DialFailureDestroysTheContainer(t *testing.T) {
 	require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
 	assert.Equal(t, []container.Outcome{container.OutcomeFailure}, h.containers.Outcomes(),
 		"a container whose executor never answered is not reusable")
+}
+
+func TestRun_AnOOMShapedFailureOnASessionResumeIsNeverRetried(t *testing.T) {
+	h := newHarness(t, execution.RunnerConfig{WorkerMemTotal: 4 << 30}, func(h *harness) {
+		h.dialer.noReply = true
+	})
+
+	req := request()
+	req.ContainerID = "exec_container-warm" // a session resume, not a fresh container
+
+	_, err := h.runner.Run(context.Background(), req, &chunkSource{}, h.sink)
+
+	require.Error(t, err, "retrying a session resume would race its own container's teardown")
+	assert.ErrorIs(t, err, executor.ErrNoResponse)
+	assert.Len(t, h.containers.AcquireRequests(), 1, "no retry was attempted")
 }
 
 func TestRun_RequestSourceErrorFailsTheExecution(t *testing.T) {

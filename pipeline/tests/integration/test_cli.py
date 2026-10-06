@@ -43,7 +43,11 @@ def test_plan_produces_a_plan_from_the_committed_corpus(workspace: Path, capsys)
     assert code == 0
     plan = json.loads((workspace / "checkpoints.json").read_text())
     assert 1 <= len(plan) <= 2
-    assert plan[0]["imports"]
+    # A single facility's own top-level ask can be filtered out as ineligible
+    # even while its shared dependencies remain (see MIN_COVERAGE), so it's
+    # the plan as a whole -- not necessarily its first entry -- that must
+    # report something the executor can act on.
+    assert any(p["imports"] for p in plan)
     assert plan[0]["requests_served"] > 0
     assert "planning over" in capsys.readouterr().out
 
@@ -112,9 +116,10 @@ def test_analyze_writes_dataset_measurements_with_package_metadata(tmp_path: Pat
     assert run("--data-dir", str(data), "--output-dir", str(tmp_path / "out"), "analyze") == 0
 
     written = json.loads((data / "metadata" / "cpu.json").read_text())
-    assert written["pandas"]["resource_type"] == "package"
-    assert written["owner/data"]["resource_type"] == "dataset"
-    assert written["owner/data"]["memory_size_mb"] == 30
+    packages = written["packages"]
+    assert packages["pandas"]["resource_type"] == "package"
+    assert packages["owner/data"]["resource_type"] == "dataset"
+    assert packages["owner/data"]["memory_size_mb"] == 30
 
 
 def test_the_fixed_planner_is_selectable(workspace: Path):

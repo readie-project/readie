@@ -4,10 +4,17 @@ Written once per generation beside the manifest and read by the router at
 startup. It is the whole input to request-time checkpoint selection:
 
 * ``items`` - every measured item (package, dataset, model, tokenizer) with its
-  disk size, load time, and (for a package with measured dependencies) the
-  item keys of its direct dependencies, so the router can expand a request's
-  declared needs into the same closure the planner scored checkpoints against
-  before pricing the residual.
+  resident memory size, load time, and (for a package) the item keys of
+  ``dependencies``, so the router can expand a request's declared needs into
+  the same closure the planner scored checkpoints against before pricing the
+  residual. Despite the name, this is now already the *full* transitive
+  closure, not just first-level requirements: ``Metadata.direct_dependencies``
+  is empirically measured (a ``sys.modules`` diff around the actual import),
+  and that diff is already fully transitive in one shot -- the router's own
+  recursive expansion over it is still correct, just redundant now. ``size_mb``
+  here is memory, not disk: what gVisor actually copies back on restore, and
+  what the ``alpha * size`` term below is charging for -- see
+  ``PackageFacts.memory_size_mb``.
 * ``checkpoints`` - each checkpoint's item set and its raw total size (MB). Two
   item lists per checkpoint: ``items`` is the full dependency closure (what is
   actually resident, and what pricing needs), ``canonical`` is only what some
@@ -15,12 +22,15 @@ startup. It is the whole input to request-time checkpoint selection:
   ``planning/greedy.py``'s ``_describe``).
 
 The router picks the checkpoint minimising ``alpha * size + Σ load_time(closure
-of required items not in it)``, applying its own ``alpha`` to the raw size. The
-``alpha`` the planner built these under is recorded here for reference.
+of required items not in it)``, applying the catalogue's ``alpha`` to the raw size. The
+``alpha`` recorded here is the one measured after capture; the router has no
+``alpha`` setting of its own.
 
 Items are keyed the way the client names them in a request's required set:
-packages by their bare import name, and datasets/models/tokenizers prefixed with
-their kind (``model:gpt2``), so the router can match a request's needs directly.
+packages by their resolved dotted import name (not necessarily top-level --
+``sklearn`` and ``sklearn.svm`` are independent items), and
+datasets/models/tokenizers prefixed with their kind (``model:gpt2``), so the
+router can match a request's needs directly.
 """
 
 from __future__ import annotations
@@ -69,23 +79,7 @@ def _checkpoint_items(plan: CheckpointPlan, metadata: Metadata) -> list[str]:
     checkpoint, dependencies included, not just the trimmed executor-facing
     list (see ``_canonical_items`` for that one).
     """
-    requested = list(plan.imports)
-    requested.extend(item_key(name, ResourceType.DATASET) for name in plan.datasets)
-    requested.extend(item_key(name, ResourceType.MODEL) for name in plan.models)
-    requested.extend(item_key(name, ResourceType.TOKENIZER) for name in plan.tokenizers)
-    closure = metadata.closure(requested)
-    packages = [name for name in closure if ":" not in name]
-    datasets = [name.partition(":")[2] for name in closure if name.startswith("dataset:")]
-    models = [name.partition(":")[2] for name in closure if name.startswith("model:")]
-    tokenizers = [name.partition(":")[2] for name in closure if name.startswith("tokenizer:")]
-    return _keyed_items(
-        packages,
-        CheckpointPlan(
-            datasets=tuple(datasets),
-            models=tuple(models),
-            tokenizers=tuple(tokenizers),
-        ),
-    )
+    return _keyed_items(metadata.closure(plan.imports), plan)
 
 
 def _canonical_items(plan: CheckpointPlan) -> list[str]:
@@ -113,8 +107,7 @@ def build_catalogue(
     items: dict[str, dict[str, Any]] = {}
     for name, facts in metadata.packages.items():
         entry: dict[str, Any] = {
-            "size_mb": round(facts.disk_size_mb, 4),
-            "memory_size_mb": round(facts.memory_size_mb, 4),
+            "size_mb": round(facts.memory_size_mb, 4),
             "load_time": facts.import_time,
             "resource_type": str(facts.resource_type),
         }
@@ -126,7 +119,7 @@ def build_catalogue(
     checkpoints = []
     for checkpoint_id, plan in entries:
         keys = _checkpoint_items(plan, metadata)
-        size_mb = sum(metadata.size_mb(_bare(key)) for key in keys)
+        size_mb = sum(metadata.memory_size_mb(_bare(key)) for key in keys)
         checkpoints.append(
             {
                 "id": checkpoint_id,

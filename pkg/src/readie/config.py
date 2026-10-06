@@ -39,15 +39,15 @@ class Settings:
     stream_logs: bool = DEFAULT_STREAM_LOGS
     """Print executor output as it arrives, instead of only on failure."""
 
-    auth_token: str = field(default_factory=lambda: os.environ.get(
-        "READIE_AUTH_TOKEN") or "", init=False)
+    auth_token: str = field(
+        default_factory=lambda: os.environ.get("READIE_AUTH_TOKEN") or "", init=False
+    )
     """Bearer token sent to a router that requires one. Empty sends none."""
 
     tls: bool = True
     """Connect over TLS. Implied by ``tls_ca``. Off means plaintext. Required for HTTPS."""
 
-    tls_ca: str = field(default_factory=lambda: os.environ.get(
-        "READIE_TLS_CA") or "", init=False)
+    tls_ca: str = field(default_factory=lambda: os.environ.get("READIE_TLS_CA") or "", init=False)
     """Path to a PEM CA bundle that verifies the nginx server. Empty uses TLS with the
     system roots (when ``tls`` is on)."""
 
@@ -59,7 +59,7 @@ class Settings:
     def __post_init__(self) -> None:
         """Reject settings that would fail later, and more confusingly."""
         if not self.router_uri:
-            msg = "router_uri is required; set READIE_ROUTER_URI or pass it explicitly"
+            msg = "router_uri is required; pass it to readie.configure(router_uri=...)"
             raise ConfigurationError(msg)
         if self.chunk_size <= 0:
             msg = f"chunk_size must be positive, got {self.chunk_size}"
@@ -73,6 +73,9 @@ class Settings:
         if self.timeout is not None and self.timeout <= 0:
             msg = f"timeout must be positive or None, got {self.timeout}"
             raise ConfigurationError(msg)
+        # Statically stream_logs is always a bool, but nothing stops a caller
+        # constructing Settings from untyped data (e.g. parsed config) from
+        # passing something else.
         if self.stream_logs is not None and not isinstance(self.stream_logs, bool):
-            msg = f"stream_logs must be a boolean, got {self.stream_logs}"
+            msg = f"stream_logs must be a boolean, got {self.stream_logs}"  # type: ignore[unreachable]
             raise ConfigurationError(msg)

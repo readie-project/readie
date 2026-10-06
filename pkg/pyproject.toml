@@ -1,6 +1,6 @@
 [project]
 name = "readie"
-version = "0.2.6"
+version = "0.3.1"
 description = "Client SDK for running Python functions on Readie"
 readme = "README.md"
 requires-python = "~=3.12.0"

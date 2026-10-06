@@ -121,8 +121,7 @@ class RegistryService(registry_pb2_grpc.RegistryServiceServicer):
             gpu_mem_used=request.gpu_mem_used,
             gpu_mem_total=request.gpu_mem_total,
         )
-        self._log.debug("worker utilization", **
-                        {KEY_WORKER_ID: request.worker_id})
+        self._log.debug("worker utilization", **{KEY_WORKER_ID: request.worker_id})
         return registry_pb2.RegistryUpdateResponse(updated=True)
 
     async def PostExecutorUtilization(  # noqa: N802

@@ -1,3 +1,5 @@
+name: readie
+
 services:
     nginx:
         image: nginx:alpine
@@ -5,6 +7,8 @@ services:
         depends_on:
             router:
                 condition: service_healthy
+            playground:
+                condition: service_started
         restart: unless-stopped
     router:
         build:
@@ -166,6 +170,43 @@ services:
             timeout: 5s
             retries: 3
             start_period: 5s
+
+    # The docs playground. It runs under gVisor, so the host must register the runsc runtime
+    # with Docker, with no capabilities and a read-only root filesystem. nginx forwards
+    # /playground/ to it. It calls the Readie server that the client uses by default, so it
+    # needs no address.
+    playground:
+        build:
+            context: .
+            dockerfile: playground/Dockerfile
+            # Same as the router: uv's bytecode compile needs more descriptors than some
+            # hosts give a build by default.
+            ulimits:
+                nofile:
+                    soft: 65536
+                    hard: 65536
+        image: readie-playground:latest
+        container_name: playground
+        runtime: runsc
+        read_only: true
+        tmpfs:
+            - /tmp:rw,noexec,nosuid,size=64m
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        pids_limit: 256
+        mem_limit: 1g
+        volumes:
+            # gVisor cannot reach Docker's built-in DNS, so no name would resolve without this.
+            - ./playground/resolv.conf:/etc/resolv.conf:ro
+        environment:
+            # nginx puts the client address in X-Forwarded-For.
+            PLAYGROUND_TRUST_PROXY: "true"
+            # Origin(s) of the docs site that calls the playground, comma separated.
+            PLAYGROUND_ALLOWED_ORIGINS: ${PLAYGROUND_ALLOWED_ORIGINS:-https://readie.org}
+            # Use a token that only the playground has.
+            READIE_AUTH_TOKEN: ${PLAYGROUND_AUTH_TOKEN:-}
 
 volumes:
     worker-shared:

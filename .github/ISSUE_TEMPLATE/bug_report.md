@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something behaves differently than documented
+about: Report behavior that differs from the documentation
 labels: bug
 ---
 
@@ -10,16 +10,16 @@ labels: bug
 
 ## What happened
 
-<!-- Include the exact error, and the structured log lines around it. The
-     router and worker log JSON with request_id and container_id - those two
-     fields are what let a report be traced across components. -->
+<!-- Include the exact error and the structured log lines around it. The
+     router and worker log JSON with request_id and container_id. These two
+     fields let a report be traced across components. -->
 
 ## What you expected
 
 ## Reproduction
 
-<!-- The smallest thing that shows it. If it involves a remote function, the
-     function body matters: what it imports and what it returns. -->
+<!-- The smallest example that shows the problem. If it involves a remote
+     function, include the function body: what it imports and what it returns. -->
 
 ## Environment
 
@@ -29,4 +29,4 @@ labels: bug
 
 <!-- If this involves executing a function rather than only the router/worker
      gRPC path: gVisor is amd64-only, so this cannot reproduce on Apple Silicon.
-     Please say which you are on. -->
+     State which platform you are on. -->

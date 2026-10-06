@@ -5,6 +5,18 @@ corpus notebooks. It is reimplemented rather than imported: the SDK ships to
 users, and coupling it to the offline analysis tooling -- and to that tooling's
 dependencies and its notebook-specific line cleaning -- costs more than the
 duplication.
+
+KEEP THE TWO VISITORS' IMPORT-EXTRACTION IN SYNC. This visitor's output
+(``SourceFacts.imports``) becomes ``ExecutionConfig.imports`` on a live
+request (see ``resources.py`` and ``protocol.py``), which the router matches
+against the catalogue ``pipeline``'s ``corpus/tree_parser.py`` was used to
+build, using plain, un-normalised string equality -- the router does no
+collapsing of its own. If the two visitors ever record a dotted import
+differently (e.g. one keeps the deepest candidate ``x.y.z`` and the other
+truncates to ``x.y``), a live request stops matching catalogue entries it
+should, silently degrading toward a worse checkpoint or a cold start with no
+error raised anywhere. Change ``visit_Import``/``visit_ImportFrom`` here only
+in lockstep with the same methods there, and vice versa.
 """
 
 from __future__ import annotations
@@ -38,10 +50,23 @@ class _Visitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        """Record ``from x import y``, ignoring relative imports."""
+        """Record ``from x import y``, as the deepest candidate ``x.y``.
+
+        ``y`` may turn out to be a submodule (``from PIL import Image``) or an
+        attribute of ``x`` (``from sklearn.svm import LinearSVC``) -- that can
+        only be told apart by actually importing candidates in the target
+        environment, which this AST-only pass has no access to. So it records
+        the deepest possible candidate and leaves resolving it (trying
+        ``x.y``, then falling back to ``x``) to whatever does have that
+        environment; ignoring relative imports, which name no absolute module.
+        """
         # node.module is None for `from . import x`, which names no module.
         if node.module and node.level == 0:
-            self.facts.imports.add(node.module)
+            for alias in node.names:
+                if alias.name == "*":
+                    self.facts.imports.add(node.module)
+                else:
+                    self.facts.imports.add(f"{node.module}.{alias.name}")
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:

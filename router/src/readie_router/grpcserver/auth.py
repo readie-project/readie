@@ -58,13 +58,12 @@ class SharedTokenAuthenticator:
                 continue
             presented = value.decode() if isinstance(value, bytes) else value
             if presented.lower().startswith(_BEARER):
-                presented = presented[len(_BEARER):]
+                presented = presented[len(_BEARER) :]
             return hmac.compare_digest(presented, self._token)
         return False
 
 
-# type: ignore[misc]  # grpc stub is Any
-class AuthInterceptor(grpc.aio.ServerInterceptor):
+class AuthInterceptor(grpc.aio.ServerInterceptor):  # type: ignore[misc]  # grpc stub is Any
     """Rejects unauthorized ``ProxyService`` calls with UNAUTHENTICATED."""
 
     def __init__(self, authenticator: Authenticator) -> None:

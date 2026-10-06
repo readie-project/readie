@@ -18,6 +18,12 @@ message ExecutionConfig {
   // Whether the function needs a GPU. The router also treats any GPU-memory
   // budget as a GPU request, so this covers a GPU function that names no size.
   bool gpu = 3;
+
+  // When true, the router skips checkpoint restore for this call and always
+  // cold-starts. Session affinity (warm-container reuse) still applies; the
+  // router rejects this only when the session's warm container was itself
+  // restored from a checkpoint.
+  bool disable_optimized_execution = 4;
 }
 
 // Message used for code execution requests from clients

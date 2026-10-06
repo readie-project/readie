@@ -1,13 +1,11 @@
 package execution
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/illinoisdata/readie/worker/internal/executor"
@@ -95,59 +93,6 @@ func (r *Runner) pumpResponse(ctx context.Context, session *executor.Session, ev
 		}
 		return nil
 	})
-}
-
-// pumpLogs tails the container's output.
-//
-// Logs are a convenience, so every failure here is logged and swallowed: the
-// previous implementation dereferenced a nil reader when opening logs failed,
-// crashing the process from an unrecovered goroutine.
-func (r *Runner) pumpLogs(ctx context.Context, containerID string, events chan<- event, log *slog.Logger) {
-	logs, err := r.containers.Logs(ctx, containerID)
-	if err != nil {
-		// A short execution finishes before this stream is even established,
-		// which cancels it mid-open. That is the design working, not a problem
-		// worth a warning on every fast request.
-		logSideChannelFailure(ctx, log, "container logs", err)
-		return
-	}
-	defer func() {
-		if err := logs.Close(); err != nil {
-			log.Debug("closing container logs", logging.KeyError, err)
-		}
-	}()
-
-	// Closing the reader is what unblocks a pending Read on cancellation; the
-	// deferred Close alone would never run while that Read is in flight.
-	stop := context.AfterFunc(ctx, func() { _ = logs.Close() })
-	defer stop()
-
-	scanner := bufio.NewScanner(logs)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !clientVisibleLog(line) {
-			continue
-		}
-		if !emit(ctx, events, event{logs: line + "\n", isLog: true}) {
-			return
-		}
-	}
-
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		log.Warn("container log stream ended with an error", logging.KeyError, err)
-	}
-}
-
-// clientVisibleLog keeps executor lifecycle records in the sandbox log while
-// excluding them from the client-facing stream. The runtime exposes one merged
-// stdout/stderr file, so this boundary is the only place that can preserve
-// diagnostics for operators without presenting startup noise as function output.
-// Executor failures deliberately remain visible: they are errors, not lifecycle
-// records.
-func clientVisibleLog(line string) bool {
-	return !strings.HasPrefix(line, "[preimport] ") && !strings.HasPrefix(line, "[checkpoint] ") && !strings.HasPrefix(line, "[executor] ")
 }
 
 // pumpStats samples container resource usage, drives proactive memory

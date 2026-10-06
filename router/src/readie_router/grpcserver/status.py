@@ -12,7 +12,9 @@ from readie_router.errors import (
     InvalidRequestError,
     NoCapacityError,
     NoWorkersRegisteredError,
+    OptimizedExecutionConflictError,
     SessionBusyError,
+    SessionExpiredError,
     WorkerUnavailableError,
 )
 
@@ -20,11 +22,17 @@ from readie_router.errors import (
 _MAPPING: tuple[tuple[type[BaseException], grpc.StatusCode, str], ...] = (
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT, "invalid execution request"),
     (NoWorkersRegisteredError, grpc.StatusCode.UNAVAILABLE, "no workers are available"),
-    (NoCapacityError, grpc.StatusCode.RESOURCE_EXHAUSTED,
-     "no worker can accept this request"),
+    (NoCapacityError, grpc.StatusCode.RESOURCE_EXHAUSTED, "no worker can accept this request"),
     (SessionBusyError, grpc.StatusCode.RESOURCE_EXHAUSTED, "the session is busy"),
-    (WorkerUnavailableError, grpc.StatusCode.UNAVAILABLE,
-     "the assigned worker is unreachable"),
+    (
+        OptimizedExecutionConflictError,
+        grpc.StatusCode.FAILED_PRECONDITION,
+        "the session is already running optimized execution",
+    ),
+    # Distinct from a session_id that has simply never been seen, which is
+    # not an error at all - only a *known*, expired one lands here.
+    (SessionExpiredError, grpc.StatusCode.NOT_FOUND, "the session has expired"),
+    (WorkerUnavailableError, grpc.StatusCode.UNAVAILABLE, "the assigned worker is unreachable"),
     (TimeoutError, grpc.StatusCode.DEADLINE_EXCEEDED, "the execution timed out"),
 )
 

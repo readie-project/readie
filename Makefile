@@ -22,6 +22,9 @@ STAGE := .build/proto-stage
 # produce fully independent artifact dirs and images, so one never clobbers the
 # other's checkpoints. Everything below hangs off FLAVOR.
 FLAVOR          ?= cpu
+# Packages `analyze` should skip entirely, and everything under them. 
+# Space-separated; e.g. `make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"`.
+ANALYZE_EXCLUDE ?= google
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
 ARTIFACTS_DIR   := pipeline/out/$(FLAVOR)
@@ -45,10 +48,12 @@ WORKER_IMAGE    := readie-worker-$(FLAVOR)
 # A gpu generation uses the Kaggle GPU rootfs and captures under nvproxy with the
 # host's GPUs attached; a cpu generation uses the plain image and no devices.
 ifeq ($(FLAVOR),gpu)
-ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python
+# Kaggle GPU v170, which uses Python 3.12.
+ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461
 CAPTURE_GPU_FLAGS := --gpus all
 else
-ROOTFS_BASE_IMAGE := gcr.io/kaggle-images/python
+# Kaggle v170, which uses Python 3.12, matching the client/executor:
+ROOTFS_BASE_IMAGE := gcr.io/kaggle-images/python@sha256:dafd4ce5668bbf1ad422e4c109e0f18c9623c3a7c7f48b0235f13142755c40b9
 CAPTURE_GPU_FLAGS :=
 endif
 # Overridable so an experiment can be tagged something meaningful.
@@ -62,13 +67,15 @@ READIE_MAX_CHECKPOINTS := 15
 # Total size budget, in MB.
 READIE_SIZE_BUDGET_MB := 2048.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
-# more than alpha*size. Default 0.01.
-READIE_ALPHA := 0.01
+# more than alpha*size. Tuned over time; the pipeline measures the real value
+# after capture and writes it into the catalogue the router reads.
+READIE_ALPHA := 0.006
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
         worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
-        router-% pkg-% executor-% pipeline-% worker-% lint type test help \
-		run-prod run-local shutdown
+        router-% pkg-% executor-% pipeline-% playground-% worker-% lint type test help \
+		run-prod run-local shutdown \
+        docs-install docs-tools docs-protos docs-build docs-start docs-serve
 
 all: protos lint type test ## Generate, check and test everything
 
@@ -77,6 +84,7 @@ install: ## Sync every Python virtualenv from its lockfile
 	@$(MAKE) --no-print-directory -C pkg install
 	@$(MAKE) --no-print-directory -C executor install
 	@$(MAKE) --no-print-directory -C pipeline install
+	@$(MAKE) --no-print-directory -C playground install
 	@$(MAKE) --no-print-directory -C worker install
 
 # ---------------------------------------------------------------------------
@@ -194,10 +202,18 @@ analyzer-image: ## Build the analyzer image (readie-pipeline on the base image i
 analyze: analyzer-image ## Measure every package the $(FLAVOR) base image installs
 	@echo "==> analysing $(FLAVOR) packages against $(ROOTFS_BASE_IMAGE)"
 	@mkdir -p pipeline/data/metadata
+	# --network none: a checkpoint's restore-time import must not depend on
+	# network reachability, and several bundled cloud SDKs (Google Cloud,
+	# BigQuery magics, etc.) probe for credentials/environment at import time
+	# -- with network access, that probe runs (slowly) instead of failing
+	# immediately, which turned individual packages into 30-100+ second
+	# hangs during analysis (confirmed against a real run).
 	docker run --rm \
+		--network none \
 		-e FLAVOR=$(FLAVOR) \
+		-e PYTHONUNBUFFERED=1 \
 		-v "$(CURDIR)/pipeline/data:/app/data" \
-		$(ANALYZER_IMAGE)
+		$(ANALYZER_IMAGE) analyze -v $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg))
 	@echo "==> wrote pipeline/data/metadata/$(FLAVOR).json"
 
 # One run, not two: `capture` plans and captures in the same container because
@@ -269,6 +285,9 @@ executor-%:
 pipeline-%:
 	@$(MAKE) --no-print-directory -C pipeline $*
 
+playground-%:
+	@$(MAKE) --no-print-directory -C playground $*
+
 worker-%:
 	@$(MAKE) --no-print-directory -C worker $*
 
@@ -280,6 +299,7 @@ lint: protos-lint ## Lint every component
 	@$(MAKE) --no-print-directory -C pkg lint
 	@$(MAKE) --no-print-directory -C executor lint
 	@$(MAKE) --no-print-directory -C pipeline lint
+	@$(MAKE) --no-print-directory -C playground lint
 	@$(MAKE) --no-print-directory -C worker lint
 
 type: ## Type-check the Python components
@@ -287,13 +307,41 @@ type: ## Type-check the Python components
 	@$(MAKE) --no-print-directory -C pkg type
 	@$(MAKE) --no-print-directory -C executor type
 	@$(MAKE) --no-print-directory -C pipeline type
+	@$(MAKE) --no-print-directory -C playground type
 
 test: ## Test every component
 	@$(MAKE) --no-print-directory -C router test
 	@$(MAKE) --no-print-directory -C pkg test
 	@$(MAKE) --no-print-directory -C executor test
 	@$(MAKE) --no-print-directory -C pipeline test
+	@$(MAKE) --no-print-directory -C playground test
 	@$(MAKE) --no-print-directory -C worker test
+
+# ---------------------------------------------------------------------------
+# Documentation site (Docusaurus, in docs/; Node version pinned in docs/.nvmrc)
+# ---------------------------------------------------------------------------
+docs-install: ## Install the docs site's npm dependencies
+	cd docs && npm ci
+
+# Pinned so the generated page is byte-identical locally and in CI. protoc itself
+# comes from `make -C worker tools`.
+PROTOC_GEN_DOC_VERSION := v1.5.1
+
+docs-tools: ## Install protoc-gen-doc into GOBIN
+	go install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@$(PROTOC_GEN_DOC_VERSION)
+
+docs-protos: ## Regenerate the protobuf reference page (needs protoc-gen-doc on PATH)
+	protoc -I $(PROTO_SRC) --doc_out=docs/docs/architecture \
+		--doc_opt=docs/tools/protos.md.tmpl,protos.md $(PROTO_SRC)/*.proto
+
+docs-build: ## Build the docs site; fails on any broken link
+	cd docs && npm run build
+
+docs-start: ## Run the docs site with live reload
+	cd docs && npm start
+
+docs-serve: docs-build ## Build the docs site and serve the result
+	cd docs && npm run serve
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) \

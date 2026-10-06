@@ -29,6 +29,13 @@ type fakeRunner struct {
 	fail map[string]error
 	// failOnce is consumed after firing, for testing retry paths.
 	failOnce map[string]error
+
+	// spawnBlock, when set, makes Spawn wait after recording the call until
+	// either it is closed (Spawn then returns normally) or ctx is done (Spawn
+	// then returns ctx.Err()) - simulating exec.CommandContext's real
+	// behaviour for a long-running command, which fakeRunner otherwise
+	// ignores entirely.
+	spawnBlock <-chan struct{}
 }
 
 var _ Runner = (*fakeRunner)(nil)
@@ -45,8 +52,20 @@ func (f *fakeRunner) Output(_ context.Context, args ...string) (Result, error) {
 	return f.record(call{Args: args})
 }
 
-func (f *fakeRunner) Spawn(_ context.Context, stdio Stdio, args ...string) (Result, error) {
-	return f.record(call{Args: args, Stdio: stdio})
+func (f *fakeRunner) Spawn(ctx context.Context, stdio Stdio, args ...string) (Result, error) {
+	result, err := f.record(call{Args: args, Stdio: stdio})
+	f.mu.Lock()
+	block := f.spawnBlock
+	f.mu.Unlock()
+	if block == nil {
+		return result, err
+	}
+	select {
+	case <-block:
+		return result, err
+	case <-ctx.Done():
+		return Result{}, ctx.Err()
+	}
 }
 
 func (f *fakeRunner) record(c call) (Result, error) {
@@ -98,6 +117,14 @@ func (f *fakeRunner) lastStdio() Stdio {
 		}
 	}
 	return Stdio{}
+}
+
+// blockSpawnOn makes a future Spawn wait on block instead of returning
+// immediately; see spawnBlock's doc comment.
+func (f *fakeRunner) blockSpawnOn(block <-chan struct{}) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.spawnBlock = block
 }
 
 func (f *fakeRunner) reset() {

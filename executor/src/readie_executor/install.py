@@ -1,42 +1,17 @@
 """Installing packages with ``uv`` before a call runs.
 
-Every request restores a fresh, isolated container (warm reuse is currently
-disabled worker-side), so there is nothing to check an "already installed"
-package against -- this always shells out, even for a package the rootfs
-already carries.
+A request runs in a freshly restored container, or in a session's idle one
+when the worker reuses it. Either way this keeps no record of earlier installs,
+so it always shells out, even for a package the rootfs already carries.
 """
 
 from __future__ import annotations
 
-import shutil
 import subprocess
-from pathlib import Path
-
-#: Where the rootfs bakes a working nameserver config (see pipeline/Dockerfile).
-#: Not baked at /etc/resolv.conf directly -- Docker treats that exact path as a
-#: runtime-managed file and drops anything written to it at build time.
-_RESOLV_CONF_DEFAULT = Path("/etc/readie-resolv.conf")
-_RESOLV_CONF = Path("/etc/resolv.conf")
 
 
 class InstallError(Exception):
     """`uv pip install` exited non-zero."""
-
-
-def _ensure_dns() -> None:
-    """Copy in a working /etc/resolv.conf if the rootfs shipped an empty one.
-
-    Nothing populates /etc/resolv.conf for a gVisor sandbox the way a normal
-    container runtime would at container-create time, so without this every
-    DNS lookup -- including the one a package install needs to reach PyPI --
-    fails. Best-effort: an older rootfs built before _RESOLV_CONF_DEFAULT
-    existed just leaves this a no-op rather than failing the call outright.
-    """
-    try:
-        if _RESOLV_CONF.stat().st_size == 0 and _RESOLV_CONF_DEFAULT.exists():
-            shutil.copyfile(_RESOLV_CONF_DEFAULT, _RESOLV_CONF)
-    except OSError:
-        pass
 
 
 def install_packages(specs: list[str], *, uv_binary: str = "uv") -> str:
@@ -48,8 +23,6 @@ def install_packages(specs: list[str], *, uv_binary: str = "uv") -> str:
     """
     if not specs:
         return ""
-
-    _ensure_dns()
 
     result = subprocess.run(  # noqa: S603 - specs are requirement strings, not shell input
         [uv_binary, "pip", "install", "--system", "--no-cache-dir", *specs],

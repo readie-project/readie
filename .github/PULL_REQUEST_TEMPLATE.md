@@ -1,7 +1,7 @@
 ## What was broken
 
-<!-- The behaviour before this change, and why it was wrong. The diff already
-     says what changed; this says why it needed to. -->
+<!-- The behavior before this change, and why it was wrong. The diff already
+     shows what changed; this section explains why the change was needed. -->
 
 ## What this does
 
@@ -9,8 +9,8 @@
 
 ## Verification
 
-<!-- What you actually ran, and what it printed. Not "tests pass" - which tests,
-     and what they now cover that they did not before. -->
+<!-- What you ran, and what it printed. Name the tests, and state what they
+     now cover that they did not before. "Tests pass" is not sufficient. -->
 
 - [ ] `make lint type test` green for every component touched
 - [ ] `go test -race ./...` if the worker changed
@@ -19,10 +19,10 @@
 
 ## Contract changes
 
-<!-- Delete this section if none. Otherwise say which, and what an operator has
-     to do about it. -->
+<!-- Delete this section if there are none. Otherwise state which, and what an
+     operator must do about it. -->
 
 - [ ] Proto field added (new number, nothing renumbered or reused)
 - [ ] Executor protocol version bumped, both ends and the golden fixture updated
-- [ ] Generation manifest changed - existing artifacts need regenerating
+- [ ] Generation manifest changed: existing artifacts need regenerating
 - [ ] Configuration variable added or renamed, and documented in the component README

@@ -1,0 +1,451 @@
+/* Landing page, after react.dev: a centered hero, then soft bands with centered headings.
+   Colors and type come from the tokens in custom.css. */
+
+/* ---------------------------------------------------------------- Hero */
+
+.hero {
+  padding-block: 4.5rem 4.5rem;
+  text-align: center;
+}
+
+.heroInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mark {
+  margin-bottom: 1rem;
+}
+
+.title {
+  font-size: clamp(2.25rem, 5vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.1;
+  margin: 0 0 1rem;
+}
+
+/* A light subtitle, as on react.dev: larger than body text, not bold. */
+.tagline {
+  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--rd-ink-2);
+  margin: 0;
+  max-width: 56rem;
+}
+
+.install {
+  width: 100%;
+  max-width: 18rem;
+  margin-top: 1.75rem;
+  text-align: left;
+}
+
+.install :global(.theme-code-block) {
+  margin: 0;
+}
+
+.cta {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  padding: 0.6rem 1.5rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+/* ------------------------------------------------------------ Sections */
+
+.section {
+  padding-block: 4rem;
+}
+
+.band {
+  background: var(--rd-band);
+  border-block: 1px solid var(--rd-line);
+}
+
+.anchored {
+  /* Keep the section's title below the sticky navbar when a link jumps to it. */
+  scroll-margin-top: var(--ifm-navbar-height);
+}
+
+.last {
+  padding-bottom: 5rem;
+  border-bottom: 0;
+}
+
+
+.wide {
+  max-width: 66rem;
+}
+
+.section h2 {
+  font-size: clamp(1.6rem, 3vw, 2rem);
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+/* Title and description, then two columns: the code to run and its timeline. */
+.intro {
+  max-width: 52rem;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+}
+
+.introFull {
+  max-width: none;
+}
+
+.intro p {
+  color: var(--rd-ink-2);
+  font-size: 1.05rem;
+  margin: 0 0 1rem;
+  text-wrap: pretty;
+}
+
+/* After react.dev's "Create user interfaces from components", without the gradient: a rounded
+   stage, a code card that overlaps it and pokes 1.25rem past its left, top and bottom edges, and
+   a result card (the timeline) centered inside the stage. */
+.stage {
+  position: relative;
+  margin: 1.25rem 0 1.25rem 1.25rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1.25rem;
+  align-items: center;
+  padding-right: 1.25rem;
+  border-radius: 16px;
+  background: var(--rd-stage);
+  box-shadow: inset 0 0 0 1px var(--rd-ring);
+}
+
+.codeCard {
+  align-self: stretch;
+  margin: -1.25rem 0 -1.25rem -1.25rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--rd-stage-card);
+  box-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.1), 0 0 0 1px var(--rd-stage-edge);
+}
+
+.codeCard :global(.theme-code-block) {
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  background: transparent;
+}
+
+.codeCard :global([class*='codeBlockTitle']) {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--rd-stage-text);
+  background: var(--rd-stage-head);
+  border-bottom: 1px solid var(--rd-stage-hairline);
+}
+
+.codeCard :global([class*='codeBlockContent']) {
+  flex: 1;
+  display: flex;
+}
+
+.codeCard :global([class*='codeBlockContent']) pre {
+  flex: 1;
+}
+
+.codeCard :global(.prism-code),
+.codeCard :global([class*='codeBlockContent']) pre {
+  background-color: var(--rd-stage-card) !important;
+}
+
+.codeCard :global(code) {
+  font-size: 0.84rem;
+}
+
+.more {
+  margin: 1.5rem 0 0 !important;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ Timeline */
+
+/* Shares the code card's geometry: a title bar, then 1rem of padding, so the two
+   columns line up edge to edge and the content starts at the same left inset. */
+.timeline {
+  margin: 1.25rem 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--rd-stage-card);
+  box-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.1), 0 0 0 1px var(--rd-stage-edge);
+}
+
+.timelineBody {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 1rem;
+}
+
+.groupTitle {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 13.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+
+.stepLabel {
+  font-family: var(--rd-font-mono);
+  font-size: 0.76rem;
+  color: var(--rd-ink);
+  white-space: nowrap;
+}
+
+.track {
+  position: relative;
+  display: block;
+  height: 1.4rem;
+  /* Room after the scale for the finish flag; the same for every row, so the scale is shared. */
+  margin-right: 1.5rem;
+  /* A faint rail so each bar reads as a position on the shared scale. */
+  background: linear-gradient(var(--rd-line), var(--rd-line)) center / 100% 1px no-repeat;
+}
+
+.fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--offset);
+  width: var(--span);
+  border-radius: 5px;
+  /* Each bar is drawn at its own start time and for as long as its step takes, so the
+     restored group finishes first. The resting state is fully drawn. */
+  animation: draw var(--dur) linear var(--delay) both;
+}
+
+@keyframes draw {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.start {
+  background: var(--rd-muted-fill);
+}
+
+.import {
+  background: var(--rd-time);
+}
+
+.restore {
+  background: var(--rd-accent);
+}
+
+.run {
+  background: var(--rd-surface);
+  box-shadow: inset 0 0 0 1.5px var(--rd-ink-2);
+}
+
+.axis {
+  display: grid;
+  grid-template-columns: 13.25rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: -0.25rem;
+  font-family: var(--rd-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rd-ink-2);
+}
+
+.axisLine {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-right: 1.5rem;
+}
+
+.axisLine::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rd-ink-2);
+  opacity: 0.5;
+}
+
+/* The finish flag (a tilted triangular pennant) sits just after the end of the run bar, on the same row. It appears when
+   the bar finishes drawing, and is fully visible at rest. */
+.flag {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--offset) + var(--span));
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: -0.575rem 0 0 0.3rem;
+  overflow: visible;
+  animation: flag-in 0.3s cubic-bezier(0.3, 1.4, 0.5, 1) calc(var(--delay) + var(--dur)) both;
+}
+
+.flagShape {
+  fill: var(--rd-ink);
+  stroke: var(--rd-ink);
+  stroke-width: 0.8;
+  stroke-linejoin: round;
+}
+
+.flagPole {
+  stroke: var(--rd-ink);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+@keyframes flag-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.caption {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--rd-ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill,
+  .flag {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------- Documentation */
+
+.centered {
+  text-align: center;
+  margin-bottom: 2rem !important;
+}
+
+/* Every card has the same width: three per row, and the last row is centered. */
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.card {
+  flex: 0 0 calc((100% - 2rem) / 3);
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--rd-bg);
+  box-shadow: inset 0 0 0 1px var(--rd-ring);
+  border-radius: 16px;
+  color: var(--rd-ink);
+  text-decoration: none;
+}
+
+.card:hover {
+  text-decoration: none;
+  color: var(--rd-ink);
+  box-shadow: inset 0 0 0 1px var(--rd-accent);
+}
+
+.cardTitle {
+  font-weight: 600;
+  color: var(--rd-ink);
+}
+
+.cardText {
+  color: var(--rd-ink-2);
+}
+
+/* -------------------------------------------------------------- Narrow */
+
+@media (max-width: 996px) {
+  /* The stage stacks: both cards sit on it and nothing overlaps its edge. */
+  .stage {
+    margin: 0;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 1.25rem;
+    padding: 1.25rem;
+    background: var(--rd-stage);
+  }
+
+  .codeCard {
+    margin: 0;
+    align-self: auto;
+  }
+
+  .timeline {
+    margin: 0;
+  }
+
+  /* Two per row, still the same width; the odd fifth card is centered. */
+  .card {
+    flex-basis: calc((100% - 1rem) / 2);
+  }
+}
+
+@media (max-width: 560px) {
+  .step,
+  .axis {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+
+  .axis > span:first-child {
+    display: none;
+  }
+
+  .stepLabel {
+    font-size: 0.72rem;
+  }
+
+  .card {
+    flex-basis: 100%;
+  }
+
+  .hero {
+    padding-block: 3rem;
+  }
+
+}

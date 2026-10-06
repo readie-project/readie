@@ -43,6 +43,7 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 
     ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
     """
+    # Both nested imports avoid an import cycle.
     from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415
 
     if name == "fixed":
@@ -60,7 +61,13 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 # Stages
 # ---------------------------------------------------------------------------
 def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
-    """Generate request snippets."""
+    """Generate request snippets, or re-derive facts for already-generated ones."""
+    if args.reparse:
+        from readie_pipeline.corpus.generate import reparse  # noqa: PLC0415 - optional extra
+
+        reparse(settings.corpus_path)
+        return 0
+
     from readie_pipeline.corpus.generate import generate  # noqa: PLC0415 - optional extra
 
     corpus_settings = CorpusSettings.from_env()
@@ -74,15 +81,29 @@ def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
-    """Measure every package installed in this environment -- the base image.
+    """Measure every package installed here, plus every import the corpus uses.
 
-    Not the corpus's imports: a checkpoint restores into the base image, not
-    into whatever a sample of requests happens to reference, so that is the
-    universe the planner needs a real number for. Run this wherever that base
-    image's packages are actually importable (see ``installed_packages``).
+    ``installed_packages()`` alone only ever names top-level packages -- it
+    can never surface a specific dotted import like ``sklearn.svm``, since
+    nothing else would ask to resolve or measure one. The corpus's raw
+    ``imports`` are exactly those candidates (see ``Request.imports``), so
+    both are measured together: the base image's own universe (a checkpoint
+    restores into the base image, not into whatever a sample of requests
+    happens to reference, so the planner needs a real number for all of it,
+    corpus or not) plus whatever specific dotted names the corpus actually
+    references. Run this wherever that base image's packages are actually
+    importable (see ``installed_packages``).
     """
-    packages = installed_packages()
-    print(f"[*] analysing {len(packages)} packages installed in this environment")
+    packages = set(installed_packages())
+    if settings.corpus_path.exists():
+        corpus = Corpus.load(settings.corpus_path)
+        for request in corpus:
+            packages.update(request.imports)
+
+    exclude = list(args.exclude or ())
+    if exclude:
+        print(f"[*] excluding: {', '.join(exclude)}")
+    print(f"[*] analysing {len(packages)} candidate imports in this environment")
 
     def progress(name: str, facts: object) -> None:
         # An error is worth seeing on every run, verbose or not, because the
@@ -94,23 +115,28 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
             print(f"    {name}: {error}", file=sys.stderr)
         elif args.verbose:
             print(
-                f"    {name}: {getattr(facts, 'disk_size_mb', 0.0):.1f} MB, "
+                f"    {name}: {getattr(facts, 'disk_size_mb', 0.0):.1f} MB disk, "
+                f"{getattr(facts, 'memory_size_mb', 0.0):.1f} MB resident, "
                 f"{getattr(facts, 'import_time', 0.0):.3f} s"
             )
 
-    metadata = analyze(packages, on_progress=progress)
-    corpus = Corpus.load(settings.corpus_path)
-    dataset_facts = measure_datasets(
-        sorted(corpus.resources().datasets),
-        on_progress=progress,
-    )
-    metadata = Metadata({**metadata.packages, **dataset_facts})
+    metadata = analyze(packages, exclude=exclude, on_progress=progress)
+    if settings.corpus_path.exists():
+        corpus = Corpus.load(settings.corpus_path)
+        dataset_facts = measure_datasets(
+            sorted(corpus.resources(metadata).datasets),
+            on_progress=progress,
+        )
+        metadata = Metadata(
+            {**metadata.packages, **dataset_facts},
+            resolved=metadata.resolved,
+        )
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
 
     usable = sum(1 for f in metadata.packages.values() if f.usable)
-    print(f"[*] {usable}/{len(metadata)} resources measured -> {settings.metadata_path}")
+    print(f"[*] {usable}/{len(metadata)} packages measured -> {settings.metadata_path}")
     return 0
 
 
@@ -173,9 +199,6 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     plans = [CheckpointPlan()] + [
         CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())
     ]
-    if any(plan.datasets for plan in plans):
-        msg = "dataset checkpoint capture is not implemented; do not build a plan with datasets yet"
-        raise ConfigError(msg)
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
     metadata = Metadata.load(settings.metadata_path)
@@ -183,8 +206,8 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     print(f"[*] building {len(plans)} checkpoints with {version}")
 
     entries: list[tuple[str, CheckpointPlan]] = []
-    baseline_time = 0.0
-    computed_alphas: list[float] = []
+    sizes_mb: list[float] = []
+    restore_times: list[float] = []
     for index, plan in enumerate(plans):
         checkpoint_id = f"checkpoint_{index}"
         print(f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
@@ -211,11 +234,8 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
 
         restore_time = measure_time(settings, checkpoint_id, write_spec=write_spec)
         print(f"    restored in {restore_time}s")
-        if index == 0:
-            baseline_time = restore_time
-        computed_alphas.append(
-            (restore_time - baseline_time) / plan.size_mb if plan.size_mb else 0.0
-        )
+        sizes_mb.append(plan.size_mb)
+        restore_times.append(restore_time)
 
     Manifest(
         runsc_version=version,
@@ -225,10 +245,30 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         network=settings.sandbox_network,
     ).write(settings.output_dir)
 
-    computed_alpha = round(np.mean(computed_alphas), ALPHA_PRECISION)
+    # alpha is the seconds-per-MB *slope* of restore_time vs. size_mb -- a
+    # linear relationship, but not one that passes through the origin: even
+    # the empty checkpoint (index 0, size_mb == 0) takes real, nonzero time
+    # to restore (a fixed gVisor sandbox-startup cost, unrelated to size).
+    # Fitting a per-checkpoint ratio (restore_time - baseline_time) / size_mb
+    # and averaging those, as this used to, implicitly forces that fixed
+    # cost to be treated as part of the size-proportional term -- for a
+    # checkpoint whose size_mb is small relative to the fixed cost, that
+    # ratio is dominated by the fixed cost alone and blows up (confirmed
+    # against real data: a 10MB checkpoint produced a ratio 15x every other
+    # checkpoint's, dragging the unweighted mean far above what the other,
+    # larger checkpoints actually showed). A single ordinary-least-squares
+    # fit across every (size_mb, restore_time) pair separates the two
+    # unavoidably-confounded terms properly: its slope is alpha, robust to
+    # small checkpoints since they just become low-leverage points near the
+    # intercept instead of a division problem; its intercept is the fixed
+    # cost itself, discarded here since it never affects which checkpoint
+    # the router or planner ends up choosing (the same constant added to
+    # every candidate never changes an argmin).
+    computed_alpha = round(float(np.polyfit(sizes_mb, restore_times, 1)[0]), ALPHA_PRECISION)
+    drift = computed_alpha - settings.alpha
     print(
         f"\n[*] planned alpha value: {settings.alpha}, "
-        f"computed alpha: {computed_alpha}, drift: {computed_alpha - settings.alpha}"
+        f"computed alpha: {computed_alpha}, drift: {drift}"
     )
     # The catalogue the router selects from: every measured item's cost plus each
     # checkpoint's contents and precomputed size term.
@@ -267,7 +307,9 @@ def add_planner_flags(parser: argparse.ArgumentParser) -> None:
     """Attach the planner's knobs, shared by `plan` and `capture`."""
     parser.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
     parser.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
-    parser.add_argument("--size-budget-mb", type=float, help="per-checkpoint size budget")
+    parser.add_argument(
+        "--size-budget-mb", type=float, help="total size budget across all checkpoints, in MB"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -287,11 +329,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     corpus = sub.add_parser("corpus", help="generate request snippets with a hosted model")
     corpus.add_argument("--category", action="append", help="restrict to a category; repeatable")
+    corpus.add_argument(
+        "--reparse",
+        action="store_true",
+        help="re-derive every request's imports/datasets/models/tokenizers from its "
+        "already-generated code, without calling the model again",
+    )
     corpus.set_defaults(handler=cmd_corpus)
 
     analyze_cmd = sub.add_parser("analyze", help="measure package sizes and import times")
     analyze_cmd.add_argument(
         "-v", "--verbose", action="store_true", help="also report each successful measurement"
+    )
+    analyze_cmd.add_argument(
+        "--exclude",
+        action="append",
+        help="skip a package, and everything under it; repeatable",
     )
     analyze_cmd.set_defaults(handler=cmd_analyze)
 

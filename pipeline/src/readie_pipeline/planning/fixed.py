@@ -33,18 +33,21 @@ class FixedPlanner:
         """
         plans = []
         for imports in self._sets[: budget.max_checkpoints]:
-            served = sum(1 for r in corpus if set(imports) & r.top_level_imports)
+            wanted = set(imports)
+            resolved_per_request = [metadata.resolve_imports(r.imports) for r in corpus]
+            served = sum(1 for resolved in resolved_per_request if wanted & resolved)
             saved = sum(
                 metadata.import_time(name)
-                for r in corpus
-                for name in set(imports) & r.top_level_imports
+                for resolved in resolved_per_request
+                for name in wanted & resolved
             )
             plans.append(
                 CheckpointPlan(
                     imports=imports,
                     requests_served=served,
                     seconds_saved=saved,
-                    size_mb=sum(metadata.size_mb(name) for name in imports),
+                    # Memory, not disk -- see GreedyPlanner._size_mb.
+                    size_mb=sum(metadata.memory_size_mb(name) for name in imports),
                 )
             )
         return plans

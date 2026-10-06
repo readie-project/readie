@@ -1,8 +1,8 @@
-# NGINX gRPC Proxy
+# NGINX gRPC proxy
 
-NGINX is used as the public entrypoint for the Readie router.
-
-The architecture is:
+NGINX is the public entrypoint for the Readie router. It accepts client gRPC
+traffic and forwards it to the router inside the Docker Compose network. The
+router and the workers are not published on the host. Only NGINX exposes a port.
 
 ```text
                     Local
@@ -19,7 +19,7 @@ Python client ──→ localhost:50051
 
 
                   Production
-Python client ──→ <public_hostname>:443
+Python client ──→ <public-hostname>:443
                        │
                   TLS / HTTP2
                        │
@@ -35,7 +35,9 @@ Python client ──→ <public_hostname>:443
                   worker(s)
 ```
 
-The router and workers are kept private inside the Docker Compose network. Only NGINX exposes a port on the host.
+For the full deployment procedure, see [Deploy with
+TLS](https://readie.org/docs/contributing/deploy-with-tls). For the security
+posture, see [Security](https://readie.org/docs/architecture/security).
 
 ## Files
 
@@ -43,23 +45,54 @@ The router and workers are kept private inside the Docker Compose network. Only 
 nginx/
 ├── nginx.local.conf       # Local development, plaintext gRPC
 ├── nginx.prod.conf        # Production, TLS + gRPC
-└── certs/                 # Production TLS certificates
+├── certs/
+│   └── server.crt         # Committed public certificate chain (see below)
+└── .gitignore             # Ignores *.key
 ```
 
-Production certificates should **not** be committed to Git.
+The compose files mount the configuration into the stock `nginx:alpine` image:
+`docker-compose.local.yml` mounts `nginx.local.conf` and publishes port `50051`,
+and `docker-compose.prod.yml` mounts `nginx.prod.conf` and `nginx/certs/`, and
+publishes port `443`.
+
+### Committed certificate
+
+`nginx/certs/server.crt` is committed to the repository. It is a certificate
+chain in PEM format, with four certificates. The leaf certificate is issued by
+Let's Encrypt for `readie.eastus.cloudapp.azure.com`, the hostname in
+`nginx.prod.conf`. The file contains no private key, so it is public
+information. The matching `server.key` is ignored by `nginx/.gitignore` and
+must never be committed.
+
+The committed chain lets the production configuration start for that hostname
+when the key is supplied separately. It is not a self-signed development
+certificate. Let's Encrypt certificates expire after 90 days, so the file must
+be replaced on renewal, and a deployment under a different hostname must replace
+it with its own chain. The local configuration does not use it.
+
+## Playground route
+
+The configurations also forward `/playground/` to the playground service, when it is
+running, and keep every other path for gRPC. The playground itself calls the Readie server
+that the client uses by default, like any other client. See
+[`playground/README.md`](../playground/README.md).
 
 ## Local development
 
-Local development does not require a domain name or TLS certificate.
-
-The local NGINX configuration listens on port `50051`:
+Local development needs no domain name and no TLS certificate. The local
+configuration listens for plaintext gRPC on port `50051` and forwards to the
+router:
 
 ```nginx
+upstream grpc_router {
+    server router:50051;
+}
+
 server {
     listen 50051 http2;
 
     location / {
-        grpc_pass grpc://router:50051;
+        grpc_pass grpc://grpc_router;
 
         grpc_read_timeout 1h;
         grpc_send_timeout 1h;
@@ -67,38 +100,19 @@ server {
 }
 ```
 
-The gRPC client connects to:
-
-```text
-localhost:50051
-```
-
-NGINX then forwards the request to:
-
-```text
-router:50051
-```
-
-No `50051` port needs to be exposed directly by the router container.
+The router container does not need to publish port `50051` itself.
 
 ## Production
 
-Production uses a public hostname. The client connects to port 443 of the hostname.
-
-NGINX terminates TLS and proxies the gRPC request to:
-
-```text
-router:50051
-```
-
-The production configuration uses:
+Production uses a public hostname. Clients connect to port `443` of that
+hostname. NGINX terminates TLS and proxies the gRPC stream to `router:50051`:
 
 ```nginx
 server {
     listen 443 ssl;
     http2 on;
 
-    server_name <public_hostname>;
+    server_name <public-hostname>;
 
     ssl_certificate     /etc/nginx/certs/server.crt;
     ssl_certificate_key /etc/nginx/certs/server.key;
@@ -112,61 +126,70 @@ server {
 }
 ```
 
+`nginx.prod.conf` defines the `grpc_router` upstream the same way as the local
+configuration. Set `server_name` in `nginx.prod.conf` to your own hostname
+before deploying.
+
+### Authentication
+
+NGINX does not authenticate callers. The router does, when its `AUTH_TOKEN`
+environment variable is set. Each client sends the same value, which it reads
+from the `READIE_AUTH_TOKEN` environment variable. An empty or unset `AUTH_TOKEN`
+turns authentication off. Use TLS together with a token on any public
+deployment, and do not commit the token. For the compose override that sets
+`AUTH_TOKEN`, see [Deploy with
+TLS](https://readie.org/docs/contributing/deploy-with-tls).
+
 ### TLS certificates
 
-The production certificate can be obtained from [Let's Encrypt](https://letsencrypt.org/) using Certbot.
+Any certificate authority works. The following steps use [Let's Encrypt](https://letsencrypt.org/)
+with Certbot on a Debian-based host, such as a cloud VM.
 
-On the Azure VM:
+1. Install Certbot:
 
-```bash
-sudo apt update
-sudo apt install certbot
-```
+   ```bash
+   sudo apt update
+   sudo apt install certbot
+   ```
 
-Obtain a certificate:
+2. Obtain a certificate. The standalone mode needs inbound port `80` open
+   during validation:
 
-```bash
-sudo certbot certonly --standalone \
-    -d <public_hostname>
-```
+   ```bash
+   sudo certbot certonly --standalone -d <public-hostname>
+   ```
 
-Certbot will create the certificate under:
+   Certbot writes the certificate to `/etc/letsencrypt/live/<public-hostname>/`.
+   The files NGINX needs are `fullchain.pem` and `privkey.pem`.
 
-```text
-/etc/letsencrypt/live/<public_hostname>/
-```
+3. Copy them into `nginx/certs/` under the names the compose file mounts into
+   the container as `/etc/nginx/certs/server.crt` and
+   `/etc/nginx/certs/server.key`:
 
-The important files are:
+   ```bash
+   sudo cp /etc/letsencrypt/live/<public-hostname>/fullchain.pem nginx/certs/server.crt
+   sudo cp /etc/letsencrypt/live/<public-hostname>/privkey.pem   nginx/certs/server.key
+   sudo chmod 600 nginx/certs/server.key
+   ```
 
-```text
-fullchain.pem
-privkey.pem
-```
+The private key must not be committed to the repository.
 
-These are mounted into the NGINX container as:
+### DNS and network access
 
-```text
-/etc/nginx/certs/server.crt
-/etc/nginx/certs/server.key
-```
-
-Do **not** commit the private key to the repository.
-
-### DNS
-
-The DNS record must point:
+The DNS record for the hostname must point at the public IP address of the host:
 
 ```text
-<public_hostname> → <public_IP>
+<public-hostname> → <public-ip>
 ```
 
-The service should have inbound access to port `443`.
-
-Port `50051` and the worker port `50052` should remain private and should not be exposed through the Azure Network Security Group.
+Allow inbound TCP on port `443` in the host firewall or the cloud network
+security rules. For example, on Azure, add an inbound rule to the network
+security group. Keep port `50051` and the worker port `50052` private. They must
+not be reachable from the internet.
 
 ## Production deployment
 
-Start the production stack with:
+Start the production stack:
 
 ```bash
 docker compose \
@@ -193,35 +216,6 @@ Check the containers:
 docker compose ps
 ```
 
-## Client configuration
-
-The client should not hardcode the router container address. Instead use the `configure` method.
-There is no need to configure for the production environment.
-
-Local:
-
-```python
-readie.configure(router_uri="localhost:50051")
-```
-
-Example Python setup:
-
-```python
-import os
-import grpc
-
-endpoint = os.getenv("READIE_ROUTER_URI", "localhost:50051")
-tls = os.getenv("READIE_TLS", "false").lower() == "true"
-
-if tls:
-    channel = grpc.secure_channel(
-        endpoint,
-        grpc.ssl_channel_credentials(),
-    )
-else:
-    channel = grpc.insecure_channel(endpoint)
-```
-
 ## Troubleshooting
 
 Check that NGINX can resolve the router:
@@ -230,44 +224,36 @@ Check that NGINX can resolve the router:
 docker compose exec nginx getent hosts router
 ```
 
-Check that the router is reachable from NGINX:
+Check that the router is healthy. The router image provides `grpcurl`, which
+its own health check uses:
 
 ```bash
-docker compose exec nginx \
+docker compose exec router \
     grpcurl -plaintext router:50051 grpc.health.v1.Health/Check
 ```
 
-Check NGINX logs:
+Read the NGINX and router logs:
 
 ```bash
 docker compose logs nginx
-```
-
-Check router logs:
-
-```bash
 docker compose logs router
 ```
 
-If the client cannot connect in production, verify:
+If a client cannot connect in production, verify the following:
 
-1. `<public_hostname>` resolves to the VM.
-2. Azure allows inbound TCP `443`.
-3. The TLS certificate is valid for `<public_hostname>`.
+1. `<public-hostname>` resolves to the host.
+2. The firewall or cloud security rules allow inbound TCP `443`.
+3. The TLS certificate is valid for `<public-hostname>` and has not expired.
 4. NGINX is listening on port `443`.
 5. The router is healthy.
 6. NGINX can reach `router:50051`.
+7. The client token matches the router's `AUTH_TOKEN`, if authentication is
+   enabled.
 
-The important networking rule is:
-
-```text
-Host/client → NGINX → router → worker
-```
-
-not:
+Traffic must always follow this path, with NGINX as the only public entrypoint:
 
 ```text
-Host/client → router
+client → NGINX → router → worker
 ```
 
-NGINX is the only public entrypoint.
+Clients must not connect to the router directly.

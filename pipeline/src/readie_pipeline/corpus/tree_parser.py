@@ -7,6 +7,19 @@ The SDK has a near-identical visitor in ``pkg/src/readie/_ast.py``. They are
 deliberately separate: this one handles notebook-derived source with magics and
 ``# DATASET USED:`` markers, and the SDK's ships to users who should not inherit
 the offline tooling's assumptions.
+
+KEEP THE TWO VISITORS' IMPORT-EXTRACTION IN SYNC. A live request's
+``ExecutionConfig.imports`` (built by the SDK's visitor, see
+``pkg/src/readie/_ast.py`` and ``pkg/src/readie/resources.py``) is matched by
+the router against the catalogue this offline pipeline builds from what this
+visitor extracts (see ``metadata/resolve.py`` and ``catalogue.py``) using
+plain, un-normalised string equality -- the router does no collapsing of its
+own. If the two visitors ever record a dotted import differently (e.g. one
+keeps the deepest candidate ``x.y.z`` and the other truncates to ``x.y``), a
+live request stops matching catalogue entries it should, silently degrading
+toward a worse checkpoint or a cold start with no error raised anywhere.
+Change ``visit_Import``/``visit_ImportFrom`` here only in lockstep with the
+same methods there, and vice versa.
 """
 
 from __future__ import annotations
@@ -54,10 +67,23 @@ class _Visitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        """Record ``from x import y``, ignoring relative imports."""
+        """Record ``from x import y``, as the deepest candidate ``x.y``.
+
+        ``y`` may turn out to be a submodule (``from PIL import Image``) or an
+        attribute of ``x`` (``from sklearn.svm import LinearSVC``) -- that can
+        only be told apart by actually importing candidates in the target
+        environment, which this AST-only pass has no access to. So it records
+        the deepest possible candidate and leaves resolving it (trying
+        ``x.y``, then falling back to ``x``) to whatever does have that
+        environment; ignoring relative imports, which name no absolute module.
+        """
         # node.module is None for `from . import x`, which names no module.
         if node.module and node.level == 0:
-            self.facts.imports.add(node.module)
+            for alias in node.names:
+                if alias.name == "*":
+                    self.facts.imports.add(node.module)
+                else:
+                    self.facts.imports.add(f"{node.module}.{alias.name}")
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:

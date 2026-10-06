@@ -1,12 +1,13 @@
 ---
 name: Feature request
-about: Propose a change to behaviour or design
+about: Propose a change to behavior or design
 labels: enhancement
 ---
 
 ## The problem
 
-<!-- What you are unable to do today. Not the solution - the situation. -->
+<!-- What you are unable to do today. Describe the situation and not the
+     solution. -->
 
 ## Proposed change
 
@@ -18,5 +19,6 @@ labels: enhancement
 
 ## Alternatives considered
 
-<!-- CONTRIBUTING.md has a "deliberately not done" section. If this is one of
-     those, say what changed to make it worth revisiting. -->
+<!-- CONTRIBUTING.md has a "What is deliberately not done" section. If this
+     proposal is one of those items, say what changed to make it worth
+     revisiting. -->

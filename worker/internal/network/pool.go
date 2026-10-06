@@ -90,7 +90,7 @@ func (p *ipPool) release(id string) {
 	}
 }
 
-func (p *ipPool) addrs(slot int) (sandboxIP, hostIP netip.Addr, err error) {
+func (p *ipPool) addrs(slot int) (sandboxIP, hostIP netip.Addr, err error) { //nolint:unparam // signature mirrors acquire's; kept for symmetry
 	slotBase := p.base + uint32(slot)*4 //nolint:gosec // slot is bounds-checked against p.slots at acquire time
 	return addrFromUint32(slotBase + 2), addrFromUint32(slotBase + 1), nil
 }

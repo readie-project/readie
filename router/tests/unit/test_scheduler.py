@@ -11,7 +11,12 @@ from typing import Any
 import pytest
 
 from readie_router.clock import FakeClock
-from readie_router.errors import NoCapacityError, NoWorkersRegisteredError
+from readie_router.errors import (
+    NoCapacityError,
+    NoWorkersRegisteredError,
+    OptimizedExecutionConflictError,
+    SessionExpiredError,
+)
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
     RESOURCE_GPU_MEMORY,
@@ -270,9 +275,14 @@ def test_a_different_session_does_not_reuse_the_container(
     assert provision(scheduler, "req-2", "sess-2").container_id == ""
 
 
-def test_affinity_is_dropped_when_the_container_is_gone(
+def test_reusing_a_session_whose_container_is_gone_raises_expired(
     scheduler: Scheduler, state: ClusterState
 ) -> None:
+    """A gone container doesn't just drop affinity - it expires the id.
+
+    Silently cold-starting under the same session_id would look like a warm
+    resume that quietly lost all its state, so the id is retired instead.
+    """
     register(state, "w1")
 
     first = provision(scheduler, "req-1", "sess-1")
@@ -283,7 +293,8 @@ def test_affinity_is_dropped_when_the_container_is_gone(
         "w1", "container-a", session_id="sess-1", request_id="", status=STATUS_REMOVED, now=0.0
     )
 
-    assert provision(scheduler, "req-2", "sess-1").container_id == ""
+    with pytest.raises(SessionExpiredError):
+        provision(scheduler, "req-2", "sess-1")
 
 
 def test_affinity_is_dropped_when_the_container_failed(
@@ -303,7 +314,7 @@ def test_affinity_is_dropped_when_the_container_failed(
     assert provision(scheduler, "req-2", "sess-1").container_id == ""
 
 
-def test_affinity_is_dropped_when_the_worker_is_evicted(
+def test_reusing_a_session_whose_worker_was_evicted_raises_expired(
     scheduler: Scheduler, state: ClusterState
 ) -> None:
     register(state, "w1")
@@ -315,8 +326,62 @@ def test_affinity_is_dropped_when_the_worker_is_evicted(
 
     state.evict_worker(first.worker_id)
 
-    second = provision(scheduler, "req-2", "sess-1")
-    assert second.worker_id != first.worker_id
+    with pytest.raises(SessionExpiredError):
+        provision(scheduler, "req-2", "sess-1")
+
+
+def test_evicting_a_worker_expires_its_sessions_outright(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """Every container on an evicted worker is gone with it, sessions included.
+
+    Not just unpinned, and not deleted either: a session has no way back
+    from losing its container, so it is retired (state.remove_executor
+    applies the same rule one container at a time) rather than surviving
+    unpinned or vanishing as if the id had never been seen.
+    """
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "sess-1")
+    scheduler.bind("req-1", first.worker_id, "container-a")
+    scheduler.release("req-1", Outcome.SUCCESS)
+    session = state.session("sess-1")
+    assert session is not None
+
+    state.evict_worker(first.worker_id)
+
+    assert session.expired
+    assert session.affinity is None
+
+
+def test_an_empty_session_id_is_never_tracked(scheduler: Scheduler, state: ClusterState) -> None:
+    """A call with no session sends "", not a fresh id each time.
+
+    Tracking it anyway would leave one permanent entry behind per call that
+    was never going to be resumed anyway.
+    """
+    register(state, "w1")
+
+    placement = provision(scheduler, "req-1", "")
+    scheduler.bind("req-1", placement.worker_id, "container-a")
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    assert placement.warm is False
+    assert state.session("") is None
+
+
+def test_repeated_empty_session_calls_never_share_a_container(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """Two unrelated "no session" calls must not look like the same session."""
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "")
+    scheduler.bind("req-1", first.worker_id, "container-a")
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    second = provision(scheduler, "req-2", "")
+    assert second.warm is False
     assert second.container_id == ""
 
 
@@ -511,6 +576,94 @@ def test_no_catalogue_for_a_workers_flavor_means_a_cold_uncheckpointed_start(
     )
 
     assert placement.checkpoint_id == ""
+
+
+# ---------------------------------------------------------------------------
+# Disable optimized execution
+# ---------------------------------------------------------------------------
+def _cold_demand(*, disable_optimized_execution: bool = True) -> Demand:
+    return Demand(
+        budgets=(Budget(kind=RESOURCE_MEMORY, alloc=ALLOC),),
+        resources=("pandas", "numpy"),
+        disable_optimized_execution=disable_optimized_execution,
+    )
+
+
+def test_disable_optimized_execution_skips_checkpoint_selection_on_a_cold_start(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    """A catalogue match exists, but the flag must still force a bare cold start."""
+    scheduler = Scheduler(
+        state=state,
+        selector=default_selector(),
+        clock=clock,
+        catalogues={"cpu": _catalogue("cpu")},
+    )
+    register(state, "w1")
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_cold_demand())
+    )
+
+    assert placement.checkpoint_id == ""
+
+
+def test_disable_optimized_execution_still_reuses_a_cold_started_warm_container(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """Reusing a container that was itself never restored from a checkpoint is fine."""
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "sess-1")
+    scheduler.bind("req-1", first.worker_id, "container-a")
+    state.apply_executor_status(
+        "w1", "container-a", session_id="sess-1", request_id="req-1", status=STATUS_READY, now=0.0
+    )
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    second = scheduler.provision(
+        ProvisionRequest(request_id="req-2", session_id="sess-1", demand=_cold_demand())
+    )
+    assert second.container_id == "container-a"
+    assert second.warm is True
+
+
+def test_disable_optimized_execution_conflicts_with_an_already_optimized_session(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """The session's warm container was restored from a checkpoint already.
+
+    Reusing it would silently ignore the request; tearing it down would
+    silently lose the session's state - so this is rejected instead of
+    guessing.
+    """
+    register(state, "w1")
+
+    first = provision(scheduler, "req-1", "sess-1")
+    scheduler.bind("req-1", first.worker_id, "container-a", checkpoint_id="c-data")
+    state.apply_executor_status(
+        "w1", "container-a", session_id="sess-1", request_id="req-1", status=STATUS_READY, now=0.0
+    )
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    with pytest.raises(OptimizedExecutionConflictError):
+        scheduler.provision(
+            ProvisionRequest(request_id="req-2", session_id="sess-1", demand=_cold_demand())
+        )
+
+
+def test_disable_optimized_execution_on_a_fresh_session_is_not_a_conflict(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """No affinity yet: there is nothing "already optimized" to conflict with."""
+    register(state, "w1")
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="sess-1", demand=_cold_demand())
+    )
+
+    assert placement.checkpoint_id == ""
+    assert placement.warm is False
 
 
 # ---------------------------------------------------------------------------

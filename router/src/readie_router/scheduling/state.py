@@ -66,12 +66,17 @@ class ClusterState:
         return worker
 
     def evict_worker(self, worker_id: str) -> bool:
-        """Remove a worker and every reference to it.
+        """Remove a worker and every reference to it, sessions included.
 
         In-flight streams are deliberately *not* cancelled. The worker
         deregisters before it drains, so those executions are still running and
         will finish or fail on their own; eviction only stops new work being
         routed here.
+
+        Every container this worker held is gone with it, so every session
+        pinned to one of them expires too - the same rule remove_executor
+        applies one container at a time, applied here to all of a worker's at
+        once.
         """
         worker = self._workers.pop(worker_id, None)
         if worker is None:
@@ -80,6 +85,7 @@ class ClusterState:
         for session in self._sessions.values():
             if session.affinity is not None and session.affinity.worker_id == worker_id:
                 session.affinity = None
+                session.expired = True
 
         if worker.worker_uri:
             self._evicted_uris.append(worker.worker_uri)
@@ -96,26 +102,45 @@ class ClusterState:
         worker = self.ensure_worker(worker_id, now)
         executor = worker.executors.get(container_id)
         if executor is None:
-            executor = ExecutorRecord(
-                container_id=container_id, worker_id=worker_id, last_seen=now)
+            executor = ExecutorRecord(container_id=container_id, worker_id=worker_id, last_seen=now)
             worker.executors[container_id] = executor
         else:
             executor.last_seen = now
         return executor
 
     def remove_executor(self, worker_id: str, container_id: str) -> None:
-        """Delete a container and clear any session pinned to it."""
+        """Delete a container and expire any session pinned to it.
+
+        This is a session's only expiry path: once the container backing it
+        is gone - torn down by the worker's own idle TTL and reported as
+        STATUS_REMOVED, or reclaimed here after a lost removal notification -
+        the session is retired rather than lingering under a TTL or cap of its
+        own. It is kept, not deleted: a later request reusing the same
+        session_id must be told it has expired (Scheduler.provision), not
+        silently start a fresh one as if the id had never been seen.
+        """
         worker = self._workers.get(worker_id)
         if worker is not None:
             worker.executors.pop(container_id, None)
-        self.clear_affinity_to(worker_id, container_id)
+
+        for session in self._sessions.values():
+            if (
+                session.affinity is not None
+                and session.affinity.worker_id == worker_id
+                and session.affinity.container_id == container_id
+            ):
+                session.affinity = None
+                session.expired = True
 
     def clear_affinity_to(self, worker_id: str, container_id: str) -> None:
-        """Unpin every session bound to a container.
+        """Unpin every session bound to a container without deleting it.
 
-        Called when the container is gone or broken. A session left pinned to
-        it would get NOT_FOUND from the worker on its next request instead of
-        quietly cold-starting.
+        Called only when the container is broken (STATUS_ERROR), not gone: the
+        record is kept briefly for diagnosis, so the session survives too,
+        just without a target to resume - the next request for it cold-starts
+        instead of getting NOT_FOUND from the worker. remove_executor is what
+        runs once the container is actually gone, and it expires the session
+        outright rather than just unpinning it.
         """
         for session in self._sessions.values():
             affinity = session.affinity
@@ -135,8 +160,16 @@ class ClusterState:
         """Iterate every known session."""
         return iter(list(self._sessions.values()))
 
-    def touch_session(self, session_id: str, now: float) -> SessionRecord:
-        """Return a session, creating it if unknown, and mark it as active."""
+    def touch_session(self, session_id: str, now: float) -> SessionRecord | None:
+        """Return a session, creating it if unknown, and mark it as active.
+
+        An empty session_id means the caller was never part of any session -
+        every call without an explicit one sends "", not a fresh id per call -
+        so it is never tracked. Tracking it anyway would leave one permanent
+        entry behind per such call, for a session nothing will ever look up.
+        """
+        if not session_id:
+            return None
         session = self._sessions.get(session_id)
         if session is None:
             session = SessionRecord(session_id=session_id, last_seen=now)
@@ -144,14 +177,6 @@ class ClusterState:
         else:
             session.last_seen = now
         return session
-
-    def remove_session(self, session_id: str) -> None:
-        """Delete a session."""
-        self._sessions.pop(session_id, None)
-
-    def session_count(self) -> int:
-        """Return how many sessions are tracked."""
-        return len(self._sessions)
 
     # -- Leases -----------------------------------------------------------
     def open_lease(self, placement: Placement) -> None:

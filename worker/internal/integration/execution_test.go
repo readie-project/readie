@@ -115,14 +115,23 @@ func TestExecution_HappyPath(t *testing.T) {
 	assert.Equal(t, "req-1", first.GetRequestId())
 	assert.Equal(t, "sess-1", first.GetSessionId())
 
-	// Pause-on-success is disabled for now (see Manager.Release): a completed
-	// container is destroyed, not paused for reuse. Release now runs in the
-	// background after the RPC returns, so this must poll rather than assert
-	// immediately.
-	require.Eventually(t, func() bool {
-		state, ok := h.Runtime.Get(first.GetContainerId())
-		return ok && !state.Paused && state.Removed
-	}, 5*time.Second, 20*time.Millisecond, "the container must eventually be destroyed, not paused")
+	// A completed container is left running for reuse, not destroyed (see
+	// Manager.IdleTTL's doc comment for why it is not suspended either).
+	// Release now runs in the background after the RPC returns, so this polls
+	// for its STATUS_READY report rather than asserting immediately.
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetContainerId() == first.GetContainerId() && st.GetStatus() == pb.Status_STATUS_READY {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second), "the router must eventually be told the container is ready for reuse")
+
+	state, ok := h.Runtime.Get(first.GetContainerId())
+	require.True(t, ok)
+	assert.False(t, state.Paused, "left running while idle, not suspended")
+	assert.False(t, state.Removed)
 
 	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
 		return len(s.ExecutorStatuses()) >= 2
@@ -132,7 +141,7 @@ func TestExecution_HappyPath(t *testing.T) {
 	for _, s := range h.Router.ExecutorStatuses() {
 		statuses = append(statuses, s.GetStatus())
 	}
-	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_REMOVED}, statuses)
+	assert.Equal(t, []pb.Status{pb.Status_STATUS_BUSY, pb.Status_STATUS_READY}, statuses)
 }
 
 func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
@@ -176,21 +185,15 @@ func TestExecution_ProvisionsTheSandboxNetworkAndReleasesItOnTeardown(t *testing
 
 	specs := h.Runtime.CreateSpecs()
 	require.Len(t, specs, 1)
-	alloc := net.Allocations()[containerID]
-	// Release now runs in the background after the RPC returns (see
-	// Runner.WaitPendingReleases), so the allocation itself may already be
-	// gone by the time we get here - only the spec the runtime received, set
-	// while the container was still live, is asserted directly.
-	if alloc.NetnsPath != "" {
-		assert.Equal(t, alloc.NetnsPath, specs[0].NetnsPath)
-	} else {
-		assert.NotEmpty(t, specs[0].NetnsPath, "the runtime must have received a real netns path")
-	}
+	alloc, ok := net.Allocations()[containerID]
+	require.True(t, ok, "a completed container is paused for reuse, so its network stays reserved")
+	assert.Equal(t, alloc.NetnsPath, specs[0].NetnsPath)
 
-	require.Eventually(t, func() bool {
-		releases := net.Releases()
-		return len(releases) == 1 && releases[0] == containerID
-	}, 5*time.Second, 20*time.Millisecond, "the sandbox network must be released once the container is torn down")
+	// Only actual teardown - here, shutdown reclaiming the paused container -
+	// releases the network; pausing it for reuse must not.
+	require.NoError(t, h.Shutdown())
+	assert.Equal(t, []string{containerID}, net.Releases(),
+		"the sandbox network must be released once the container is torn down")
 }
 
 func TestExecution_ANetworkProvisionFailureNeverReachesTheRuntime(t *testing.T) {
@@ -217,16 +220,24 @@ func TestExecution_ReclaimingAnOrphanAlsoReleasesItsNetwork(t *testing.T) {
 }
 
 func TestExecution_ReusesAWarmContainer(t *testing.T) {
-	// Pause-on-success is disabled for now (see Manager.Release), so a
-	// container is never left warm to reuse. Re-enable once that's uncommented.
-	t.Skip("pause-on-success is temporarily disabled; see Manager.Release")
-
 	h := newHarness(t)
 
 	first, err := execute(t, h, "", []byte("first"))
 	require.NoError(t, err)
 	require.NotEmpty(t, first)
 	containerID := first[0].GetContainerId()
+
+	// Release now runs in the background after the RPC returns, so the first
+	// container's release may not have landed yet; poll for its STATUS_READY
+	// report before resuming it.
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetContainerId() == containerID && st.GetStatus() == pb.Status_STATUS_READY {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second), "the router must eventually be told the container is ready for reuse")
 
 	second, err := execute(t, h, containerID, []byte("second"))
 	require.NoError(t, err)
@@ -235,9 +246,19 @@ func TestExecution_ReusesAWarmContainer(t *testing.T) {
 	assert.Equal(t, containerID, second[0].GetContainerId())
 	assert.Len(t, h.Runtime.CreateSpecs(), 1, "a warm container must not be recreated")
 
+	require.True(t, h.Router.WaitFor(func(s *fakeregistry.Server) bool {
+		var readyReports int
+		for _, st := range s.ExecutorStatuses() {
+			if st.GetContainerId() == containerID && st.GetStatus() == pb.Status_STATUS_READY {
+				readyReports++
+			}
+		}
+		return readyReports >= 2
+	}, 5*time.Second), "the container is released again, still running, after the second execution")
+
 	state, ok := h.Runtime.Get(containerID)
 	require.True(t, ok)
-	assert.True(t, state.Paused, "the container is paused again after the second execution")
+	assert.False(t, state.Paused, "left running while idle, not suspended")
 }
 
 func TestExecution_LargePayloadRoundTrips(t *testing.T) {
@@ -298,14 +319,29 @@ func TestExecution_TimeoutFailsAndDestroysTheContainer(t *testing.T) {
 // Release moved off the RPC's critical path so a slow teardown cannot inflate
 // response latency: the RPC must return well before Stop's delay elapses, and
 // teardown must still complete afterward on its own.
+//
+// A completed container is paused rather than destroyed, so a failing
+// execution - which does destroy its container - is what exercises Stop here.
 func TestExecution_RPCReturnsBeforeTeardownCompletes(t *testing.T) {
-	h := newHarness(t, withFakes(func(rt *fakesandbox.Sandbox, _ *fakeregistry.Server) {
-		rt.StopDelay = 2 * time.Second
-	}))
+	h := newHarness(t,
+		withConfig(func(c *config.Config) {
+			c.ExecutionTimeout = 300 * time.Millisecond
+			c.FirstByteTimeout = time.Hour
+			c.ResponseIdleTimeout = time.Hour
+		}),
+		withExecutor(fakeexecutor.Options{
+			Mode:          fakeexecutor.ModeSlowResponse,
+			ResponseDelay: 30 * time.Second,
+			Reply:         []byte("too late"),
+		}),
+		withFakes(func(rt *fakesandbox.Sandbox, _ *fakeregistry.Server) {
+			rt.StopDelay = 2 * time.Second
+		}),
+	)
 
 	started := time.Now()
 	_, err := execute(t, h, "", []byte("body"))
-	require.NoError(t, err)
+	require.Error(t, err)
 	assert.Less(t, time.Since(started), time.Second, "the RPC must return before teardown finishes")
 
 	require.Eventually(t, func() bool {

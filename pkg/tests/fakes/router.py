@@ -58,10 +58,6 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
         self.max_concurrent = max(self.max_concurrent, self.concurrent)
         self.metadata = [(k, v) for k, v in context.invocation_metadata() or ()]
         try:
-            if self.abort_with is not None:
-                code, details = self.abort_with
-                await context.abort(code, details)
-
             payload = bytearray()
             ref = ("", "")
             async for message in request_iterator:  # type: ignore[attr-defined]
@@ -74,6 +70,10 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
                 elif arm == "payload":
                     self.payload_messages.append(message)
                     payload.extend(message.payload)
+
+            if self.abort_with is not None:
+                code, details = self.abort_with
+                await context.abort(code, details)
 
             if self.delay:
                 await asyncio.sleep(self.delay)

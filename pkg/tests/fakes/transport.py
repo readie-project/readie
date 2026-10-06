@@ -9,8 +9,9 @@ import cloudpickle
 from readie.budget import Budget
 from readie.protocol import Attribution, CallRef, Outcome
 
-# What the client handed the transport: ref, payload, imports, budgets, timeout, gpu.
-Recorded = tuple[CallRef, bytes, tuple[str, ...], tuple[Budget, ...], float | None, bool]
+# What the client handed the transport: ref, payload, imports, budgets, timeout,
+# gpu, disable_optimized_execution.
+Recorded = tuple[CallRef, bytes, tuple[str, ...], tuple[Budget, ...], float | None, bool, bool]
 
 
 class RecordingTransport:
@@ -35,8 +36,11 @@ class RecordingTransport:
         timeout: float | None,
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
+        disable_optimized_execution: bool = False,
     ) -> Outcome:
-        self.calls.append((ref, payload, imports, budgets, timeout, gpu))
+        self.calls.append(
+            (ref, payload, imports, budgets, timeout, gpu, disable_optimized_execution)
+        )
         if self.error is not None:
             raise self.error
         for line in self.logs:
@@ -63,8 +67,18 @@ class RecordingTransport:
         timeout: float | None,
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
+        disable_optimized_execution: bool = False,
     ) -> Outcome:
-        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log, gpu=gpu)
+        return self._run(
+            ref,
+            payload,
+            imports,
+            budgets,
+            timeout=timeout,
+            on_log=on_log,
+            gpu=gpu,
+            disable_optimized_execution=disable_optimized_execution,
+        )
 
     def close(self) -> None:
         self.closed = True
@@ -87,8 +101,18 @@ class AsyncRecordingTransport(RecordingTransport):
         timeout: float | None,
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
+        disable_optimized_execution: bool = False,
     ) -> Outcome:
-        return self._run(ref, payload, imports, budgets, timeout=timeout, on_log=on_log, gpu=gpu)
+        return self._run(
+            ref,
+            payload,
+            imports,
+            budgets,
+            timeout=timeout,
+            on_log=on_log,
+            gpu=gpu,
+            disable_optimized_execution=disable_optimized_execution,
+        )
 
     async def aclose(self) -> None:
         self.closed = True

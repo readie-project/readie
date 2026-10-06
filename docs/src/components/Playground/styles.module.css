@@ -1,0 +1,384 @@
+/* The playground section of the landing page. It follows the rest of that page: the rounded
+   stage with white cards on it, a title bar like a code block's, and the same colors and type,
+   which come from the tokens in custom.css. */
+
+/* --------------------------------------------------------------- Stage */
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: var(--rd-stage);
+  box-shadow: inset 0 0 0 1px var(--rd-ring);
+}
+
+/* One card, like the live examples on react.dev: a tab bar on top, then the code on the left
+   and the results on the right, side by side. */
+.card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--rd-stage-card);
+  box-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.1), 0 0 0 1px var(--rd-stage-edge);
+}
+
+.tabbar {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding-inline: 1.25rem;
+  background: var(--rd-stage-head);
+  border-bottom: 1px solid var(--rd-stage-hairline);
+}
+
+/* The file's tab: underlined in the accent color, like the tab above a react.dev example. */
+.tab {
+  display: flex;
+  align-items: center;
+  padding-inline: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--rd-accent);
+  border-bottom: 2px solid var(--rd-accent);
+  margin-bottom: -1px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* The docs button, with the corner radius of the cards and list items on this page instead of a
+   pill, so it sits in the title bar like the rest of the stage. */
+.run {
+  border-radius: 10px;
+  padding: 0.35rem 1.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.link {
+  padding: 0.2rem 0.25rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--rd-stage-text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.link:hover:not(:disabled) {
+  color: var(--rd-ink);
+}
+
+.link:disabled {
+  visibility: hidden;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  height: 22rem;
+}
+
+.codePane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ------------------------------------------------------------ Examples */
+
+/* A row of thin pills that scrolls sideways, with an arrow at each end. */
+.carousel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.track {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.25rem 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  /* Snap to the pills' own inset, not to the edge, so the first pill is not pushed under the fade. */
+  scroll-padding-inline: 1rem;
+  scrollbar-width: none;
+  /* The pills fade out at both ends instead of being cut off. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 1rem, #000 calc(100% - 1rem), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 1rem, #000 calc(100% - 1rem), transparent);
+}
+
+.track::-webkit-scrollbar {
+  display: none;
+}
+
+.pill {
+  flex: none;
+  scroll-snap-align: start;
+  padding: 0.15rem 0.8rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: nowrap;
+  color: var(--rd-ink);
+  background: var(--rd-stage-card);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--rd-stage-edge);
+  cursor: pointer;
+}
+
+.pill:hover:not(:disabled) {
+  box-shadow: 0 0 0 1px var(--rd-accent);
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--rd-accent);
+  outline-offset: 2px;
+}
+
+.pill:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.pillOn,
+.pillOn:hover:not(:disabled) {
+  font-weight: 600;
+  color: var(--rd-accent);
+  background: var(--rd-accent-tint);
+  box-shadow: 0 0 0 1px var(--rd-accent);
+}
+
+.own {
+  color: var(--rd-accent);
+  font-weight: 600;
+}
+
+.arrow {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  color: var(--rd-ink);
+  background: var(--rd-stage-card);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--rd-stage-edge);
+  cursor: pointer;
+}
+
+.arrow:hover:not(:disabled) {
+  box-shadow: 0 0 0 1px var(--rd-accent);
+}
+
+.arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* --------------------------------------------------------------- Editor */
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(max-content, 1fr);
+  overflow: auto;
+  background: var(--rd-stage-card);
+}
+
+.gutter,
+.highlight,
+.textarea {
+  margin: 0;
+  padding-block: 1rem;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--rd-font-mono);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  white-space: pre;
+  tab-size: 4;
+  letter-spacing: normal;
+  word-spacing: normal;
+}
+
+/* Line numbers stay in view while the code scrolls sideways. */
+.gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  padding-inline: 0 0.75rem;
+  text-align: right;
+  color: var(--rd-ink-2);
+  background: var(--rd-stage-card);
+  user-select: none;
+}
+
+.stack {
+  display: grid;
+  min-width: 0;
+}
+
+.highlight,
+.textarea {
+  grid-area: 1 / 1;
+  padding-inline: 0.5rem 1.25rem;
+}
+
+.highlight {
+  background: transparent;
+  pointer-events: none;
+}
+
+.line {
+  display: block;
+}
+
+.textarea {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  overflow: hidden;
+  color: transparent;
+  caret-color: var(--rd-ink);
+  background: transparent;
+  outline: none;
+}
+
+.textarea::selection {
+  background: var(--rd-accent-tint);
+}
+
+/* --------------------------------------------------------------- Results */
+
+/* The right half, tinted like the preview beside a react.dev example. Both runs are always
+   on screen, one above the other. */
+.results {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--rd-sunken);
+  border-left: 1px solid var(--rd-stage-hairline);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane + .pane {
+  border-top: 1px solid var(--rd-stage-hairline);
+}
+
+.paneHead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem 0;
+}
+
+.paneName {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.paneTime {
+  margin-left: auto;
+  font-family: var(--rd-font-mono);
+  font-size: 0.8125rem;
+  color: var(--rd-ink-2);
+}
+
+.output {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.5rem 1.25rem 1rem;
+  overflow: auto;
+  font-family: var(--rd-font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--rd-ink);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.placeholder {
+  color: var(--rd-ink-2);
+  font-family: var(--rd-font-body);
+}
+
+.error {
+  color: var(--rd-time-ink);
+}
+
+.notice {
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  color: var(--rd-time-ink);
+  border-top: 1px solid var(--rd-stage-hairline);
+}
+
+/* --------------------------------------------------------------- Narrow */
+
+/* Like react.dev, the code and the results stack when the card is too narrow for two halves. */
+@media (max-width: 1100px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 20rem auto;
+    height: auto;
+  }
+
+  .results {
+    grid-template-rows: none;
+    border-left: 0;
+    border-top: 1px solid var(--rd-stage-hairline);
+  }
+
+  .output {
+    min-height: 6rem;
+    max-height: 12rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .stage {
+    padding: 0.75rem;
+  }
+
+  .arrow {
+    display: none;
+  }
+
+  .track {
+    padding-inline: 0.5rem;
+  }
+}

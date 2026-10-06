@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import Any
 
+from readie._compat import check_python_version
 from readie.budget import Budget
 from readie.codec import CloudpickleCodec, ResultCodec
 from readie.config import Settings
@@ -91,6 +92,7 @@ class Client:
         async_transport: AsyncTransport | None = None,
         log_sink: Callable[[str], None] | None = None,
     ) -> None:
+        check_python_version()
         self.settings = settings or Settings()
         self._codec = codec or CloudpickleCodec()
         self._log_sink = log_sink if log_sink is not None else _default_log_sink
@@ -130,6 +132,7 @@ class Client:
         budgets: tuple[Budget, ...] = (),
         gpu: bool = False,
         packages: tuple[str, ...] = (),
+        disable_optimized_execution: bool = False,
     ) -> Any:
         """Execute ``func`` remotely and return its result.
 
@@ -144,6 +147,7 @@ class Client:
             imports,
             budgets,
             gpu=gpu,
+            disable_optimized_execution=disable_optimized_execution,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -160,6 +164,7 @@ class Client:
         budgets: tuple[Budget, ...] = (),
         gpu: bool = False,
         packages: tuple[str, ...] = (),
+        disable_optimized_execution: bool = False,
     ) -> Any:
         """Execute ``func`` remotely and return its result, without blocking."""
         ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
@@ -169,6 +174,7 @@ class Client:
             imports,
             budgets,
             gpu=gpu,
+            disable_optimized_execution=disable_optimized_execution,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -229,9 +235,12 @@ class Client:
         if session is not None:
             session._check()
 
-        # A call with no session gets a fresh id rather than a shared constant,
-        # so unrelated calls do not contend for one container's queue.
-        session_id = session.id if session is not None else new_session_id()
+        # A call with no session sends no session_id at all, rather than a
+        # fresh one per call: the router treats an empty id as "not part of
+        # any session" and skips session bookkeeping for it entirely, so
+        # nothing accumulates for the vast majority of calls that were never
+        # going to be resumed anyway.
+        session_id = session.id if session is not None else ""
         ref = CallRef(request_id=new_request_id(), session_id=session_id)
         payload = self._codec.encode_call(func, args, kwargs or {}, packages)
         imports = extract_imports(func)

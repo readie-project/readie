@@ -291,16 +291,17 @@ func (d *Sandbox) Pause(_ context.Context, id string) error {
 	}
 
 	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	s, ok := d.sandboxes[id]
 	if !ok || s.Removed {
+		d.mu.Unlock()
 		return sandbox.ErrNotFound
 	}
 	if s.Paused {
+		d.mu.Unlock()
 		return sandbox.ErrConflict
 	}
 	s.Paused = true
+	d.mu.Unlock()
 	return nil
 }
 

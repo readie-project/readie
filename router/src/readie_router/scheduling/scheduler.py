@@ -13,7 +13,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from readie_router.clock import Clock
-from readie_router.errors import NoCapacityError, NoWorkersRegisteredError
+from readie_router.errors import (
+    NoCapacityError,
+    NoWorkersRegisteredError,
+    OptimizedExecutionConflictError,
+    SessionExpiredError,
+)
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
     RESOURCE_MEMORY,
@@ -67,16 +72,25 @@ class Scheduler:
         Raises:
             NoWorkersRegisteredError: nothing has registered, or nothing is healthy.
             NoCapacityError: workers exist but none can take this allocation.
+            SessionExpiredError: this session_id is known and has expired.
         """
         now = self._clock.now()
+        # None for an empty session_id: touch_session refuses to track one,
+        # since every call without an explicit session sends "" rather than a
+        # fresh id, and there would be nothing to ever look it up again.
         session = self._state.touch_session(request.session_id, now)
-        session.requests.add(request.request_id)
+        if session is not None and session.expired:
+            # Checked before anything else is touched: an expired session
+            # must not accrue a request, a reservation, or any other side
+            # effect on its way to being rejected.
+            raise SessionExpiredError(request.session_id)
+        if session is not None:
+            session.requests.add(request.request_id)
 
         demand = request.demand
         lease_id = self._state.next_lease_id()
 
-        worker_id, container_id, checkpoint_id, warm = self._resolve_target(
-            session, demand)
+        worker_id, container_id, checkpoint_id, warm = self._resolve_target(session, demand)
         worker = self._state.worker(worker_id)
         if worker is None:  # pragma: no cover - _resolve_target only returns live workers
             raise NoWorkersRegisteredError
@@ -106,24 +120,32 @@ class Scheduler:
         # same session must not see an empty affinity just because this one has
         # not reached the worker yet.
         if warm and container_id:
-            self._state.bind_session(
-                request.request_id, worker_id, container_id, now=now)
+            self._state.bind_session(request.request_id, worker_id, container_id, now=now)
 
         return placement
 
-    def _resolve_target(self, session: SessionRecord, demand: Demand) -> tuple[str, str, str, bool]:
+    def _resolve_target(
+        self, session: SessionRecord | None, demand: Demand
+    ) -> tuple[str, str, str, bool]:
         """Pick a worker and, when reusing, the container to resume.
 
         Affinity beats load. A warm container holds the session's live Python
         state, so placing the session elsewhere silently loses it - a much
-        worse outcome than an imbalanced cluster.
+        worse outcome than an imbalanced cluster. A caller with no session
+        (``session is None``) has no affinity to consider by construction.
         """
-        affinity = session.affinity
-        if affinity is not None:
+        if session is not None and session.affinity is not None:
+            affinity = session.affinity
             worker = self._state.worker(affinity.worker_id)
             if worker is not None and worker.is_selectable:
                 executor = worker.executors.get(affinity.container_id)
                 if executor is not None and executor.is_reusable:
+                    if demand.disable_optimized_execution and executor.checkpoint_id:
+                        # The session is already running on a checkpoint-restored
+                        # container. Reusing it would silently ignore the request;
+                        # tearing it down would silently lose the session's state.
+                        # Neither is a good default, so this is the caller's call.
+                        raise OptimizedExecutionConflictError(session.session_id)
                     return (
                         affinity.worker_id,
                         affinity.container_id,
@@ -147,7 +169,9 @@ class Scheduler:
         # A cold start: pick the cheapest checkpoint from the chosen worker's
         # flavor catalogue. A GPU worker serving a CPU request restores a GPU
         # checkpoint, so selection follows the worker, not the request.
-        checkpoint_id = self._select_checkpoint(chosen, demand)
+        checkpoint_id = (
+            "" if demand.disable_optimized_execution else self._select_checkpoint(chosen, demand)
+        )
 
         # An empty container id is the worker's "provision a new one" sentinel.
         return chosen, "", checkpoint_id, False
@@ -197,8 +221,7 @@ class Scheduler:
         worker = self._state.worker(lease.worker_id)
         if worker is not None:
             worker.inflight = max(0, worker.inflight - 1)
-            worker.reserved_bytes = max(
-                0, worker.reserved_bytes - lease.alloc_of(RESOURCE_MEMORY))
+            worker.reserved_bytes = max(0, worker.reserved_bytes - lease.alloc_of(RESOURCE_MEMORY))
 
         session = self._state.session(lease.session_id)
         if session is None:
