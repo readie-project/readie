@@ -42,7 +42,6 @@ class CheckpointPlan:
     requests_served: int = 0
     seconds_saved: float = 0.0
     size_mb: float = 0.0
-    memory_size_mb: float = 0.0
 
     def to_json(self) -> dict[str, Any]:
         """Render to the on-disk plan shape."""
@@ -54,7 +53,6 @@ class CheckpointPlan:
             "requests_served": self.requests_served,
             "seconds_saved": round(self.seconds_saved, 4),
             "size_mb": round(self.size_mb, 4),
-            "memory_size_mb": round(self.memory_size_mb, 4),
         }
 
     @classmethod
@@ -68,7 +66,6 @@ class CheckpointPlan:
             requests_served=int(raw.get("requests_served") or 0),
             seconds_saved=float(raw.get("seconds_saved") or 0.0),
             size_mb=float(raw.get("size_mb") or 0.0),
-            memory_size_mb=float(raw.get("memory_size_mb") or 0.0),
         )
 
 
