@@ -75,6 +75,7 @@ class FakeLoader:
             raise ValueError(message)
         return FakeFrame(self.sizes[Path(path).name])
 
+
 class FailingLoader:
     def dataset_download(
         self,
