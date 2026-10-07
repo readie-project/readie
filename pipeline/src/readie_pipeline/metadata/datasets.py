@@ -28,6 +28,19 @@ _DATASET_PATH_PARTS = 3
 _OWNER_DATASET_PARTS = 2
 _RATE_LIMIT_RETRIES = 3
 _RATE_LIMIT_DELAYS = (30.0, 60.0, 120.0)
+_FILE_LOAD_ERRORS = (
+    OSError,
+    TypeError,
+    ValueError,
+    AttributeError,
+    RuntimeError,
+    BackendError,
+    DataCorruptionError,
+    KaggleApiHTTPError,
+    KaggleEnvironmentError,
+    NotFoundError,
+    UnauthenticatedError,
+)
 
 
 class DatasetMeasurementError(ValueError):
@@ -148,7 +161,7 @@ def _load_frames(
     handle: str,
     root: Path,
     path: Path,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], tuple[str, ...]]:
     relative = path.relative_to(root).as_posix()
     adapter = cast(Any, kagglehub.KaggleDatasetAdapter.PANDAS)
 
@@ -172,10 +185,16 @@ def _load_frames(
             )
 
     if path.suffix.lower() not in {".sqlite", ".sqlite3", ".db", ".db3", ".s3db", ".dl3"}:
-        loaded = load()
+        try:
+            loaded = load()
+        except _FILE_LOAD_ERRORS as exc:
+            return {}, (f"{relative}: {exc}",)
         if isinstance(loaded, dict):
-            return {f"{relative}::{sheet}": frame for sheet, frame in loaded.items()}
-        return {relative: loaded}
+            return (
+                {f"{relative}::{sheet}": frame for sheet, frame in loaded.items()},
+                (),
+            )
+        return {relative: loaded}, ()
 
     connection = sqlite3.connect(path)
     try:
@@ -186,12 +205,16 @@ def _load_frames(
         connection.close()
 
     frames: dict[str, Any] = {}
+    errors: list[str] = []
     for (table_name,) in tables:
         quoted_name = table_name.replace('"', '""')
-        frames[f"{relative}::{table_name}"] = load(
-            sql_query=f'SELECT * FROM "{quoted_name}"',  # noqa: S608 - table names are discovered locally and quoted
-        )
-    return frames
+        try:
+            frames[f"{relative}::{table_name}"] = load(
+                sql_query=f'SELECT * FROM "{quoted_name}"',  # noqa: S608 - table names are discovered locally and quoted
+            )
+        except _FILE_LOAD_ERRORS as exc:
+            errors.append(f"{relative}::{table_name}: {exc}")
+    return frames, tuple(errors)
 
 
 def measure_dataset(
@@ -239,22 +262,26 @@ def _measure_dataset_once(
             raise DatasetMeasurementError.empty_dataset(slug)
 
         frames: dict[str, Any] = {}
+        file_errors: list[str] = []
         disk_size = 0
         memory_size = 0
         start = clock()
         for path in paths:
             disk_size += path.stat().st_size
-            loaded_frames = _load_frames(
+            loaded_frames, errors = _load_frames(
                 downloader,
                 dataset_handle(slug),
                 root,
                 path,
             )
             frames.update(loaded_frames)
-            memory_size += sum(
-                int(frame.memory_usage(index=True, deep=True).sum())
-                for frame in loaded_frames.values()
-            )
+            file_errors.extend(errors)
+            for frame_name, frame in loaded_frames.items():
+                try:
+                    memory_size += int(frame.memory_usage(index=True, deep=True).sum())
+                except _FILE_LOAD_ERRORS as exc:
+                    frames.pop(frame_name)
+                    file_errors.append(f"{frame_name}: could not measure memory: {exc}")
         load_time = clock() - start
 
         facts = PackageFacts(
@@ -263,21 +290,10 @@ def _measure_dataset_once(
             memory_size_mb=memory_size / _MB,
             import_time=load_time,
             resource_type=ResourceType.DATASET,
+            error="; ".join(file_errors),
         )
         return DatasetMeasurement(facts=facts, frames=frames)
-    except (
-        OSError,
-        TypeError,
-        ValueError,
-        AttributeError,
-        RuntimeError,
-        BackendError,
-        DataCorruptionError,
-        KaggleApiHTTPError,
-        KaggleEnvironmentError,
-        NotFoundError,
-        UnauthenticatedError,
-    ) as exc:
+    except (*_FILE_LOAD_ERRORS, sqlite3.Error) as exc:
         return DatasetMeasurement(
             facts=PackageFacts(
                 base_import=slug,

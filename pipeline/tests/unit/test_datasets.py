@@ -240,6 +240,22 @@ def test_measure_dataset_reports_unsupported_files(tmp_path: Path) -> None:
     assert measurement.frames == {}
 
 
+def test_measure_dataset_keeps_supported_files_when_another_file_is_unsupported(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "data.csv").write_bytes(b"valid")
+    (tmp_path / "README.txt").write_text("not tabular data")
+    loader = FakeLoader(tmp_path)
+    loader.sizes = {"data.csv": 10}
+
+    measurement = measure_dataset("owner/data", downloader=loader)
+
+    assert measurement.frames.keys() == {"data.csv"}
+    assert not measurement.facts.usable
+    assert "README.txt" in measurement.facts.error
+    assert "unsupported dataset file type" in measurement.facts.error
+
+
 def test_measure_dataset_reports_an_unavailable_dataset() -> None:
     measurement = measure_dataset(
         "owner/data",

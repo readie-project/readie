@@ -116,7 +116,7 @@ def test_analyze_writes_dataset_measurements_with_package_metadata(tmp_path: Pat
     assert run("--data-dir", str(data), "--output-dir", str(tmp_path / "out"), "analyze") == 0
 
     written = json.loads((data / "metadata" / "cpu.json").read_text())
-    packages = written["packages"]
+    packages = written["resources"]
     assert packages["pandas"]["resource_type"] == "package"
     assert packages["owner/data"]["resource_type"] == "dataset"
     assert packages["owner/data"]["memory_size_mb"] == 30

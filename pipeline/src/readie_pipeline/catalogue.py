@@ -105,7 +105,7 @@ def build_catalogue(
     ``entries`` pairs each checkpoint id with the plan it was built from.
     """
     items: dict[str, dict[str, Any]] = {}
-    for name, facts in metadata.packages.items():
+    for name, facts in metadata.resources.items():
         entry: dict[str, Any] = {
             "size_mb": round(facts.memory_size_mb, 4),
             "load_time": facts.import_time,

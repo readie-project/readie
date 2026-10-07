@@ -131,15 +131,15 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
             on_progress=progress,
         )
         metadata = Metadata(
-            {**metadata.packages, **dataset_facts},
+            {**metadata.resources, **dataset_facts},
             resolved=metadata.resolved,
         )
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
 
-    usable = sum(1 for f in metadata.packages.values() if f.usable)
-    print(f"[*] {usable}/{len(metadata)} packages measured -> {settings.metadata_path}")
+    usable = sum(1 for f in metadata.resources.values() if f.usable)
+    print(f"[*] {usable}/{len(metadata)} resources measured -> {settings.metadata_path}")
     return 0
 
 

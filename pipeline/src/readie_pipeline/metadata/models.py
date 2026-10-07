@@ -1,4 +1,4 @@
-"""Measured package facts.
+"""Measured resource facts.
 
 The previous code emitted ``disk_size_mb`` and ``load_time``, the committed data
 has ``disk_size_mb`` and ``import_time``, and the TypedDict declared ``size``
@@ -33,7 +33,7 @@ class ResourceType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PackageFacts:
-    """What one package costs to have available."""
+    """What one resource costs to have available."""
 
     base_import: str
     """The resolved dotted import name, e.g. ``sklearn`` or ``sklearn.svm`` --
@@ -129,9 +129,9 @@ class PackageFacts:
 
 @dataclass(frozen=True, slots=True)
 class Metadata:
-    """Facts for every package the corpus mentions."""
+    """Facts for every resource the corpus mentions."""
 
-    packages: dict[str, PackageFacts] = field(default_factory=dict)
+    resources: dict[str, PackageFacts] = field(default_factory=dict)
 
     resolved: dict[str, str] = field(default_factory=dict)
     """Raw corpus import string -> the resolved dotted name it actually names
@@ -140,17 +140,27 @@ class Metadata:
     importable in the analysed environment (a hallucinated or uninstalled
     name) and is dropped rather than guessed at."""
 
+    @property
+    def packages(self) -> dict[str, PackageFacts]:
+        """Compatibility view of the common resource mapping.
+
+        Package-specific callers predate the common resource store. Keeping
+        this view avoids changing those callers while datasets and packages
+        are serialized together under ``resources``.
+        """
+        return self.resources
+
     def __len__(self) -> int:
-        """How many packages are described."""
-        return len(self.packages)
+        """How many resources are described."""
+        return len(self.resources)
 
     def __contains__(self, name: str) -> bool:
         """Whether a package has facts."""
-        return name in self.packages
+        return name in self.resources
 
     def get(self, name: str) -> PackageFacts | None:
         """Facts for a package, or None."""
-        return self.packages.get(name)
+        return self.resources.get(name)
 
     def size_mb(self, name: str) -> float:
         """Disk cost, or zero when unknown.
@@ -159,7 +169,7 @@ class Metadata:
         it should just look free, and the planner's budget check still bounds
         the total.
         """
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         return facts.disk_size_mb if facts else 0.0
 
     def memory_size_mb(self, name: str) -> float:
@@ -168,12 +178,12 @@ class Metadata:
         What the planner and catalogue actually price a checkpoint by -- see
         ``PackageFacts.memory_size_mb``.
         """
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         return facts.memory_size_mb if facts else 0.0
 
     def import_time(self, name: str) -> float:
         """Import cost in seconds, or zero when unknown."""
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         return facts.import_time if facts else 0.0
 
     def direct_dependencies(self, name: str) -> frozenset[str]:
@@ -186,7 +196,7 @@ class Metadata:
         left to compute -- this is kept only as a convenience accessor for a
         single package.
         """
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         if facts is None:
             return frozenset()
         return facts.loaded_modules - {name}
@@ -201,7 +211,7 @@ class Metadata:
         """
         seen: set[str] = set(names)
         for name in names:
-            facts = self.packages.get(name)
+            facts = self.resources.get(name)
             if facts is not None:
                 seen |= facts.loaded_modules
         return frozenset(seen)
@@ -228,7 +238,7 @@ class Metadata:
                 continue
             name = self.resolved.get(raw)
             if name is None:
-                facts = self.packages.get(raw)
+                facts = self.resources.get(raw)
                 if facts is not None and facts.usable:
                     name = raw
             if name is not None:
@@ -251,14 +261,20 @@ class Metadata:
             msg = f"metadata at {path} must be an object, got {type(raw).__name__}"
             raise MetadataError(msg)
 
-        if "packages" in raw:
-            packages_raw, resolved_raw = raw["packages"], raw.get("resolved", {})
+        if "resources" in raw:
+            resources_raw, resolved_raw = raw["resources"], raw.get("resolved", {})
+        elif "packages" in raw:
+            # Metadata written before the common resource store.
+            resources_raw, resolved_raw = raw["packages"], raw.get("resolved", {})
         else:
             # Predates the "resolved" map: a flat {name: facts} dict.
-            packages_raw, resolved_raw = raw, {}
+            resources_raw, resolved_raw = raw, {}
 
         return cls(
-            {name: PackageFacts.from_json(name, entry) for name, entry in packages_raw.items()},
+            {
+                name: PackageFacts.from_json(name, entry)
+                for name, entry in resources_raw.items()
+            },
             resolved={str(k): str(v) for k, v in resolved_raw.items()},
         )
 
@@ -274,10 +290,10 @@ class Metadata:
         would otherwise show up here as if it were a real package that failed.
         """
         return {
-            "packages": {
+            "resources": {
                 name: facts.to_json()
-                for name, facts in sorted(self.packages.items())
-                if not facts.error
+                for name, facts in sorted(self.resources.items())
+                if not facts.error or facts.resource_type != ResourceType.PACKAGE
             },
             "resolved": dict(sorted(self.resolved.items())),
         }

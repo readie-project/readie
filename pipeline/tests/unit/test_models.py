@@ -161,8 +161,8 @@ def test_an_errored_entry_is_dropped_from_the_written_metadata():
         }
     )
     payload = metadata.to_json()
-    assert set(payload["packages"]) == {"pandas"}
-    assert "error" not in payload["packages"]["pandas"]
+    assert set(payload["resources"]) == {"pandas"}
+    assert "error" not in payload["resources"]["pandas"]
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +250,7 @@ def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
     path = tmp_path / "metadata.json"
     path.write_text(json.dumps(metadata.to_json()))
 
-    assert list(json.loads(path.read_text())["packages"]) == ["abc", "zlib"]
+    assert list(json.loads(path.read_text())["resources"]) == ["abc", "zlib"]
     assert Metadata.load(path).import_time("abc") == 0.2
 
 

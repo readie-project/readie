@@ -55,9 +55,12 @@ Dataset references in the corpus are measured during `analyze`. The pipeline
 first uses KaggleHub to enumerate every downloaded file, then loads each file
 serially through KaggleHub's pandas adapter. This keeps file discovery separate
 from conversion and records SQLite tables and multi-sheet files as separate
-frames. Invalid, competition, inaccessible, checksum-failed, and rate-limited
-references are recorded as dataset measurement errors; datasets are not chosen
-for checkpoint plans until dataset capture and restore support is implemented.
+frames. A conversion error is recorded for the individual file while other
+files continue to be measured. Invalid, competition, inaccessible,
+checksum-failed, and rate-limited references are recorded as dataset
+measurement errors; datasets are not chosen for checkpoint plans until dataset
+capture and restore support is implemented. Package and dataset facts are
+stored together under the metadata `resources` key.
 
 ### capture
 
