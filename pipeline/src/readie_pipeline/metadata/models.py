@@ -271,10 +271,7 @@ class Metadata:
             resources_raw, resolved_raw = raw, {}
 
         return cls(
-            {
-                name: PackageFacts.from_json(name, entry)
-                for name, entry in resources_raw.items()
-            },
+            {name: PackageFacts.from_json(name, entry) for name, entry in resources_raw.items()},
             resolved={str(k): str(v) for k, v in resolved_raw.items()},
         )
 
