@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from readie_pipeline.corpus.models import Corpus, Request
-from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata.models import Metadata, PackageFacts, ResourceType
 from readie_pipeline.planning.fixed import FixedPlanner
 from readie_pipeline.planning.greedy import GreedyPlanner
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
@@ -77,6 +77,34 @@ def test_it_prefers_import_time_over_popularity():
 
     plans = GreedyPlanner(alpha=0.005).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
     assert plans[0].imports == ("slow",)
+
+
+def test_it_does_not_select_datasets_before_capture_support_exists():
+    corpus = Corpus.of(
+        [
+            Request(task_name="t", category="c", code="", datasets=("owner/data",)),
+        ]
+        * 10
+    )
+    metadata = Metadata(
+        {
+            "owner/data": PackageFacts(
+                base_import="owner/data",
+                disk_size_mb=12,
+                memory_size_mb=24,
+                import_time=1.5,
+                resource_type=ResourceType.DATASET,
+            )
+        }
+    )
+
+    plans = GreedyPlanner(alpha=0.01).plan(
+        corpus,
+        metadata,
+        Budget(max_checkpoints=1, size_mb=20),
+    )
+
+    assert plans == []
 
 
 def test_it_prefers_the_cheaper_of_two_equally_useful_packages():

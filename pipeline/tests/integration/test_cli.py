@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from readie_pipeline import cli
 from readie_pipeline.cli import main
 from readie_pipeline.corpus.models import Corpus, Request
+from readie_pipeline.metadata.models import Metadata, PackageFacts, ResourceType
 
 DATA = Path(__file__).parents[2] / "data"
 
@@ -68,6 +70,56 @@ def test_plan_is_reproducible(workspace: Path):
     run(*args)
 
     assert (workspace / "checkpoints.json").read_text() == first
+
+
+def test_analyze_writes_dataset_measurements_with_package_metadata(tmp_path: Path, monkeypatch):
+    data = tmp_path / "data"
+    (data / "datasets").mkdir(parents=True)
+    (data / "metadata").mkdir()
+    corpus = Corpus.of(
+        [
+            Request(
+                task_name="dataset task",
+                category="data",
+                code="",
+                datasets=("owner/data",),
+            )
+        ]
+    )
+    (data / "datasets" / "cpu.json").write_text(json.dumps([r.to_json() for r in corpus]))
+
+    monkeypatch.setattr(cli, "installed_packages", lambda: ["pandas"])
+
+    def fake_analyze(_packages, *, on_progress):
+        del on_progress
+        return Metadata({"pandas": PackageFacts(base_import="pandas", disk_size_mb=10)})
+
+    def fake_measure_datasets(_slugs, *, on_progress):
+        del on_progress
+        return {
+            "owner/data": PackageFacts(
+                base_import="owner/data",
+                disk_size_mb=20,
+                memory_size_mb=30,
+                import_time=1.5,
+                resource_type=ResourceType.DATASET,
+            )
+        }
+
+    monkeypatch.setattr(
+        cli,
+        "analyze",
+        fake_analyze,
+    )
+    monkeypatch.setattr(cli, "measure_datasets", fake_measure_datasets)
+
+    assert run("--data-dir", str(data), "--output-dir", str(tmp_path / "out"), "analyze") == 0
+
+    written = json.loads((data / "metadata" / "cpu.json").read_text())
+    packages = written["packages"]
+    assert packages["pandas"]["resource_type"] == "package"
+    assert packages["owner/data"]["resource_type"] == "dataset"
+    assert packages["owner/data"]["memory_size_mb"] == 30
 
 
 def test_the_fixed_planner_is_selectable(workspace: Path):

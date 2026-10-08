@@ -33,6 +33,7 @@ from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings,
 from readie_pipeline.corpus.models import Corpus, CorpusError
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
+from readie_pipeline.metadata.datasets import measure_datasets
 from readie_pipeline.metadata.models import Metadata, MetadataError
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
 
@@ -119,7 +120,20 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
                 f"{getattr(facts, 'import_time', 0.0):.3f} s"
             )
 
-    metadata = analyze(packages, exclude=exclude, on_progress=progress)
+    if exclude:
+        metadata = analyze(packages, exclude=exclude, on_progress=progress)
+    else:
+        metadata = analyze(packages, on_progress=progress)
+    if settings.corpus_path.exists():
+        corpus = Corpus.load(settings.corpus_path)
+        dataset_facts = measure_datasets(
+            sorted(corpus.resources(metadata).datasets),
+            on_progress=progress,
+        )
+        metadata = Metadata(
+            {**metadata.packages, **dataset_facts},
+            resolved=metadata.resolved,
+        )
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")

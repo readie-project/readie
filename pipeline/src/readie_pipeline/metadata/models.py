@@ -113,7 +113,7 @@ class PackageFacts:
         there) -- a package that could not be measured is dropped rather than
         written down as broken.
         """
-        return {
+        payload = {
             "base_import": self.base_import,
             "distribution": self.distribution,
             "loaded_modules": sorted(self.loaded_modules),
@@ -122,6 +122,9 @@ class PackageFacts:
             "import_time": self.import_time,
             "resource_type": str(self.resource_type),
         }
+        if self.error and self.resource_type != ResourceType.PACKAGE:
+            payload["error"] = self.error
+        return payload
 
 
 @dataclass(frozen=True, slots=True)

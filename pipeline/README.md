@@ -51,6 +51,14 @@ result is written on the host to `data/metadata/<flavor>.json`.
 `plan` and `capture` read whatever `data/metadata/<flavor>.json` already
 contains. They do not regenerate it.
 
+Dataset references in the corpus are measured during `analyze`. The pipeline
+first uses KaggleHub to enumerate every downloaded file, then loads each file
+serially through KaggleHub's pandas adapter. This keeps file discovery separate
+from conversion and records SQLite tables and multi-sheet files as separate
+frames. Invalid, competition, inaccessible, checksum-failed, and rate-limited
+references are recorded as dataset measurement errors; datasets are not chosen
+for checkpoint plans until dataset capture and restore support is implemented.
+
 ### capture
 
 `capture` is the image's default command. It exists because `plan` and `build`
