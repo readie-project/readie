@@ -14,6 +14,7 @@ point, which makes awaiting during cleanup fraught; a coroutine can hold a
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import cast
 
@@ -74,7 +75,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
 
     async def RequestExecution(  # noqa: N802 - the generated interface names it
         self,
-        request_iterator: grpc.aio.MessageIterator,
+        request_iterator: AsyncIterator[proxy_pb2.ClientExecutionRequest],
         context: grpc.aio.ServicerContext,
     ) -> None:
         """Run one execution on the client's behalf."""
@@ -116,7 +117,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
 
     async def _read_header(
         self,
-        request_iterator: grpc.aio.MessageIterator,
+        request_iterator: AsyncIterator[proxy_pb2.ClientExecutionRequest],
         context: grpc.aio.ServicerContext,  # noqa: ARG002
     ) -> proxy_pb2.ClientExecutionRequest:
         """Consume and validate the first message.
@@ -142,7 +143,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
     async def _run(
         self,
         header: proxy_pb2.ClientExecutionRequest,
-        request_iterator: grpc.aio.MessageIterator,
+        request_iterator: AsyncIterator[proxy_pb2.ClientExecutionRequest],
         context: grpc.aio.ServicerContext,
         log: structlog.stdlib.BoundLogger,
     ) -> None:
@@ -189,7 +190,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         self,
         placement: Placement,
         *,
-        request_iterator: grpc.aio.MessageIterator,
+        request_iterator: AsyncIterator[proxy_pb2.ClientExecutionRequest],
         context: grpc.aio.ServicerContext,
         relay: _Relay,
         log: structlog.stdlib.BoundLogger,
@@ -210,7 +211,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
     async def _pump_requests(
         self,
         placement: Placement,
-        request_iterator: grpc.aio.MessageIterator,
+        request_iterator: AsyncIterator[proxy_pb2.ClientExecutionRequest],
         stream: ExecutionStream,
     ) -> None:
         """Forward the client's payload chunks to the worker.

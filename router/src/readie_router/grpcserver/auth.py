@@ -71,9 +71,9 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):  # type: ignore[misc]  # grpc
 
     async def intercept_service(
         self,
-        continuation: Callable[[grpc.HandlerCallDetails], Awaitable[grpc.RpcMethodHandler]],
+        continuation: Callable[[grpc.HandlerCallDetails], Awaitable[grpc.RpcMethodHandler | None]],
         handler_call_details: grpc.HandlerCallDetails,
-    ) -> grpc.RpcMethodHandler:
+    ) -> grpc.RpcMethodHandler | None:
         """Guard ProxyService; pass everything else straight through."""
         method = handler_call_details.method
         if not method.startswith(GUARDED_PREFIX):
