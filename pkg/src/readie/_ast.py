@@ -1,7 +1,7 @@
 """Static analysis of a decorated function's source.
 
-The visitor shape follows ``pipeline``'s ``corpus/tree_parser.py``, which does this for
-corpus notebooks. It is reimplemented rather than imported: the SDK ships to
+The visitor shape follows ``pipeline``'s ``corpus/extract.py``, which does this for
+corpus code. It is reimplemented rather than imported: the SDK ships to
 users, and coupling it to the offline analysis tooling -- and to that tooling's
 dependencies and its notebook-specific line cleaning -- costs more than the
 duplication.
@@ -9,7 +9,7 @@ duplication.
 KEEP THE TWO VISITORS' IMPORT-EXTRACTION IN SYNC. This visitor's output
 (``SourceFacts.imports``) becomes ``ExecutionConfig.imports`` on a live
 request (see ``resources.py`` and ``protocol.py``), which the router matches
-against the catalogue ``pipeline``'s ``corpus/tree_parser.py`` was used to
+against the catalogue ``pipeline``'s ``corpus/extract.py`` was used to
 build, using plain, un-normalised string equality -- the router does no
 collapsing of its own. If the two visitors ever record a dotted import
 differently (e.g. one keeps the deepest candidate ``x.y.z`` and the other

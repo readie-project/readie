@@ -23,13 +23,13 @@ flowchart LR
 
 | Stage | What it does | Reads | Writes |
 | --- | --- | --- | --- |
-| `corpus` | Asks a hosted language model for realistic code snippets and records which packages each one imports. | Azure OpenAI credentials | `data/datasets/<flavor>.json` |
+| `corpus` | Collects workloads for one flavor from Kaggle, Hugging Face and a hosted language model. Each item records its code, domain, source and the resources it uses, and every resource is checked against the service that owns it. | Model endpoint, Kaggle and Hugging Face credentials | `data/datasets/<flavor>.json` |
 | `analyze` | Imports every package in the base image in a separate process and measures it. | The corpus, the packages installed in the image | `data/metadata/<flavor>.json` |
 | `plan` | Chooses what each checkpoint pre-imports and writes the sandbox specification. | Corpus and metadata | `checkpoints.json` (the plan), a spec fingerprint |
 | `build` | Captures one checkpoint per planned set, times a restore of each, writes the outputs. | The plan | Checkpoints, manifest, catalogue |
 | `capture` | Runs `plan` and then `build` in one process. | Same | Same |
 
-The `corpus` stage is an authoring step that requires a model account. The repository already contains a corpus, so the stage is normally skipped. The `plan` and `build` stages are joined into `capture` because `plan` writes the sandbox spec inside the container, and a second container would not see it.
+The `corpus` stage is an authoring step that requires a model account and, for real code, Kaggle and Hugging Face access. It must run before `analyze` and `plan` for a flavor, because those stages read the corpus it writes. The `plan` and `build` stages are joined into `capture` because `plan` writes the sandbox spec inside the container, and a second container would not see it.
 
 ## Analyzer measurements
 

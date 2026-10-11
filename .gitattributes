@@ -28,3 +28,4 @@ pipeline/data/metadata/* filter=lfs diff=lfs merge=lfs -text
 catalogues/* filter=lfs diff=lfs merge=lfs -text
 # The README is plain text and must not be stored as an LFS pointer.
 catalogues/README.md -filter -diff -merge text
+pipeline/data/** filter=lfs diff=lfs merge=lfs -text

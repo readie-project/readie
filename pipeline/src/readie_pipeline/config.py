@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 #: Where the executor binds its socket *inside* the sandbox. A contract with the
@@ -130,6 +130,15 @@ class Settings:
         return (self.plan_dir or self.output_dir) / "spec-fingerprint.txt"
 
     @property
+    def corpus_cache_path(self) -> Path:
+        """Resource lookups already answered, so a re-run does not repeat them.
+
+        Shared by every flavor. The cache holds what PyPI, the Hugging Face Hub
+        and Kaggle said, and none of that depends on the flavor.
+        """
+        return self.data_dir / "cache" / "verified.json"
+
+    @property
     def corpus_path(self) -> Path:
         """The request corpus.
 
@@ -231,7 +240,7 @@ class Settings:
 
 
 def _default_data_dir() -> Path:
-    """The committed corpus, packaged alongside the code."""
+    """The corpus, cache and metadata folder, packaged alongside the code."""
     return Path(__file__).resolve().parent.parent.parent / "data"
 
 
@@ -266,23 +275,49 @@ class CorpusSettings:
     """Credentials and knobs for corpus generation.
 
     Separate from Settings because generating a corpus is an authoring step that
-    needs a hosted model, and building checkpoints is not.
+    needs a hosted model and, for real code, Kaggle and Hugging Face access,
+    and building checkpoints needs none of them.
     """
 
     endpoint: str
     api_key: str
     model: str
-    api_version: str = "2025-03-01-preview"
-    categories: tuple[str, ...] = field(default_factory=tuple)
-    requests_per_batch: int = 10
-    batches_per_category: int = 10
+    total: int = 2000
+    """New items one run appends to the corpus for the flavor."""
+    source_weights: str = ""
+    """``source=weight`` overrides of the default mix; see ``corpus.mix``."""
+    batch_size: int = 10
+    seed: int | None = None
+    kaggle_token: str | None = None
+    hf_token: str | None = None
+    rewrite: bool = True
+    """Replace reads of missing files with generated stand-in data."""
+    rewrite_max_chars: int = 60_000
+    """Items with more code than this are not rewritten."""
+    rewrite_workers: int = 6
+    """Model calls for rewrites that run at the same time."""
+
+    def __post_init__(self) -> None:
+        """Reject values that would make a run meaningless."""
+        if self.total <= 0:
+            msg = f"READIE_CORPUS_TOTAL must be positive, got {self.total}"
+            raise ConfigError(msg)
+        if self.batch_size <= 0:
+            msg = f"READIE_CORPUS_BATCH must be positive, got {self.batch_size}"
+            raise ConfigError(msg)
+        if self.rewrite_max_chars <= 0 or self.rewrite_workers <= 0:
+            msg = (
+                "READIE_CORPUS_REWRITE_MAX_CHARS and READIE_CORPUS_REWRITE_WORKERS must be positive"
+            )
+            raise ConfigError(msg)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> CorpusSettings:
-        """Read Azure OpenAI credentials, failing clearly when one is missing.
+        """Read corpus settings, failing clearly when a required one is missing.
 
-        The previous code passed ``os.environ.get(...)`` straight through, so an
-        unset AZURE_MODEL_NAME reached the API as ``model=None``.
+        Only the model credentials are required here. Kaggle and Hugging Face
+        credentials are required exactly when a source that uses them has a
+        non-zero weight, which is checked once the weights are known.
         """
         source = os.environ if env is None else env
 
@@ -295,9 +330,19 @@ class CorpusSettings:
             msg = f"corpus generation needs {', '.join(missing)}; set them or use a .env file"
             raise ConfigError(msg)
 
+        seed = (source.get("READIE_CORPUS_SEED") or "").strip()
         return cls(
             endpoint=source["AZURE_ENDPOINT"].strip(),
             api_key=source["AZURE_API_KEY"].strip(),
             model=source["AZURE_MODEL_NAME"].strip(),
-            api_version=source.get("AZURE_API_VERSION") or "2025-03-01-preview",
+            total=_int(source, "READIE_CORPUS_TOTAL", 2000),
+            source_weights=(source.get("READIE_CORPUS_SOURCE_WEIGHTS") or "").strip(),
+            batch_size=_int(source, "READIE_CORPUS_BATCH", 10),
+            seed=_int(source, "READIE_CORPUS_SEED", 0) if seed else None,
+            kaggle_token=(source.get("KAGGLE_API_TOKEN") or "").strip() or None,
+            hf_token=(source.get("HF_TOKEN") or "").strip() or None,
+            rewrite=(source.get("READIE_CORPUS_REWRITE") or "1").strip().lower()
+            not in {"0", "false", "no", "off"},
+            rewrite_max_chars=_int(source, "READIE_CORPUS_REWRITE_MAX_CHARS", 60_000),
+            rewrite_workers=_int(source, "READIE_CORPUS_REWRITE_WORKERS", 6),
         )

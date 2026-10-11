@@ -2,7 +2,7 @@
 
 Four stages, each runnable alone::
 
-    readie-pipeline corpus    generate request snippets with a hosted model
+    readie-pipeline corpus    build the workload corpus for one flavor
     readie-pipeline analyze   measure package sizes and import times
     readie-pipeline plan      choose checkpoint contents, write the OCI spec
     readie-pipeline build     capture one gVisor checkpoint per planned set
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from collections.abc import Sequence
@@ -30,7 +31,8 @@ from readie_pipeline.capture.build import CaptureError, capture, measure_time
 from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, runsc_version
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
 from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
-from readie_pipeline.corpus.models import Corpus, CorpusError
+from readie_pipeline.corpus.generate import Report
+from readie_pipeline.corpus.models import Corpus, CorpusError, Source
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
 from readie_pipeline.metadata.models import Metadata, MetadataError
@@ -60,23 +62,149 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 # Stages
 # ---------------------------------------------------------------------------
 def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
-    """Generate request snippets, or re-derive facts for already-generated ones."""
-    if args.reparse:
-        from readie_pipeline.corpus.generate import reparse  # noqa: PLC0415 - optional extra
+    """Generate the corpus for this run's flavor, or re-verify an existing one."""
+    from dataclasses import replace  # noqa: PLC0415
 
-        reparse(settings.corpus_path)
+    from readie_pipeline.corpus.domains import DOMAINS  # noqa: PLC0415
+    from readie_pipeline.corpus.mix import parse_weights, schedule  # noqa: PLC0415
+    from readie_pipeline.corpus.models import Source  # noqa: PLC0415
+
+    only_sources = tuple(Source(s) for s in args.source or ())
+    only_domains = tuple(args.domain or ())
+    corpus_path = args.output or settings.corpus_path
+
+    if args.dry_run:
+        env = os.environ
+        weights = parse_weights((env.get("READIE_CORPUS_SOURCE_WEIGHTS") or "").strip())
+        if only_sources:
+            weights = {s: (w if s in only_sources else 0.0) for s, w in weights.items()}
+        total = args.total or int(env.get("READIE_CORPUS_TOTAL") or 2000)
+        seed = int(env["READIE_CORPUS_SEED"]) if env.get("READIE_CORPUS_SEED") else None
+        plan = schedule(total, weights, only_domains or DOMAINS, seed)
+        print(f"[*] {settings.flavor} corpus, adding {total} items -> {corpus_path}")
+        for source in Source:
+            share = sum(n for (_, src), n in plan.items() if src is source)
+            print(f"    {source.value}: {share}")
+        return 0
+
+    if args.clean:
+        return _clean(settings, args, corpus_path)
+
+    corpus_settings = CorpusSettings.from_env()
+    if args.no_rewrite:
+        corpus_settings = replace(corpus_settings, rewrite=False)
+
+    if args.revalidate:
+        from readie_pipeline.corpus.generate import revalidate  # noqa: PLC0415 - optional extra
+        from readie_pipeline.corpus.live import build_verifier  # noqa: PLC0415 - optional extra
+
+        verifier = build_verifier(
+            corpus_settings, settings.corpus_cache_path, _installed_packages(settings)
+        )
+        revalidate(corpus_path, verifier)
         return 0
 
     from readie_pipeline.corpus.generate import generate  # noqa: PLC0415 - optional extra
 
-    corpus_settings = CorpusSettings.from_env()
-    corpus = generate(
+    if args.total:
+        corpus_settings = replace(corpus_settings, total=args.total)
+    corpus, report = generate(
         corpus_settings,
-        settings.corpus_path,
-        categories=args.category or None,
+        settings.flavor,
+        corpus_path,
+        settings.corpus_cache_path,
+        only_sources=only_sources,
+        only_domains=only_domains,
+        known_packages=_installed_packages(settings),
+        exclude=tuple(args.exclude or ()),
     )
-    print(f"[*] corpus now holds {len(corpus)} requests at {settings.corpus_path}")
+    _report_generation(corpus, report, corpus_path)
     return 0
+
+
+def _report_generation(corpus: Corpus, report: Report, corpus_path: Path) -> None:
+    """Print what a generation run produced."""
+    print(f"[*] corpus now holds {len(corpus)} items at {corpus_path}")
+    for name, count in corpus.source_counts().items():
+        print(f"    {name}: {count}")
+    usage = corpus.package_usage()
+    if usage:
+        top = ", ".join(f"{name} {count}" for name, count in list(usage.items())[:10])
+        single = sum(1 for count in usage.values() if count == 1)
+        print(f"    most used packages (items): {top}")
+        print(f"    packages used by a single item: {single} of {len(usage)}")
+    if report.shortfall:
+        print(f"[!] {sum(report.shortfall.values())} items short of target:")
+        for (domain, source), missing in sorted(report.shortfall.items()):
+            print(f"    {source.value} / {domain}: {missing}")
+    for reason, count in sorted(report.rejected.items()):
+        print(f"    rejected ({reason}): {count}")
+    if report.cleaned or report.rewrites:
+        print(f"    cleaned: {report.cleaned} items had notebook syntax or paths fixed")
+    for outcome, count in sorted(report.rewrites.items()):
+        print(f"    stand-in rewrite ({outcome}): {count}")
+
+
+def _clean(settings: Settings, args: argparse.Namespace, corpus_path: Path) -> int:
+    """Make an existing corpus runnable, in place."""
+    from readie_pipeline.corpus.clean import RewriteLog, clean_corpus  # noqa: PLC0415
+    from readie_pipeline.corpus.verify import ResourceLookupError  # noqa: PLC0415
+
+    standins = verifier = None
+    workers = 6
+    if not args.no_rewrite:
+        from readie_pipeline.corpus.live import (  # noqa: PLC0415 - optional extra
+            build_standins,
+            build_verifier,
+        )
+
+        corpus_settings = CorpusSettings.from_env()
+        workers = corpus_settings.rewrite_workers
+        if corpus_settings.rewrite:
+            standins = build_standins(corpus_settings)
+            verifier = build_verifier(
+                corpus_settings, settings.corpus_cache_path, _installed_packages(settings)
+            )
+
+    def verify(new: tuple[str, ...]) -> list[str] | str:
+        assert verifier is not None  # noqa: S101 - only called when rewriting
+        try:
+            return verifier.missing(new)
+        except (ResourceLookupError, CorpusError) as exc:
+            return str(exc)
+
+    log = RewriteLog(settings.corpus_cache_path.with_name("rewrites.json"))
+    report = clean_corpus(
+        corpus_path,
+        standins=standins,
+        verify=verify if standins is not None else None,
+        log=log,
+        workers=workers,
+        retry=args.retry_rewrites,
+    )
+    if verifier is not None:
+        verifier.flush()
+    print(f"[*] cleaned {report.items} items at {corpus_path}")
+    print(f"    notebook syntax or paths fixed in {report.changed} items")
+    for fix, count in report.fixes.most_common():
+        print(f"      {fix}: {count}")
+    for outcome, count in sorted(report.rewrites.items()):
+        print(f"    stand-in rewrite ({outcome}): {count}")
+    print(f"    still reading a file that does not exist: {report.still_missing} items")
+    print(f"    still with a cell that does not parse: {report.unparsable} items")
+    return 0
+
+
+def _installed_packages(settings: Settings) -> frozenset[str]:
+    """Top-level names measured in this flavor's base image, if it was analyzed.
+
+    Corpus code runs in that image, so a package installed there is real
+    whatever its PyPI project is called. Empty when ``analyze`` has not run.
+    """
+    if not settings.metadata_path.exists():
+        return frozenset()
+    return frozenset(Metadata.load(settings.metadata_path).packages)
+
 
 
 def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
@@ -85,7 +213,7 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     ``installed_packages()`` alone only ever names top-level packages -- it
     can never surface a specific dotted import like ``sklearn.svm``, since
     nothing else would ask to resolve or measure one. The corpus's raw
-    ``imports`` are exactly those candidates (see ``Request.imports``), so
+    ``package:`` resources are exactly those candidates (see ``CorpusItem.imports``), so
     both are measured together: the base image's own universe (a checkpoint
     restores into the base image, not into whatever a sample of requests
     happens to reference, so the planner needs a real number for all of it,
@@ -96,8 +224,8 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     packages = set(installed_packages())
     if settings.corpus_path.exists():
         corpus = Corpus.load(settings.corpus_path)
-        for request in corpus:
-            packages.update(request.imports)
+        for item in corpus:
+            packages.update(item.imports)
 
     exclude = list(args.exclude or ())
     if exclude:
@@ -135,8 +263,8 @@ def cmd_plan(settings: Settings, args: argparse.Namespace) -> int:
     metadata = Metadata.load(settings.metadata_path)
 
     print(f"[*] planning over {len(corpus)} requests and {len(metadata)} packages")
-    for category, count in list(corpus.category_counts().items())[:5]:
-        print(f"    {category}: {count}")
+    for domain, count in list(corpus.domain_counts().items())[:5]:
+        print(f"    {domain}: {count}")
 
     planner = build_planner(settings.planner, settings.alpha)
     plans = planner.plan(
@@ -301,7 +429,7 @@ def add_planner_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     """Assemble the argument parser."""
     parser = argparse.ArgumentParser(
         prog="readie-pipeline",
@@ -316,15 +444,56 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    corpus = sub.add_parser("corpus", help="generate request snippets with a hosted model")
-    corpus.add_argument("--category", action="append", help="restrict to a category; repeatable")
+    corpus = sub.add_parser(
+        "corpus",
+        help="build the corpus for FLAVOR from Kaggle, Hugging Face and the hosted model",
+    )
+    corpus.add_argument("--total", type=int, help="new items to append to the corpus")
     corpus.add_argument(
-        "--reparse",
+        "--source",
+        action="append",
+        choices=[s.value for s in Source],
+        help="restrict to a source; repeatable",
+    )
+    corpus.add_argument("--domain", action="append", help="restrict to a domain; repeatable")
+    corpus.add_argument(
+        "--dry-run", action="store_true", help="print the planned mix and fetch nothing"
+    )
+    corpus.add_argument(
+        "--output",
+        type=Path,
+        help="the corpus file to read and write instead of data/datasets/<flavor>.json; "
+        "this is how an eval set is generated",
+    )
+    corpus.add_argument(
+        "--exclude",
+        action="append",
+        type=Path,
+        help="a corpus file whose items nothing added may repeat; repeatable",
+    )
+    corpus.add_argument(
+        "--clean",
         action="store_true",
-        help="re-derive every request's imports/datasets/models/tokenizers from its "
-        "already-generated code, without calling the model again",
+        help="make the items of an existing corpus runnable, in place: notebook syntax, "
+        "Kaggle folders, and stand-in data for reads of files that do not exist",
+    )
+    corpus.add_argument(
+        "--no-rewrite",
+        action="store_true",
+        help="skip the model rewrite of missing-file reads, for --clean and for generation",
+    )
+    corpus.add_argument(
+        "--retry-rewrites",
+        action="store_true",
+        help="with --clean, offer the model the items it already failed to rewrite again",
+    )
+    corpus.add_argument(
+        "--revalidate",
+        action="store_true",
+        help="re-verify every resource in the existing corpus and drop items that fail",
     )
     corpus.set_defaults(handler=cmd_corpus)
+
 
     analyze_cmd = sub.add_parser("analyze", help="measure package sizes and import times")
     analyze_cmd.add_argument(

@@ -145,8 +145,10 @@ visitor-derived input, so it is contained:
 
 ## Secrets
 
-`pipeline` reads `AZURE_API_KEY` and `AZURE_ENDPOINT` for corpus generation. It
-reads them from the environment or from a `.env` file, both of which are
-git-ignored, and never writes them to the corpus, the manifests, or a log line.
+`pipeline` reads `AZURE_API_KEY`, `AZURE_ENDPOINT`, `KAGGLE_API_TOKEN` and
+`HF_TOKEN` for corpus generation. It reads them from the environment or from a
+`.env` file, both of which are git-ignored, and never writes them to the corpus,
+the manifests, or a log line. Corpus generation downloads code from Kaggle and
+the Hugging Face Hub and parses it, but never executes it.
 Corpus generation is an offline authoring step and is not part of the serving
 path.

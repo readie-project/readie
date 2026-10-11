@@ -136,7 +136,7 @@ def test_a_resolved_candidate_is_recorded_in_the_resolved_map(monkeypatch):
 
 
 def test_a_deeper_candidate_resolves_to_its_shorter_prefix(monkeypatch):
-    # What corpus/tree_parser.py now hands this: the deepest candidate implied
+    # What corpus/extract.py now hands this: the deepest candidate implied
     # by `from sklearn.svm import LinearSVC`, which is not itself a module.
     _fake_graph(
         monkeypatch,

@@ -4,7 +4,7 @@
 just an attribute of ``x.y`` (``sklearn.svm.LinearSVC`` is a class, not a
 submodule) -- that can only be told apart by actually trying to import it,
 which requires the target environment's packages to be installed.
-``corpus/tree_parser.py`` records the deepest candidate implied by the syntax
+``corpus/extract.py`` records the deepest candidate implied by the syntax
 (``x.y.z``); this module tries it, then each shorter prefix, and keeps
 whichever one is real.
 """

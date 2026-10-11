@@ -122,3 +122,73 @@ def test_corpus_credentials_load_when_present():
         {"AZURE_ENDPOINT": "https://x", "AZURE_API_KEY": "k", "AZURE_MODEL_NAME": "gpt"}
     )
     assert s.model == "gpt"
+
+
+def test_corpus_settings_read_the_mix_and_the_service_credentials():
+    s = CorpusSettings.from_env(
+        {
+            "AZURE_ENDPOINT": "https://x",
+            "AZURE_API_KEY": "k",
+            "AZURE_MODEL_NAME": "gpt",
+            "READIE_CORPUS_TOTAL": "500",
+            "READIE_CORPUS_SOURCE_WEIGHTS": "kaggle=3",
+            "READIE_CORPUS_SEED": "7",
+            "KAGGLE_API_TOKEN": " tok ",
+            "HF_TOKEN": "hf",
+        }
+    )
+    assert (s.total, s.source_weights, s.seed) == (500, "kaggle=3", 7)
+    assert (s.kaggle_token, s.hf_token) == ("tok", "hf")
+
+
+def test_corpus_settings_default_to_no_seed_and_no_service_credentials():
+    s = CorpusSettings.from_env(
+        {"AZURE_ENDPOINT": "https://x", "AZURE_API_KEY": "k", "AZURE_MODEL_NAME": "gpt"}
+    )
+    assert s.seed is None
+    assert s.kaggle_token is None
+    assert s.hf_token is None
+
+
+def test_a_non_positive_corpus_total_is_rejected():
+    with pytest.raises(ConfigError, match="READIE_CORPUS_TOTAL"):
+        CorpusSettings.from_env(
+            {
+                "AZURE_ENDPOINT": "https://x",
+                "AZURE_API_KEY": "k",
+                "AZURE_MODEL_NAME": "gpt",
+                "READIE_CORPUS_TOTAL": "0",
+            }
+        )
+
+
+def test_the_verification_cache_is_shared_by_every_flavor():
+    cpu = Settings.from_env({"READIE_DATA_DIR": "/data", "FLAVOR": "cpu"})
+    gpu = Settings.from_env({"READIE_DATA_DIR": "/data", "FLAVOR": "gpu"})
+    assert cpu.corpus_cache_path == gpu.corpus_cache_path == Path("/data/cache/verified.json")
+
+
+def test_the_stand_in_rewrite_is_on_by_default_and_can_be_tuned():
+    base = {"AZURE_ENDPOINT": "https://x", "AZURE_API_KEY": "k", "AZURE_MODEL_NAME": "m"}
+    default = CorpusSettings.from_env(base)
+    assert (default.rewrite, default.rewrite_max_chars, default.rewrite_workers) == (
+        True,
+        60_000,
+        6,
+    )
+
+    tuned = CorpusSettings.from_env(
+        {
+            **base,
+            "READIE_CORPUS_REWRITE": "0",
+            "READIE_CORPUS_REWRITE_MAX_CHARS": "1000",
+            "READIE_CORPUS_REWRITE_WORKERS": "2",
+        }
+    )
+    assert (tuned.rewrite, tuned.rewrite_max_chars, tuned.rewrite_workers) == (False, 1000, 2)
+
+
+def test_a_non_positive_rewrite_setting_is_rejected():
+    base = {"AZURE_ENDPOINT": "https://x", "AZURE_API_KEY": "k", "AZURE_MODEL_NAME": "m"}
+    with pytest.raises(ConfigError, match="REWRITE"):
+        CorpusSettings.from_env({**base, "READIE_CORPUS_REWRITE_WORKERS": "0"})

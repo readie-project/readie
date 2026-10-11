@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from readie_pipeline.corpus.models import Corpus, Request
+from readie_pipeline.corpus.models import Corpus, CorpusItem
 from readie_pipeline.metadata.models import Metadata
 from readie_pipeline.planning.ports import Budget, CheckpointPlan
 
@@ -56,7 +56,7 @@ class GreedyPlanner:
         decreasing marginal value, so its prefix is already the highest-value
         subset.
         """
-        requests = corpus.requests
+        requests = corpus.items
         if not requests:
             return []
 
@@ -94,7 +94,7 @@ class GreedyPlanner:
         # whichever of the captured ones is cheapest for it -- so its overlap
         # is credited to that single checkpoint only, never split across
         # every checkpoint it happens to intersect.
-        assignments: list[list[Request]] = [[] for _ in facilities]
+        assignments: list[list[CorpusItem]] = [[] for _ in facilities]
         total_latency = 0.0
         remaining_latency = 0.0
 
@@ -140,7 +140,7 @@ class GreedyPlanner:
 
     @staticmethod
     def _closures(
-        requests: Sequence[Request],
+        requests: Sequence[CorpusItem],
         metadata: Metadata,
     ) -> dict[frozenset[str], frozenset[str]]:
         """Each distinct request import set's dependency closure, computed once.
@@ -159,7 +159,7 @@ class GreedyPlanner:
 
     def _eligible_packages(
         self,
-        requests: Sequence[Request],
+        requests: Sequence[CorpusItem],
         metadata: Metadata,
     ) -> set[str]:
         closures = self._closures(requests, metadata)
@@ -235,7 +235,7 @@ class GreedyPlanner:
     def _select_checkpoints(
         self,
         *,
-        requests: Sequence[Request],
+        requests: Sequence[CorpusItem],
         eligible_packages: set[str],
         metadata: Metadata,
         size_budget_mb: float,
@@ -382,7 +382,7 @@ class GreedyPlanner:
         self,
         *,
         selected: frozenset[str],
-        assigned: Sequence[Request],
+        assigned: Sequence[CorpusItem],
         closures: dict[frozenset[str], frozenset[str]],
         requested: set[str],
         metadata: Metadata,

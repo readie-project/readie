@@ -18,14 +18,14 @@ The pipeline requires Python 3.12 or later (`requires-python = ">=3.12"` in
 
 ```sh
 make install   # sync the virtualenv from the lockfile
-make test      # planner, models and parser tests; no runsc needed
+make test      # planner, corpus and model tests; no runsc needed
 make lint type # ruff + mypy --strict
 ```
 
 ## The stages
 
 ```sh
-readie-pipeline corpus    # generate request snippets with a hosted model
+readie-pipeline corpus    # build the workload corpus for FLAVOR (Kaggle, Hugging Face, hosted model)
 readie-pipeline analyze   # measure every package installed here, and their deps
 readie-pipeline plan      # choose checkpoint contents, write the OCI spec
 readie-pipeline build     # capture one gVisor checkpoint per planned set
@@ -34,6 +34,156 @@ readie-pipeline capture   # plan and then build, in one process
 
 Each stage runs on its own. `plan` needs only the committed data (no runsc, no
 network, no container), so it is the stage to iterate on.
+
+### corpus
+
+`corpus` builds `data/datasets/<flavor>.json`, the set of workloads the planner
+reasons over. It generates one flavor per run, taken from `FLAVOR`, and a `cpu`
+corpus and a `gpu` corpus never share a file.
+
+Each item has four fields, plus a provenance link:
+
+| Field       | Contents                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| `code`      | A list of strings. One string is a single execution. Several strings are the cells of a notebook, the steps of a debugging session, or another multi-step session. |
+| `domain`    | One of the domains in `corpus/domains.py`.                                                 |
+| `source`    | `kaggle`, `kaggle_notebook`, `huggingface`, `huggingface_notebook`, `agent_short`, `agent_notebook` or `agent_fix`. |
+| `resources` | Strings of the form `<kind>:<value>`. Kinds are `package`, `hf_dataset`, `hf_model`, `hf_tokenizer`, `kaggle_dataset` and `kaggle_model`. |
+| `ref`       | The URL fetched code came from; `null` for generated code.                                 |
+
+The first four sources fetch real code through the Kaggle and Hugging Face
+APIs. The three `agent_*` sources are written by the hosted model, with a prompt
+that depends on the flavor: a `cpu` run asks for work that needs no GPU, and a
+`gpu` run asks for CUDA workloads. Fetched code is classified by the same model,
+and only code that matches the run's flavor is kept.
+
+Every candidate passes four gates before it is stored. The flavor judgement is
+one model call per candidate, so the calls for a batch run together, and a candidate that an earlier gate would reject is never sent:
+
+1. It is not a duplicate. Duplicates are detected by `ref`, by the normalized
+   program (formatting and comments do not matter), and by token overlap.
+2. Every step parses as Python.
+3. It matches the run's flavor.
+4. Every resource exists. The `resources` list is derived from the code itself
+   (imports, `from_pretrained`, `load_dataset`, `kagglehub` downloads) plus the
+   datasets a Kaggle notebook declares. PyPI confirms packages, the Hugging Face
+   Hub confirms models, tokenizers and datasets, and Kaggle confirms Kaggle
+   datasets and models. A generated item that names a resource that does not
+   exist is rewritten once; fetched code is rejected. A lookup that fails for
+   another reason (network, rate limit) is never recorded as "does not exist".
+   Answers are cached in `data/cache/verified.json`, one file shared by every
+   flavor. The cache holds only what PyPI, the Hugging Face Hub and Kaggle said,
+   which does not depend on the flavor, so a `gpu` run reuses what a `cpu` run
+   already looked up. The base image's package list is flavor specific, so it
+   is applied after the cache and never stored in it. When PyPI does not
+   recognize a package, that list decides, since a package installed in the
+   image is real whatever its PyPI project is called.
+
+An item that passes the gates is then made runnable, so it can be executed in a
+sandbox that has no notebook and none of the files it expects. Nothing is
+dropped, and what cannot be fixed stays as it was.
+
+- **Mechanical fixes** (`corpus/runnable.py`). IPython syntax that does not parse
+  is turned into Python or a comment: `%matplotlib` and similar display magics
+  are commented out, `%time` keeps its statement, `%env`/`%cd` become `os` calls,
+  `!cmd` becomes `subprocess.run`, `%%bash` and `%%writefile` become code, and
+  `!pip install`/`%pip install` lines are commented out and never run. Every
+  change keeps the original text in a `# [readie] ...` comment. A cell is only
+  touched when it does not parse, and a change that would leave it unparsable is
+  discarded. Code that uses `/kaggle/` or `../input` paths gets a short prelude
+  (between `# [readie:prelude]` and `# [readie:end]`) that creates
+  `/kaggle/working` and `/kaggle/input` and works from the first.
+- **Stand-in data** (`corpus/standins.py`). Code that reads a file the item does
+  not create (for example `../input/titanic/train.csv`) fails at the first read.
+  The model is shown the notebook and rewrites only the cells that read missing
+  files, so each file is created first, at the same path, with generated data of
+  the same columns, types and rough size (`numpy.random.default_rng(0)`). Nothing
+  else in the cell changes. A rewrite is kept only if a static check
+  (`corpus/dependencies.py`) finds nothing still reading a missing file, every cell
+  parses, and any new import exists. Otherwise the original stays. The code from
+  before the rewrite is kept in the item's optional `original` field. Items with
+  more than `READIE_CORPUS_REWRITE_MAX_CHARS` of code are not rewritten.
+- **Resources are not removed.** A rewritten item still lists its
+  `kaggle_dataset:` entries, since they say what the workload is about; only
+  imports the rewrite adds are unioned in.
+
+The stand-in data is random, so a rewritten item's results mean nothing, but the
+amount of work and the memory it uses stay in the right range. Model downloads
+(`from_pretrained`), web requests, environment variables and logins are not
+rewritten. The scan only sees literal file names, so a path built from variables
+is missed.
+
+Each request to a source also picks a popularity tier (`corpus/popularity.py`),
+weighted toward mainstream code. Kaggle requests read the top result pages
+ranked by votes for the mainstream tier and deeper pages ranked by recency for
+the niche tier. Hugging Face requests rank by downloads near the top of the
+listing, or start much further down. The tier only chooses where a search is
+entered. A search is then walked: Kaggle pages already read are not read again
+(Kaggle ends every search after a fixed number of result pages), a Hugging
+Face search is listed once and read on from where earlier requests stopped, and a
+request moves to the next page or another phrase, sort or kind when what it found
+was already seen. A source therefore reports a shortfall only once its searches
+are used up, not after a few unlucky pages. Agent prompts ask for introductory,
+everyday or specialised code. The tier keeps the corpus from being either a few
+famous tutorials or a collection of curiosities. After a run, the summary lists
+the most used packages and how many packages only a single item uses, so the
+shape of the distribution is visible.
+
+The search phrases are not fixed. `corpus/domains.py` holds a starting set per
+domain, and when a (domain, source) pair stops finding unseen code the source
+asks the model for new phrases. The model sees the phrases already tried and the
+titles of what was found, and it is told what each site actually matches: Kaggle
+matches notebook titles and tags, while the Hugging Face Hub matches repository
+names only, so the Hub phrases are short tokens such as library and model names.
+Kaggle needs every word of a phrase to match, so the model is asked for single
+words and two-word phrases, and longer ones are dropped. A pair keeps widening
+for as long as the new phrases find code, and stops after several widenings in a
+row that find none. The phrases it learns are
+saved in `data/cache/keywords.json` per platform, flavor and domain, and a later
+run starts from them. A phrase that finds nothing costs one search and no
+failure.
+
+Kaggle search needs every word to match, so a flavor hint appended to a phrase
+narrows it sharply. The hint is used for a minority of searches, and a hinted
+search that returns nothing is repeated without it.
+
+Kaggle also rate limits, and one budget covers its searches, downloads and
+existence checks. A pacer (`corpus/sources/pacing.py`) spaces the calls, doubles
+the spacing each time Kaggle answers 429 and eases it back while calls succeed.
+A refused call waits and retries with growing delays, for minutes if needed, and
+reports any long wait in the progress output, so a throttled
+run says so. A call that is still refused after the last attempt is a failed
+fetch and counts as one, never as an empty kernel.
+
+Every run appends: the corpus is never overwritten or trimmed, and `--total`
+(`READIE_CORPUS_TOTAL`) is how many new items the run adds. They are shared out
+over the sources by weight and over the domains, on top of what each pair holds.
+The mix is a target number of items per source and domain. Sources are weighted,
+real code above generated code by default, and domains are spread evenly. The
+schedule is repeatable for a given `READIE_CORPUS_SEED`. The corpus is saved
+after every domain and source pair, and at least once a minute while a large
+pair is still running, with a progress line (`N of M so far`) as items arrive, so
+a long pair shows progress and keeps its items when a run is stopped. Running
+the command again adds another `--total` items to what the stopped run saved.
+A source that cannot supply its share (for example few notebooks in a domain)
+leaves a shortfall that the run reports. Nothing backfills it with generated
+code.
+
+```sh
+readie-pipeline corpus --clean                            # make an existing corpus runnable, in place
+readie-pipeline corpus --clean --no-rewrite               # mechanical fixes only, no model calls
+readie-pipeline corpus --output data/evals/cpu.json ...  # generate into another file (an eval set)
+readie-pipeline corpus --output ... --exclude data/datasets/cpu.json  # and repeat nothing from that corpus
+make pipeline-corpus FLAVOR=gpu ARGS="--dry-run"          # print the planned mix
+make pipeline-corpus FLAVOR=gpu ARGS="--total 500"        # append 500 new items
+readie-pipeline corpus --source kaggle --domain "Computer Vision"
+readie-pipeline corpus --revalidate                       # re-check every resource
+```
+
+The stage needs the `corpus` extra (`uv sync --extra corpus`) and credentials,
+which are listed in [Configuration](#configuration). It is an authoring step, so
+the pipeline image does not include it. `plan` and `analyze` read the result.
+
 
 ### analyze
 
@@ -165,7 +315,7 @@ catalogue.
 | `$EXECUTOR_DIR/manifest.json`     | what those checkpoints can be restored into |
 | `$EXECUTOR_DIR/catalogue.json`    | the catalogue for the router                |
 | `$READIE_PLAN_DIR`                | the plan and the spec fingerprint           |
-| `data/`                           | the committed corpus and package metadata   |
+| `data/`                           | the corpus, its lookup cache, and package metadata |
 
 `$EXECUTOR_DIR` here is a host directory. It is distinct from the sandbox's own
 `EXECUTOR_DIR`, which is `/tmp`, where the executor binds its socket.
@@ -259,11 +409,19 @@ build could disagree with the first.
 | `READIE_MAX_CHECKPOINTS`, `READIE_SIZE_BUDGET_MB`        | planner bounds; the size budget is a total across all checkpoints                   |
 | `READIE_ALPHA`                                           | size-versus-time weight used by the planner; `build` records the measured value     |
 | `FLAVOR`                                                 | `cpu` or `gpu`; the generation this run produces                                    |
-| `READIE_DATA_DIR`                                        | overrides the committed corpus location                                             |
+| `READIE_DATA_DIR`                                        | overrides the data location (corpus, cache and metadata)                            |
 | `RUNSC_BINARY`, `OCISPEC_BINARY`                         | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
 | `READIE_CHECKPOINT_TIMEOUT`                              | how long a sandbox may take to checkpoint before `build` gives up (default `300`)   |
-| `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME`    | `corpus` only                                                                       |
-| `AZURE_API_VERSION`                                      | `corpus` only; default `2025-03-01-preview`                                         |
+| `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME`    | `corpus` only; the model endpoint, key and model name                                                     |
+| `KAGGLE_API_TOKEN`                                       | `corpus` only; Kaggle access token. Required when a Kaggle source has weight        |
+| `HF_TOKEN`                                               | `corpus` only; Hugging Face token. Required when a Hugging Face source has weight   |
+| `READIE_CORPUS_TOTAL`                                    | `corpus` only; new items one run appends (default `2000`)                                 |
+| `READIE_CORPUS_SOURCE_WEIGHTS`                           | `corpus` only; `source=weight` pairs over the defaults, for example `kaggle=3,agent_fix=0` |
+| `READIE_CORPUS_BATCH`                                    | `corpus` only; candidates requested per call (default `10`)                          |
+| `READIE_CORPUS_SEED`                                     | `corpus` only; makes the schedule repeatable                                        |
+| `READIE_CORPUS_REWRITE`                                  | `corpus` only; `0` turns off the stand-in data rewrite (default on)                 |
+| `READIE_CORPUS_REWRITE_MAX_CHARS`                        | `corpus` only; items with more code than this are not rewritten (default `60000`)   |
+| `READIE_CORPUS_REWRITE_WORKERS`                          | `corpus` only; rewrite model calls at the same time (default `6`)                   |
 
 ## Known gaps
 

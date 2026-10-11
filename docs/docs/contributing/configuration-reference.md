@@ -182,14 +182,22 @@ The pipeline builds checkpoints offline. Settings come from environment variable
 | `OCISPEC_BINARY` | `/usr/local/bin/ocispec` | Path to the spec generator. |
 | `RUNSC_BINARY` | `runsc` | gVisor binary used for capture. |
 
-Corpus generation also requires a hosted model. This authoring step is not needed to build checkpoints.
+Corpus generation requires a hosted model and, for real code, Kaggle and Hugging Face access. This authoring step is not needed to build checkpoints, and it builds the corpus for the flavor in `FLAVOR` only.
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AZURE_ENDPOINT` | required | Model endpoint. |
 | `AZURE_API_KEY` | required | API key. Keep it out of version control. |
 | `AZURE_MODEL_NAME` | required | Model or deployment name. |
-| `AZURE_API_VERSION` | `2025-03-01-preview` | API version. |
+| `KAGGLE_API_TOKEN` | required when a Kaggle source has weight | Kaggle access token. |
+| `HF_TOKEN` | required when a Hugging Face source has weight | Hugging Face access token. |
+| `READIE_CORPUS_TOTAL` | `2000` | New items one run appends to the corpus for the flavor. The corpus is only added to. |
+| `READIE_CORPUS_SOURCE_WEIGHTS` | empty | Comma-separated `source=weight` pairs that override the default mix. A weight of `0` disables a source. Sources are `kaggle`, `kaggle_notebook`, `huggingface`, `huggingface_notebook`, `agent_short`, `agent_notebook` and `agent_fix`. |
+| `READIE_CORPUS_BATCH` | `10` | Candidates requested from a source per call. |
+| `READIE_CORPUS_SEED` | unset | Integer that makes the schedule repeatable. |
+| `READIE_CORPUS_REWRITE` | `1` | Set to `0` to skip the model rewrite that replaces reads of missing files with generated stand-in data. Mechanical fixes of notebook syntax always apply. |
+| `READIE_CORPUS_REWRITE_MAX_CHARS` | `60000` | Items with more code than this are left as they are instead of being rewritten. |
+| `READIE_CORPUS_REWRITE_WORKERS` | `6` | Rewrite model calls that run at the same time. |
 
 ## Shared planner constant
 
