@@ -36,14 +36,14 @@ jobs:
       run:
         working-directory: ${{ matrix.package }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # pipeline/data/metadata/* is stored in Git LFS and the pipeline tests
           # load it. Without this the checkout holds pointer files and they fail
           # with "not valid JSON". Other packages do not need the download.
           lfs: ${{ matrix.package == 'pipeline' }}
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: ${{ matrix.package }}/uv.lock
@@ -67,9 +67,9 @@ jobs:
       run:
         working-directory: worker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: worker/go.mod
           cache-dependency-path: worker/go.sum
@@ -94,7 +94,7 @@ jobs:
     name: protos lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # buf breaking compares against main, which needs the history.
           fetch-depth: 0
@@ -133,13 +133,13 @@ jobs:
     name: generated stubs are current
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: worker/go.mod
 
@@ -169,8 +169,8 @@ jobs:
     name: framing fixture is current
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: executor/uv.lock
@@ -190,8 +190,8 @@ jobs:
     name: images build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build the router image
         run: docker compose build router
