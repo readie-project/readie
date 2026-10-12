@@ -33,6 +33,9 @@ readie-pipeline = "readie_pipeline.cli:main"
 
 [dependency-groups]
 dev = [
+    # The eval's HTTP client and its tests use httpx, which the `evals` extra
+    # installs for users; CI installs dependency groups only.
+    "httpx>=0.27",
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-cov>=6.0",
