@@ -255,6 +255,24 @@ func TestExecRunner_SpawnTeesStderrIntoTheLog(t *testing.T) {
 	assert.Contains(t, string(raw), "permission denied", "a failed create must leave a trace")
 }
 
+// Pinned: `runsc restore --detach` exits at once while the sandbox it started keeps running.
+// Capturing its stderr through a pipe made Spawn wait WaitDelay (five seconds) for a pipe the
+// sandbox still held, return ErrWaitDelay, and close it, so the adapter deleted every restored
+// sandbox about five seconds after it started. The log file must go to the child directly.
+func TestExecRunner_SpawnDoesNotWaitForADaemonisedChildHoldingStderr(t *testing.T) {
+	dir := t.TempDir()
+	logFile, err := os.OpenFile(filepath.Join(dir, "sandbox.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	require.NoError(t, err)
+	defer func() { _ = logFile.Close() }()
+
+	start := time.Now()
+	_, err = NewExecRunner("sh").Spawn(context.Background(),
+		Stdio{Out: logFile, Err: logFile}, "-c", "(sleep 8 >&2 &); exit 0")
+
+	require.NoError(t, err)
+	assert.Less(t, time.Since(start), 3*time.Second, "Spawn must return when the command exits")
+}
+
 func TestCommandName(t *testing.T) {
 	tests := []struct {
 		args []string

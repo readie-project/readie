@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -108,11 +107,20 @@ func (r *ExecRunner) Spawn(ctx context.Context, stdio Stdio, args ...string) (Re
 	cmd := r.command(ctx, args...)
 	cmd.Stdin = stdio.In
 	cmd.Stdout = stdio.Out
-	// runsc writes its own diagnostics to stderr. Tee them into the sandbox
-	// log so a failed create leaves a trace, while still capturing them for
-	// the error message.
+	// runsc writes its own diagnostics to stderr, and a failed create must leave
+	// them in the sandbox log. The log file is handed to the child directly. Anything
+	// else (a tee into a buffer, say) makes os/exec put a pipe in between, and the
+	// sandbox runsc daemonises inherits that pipe: after the command exits Go waits
+	// WaitDelay for the pipe to close, gives up with ErrWaitDelay, and closes it, so
+	// the caller sees a failed start and a restored sandbox is deleted about five
+	// seconds after it began. What the command wrote is read back from the log for
+	// the error message instead.
+	var logged int64
 	if stdio.Err != nil {
-		cmd.Stderr = io.MultiWriter(stdio.Err, &stderr)
+		cmd.Stderr = stdio.Err
+		if info, statErr := stdio.Err.Stat(); statErr == nil {
+			logged = info.Size()
+		}
 	} else {
 		cmd.Stderr = &stderr
 	}
@@ -122,7 +130,34 @@ func (r *ExecRunner) Spawn(ctx context.Context, stdio Stdio, args ...string) (Re
 		Stderr:   stderr.Bytes(),
 		ExitCode: cmd.ProcessState.ExitCode(),
 	}
+	if stdio.Err != nil {
+		result.Stderr = readLogSince(stdio.Err.Name(), logged)
+	}
 	return result, r.classify(ctx, args, result, err)
+}
+
+// maxLoggedStderr bounds how much of a command's log output is carried in its error.
+const maxLoggedStderr = 64 << 10
+
+// readLogSince returns what was appended to the log file after offset, or what is left of
+// it when it is longer than maxLoggedStderr. A log that cannot be read yields nothing.
+func readLogSince(path string, offset int64) []byte {
+	file, err := os.Open(path) //nolint:gosec // the worker's own sandbox log
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = file.Close() }()
+
+	info, err := file.Stat()
+	if err != nil || info.Size() <= offset {
+		return nil
+	}
+	if info.Size()-offset > maxLoggedStderr {
+		offset = info.Size() - maxLoggedStderr
+	}
+	buf := make([]byte, info.Size()-offset)
+	n, _ := file.ReadAt(buf, offset)
+	return buf[:n]
 }
 
 func (r *ExecRunner) command(ctx context.Context, args ...string) *exec.Cmd {

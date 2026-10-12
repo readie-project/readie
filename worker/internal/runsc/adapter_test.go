@@ -117,7 +117,7 @@ func TestColdStart_BuildsTheExactArgv(t *testing.T) {
 	assert.Equal(t, [][]string{
 		{
 			"--root=" + f.root, "--network=none", "--host-uds=create", "--overlay2=root:memory",
-			"run", "--bundle=" + bundle, "--pid-file=" + filepath.Join(bundle, pidFileName), testID,
+			"run", "--detach", "--bundle=" + bundle, "--pid-file=" + filepath.Join(bundle, pidFileName), testID,
 		},
 	}, f.runner.argv())
 }
