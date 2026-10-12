@@ -49,8 +49,8 @@ def load_results(path: Path) -> list[dict[str, Any]]:
     """The rows of a results file, skipping lines that are not JSON.
 
     A row's outcome is worked out again from its lanes, so a file written under an
-    older rule (before ``sandbox_failure`` existed, say) reports the same way as a
-    new one. Rows without lanes (a server error) keep the outcome they were given.
+    older rule reports the same way as a new one. Rows without lanes (a server error)
+    keep the outcome they were given.
     """
     from readie_pipeline.evals.run import classify  # noqa: PLC0415 - avoids a cycle
 
@@ -63,7 +63,8 @@ def load_results(path: Path) -> list[dict[str, Any]]:
         if not isinstance(row, dict):
             continue
         if "optimized" in row and "cold" in row:
-            row["outcome"] = classify({"optimized": row["optimized"], "cold": row["cold"]})
+            lanes = {"optimized": row["optimized"], "cold": row["cold"]}
+            row["outcome"] = classify(lanes, source=row.get("source"))
         rows.append(row)
     return rows
 
@@ -159,53 +160,46 @@ def _groups(items: list[ItemSummary], key: Callable[[ItemSummary], str]) -> list
     return [f"  {name:28} {describe(group)}" for name, group in sorted(groups.items())]
 
 
-def _lost_by_lane(rows: list[dict[str, Any]], outcome: str) -> dict[str, int]:
-    """How many runs of ``outcome`` lost a sandbox in each lane, and over how many items."""
-    from readie_pipeline.evals.run import is_sandbox_lost  # noqa: PLC0415 - avoids a cycle
-
-    counts = {"optimized": 0, "cold": 0}
-    items: set[str] = set()
-    for row in rows:
-        if row.get("outcome") != outcome:
-            continue
-        items.add(row["id"])
-        for lane in counts:
-            if any(is_sandbox_lost(s) for s in row.get(lane, {}).get("steps", [])):
-                counts[lane] += 1
-    return {**counts, "items": len(items)}
-
-
 def _problems(rows: list[dict[str, Any]]) -> list[str]:
-    timeouts = {r["id"] for r in rows if r.get("outcome") == "timeout"}
-    busy = sum(1 for r in rows if r.get("outcome") == "busy")
-    from readie_pipeline.evals.run import LOST, OPTIMIZED_FAILURE  # noqa: PLC0415 - avoids a cycle
+    from readie_pipeline.evals.run import (  # noqa: PLC0415 - avoids a cycle
+        BUSY,
+        FAILED,
+        LOST,
+        TIMEOUT,
+        lanes_of,
+        problem_of,
+    )
 
-    failure = _lost_by_lane(rows, OPTIMIZED_FAILURE)
-    lost = _lost_by_lane(rows, LOST)
+    meanings = (
+        (BUSY, "the worker had no room, so the code never ran; rerun to retry them"),
+        (LOST, "a sandbox died; left out of the comparison"),
+        (TIMEOUT, "a step or item ran out of time; left out of the comparison"),
+        (FAILED, "the code raised; left out of the comparison"),
+    )
+    out: list[str] = []
+    for problem, meaning in meanings:
+        group = [
+            str(r.get("outcome", ""))
+            for r in rows
+            if problem_of(str(r.get("outcome", ""))) == problem
+        ]
+        restore = sum(1 for o in group if lanes_of(o) == ("optimized",))
+        cold = sum(1 for o in group if lanes_of(o) == ("cold",))
+        both = len(group) - restore - cold
+        out.append(
+            f"{problem}: {len(group)} runs ({both} in both starts, {restore} in the restore only, "
+            f"{cold} in the cold start only): {meaning}"
+        )
     failures: Counter[str] = Counter()
     for row in rows:
-        if row.get("outcome") == "failed":
+        outcome = str(row.get("outcome", ""))
+        if problem_of(outcome) == FAILED:
             for lane in ("optimized", "cold"):
                 for step in row.get(lane, {}).get("steps", []):
                     if not step.get("ok", True):
                         failures[f"{lane}: {step.get('error_type', '?')}"] += 1
-        elif row.get("outcome") == "error":
+        elif outcome == "error":
             failures["server or network: " + str(row.get("error", ""))[:60]] += 1
-    out = [f"timeouts: {len(timeouts)} items ran out of time and are left out of the comparison"]
-    if busy:
-        out.append(
-            f"busy: {busy} runs never started because the worker was full; rerun to retry them"
-        )
-    out.append(
-        "sandbox failure (only the optimized start lost its sandbox while the cold start "
-        f"did not; left out of the comparison): {failure['items']} items, "
-        f"{failure['optimized']} runs"
-    )
-    out.append(
-        "sandbox lost (any other pattern; left out of the comparison): "
-        f"{lost['items']} items, optimized lane {lost['optimized']} runs, "
-        f"cold lane {lost['cold']} runs"
-    )
     out.append("failed steps by kind:")
     out.extend(f"  {count:5} {kind}" for kind, count in failures.most_common(10))
     if not failures:

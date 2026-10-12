@@ -190,34 +190,60 @@ def lost_lane() -> dict[str, Any]:
     return response
 
 
-def test_a_sandbox_that_died_only_in_the_optimized_start_is_a_sandbox_failure() -> None:
+def test_a_sandbox_that_died_only_in_the_optimized_start_is_restore_lost() -> None:
     # Seen in the trial: a sandbox restored from a checkpoint crashed after 5 s while
     # the cold start of the same code finished. Readie reports both as a deadline error.
-    assert classify({"optimized": lost_lane(), "cold": lane(30)}) == "sandbox_failure"
+    assert classify({"optimized": lost_lane(), "cold": lane(30)}) == "restore_lost"
 
 
-def test_a_sandbox_failure_does_not_need_the_cold_start_to_have_succeeded() -> None:
+def test_restore_lost_does_not_need_the_cold_start_to_have_succeeded() -> None:
     # Only the optimized start lost its sandbox; the cold start failed for its own reasons.
     cold = lane(3, ok=False, error_type="RemoteExecutionError")
-    assert classify({"optimized": lost_lane(), "cold": cold}) == "sandbox_failure"
+    assert classify({"optimized": lost_lane(), "cold": cold}) == "restore_lost"
 
 
-def test_both_starts_losing_a_sandbox_is_not_blamed_on_the_checkpoint_restore() -> None:
-    assert classify({"optimized": lost_lane(), "cold": lost_lane()}) == "sandbox_lost"
+def test_both_starts_losing_a_sandbox_is_plain_lost() -> None:
+    assert classify({"optimized": lost_lane(), "cold": lost_lane()}) == "lost"
 
 
-def test_only_the_cold_start_losing_a_sandbox_is_sandbox_lost() -> None:
-    assert classify({"optimized": lane(1), "cold": lost_lane()}) == "sandbox_lost"
+def test_only_the_cold_start_losing_a_sandbox_is_cold_start_lost() -> None:
+    assert classify({"optimized": lane(1), "cold": lost_lane()}) == "cold_start_lost"
 
 
-def test_a_real_timeout_wins_over_a_lost_sandbox() -> None:
+def test_a_lost_optimized_sandbox_is_restore_lost_even_if_the_cold_start_timed_out() -> None:
+    # Pinned: all 15 items first reported as timeouts had lost the optimized sandbox
+    # in seconds while the cold start ran out of time, so the restore was the problem
+    # and the cold start's timeout only says the code is slow.
     real = lane(120, ok=False, error_type="RemoteTimeoutError")
-    assert classify({"optimized": lost_lane(), "cold": real}) == "timeout"
+    assert classify({"optimized": lost_lane(), "cold": real}) == "restore_lost"
 
 
-def test_the_total_budget_running_out_is_a_timeout_not_a_lost_sandbox() -> None:
+def test_a_lost_cold_sandbox_is_cold_start_lost_even_if_the_optimized_start_timed_out() -> None:
+    real = lane(120, ok=False, error_type="RemoteTimeoutError")
+    assert classify({"optimized": real, "cold": lost_lane()}) == "cold_start_lost"
+
+
+def test_the_total_budget_running_out_in_one_start_is_a_timeout_of_that_start() -> None:
     spent = lane(0, ok=False, error_type="OutOfTime")
-    assert classify({"optimized": lane(1), "cold": spent}) == "timeout"
+    assert classify({"optimized": lane(1), "cold": spent}) == "cold_start_timeout"
+    assert classify({"optimized": spent, "cold": lane(1)}) == "restore_timeout"
+    assert classify({"optimized": spent, "cold": spent}) == "timeout"
+
+
+def test_a_busy_worker_names_the_start_it_turned_away() -> None:
+    busy = lane(0, ok=False, error_type="ResourceExhaustedError")
+    assert classify({"optimized": busy, "cold": lane(1)}) == "restore_busy"
+    assert classify({"optimized": lane(1), "cold": busy}) == "cold_start_busy"
+    assert classify({"optimized": busy, "cold": busy}) == "busy"
+
+
+def test_problems_are_looked_for_in_the_order_busy_lost_timeout_failed() -> None:
+    busy = lane(0, ok=False, error_type="ResourceExhaustedError")
+    timed_out = lane(9, ok=False, error_type="RemoteTimeoutError")
+    code_error = lane(1, ok=False, error_type="RemoteExecutionError")
+    assert classify({"optimized": lost_lane(), "cold": busy}) == "cold_start_busy"
+    assert classify({"optimized": timed_out, "cold": lost_lane()}) == "cold_start_lost"
+    assert classify({"optimized": code_error, "cold": timed_out}) == "cold_start_timeout"
 
 
 def test_an_item_that_loses_its_sandbox_is_not_repeated_as_a_timeout_would_be(
@@ -225,25 +251,85 @@ def test_an_item_that_loses_its_sandbox_is_not_repeated_as_a_timeout_would_be(
 ) -> None:
     response = {"lanes": {"optimized": lost_lane(), "cold": lane(30)}}
     report = run([item("heavy = 1")], Server(response), tmp_path, repetitions=3)
-    assert report.outcomes == {"sandbox_failure": 3}  # only timeouts stop the repetitions
+    assert report.outcomes == {"restore_lost": 3}  # only timeouts stop the repetitions
 
 
-def test_a_failed_step_is_a_failed_run_and_a_deadline_is_a_timeout() -> None:
+def test_a_failed_step_and_a_deadline_are_named_by_the_start_that_had_them() -> None:
     assert classify({"optimized": lane(1), "cold": lane(1)}) == "ok"
     assert (
         classify(
             {"optimized": lane(1), "cold": lane(1, ok=False, error_type="RemoteExecutionError")}
         )
+        == "cold_start_failed"
+    )
+    assert (
+        classify(
+            {
+                "optimized": lane(1, ok=False, error_type="RemoteExecutionError"),
+                "cold": lane(1, ok=False, error_type="RemoteExecutionError"),
+            }
+        )
         == "failed"
     )
     assert (
         classify({"optimized": lane(1, ok=False, error_type="RemoteTimeoutError"), "cold": lane(1)})
-        == "timeout"
+        == "restore_timeout"
     )
     assert (
         classify({"optimized": lane(1), "cold": lane(1, ok=False, error_type="OutOfTime")})
-        == "timeout"
+        == "cold_start_timeout"
     )
+
+
+def session(pattern: str) -> dict[str, Any]:
+    """A lane with one step per letter: ``Y`` succeeded, ``N`` raised in the code."""
+    steps = [
+        {"index": i, "ok": c == "Y", "duration_s": 1.0, "error": "",
+         "error_type": "" if c == "Y" else "RemoteExecutionError",
+         "output": "", "truncated": False}
+        for i, c in enumerate(pattern)
+    ]  # fmt: skip
+    return {"session_id": None, "ok": "N" not in pattern, "total_s": 3.0, "steps": steps}
+
+
+def test_a_fix_item_is_ok_when_its_last_step_succeeds() -> None:
+    # Pinned: an agent_fix item runs code that raises and then the steps that repair it,
+    # so counting every raise made fix runs that ended repaired look broken.
+    both = {"optimized": session("NYY"), "cold": session("NYY")}
+    assert classify(both, source="agent_fix") == "ok"
+    assert classify(both, source="agent_short") == "failed"
+    assert classify(both) == "failed"
+
+
+def test_a_fix_item_may_break_in_more_than_one_step_before_the_repair() -> None:
+    lanes = {"optimized": session("NNYN" + "Y"), "cold": session("NYNY")}
+    assert classify(lanes, source="agent_fix") == "ok"
+
+
+def test_a_fix_item_whose_last_step_raises_is_failed() -> None:
+    lanes = {"optimized": session("NYN"), "cold": session("NYN")}
+    assert classify(lanes, source="agent_fix") == "failed"
+
+
+def test_a_fix_item_that_ends_repaired_in_one_start_only_names_the_other_start() -> None:
+    lanes = {"optimized": session("NYY"), "cold": session("NYN")}
+    assert classify(lanes, source="agent_fix") == "cold_start_failed"
+    lanes = {"optimized": session("NYN"), "cold": session("NYY")}
+    assert classify(lanes, source="agent_fix") == "restore_failed"
+
+
+def test_a_fix_item_that_ran_out_of_time_is_still_a_timeout() -> None:
+    timed_out = lane(1, ok=False, error_type="RemoteTimeoutError")
+    lanes = {"optimized": timed_out, "cold": session("NYY")}
+    assert classify(lanes, source="agent_fix") == "restore_timeout"
+
+
+def test_a_results_file_is_reported_with_the_fix_rule_for_its_source(tmp_path: Path) -> None:
+    row = {"id": "a", "source": "agent_fix", "outcome": "failed", "steps": 3,
+           "optimized": session("NYY"), "cold": session("NYY")}  # fmt: skip
+    path = tmp_path / "r.jsonl"
+    path.write_text(json.dumps(row) + "\n")
+    assert load_results(path)[0]["outcome"] == "ok"
 
 
 def test_a_server_error_is_recorded_for_that_run_and_the_next_item_still_runs(
@@ -496,7 +582,7 @@ def test_the_report_lists_outcomes_groups_and_problems() -> None:
     assert "5 runs over 4 items" in text
     assert "failed 1" in text
     assert "ok 3" in text
-    assert "timeouts: 1 items" in text
+    assert "timeout: 1 runs" in text
     assert "by source" in text
     assert "by domain" in text
     assert "by cold duration" in text
@@ -504,7 +590,7 @@ def test_the_report_lists_outcomes_groups_and_problems() -> None:
     assert "optimized faster in" in text
 
 
-def test_the_report_counts_sandbox_failures_and_lost_sandboxes_apart_and_leaves_them_out() -> None:
+def test_the_report_counts_each_problem_by_the_starts_that_had_it() -> None:
     def row(
         ident: str, outcome: str, optimized: dict[str, Any], cold: dict[str, Any]
     ) -> dict[str, Any]:
@@ -513,16 +599,20 @@ def test_the_report_counts_sandbox_failures_and_lost_sandboxes_apart_and_leaves_
 
     rows_ = [
         *result_rows(),
-        row("z", "sandbox_failure", lost_lane(), lane(30)),
-        {**row("z", "sandbox_failure", lost_lane(), lane(31)), "repetition": 2},
-        row("y", "sandbox_lost", lost_lane(), lost_lane()),
+        row("z", "restore_lost", lost_lane(), lane(30)),
+        {**row("z", "restore_lost", lost_lane(), lane(31)), "repetition": 2},
+        row("y", "cold_start_lost", lane(30), lost_lane()),
+        row("w", "lost", lost_lane(), lost_lane()),
     ]
     text = format_report(rows_)
 
-    assert "sandbox failure (only the optimized start lost its sandbox" in text
-    assert "1 items, 2 runs" in text
-    assert "sandbox lost (any other pattern" in text
-    assert "1 items, optimized lane 1 runs, cold lane 1 runs" in text
+    assert (
+        "lost: 4 runs (1 in both starts, 2 in the restore only, 1 in the cold start only)" in text
+    )
+    assert (
+        "failed: 1 runs (1 in both starts, 0 in the restore only, 0 in the cold start only)" in text
+    )
+    assert "busy: 0 runs" in text
     assert {s.id for s in summarise_items(rows_)} == {"a", "b"}
 
 
@@ -541,7 +631,7 @@ def test_the_first_step_of_multi_step_items_is_reported_separately() -> None:
 def test_a_results_file_written_under_an_older_rule_is_reported_under_the_current_one(
     tmp_path: Path,
 ) -> None:
-    # The trial file recorded this run as a timeout, before sandbox_failure existed.
+    # The trial file recorded this run as a timeout, before restore_lost existed.
     old = {"id": "q", "source": "kaggle", "domain": DOMAIN, "steps": 1, "repetition": 1,
            "outcome": "timeout", "optimized": lost_lane(), "cold": lane(30)}  # fmt: skip
     path = tmp_path / "r.jsonl"
@@ -549,8 +639,8 @@ def test_a_results_file_written_under_an_older_rule_is_reported_under_the_curren
 
     rows_ = load_results(path)
 
-    assert [r["outcome"] for r in rows_] == ["sandbox_failure", "error"]
-    assert "sandbox failure" in format_report(rows_)
+    assert [r["outcome"] for r in rows_] == ["restore_lost", "error"]
+    assert "lost: 1 runs (0 in both starts, 1 in the restore only" in format_report(rows_)
 
 
 def test_load_results_skips_lines_that_are_not_json(tmp_path: Path) -> None:

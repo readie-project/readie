@@ -234,14 +234,18 @@ also come from `READIE_EVAL_TOKEN` and `READIE_EVAL_SERVER`.
   slow item does not cost every repetition its full budget. The report leaves timeouts out
   of the comparison and counts them. It also groups items by cold duration, because a
   start difference of seconds only shows against runs of seconds to a minute.
-- **Outcomes.** Each run is `ok`, `failed` (a step raised), `timeout`, `busy` (the worker had no room),
-  `error` (the server could
-  not be used), or one of two outcomes for a sandbox that died, which Readie reports as a
-  deadline error with the text "the worker could not complete the execution". `sandbox_failure`
-  means only the optimized start lost its sandbox, which points at the checkpoint restore and
-  not at the code. `sandbox_lost` is any other pattern (both starts lost one, or only the cold
-  start did). A lost sandbox is not a timeout and does not enter the comparison; the report counts
-  both outcomes separately.
+- **Outcomes.** A run is `ok`, `error` (the server could not be used), or it names a problem and the
+  start that had it. The problems, looked for in this order, are `busy` (the worker had no room, so the
+  code never ran), `lost` (a sandbox died; Readie reports it as a deadline error with the text "the worker
+  could not complete the execution"), `timeout` (a step or the item ran out of time) and `failed` (the code
+  raised). When both starts have the first problem found the outcome is the bare name (`lost`). When one
+  start has it, the name says which: `restore_lost`, `restore_timeout` and so on for the optimized start,
+  `cold_start_lost`, `cold_start_timeout` and so on for the cold start. So a restored sandbox that died
+  while the cold start finished, or ran out of time, is `restore_lost`, which points at the checkpoint
+  restore and not at the code. A run with any problem does not enter the comparison, and the report counts
+  each problem by the starts that had it. A `busy` run is run again by `eval run --resume`. The last step
+  of an `agent_fix` item decides whether it failed: the item breaks on purpose and is repaired, so it is
+  `ok` while its last step succeeds, whatever the steps before it did.
 - **Results** are appended to a JSONL file, one line per item and repetition, as they
   arrive. Each run starts the file over, so it holds only that run; `--resume` continues the file
   and skips the runs it holds instead. Filters:
