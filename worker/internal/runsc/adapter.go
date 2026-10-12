@@ -248,26 +248,36 @@ func (a *Adapter) Create(_ context.Context, spec sandbox.CreateSpec) (string, er
 }
 
 // Start launches a created sandbox, restoring from a checkpoint when asked.
-// go is essential: run otherwise blocks in the foreground for
-// the sandbox's entire lifetime (--detch does not work as expected with `run` and `restore`).
-// The timeout is belt and braces so a hang surfaces as a downgrade rather than a wedged execution.
 //
-// Detached from ctx: because the spawned command blocks for the sandbox's
-// entire lifetime, this goroutine necessarily outlives the call that started
-// it. ctx belongs to whatever request triggered the create - typically just
-// the container's first request - and that request's own context is
-// cancelled the instant it returns. Tied to it, this goroutine's Spawn call
-// would get killed the moment that first request finished, and the resulting
-// error would force-delete a container a session means to keep running for
-// later requests, well before anyone destroys it on purpose.
+// A cold start and a restore are launched the same way: `runsc run --detach` and
+// `runsc restore --detach`. Each command boots the sandbox, daemonises it and
+// exits, so the sandbox keeps running after the command has gone. That only works
+// while the command's stderr is a plain file (see ExecRunner.Spawn): a pipe held
+// open by the daemon made Go give up on it after five seconds and report a failed
+// start, and a restored sandbox was deleted at that point.
+//
+// It runs in a goroutine so Start returns at once; the executor socket is
+// reached later with retries. Detached from ctx: ctx belongs to whatever request
+// triggered the create - typically just the container's first request - and
+// that request's own context is cancelled the instant it returns. A command tied
+// to it would be killed with that request, and the resulting error would
+// force-delete a container a session means to keep running for later requests.
 func (a *Adapter) Start(ctx context.Context, id string, spec sandbox.StartSpec) error {
 	detached := context.WithoutCancel(ctx)
 	if spec.CheckpointID != "" {
-		go func() { _ = a.restore(detached, id, spec) }()
+		go func() {
+			if err := a.restore(detached, id, spec); err != nil {
+				a.log.Warn("restore failed", logging.KeyContainerID, id, logging.KeyError, err)
+			}
+		}()
 		return nil
 	}
 
-	go func() { _ = a.coldStart(detached, id) }()
+	go func() {
+		if err := a.coldStart(detached, id); err != nil {
+			a.log.Warn("start failed", logging.KeyContainerID, id, logging.KeyError, err)
+		}
+	}()
 	return nil
 }
 
@@ -275,14 +285,8 @@ func (a *Adapter) Start(ctx context.Context, id string, spec sandbox.StartSpec) 
 //
 // The steps clean up on failure so the caller may retry with the same id.
 //
-// No CommandTimeout here, deliberately: unlike every other runtime call,
-// Spawn for `run` does not return once the sandbox is up - it blocks for the
-// sandbox's entire lifetime (see Start's doc comment). CommandTimeout exists
-// to bound "non-blocking runtime calls" (its own doc comment); applying it
-// here would kill a perfectly healthy, still-in-use sandbox the moment it had
-// been alive longer than that timeout, which is exactly backwards. ctx is
-// already the detached one Start built, so this is bounded only by an actual
-// Destroy of this container (which stops the sandbox and lets Spawn return).
+// No CommandTimeout here: the command boots the sandbox and exits, but the sandbox
+// it daemonised lives on, and this is bounded only by an actual Destroy.
 func (a *Adapter) coldStart(ctx context.Context, id string) error {
 	stdio, closeStdio, err := a.openStdio(id)
 	if err != nil {
@@ -292,6 +296,7 @@ func (a *Adapter) coldStart(ctx context.Context, id string) error {
 
 	_, err = a.runner.Spawn(ctx, stdio, a.args(
 		"run",
+		"--detach",
 		"--bundle="+a.BundleDir(id),
 		"--pid-file="+filepath.Join(a.BundleDir(id), pidFileName),
 		id,
@@ -310,11 +315,6 @@ func (a *Adapter) coldStart(ctx context.Context, id string) error {
 // immediately downgrade to a cold start with the same id instead of hitting an
 // "already exists" conflict - turning a recoverable downgrade into a hard
 // failure.
-//
-// No CommandTimeout here either, for the same reason as coldStart: this
-// Spawn blocks for the sandbox's entire lifetime, not just until restore
-// finishes, so any fixed bound on it doubles as a ceiling on how long the
-// container may live.
 func (a *Adapter) restore(ctx context.Context, id string, spec sandbox.StartSpec) error {
 	if err := checkCheckpointImage(spec.CheckpointDir); err != nil {
 		return sandbox.Wrap("restore", id, sandbox.ErrRestoreFailed, err)
