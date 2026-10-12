@@ -206,6 +206,59 @@ def _installed_packages(settings: Settings) -> frozenset[str]:
     return frozenset(Metadata.load(settings.metadata_path).packages)
 
 
+def cmd_eval(settings: Settings, args: argparse.Namespace) -> int:
+    """Time corpus code through Readie with and without checkpoint restore, or report on it."""
+    from readie_pipeline.evals.report import format_report, load_results  # noqa: PLC0415
+
+    if args.eval_command == "report":
+        if not args.results.exists():
+            msg = f"no results at {args.results}"
+            raise ConfigError(msg)
+        print(format_report(load_results(args.results)), end="")
+        return 0
+
+    from readie_pipeline.evals.client import HttpEvalServer, RunOptions  # noqa: PLC0415
+    from readie_pipeline.evals.run import Selection, run_evaluation, select  # noqa: PLC0415
+
+    token = args.token or os.environ.get("READIE_EVAL_TOKEN", "")
+    if not token:
+        msg = "the evaluation server needs a token: pass --token or set READIE_EVAL_TOKEN"
+        raise ConfigError(msg)
+    server_url = args.server or os.environ.get("READIE_EVAL_SERVER") or "http://127.0.0.1:8081"
+
+    corpus_file = args.corpus or settings.corpus_path
+    results = args.results or settings.data_dir / "evals" / f"{corpus_file.stem}.results.jsonl"
+    items = select(
+        Corpus.load(corpus_file),
+        Selection(
+            sources=tuple(args.source or ()),
+            domains=tuple(args.domain or ()),
+            ids=tuple(args.id or ()),
+            limit=args.limit,
+        ),
+    )
+    print(f"[*] {len(items)} items from {corpus_file} -> {results}")
+    print(f"    server {server_url}, {args.repetitions} repetitions")
+    print(f"    {args.memory} per sandbox, {args.timeout:g} s per item")
+
+    run = run_evaluation(
+        items,
+        HttpEvalServer(server_url, token),
+        RunOptions(memory=args.memory, timeout_s=args.timeout),
+        results,
+        repetitions=args.repetitions,
+        skip_timeouts_after=args.skip_timeouts_after,
+        resume=args.resume,
+        busy_retries=args.busy_retries,
+        busy_wait_s=args.busy_wait,
+        parallel=args.parallel,
+    )
+    print(f"[*] {run.runs} runs ({run.skipped_done} already done, {run.skipped_timeouts} skipped)")
+    for outcome, count in sorted(run.outcomes.items()):
+        print(f"    {outcome}: {count}")
+    print(f"    summary: readie-pipeline eval report --results {results}")
+    return 0
+
 
 def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     """Measure every package installed here, plus every import the corpus uses.
@@ -494,6 +547,59 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     corpus.set_defaults(handler=cmd_corpus)
 
+    evaluate = sub.add_parser(
+        "eval", help="time corpus code through Readie, optimized start against cold start"
+    )
+    eval_sub = evaluate.add_subparsers(dest="eval_command", required=True)
+    eval_run = eval_sub.add_parser("run", help="run a corpus-format file through the eval server")
+    eval_run.add_argument("--corpus", type=Path, help="the file to run (default: the corpus)")
+    eval_run.add_argument("--results", type=Path, help="JSONL results file (appended to)")
+    eval_run.add_argument("--server", help="playground URL (READIE_EVAL_SERVER, default :8081)")
+    eval_run.add_argument("--token", help="eval token (READIE_EVAL_TOKEN)")
+    eval_run.add_argument("--repetitions", type=int, default=3, help="runs per item")
+    eval_run.add_argument("--memory", default="8Gi", help="memory of each sandbox")
+    eval_run.add_argument(
+        "--timeout",
+        type=float,
+        default=300.0,
+        help="seconds an item may take: the deadline of each step and the budget of all of them",
+    )
+    eval_run.add_argument(
+        "--skip-timeouts-after",
+        type=int,
+        default=1,
+        help="stop repeating an item after this many timeouts (0 repeats it regardless)",
+    )
+    eval_run.add_argument(
+        "--busy-retries",
+        type=int,
+        default=5,
+        help="times to try an item again when the worker has no room for it (0 never retries)",
+    )
+    eval_run.add_argument(
+        "--busy-wait",
+        type=float,
+        default=20.0,
+        help="seconds before the first retry of a busy item; each retry waits twice as long",
+    )
+    eval_run.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="items run at once; each uses two sandboxes, so at most half the worker's executors",
+    )
+    eval_run.add_argument("--source", action="append", help="only this source; repeatable")
+    eval_run.add_argument("--domain", action="append", help="only this domain; repeatable")
+    eval_run.add_argument("--id", action="append", help="only items whose id starts so")
+    eval_run.add_argument("--limit", type=int, help="run at most this many items")
+    eval_run.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue the results file, skipping runs it holds, instead of starting it over",
+    )
+    eval_report = eval_sub.add_parser("report", help="summarise a results file")
+    eval_report.add_argument("--results", type=Path, required=True)
+    evaluate.set_defaults(handler=cmd_eval)
 
     analyze_cmd = sub.add_parser("analyze", help="measure package sizes and import times")
     analyze_cmd.add_argument(

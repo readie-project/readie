@@ -132,6 +132,13 @@ visitor-derived input, so it is contained:
   `SANDBOX_NETWORK=none` on its workers where possible.
 - Readie has no quotas, so nginx (`limit_req`, body size) and the service (rate limit,
   size, output and concurrency caps) add their own.
+- `POST /eval/run` runs lists of steps with options a visitor must not control (memory,
+  timeout, packages, sessions, large bodies). It is only served when
+  `PLAYGROUND_EVAL_TOKEN` is set, requires that token on every request, and is not
+  forwarded by nginx, so it is reachable only from the host or network that runs the
+  service. Leave the token unset in the published deployment. Treat the token like the
+  Readie token: whoever holds it can run arbitrary Python on the workers with the
+  memory and time limits the service allows.
 
 ## Non-vulnerabilities
 

@@ -232,6 +232,33 @@ class GreedyPlanner:
         residual = [name for name in closure if name not in STDLIB and name not in packages]
         return self._alpha * size_mb + sum(self._import_time(name, metadata) for name in residual)
 
+    def _distances(
+        self,
+        closures: Sequence[frozenset[str]],
+        sizes: np.ndarray,
+        metadata: Metadata,
+    ) -> np.ndarray:
+        """``dist[f, n]``: the cost of serving closure ``n`` from a checkpoint holding ``f``.
+
+        That is ``alpha * size(f)`` plus the import time of every package of ``n``
+        that ``f`` lacks, which equals ``alpha * size(f) + total(n)`` minus the
+        import time of what ``n`` and ``f`` share. The shared part for every pair
+        at once is one matrix product, where summing over each pair in Python made
+        planning time grow with the square of the distinct closures.
+        """
+        packages = sorted({name for closure in closures for name in closure})
+        column = {name: i for i, name in enumerate(packages)}
+        times = np.asarray([self._import_time(name, metadata) for name in packages], dtype=float)
+
+        members = np.zeros((len(closures), len(packages)), dtype=float)
+        for row, closure in enumerate(closures):
+            members[row, [column[name] for name in closure]] = 1.0
+
+        totals = members @ times
+        shared = (members * times) @ members.T
+        dist: np.ndarray = self._alpha * sizes[:, None] + totals[None, :] - shared
+        return dist
+
     def _select_checkpoints(
         self,
         *,
@@ -278,7 +305,6 @@ class GreedyPlanner:
             dtype=float,
         )
 
-        num_facilities = len(unique_requests)
         num_nodes = len(unique_requests)
 
         all_facility_sizes = np.asarray(
@@ -289,31 +315,7 @@ class GreedyPlanner:
             dtype=float,
         )
 
-        def node_to_facility_distance(
-            facility_idx: int,
-            node_idx: int,
-        ) -> float:
-            facility_names = unique_requests[facility_idx]
-            node_names = unique_requests[node_idx]
-
-            residual = node_names.difference(facility_names)
-
-            return float(
-                self._alpha * all_facility_sizes[facility_idx]
-                + sum(self._import_time(package, metadata) for package in residual)
-            )
-
-        dist = np.empty(
-            (num_facilities, num_nodes),
-            dtype=float,
-        )
-
-        for facility_idx in range(num_facilities):
-            for node_idx in range(num_nodes):
-                dist[facility_idx, node_idx] = node_to_facility_distance(
-                    facility_idx,
-                    node_idx,
-                )
+        dist = self._distances(unique_requests, all_facility_sizes, metadata)
 
         feasible = np.where(all_facility_sizes <= size_budget_mb)[0]
 

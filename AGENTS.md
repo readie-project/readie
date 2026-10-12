@@ -22,7 +22,7 @@ offline. Everything talks gRPC over contracts in `protos/`.
 | `worker/`   | Go 1.25      | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
 | `executor/` | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
 | `pkg/`      | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
-| `pipeline/` | Python 3.13  | Offline: corpus, package analysis, checkpoint planning and capture        |
+| `pipeline/` | Python 3.13  | Offline: corpus, package analysis, checkpoint planning, capture, eval     |
 | `playground/` | Python 3.12 | FastAPI service behind the docs playground; runs visitor code under gVisor; calls Readie like any client |
 | `protos/`   | protobuf     | Wire contracts: `execution`, `proxy`, `registry`, `resources`             |
 | `docs/`     | Docusaurus   | Docs site (readie.org); Node pinned in `.nvmrc`                           |

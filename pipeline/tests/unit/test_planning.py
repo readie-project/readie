@@ -77,6 +77,28 @@ def test_it_prefers_import_time_over_popularity():
     assert plans[0].imports == ("slow",)
 
 
+def test_the_distance_matrix_matches_pricing_each_pair_one_at_a_time():
+    # Pinned: the matrix is one matrix product, replacing a Python loop over every
+    # (checkpoint, closure) pair that took hours on a corpus of thousands of closures.
+    # It must price a pair exactly as the loop did: the checkpoint's size, plus the
+    # import time of every package the closure needs that the checkpoint lacks.
+    import numpy as np
+
+    metadata = facts(a=(10, 1.0), b=(20, 0.5), c=(5, 2.5), d=(8, 0.0))
+    closures = [frozenset("ab"), frozenset("bc"), frozenset("acd"), frozenset("d")]
+    sizes = np.asarray([30.0, 25.0, 23.0, 8.0])
+    planner = GreedyPlanner(alpha=0.01)
+
+    got = planner._distances(closures, sizes, metadata)
+
+    for f, facility in enumerate(closures):
+        for n, node in enumerate(closures):
+            expected = 0.01 * sizes[f] + sum(
+                planner._import_time(name, metadata) for name in node - facility
+            )
+            assert got[f, n] == pytest.approx(expected)
+
+
 def test_it_prefers_the_cheaper_of_two_equally_useful_packages():
     # A facility is a whole request's import set, not a single package, so
     # "big" and "small" must be requested separately for either to be

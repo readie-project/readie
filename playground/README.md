@@ -41,6 +41,71 @@ Lanes are `optimized` and `cold`. Each lane ends with one `done` event. Errors
 before streaming return 413 (too large), 422 (empty), 429 (rate limited) or 503
 (busy).
 
+### Evaluation route
+
+`POST /eval/run` runs a list of steps (a notebook's cells, a debugging session)
+through both lanes and returns every step's timing as JSON. It exists only when
+`PLAYGROUND_EVAL_TOKEN` is set, needs `Authorization: Bearer <token>`, is not
+published by nginx, and is meant for a harness run by the operator.
+
+```json
+{
+  "steps": ["import pandas as pd\nx = 41", "print(x + 1)"],
+  "session": null,
+  "memory": "8Gi", "max_memory": "8Gi", "timeout_s": 300, "total_timeout_s": 300,
+  "gpu": false, "gpu_memory": null, "max_gpu_memory": null,
+  "packages": [],
+  "continue_on_error": true
+}
+```
+
+Only `steps` is required. The other fields are the options of the Readie remote
+function, and each defaults to the playground's own value (1 GiB, 30 seconds, no
+GPU, no packages, no total budget). `timeout_s` is the deadline of each step;
+`total_timeout_s` is an optional budget for all the steps of one lane: a step gets
+what is left of it, and once it is spent the remaining steps are reported as `OutOfTime`
+without a call. The service caps memory, timeouts, step count and code size
+(`PLAYGROUND_EVAL_*`).
+
+- **Both lanes run at once, as `/run` does, each lane's steps one after another.** The
+  optimized lane sends `disable_optimized_execution=False` and the cold lane
+  `True` on every step. The harness sends one request per item and may have several in flight, up to `PLAYGROUND_EVAL_MAX_CONCURRENT_RUNS`.
+- **Sessions.** More than one step, or a `session` id, runs each lane under its
+  own session (`<id>-optimized`, `<id>-cold`), so its steps share one container
+  and one interpreter: names defined by one step are visible to the next. A single
+  step with no session is a plain call. The lanes never share a session, because
+  an optimized session cannot be asked to start cold.
+- **Steps run with module semantics** (`exec` in a namespace that lasts for the
+  session, `__name__ == "__main__"`), so `from x import *`, classes and `global`
+  behave as in a script. The function the
+  client pickles repeats the step's import statements, so it records the same imports
+  as a function you wrote and the router can pick a checkpoint. `MPLBACKEND=Agg`
+  is set so plots need no display.
+- **A failing step does not stop the others** unless `continue_on_error` is false,
+  in which case the remaining steps are reported as skipped. A step that is not valid
+  Python is reported without a call.
+
+```json
+{
+  "session_id": "5f0c...",
+  "lanes": {
+    "optimized": {
+      "session_id": "5f0c...-optimized", "ok": true, "total_s": 2.41,
+      "steps": [{"index": 0, "ok": true, "duration_s": 1.93, "error": "",
+                 "error_type": "", "output": "", "truncated": false}]
+    },
+    "cold": {"session_id": "5f0c...-cold", "ok": true, "total_s": 6.02, "steps": ["..."]}
+  }
+}
+```
+
+`duration_s` is measured exactly as for `/run`: a monotonic clock around the whole
+backend call (building the function, connecting, the call). `error_type` is
+`RemoteExecutionError` for code that raised, `RemoteTimeoutError` when the deadline
+passed, `OutOfTime` when the total budget was used up, `SyntaxError`, `Skipped`, another Readie error name, or `InternalError`.
+Errors before the run return 401 (token), 413 (too large), 422 (invalid) or 503
+(an evaluation is already running).
+
 ## Resource limits
 
 Each lane builds the script into a function decorated with `@remote`, the way a user
@@ -48,9 +113,9 @@ would write one, and calls it through `readie.Client`. The module is a real file
 the client reads the script's imports and the router can choose a checkpoint for the
 optimized lane. The cold lane sets `disable_optimized_execution=True`.
 
-Every run asks for 4 GiB of initial and maximum memory (`config.MEMORY`) and
+Every `/run` asks for 1 GiB of initial and maximum memory (`config.MEMORY`) and
 never uses a session, so each lane is a fresh sandbox that is destroyed after the call.
-A request therefore uses two 4 GiB sandboxes. Size `WORKER_MAX_EXECUTORS` on the
+A request therefore uses two 1 GiB sandboxes. Size `WORKER_MAX_EXECUTORS` on the
 Readie workers to match.
 
 ## Configuration
@@ -69,6 +134,12 @@ Readie workers to match.
 | `PLAYGROUND_TRUST_PROXY` | off | Use the first `X-Forwarded-For` address as the client (on behind nginx) |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
+| `PLAYGROUND_EVAL_TOKEN` | empty | Bearer token for `/eval/run`. Empty does not serve the route |
+| `PLAYGROUND_EVAL_MAX_CODE_BYTES` | `8388608` | Largest total source of one evaluation request |
+| `PLAYGROUND_EVAL_MAX_STEPS` | `1000` | Most steps in one request |
+| `PLAYGROUND_EVAL_MAX_TIMEOUT_S` | `1800` | Largest `timeout_s` a request may ask for |
+| `PLAYGROUND_EVAL_MAX_MEMORY` | `64Gi` | Largest `memory` or `max_memory` a request may ask for |
+| `PLAYGROUND_EVAL_MAX_CONCURRENT_RUNS` | `1` | Evaluation requests at once; another gets 503 |
 
 Point the service at a dedicated Readie server with `SANDBOX_NETWORK=none` on its workers
 rather than the one real users share, by setting `PLAYGROUND_ROUTER_URI`.
@@ -92,7 +163,7 @@ workers need enough memory for two 1 GiB sandboxes per request, for example
 
 - The host is a Linux amd64 machine with Docker and the gVisor `runsc` binary registered as a
   Docker runtime named `runsc` in `/etc/docker/daemon.json`.
-- The Readie server the playground calls needs memory for two 4 GiB sandboxes per request
+- The Readie server the playground calls needs memory for two 1 GiB sandboxes per request
   (`READIE_WORKER_MEM_TOTAL`, `READIE_WORKER_MAX_EXECUTORS`). A dedicated server is
   recommended, with a token that only the playground uses.
 - gVisor cannot use Docker's built-in DNS, so the service mounts `resolv.conf` from this

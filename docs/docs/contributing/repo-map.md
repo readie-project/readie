@@ -74,7 +74,7 @@ Python components keep code under `src/<package>/` and tests under `tests/`:
 - `pkg/src/readie/` contains the SDK. `_proto/` holds generated code.
 - `router/src/readie_router/` contains `scheduling/` (placement), `workers/` (communication with workers), `grpcserver/` (the gRPC services), and `proto/` (generated code).
 - `executor/src/readie_executor/` contains `protocol.py` (framing) and `server.py`.
-- `pipeline/src/readie_pipeline/` contains `corpus/`, `metadata/`, `planning/`, and `capture/`.
+- `pipeline/src/readie_pipeline/` contains `corpus/`, `evals/`, `metadata/`, `planning/`, and `capture/`.
 
 In Go, `worker/cmd/` holds two programs (`worker` and `ocispec`) and `worker/internal/` holds the packages. `worker/proto/` is generated.
 

@@ -27,6 +27,12 @@ class PlaygroundSettings:
     trust_proxy: bool = False
     router_tls: bool = True
     workdir: str = "/tmp/playground"  # noqa: S108 - a tmpfs inside the container
+    eval_token: str = ""  # empty: the evaluation routes are not served at all
+    eval_max_code_bytes: int = 8 * 1024 * 1024
+    eval_max_steps: int = 1000
+    eval_max_timeout_s: float = 1800.0
+    eval_max_memory: str = "64Gi"
+    eval_max_concurrent_runs: int = 1
 
     @classmethod
     def from_env(cls) -> PlaygroundSettings:
@@ -52,4 +58,12 @@ class PlaygroundSettings:
             trust_proxy=env("PLAYGROUND_TRUST_PROXY", "").lower() in {"1", "true", "yes"},
             router_tls=env("PLAYGROUND_ROUTER_TLS", "true").lower() in {"1", "true", "yes"},
             workdir=env("PLAYGROUND_WORKDIR", d.workdir),
+            eval_token=env("PLAYGROUND_EVAL_TOKEN", d.eval_token),
+            eval_max_code_bytes=int(env("PLAYGROUND_EVAL_MAX_CODE_BYTES", d.eval_max_code_bytes)),
+            eval_max_steps=int(env("PLAYGROUND_EVAL_MAX_STEPS", d.eval_max_steps)),
+            eval_max_timeout_s=float(env("PLAYGROUND_EVAL_MAX_TIMEOUT_S", d.eval_max_timeout_s)),
+            eval_max_memory=env("PLAYGROUND_EVAL_MAX_MEMORY", d.eval_max_memory),
+            eval_max_concurrent_runs=int(
+                env("PLAYGROUND_EVAL_MAX_CONCURRENT_RUNS", d.eval_max_concurrent_runs)
+            ),
         )
