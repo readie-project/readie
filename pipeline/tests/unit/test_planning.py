@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import pytest
 
-from readie_pipeline.corpus.models import Corpus, Request
+from readie_pipeline.corpus.models import Corpus
 from readie_pipeline.metadata.models import Metadata, PackageFacts
 from readie_pipeline.planning.fixed import FixedPlanner
 from readie_pipeline.planning.greedy import GreedyPlanner
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
+from tests.helpers import DATA, item, workload_corpus
 
-DATA = Path(__file__).parents[2] / "data"
 
-
-def req(*imports: str) -> Request:
-    return Request(task_name="t", category="c", code="", imports=imports)
+def req(*imports: str):
+    return item(*imports)
 
 
 def facts(**sizes: tuple[float, float]) -> Metadata:
@@ -77,6 +75,28 @@ def test_it_prefers_import_time_over_popularity():
 
     plans = GreedyPlanner(alpha=0.005).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
     assert plans[0].imports == ("slow",)
+
+
+def test_the_distance_matrix_matches_pricing_each_pair_one_at_a_time():
+    # Pinned: the matrix is one matrix product, replacing a Python loop over every
+    # (checkpoint, closure) pair that took hours on a corpus of thousands of closures.
+    # It must price a pair exactly as the loop did: the checkpoint's size, plus the
+    # import time of every package the closure needs that the checkpoint lacks.
+    import numpy as np
+
+    metadata = facts(a=(10, 1.0), b=(20, 0.5), c=(5, 2.5), d=(8, 0.0))
+    closures = [frozenset("ab"), frozenset("bc"), frozenset("acd"), frozenset("d")]
+    sizes = np.asarray([30.0, 25.0, 23.0, 8.0])
+    planner = GreedyPlanner(alpha=0.01)
+
+    got = planner._distances(closures, sizes, metadata)
+
+    for f, facility in enumerate(closures):
+        for n, node in enumerate(closures):
+            expected = 0.01 * sizes[f] + sum(
+                planner._import_time(name, metadata) for name in node - facility
+            )
+            assert got[f, n] == pytest.approx(expected)
 
 
 def test_it_prefers_the_cheaper_of_two_equally_useful_packages():
@@ -321,12 +341,11 @@ def test_imports_are_sorted_so_a_plan_diffs_cleanly():
 
 
 # ---------------------------------------------------------------------------
-# Against the committed corpus
+# Against the committed measurements, with a synthetic workload
 # ---------------------------------------------------------------------------
 def real_inputs() -> tuple[Corpus, Metadata]:
-    return Corpus.load(DATA / "datasets" / "cpu.json"), Metadata.load(
-        DATA / "metadata" / "cpu.json"
-    )
+    metadata = Metadata.load(DATA / "metadata" / "cpu.json")
+    return workload_corpus(metadata), metadata
 
 
 def test_it_beats_the_fixed_plan_on_the_real_corpus():

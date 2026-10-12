@@ -44,6 +44,7 @@ Compose reads a `.env` file in the repository root. Copy `.env.example` to `.env
 | `READIE_IGNORE_CGROUPS` | `true` | Sets the worker's `SANDBOX_IGNORE_CGROUPS`. Required on Docker Desktop, where cgroup delegation blocks gVisor. Harmless on other platforms. |
 | `READIE_WORKER_MEM_TOTAL` | `4Gi` | Memory the worker offers to the router. |
 | `READIE_WORKER_MAX_EXECUTORS` | `8` | Maximum number of concurrent sandboxes. `0` means unlimited. |
+| `READIE_SANDBOX_IDLE_TTL` | `5m` | Sets the worker's `SANDBOX_IDLE_TTL`: how long a session's sandbox stays warm after its last call. The worker's own default is `5m`. |
 
 The GPU worker also reads `READIE_WORKER_GPU_TOTAL` (default `16Gi`). Its memory and sandbox defaults differ from the CPU worker (`8Gi` and `4`). The GPU worker needs the NVIDIA container toolkit and a GPU image built with `make generation FLAVOR=gpu`. Start it with `docker compose --profile gpu up`.
 

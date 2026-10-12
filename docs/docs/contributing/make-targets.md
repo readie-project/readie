@@ -58,7 +58,10 @@ make worker-test      # same as: make -C worker test
 make router-lint
 make pkg-type
 make pipeline-test
+make pipeline-corpus FLAVOR=gpu ARGS="--total 500"   # append 500 new items to the flavor's corpus
 ```
+
+`pipeline-corpus` forwards to the pipeline's own `corpus` target. It needs the `corpus` extra and the credentials listed in [Configuration reference](/docs/contributing/configuration-reference#pipeline). `make generation` does not build a corpus.
 
 See [Repo map](/docs/contributing/repo-map) for the contents of each component.
 

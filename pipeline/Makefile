@@ -1,6 +1,8 @@
 UV ?= uv
+FLAVOR ?= cpu
+ARGS ?=
 
-.PHONY: install fmt lint type test cover clean help
+.PHONY: install fmt lint type test cover corpus clean help
 
 install: ## Sync the virtualenv from the lockfile
 	$(UV) sync --all-groups
@@ -21,6 +23,9 @@ test: ## Run the whole suite
 
 cover: ## Run tests with a coverage report
 	$(UV) run pytest --cov --cov-report=term-missing
+
+corpus: ## Build the corpus for FLAVOR (cpu or gpu); pass options with ARGS
+	FLAVOR=$(FLAVOR) $(UV) run --extra corpus $(if $(wildcard .env),--env-file .env) readie-pipeline corpus $(ARGS)
 
 clean: ## Remove build and test artefacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist

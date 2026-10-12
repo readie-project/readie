@@ -40,7 +40,7 @@ class RateLimiter:
 class RunSlots:
     """A non-blocking cap on simultaneous runs.
 
-    Each run holds two 4 GiB sandboxes, so the cap protects worker memory. A full
+    Each run holds two 1 GiB sandboxes, so the cap protects worker memory. A full
     gate rejects instead of queueing, which keeps latency honest.
     """
 

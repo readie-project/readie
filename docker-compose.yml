@@ -81,6 +81,11 @@ services:
             # the host and not this cgroup.
             WORKER_MEM_TOTAL: ${READIE_WORKER_MEM_TOTAL:-4Gi}
             WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-8}
+            # How long a sandbox kept for a session stays alive after its last
+            # call before the worker removes it and frees its network slot. The
+            # worker's own default is five minutes; a harness that runs many
+            # short sessions in a row fills every slot long before that.
+            SANDBOX_IDLE_TTL: ${READIE_SANDBOX_IDLE_TTL:-5m}
         depends_on:
             router:
                 condition: service_healthy
@@ -144,6 +149,11 @@ services:
             WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-4}
             # GPU device memory the router places GPU requests on.
             WORKER_GPU_TOTAL: ${READIE_WORKER_GPU_TOTAL:-16Gi}
+            # How long a sandbox kept for a session stays alive after its last
+            # call before the worker removes it and frees its network slot. The
+            # worker's own default is five minutes; a harness that runs many
+            # short sessions in a row fills every slot long before that.
+            SANDBOX_IDLE_TTL: ${READIE_SANDBOX_IDLE_TTL:-5m}
         depends_on:
             router:
                 condition: service_healthy

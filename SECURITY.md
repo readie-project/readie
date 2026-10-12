@@ -132,6 +132,13 @@ visitor-derived input, so it is contained:
   `SANDBOX_NETWORK=none` on its workers where possible.
 - Readie has no quotas, so nginx (`limit_req`, body size) and the service (rate limit,
   size, output and concurrency caps) add their own.
+- `POST /eval/run` runs lists of steps with options a visitor must not control (memory,
+  timeout, packages, sessions, large bodies). It is only served when
+  `PLAYGROUND_EVAL_TOKEN` is set, requires that token on every request, and is not
+  forwarded by nginx, so it is reachable only from the host or network that runs the
+  service. Leave the token unset in the published deployment. Treat the token like the
+  Readie token: whoever holds it can run arbitrary Python on the workers with the
+  memory and time limits the service allows.
 
 ## Non-vulnerabilities
 
@@ -145,8 +152,10 @@ visitor-derived input, so it is contained:
 
 ## Secrets
 
-`pipeline` reads `AZURE_API_KEY` and `AZURE_ENDPOINT` for corpus generation. It
-reads them from the environment or from a `.env` file, both of which are
-git-ignored, and never writes them to the corpus, the manifests, or a log line.
+`pipeline` reads `AZURE_API_KEY`, `AZURE_ENDPOINT`, `KAGGLE_API_TOKEN` and
+`HF_TOKEN` for corpus generation. It reads them from the environment or from a
+`.env` file, both of which are git-ignored, and never writes them to the corpus,
+the manifests, or a log line. Corpus generation downloads code from Kaggle and
+the Hugging Face Hub and parses it, but never executes it.
 Corpus generation is an offline authoring step and is not part of the serving
 path.

@@ -40,7 +40,7 @@ A running sandbox, as tracked by the worker. Logs and settings use "container" w
 
 ### corpus
 
-A collection of example requests, consisting of Python snippets and the imports they use, that the pipeline analyzes to decide which packages belong in checkpoints. The pipeline generates it offline. See [Building checkpoints](/docs/architecture/building-checkpoints).
+A collection of example workloads that the pipeline analyzes to decide which packages belong in checkpoints. Each workload holds one or more code strings, a domain, a source (real code from Kaggle or Hugging Face, or code written by a model) and the resources it uses. The pipeline builds one corpus per flavor offline. See [Building checkpoints](/docs/architecture/building-checkpoints).
 
 ## D
 
