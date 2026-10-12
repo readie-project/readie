@@ -37,12 +37,20 @@ _MAX_ERROR_CHARS = 4000
 _MAX_OUTPUT_CHARS = 500
 
 OK = "ok"
-FAILED = "failed"
-TIMEOUT = "timeout"
-LOST = "sandbox_lost"
-OPTIMIZED_FAILURE = "sandbox_failure"
 ERROR = "error"
 BUSY = "busy"
+LOST = "lost"
+TIMEOUT = "timeout"
+FAILED = "failed"
+#: The problems a run can have, in the order they are looked for.
+PROBLEMS = (BUSY, LOST, TIMEOUT, FAILED)
+#: Prefix of an outcome that only one start has the problem in. When both starts have it the
+#: outcome is the bare problem: ``lost``, ``restore_lost`` and ``cold_start_lost``.
+_LANE_PREFIX = {"optimized": "restore", "cold": "cold_start"}
+
+#: Sources whose items break on purpose and are then repaired, so a lane is judged by its last
+#: step: an ``agent_fix`` item is fine while it ends working, whatever the steps before it did.
+LAST_STEP_SOURCES = frozenset({"agent_fix"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +95,21 @@ def select(items: Iterable[CorpusItem], selection: Selection) -> list[CorpusItem
     return chosen
 
 
+def problem_of(outcome: str) -> str:
+    """The problem an outcome names without its lane prefix: ``restore_lost`` is ``lost``."""
+    return outcome.rsplit("_", 1)[-1]
+
+
+def lanes_of(outcome: str) -> tuple[str, ...]:
+    """The lanes an outcome says have the problem; empty for ``ok`` and ``error``."""
+    if problem_of(outcome) not in PROBLEMS:
+        return ()
+    for lane, prefix in _LANE_PREFIX.items():
+        if outcome.startswith(prefix + "_"):
+            return (lane,)
+    return tuple(_LANE_PREFIX)
+
+
 def is_sandbox_lost(step: dict[str, Any]) -> bool:
     """Whether a step failed because its sandbox died, not because it ran out of time."""
     return step.get("error_type") == "RemoteTimeoutError" and SANDBOX_LOST in str(
@@ -94,40 +117,62 @@ def is_sandbox_lost(step: dict[str, Any]) -> bool:
     )
 
 
-def classify(lanes: dict[str, Any]) -> str:
-    """``timeout``, ``sandbox_failure``, ``sandbox_lost``, ``failed`` or ``ok`` for a pair of lanes.
+def classify(lanes: dict[str, Any], *, source: str | None = None) -> str:
+    """The outcome of a pair of lanes: ``ok``, or the first problem found, named by lane.
 
-    A real timeout wins. Then a sandbox that died: ``sandbox_failure`` when only
-    the optimized start lost its sandbox, which points at the checkpoint restore
-    and not at the code, and ``sandbox_lost`` for every other pattern (both starts
-    lost one, or only the cold start did). Then an ordinary failure. A lost
-    sandbox is kept apart from a timeout because it says nothing about how long
-    the code takes.
+    The problems are looked for in the order ``busy``, ``lost``, ``timeout``, ``failed``.
+    ``busy`` is a request the worker had no room for. ``lost`` is a sandbox that died,
+    kept apart from ``timeout`` because it says nothing about how long the code takes.
+    ``timeout`` is a step or item that ran out of time. ``failed`` is code that raised.
+
+    When both starts have the first problem found the outcome is the problem alone
+    (``lost``). When one start has it the outcome says which: ``restore_lost`` for the
+    optimized start and ``cold_start_lost`` for the cold start. So a restored sandbox that
+    died while the cold start finished, or even ran out of time, is ``restore_lost``.
+
+    An item from a source in ``LAST_STEP_SOURCES`` is not a failure while its last step
+    succeeds.
     """
-    failed = [
-        step
-        for lane in lanes.values()
-        for step in lane.get("steps", [])
-        if not step.get("ok", False)
-    ]
-    if any(step.get("error_type") in BUSY_ERRORS for step in failed):
-        return BUSY
-    if any(
-        step.get("error_type") in TIMEOUT_ERRORS and not is_sandbox_lost(step) for step in failed
-    ):
-        return TIMEOUT
-    lost = {name for name, lane in lanes.items() if _lane_lost_a_sandbox(lane)}
-    if lost == {"optimized"}:
-        return OPTIMIZED_FAILURE
-    if lost:
-        return LOST
-    if any(not lane.get("ok", False) for lane in lanes.values()):
-        return FAILED
+    judge_by_last_step = source in LAST_STEP_SOURCES
+    found = {
+        name: _lane_problems(lane, judge_by_last_step=judge_by_last_step)
+        for name, lane in lanes.items()
+    }
+    for problem in PROBLEMS:
+        affected = [name for name, problems in found.items() if problem in problems]
+        if len(affected) == len(found):
+            return problem
+        if affected:
+            return f"{_LANE_PREFIX[affected[0]]}_{problem}"
     return OK
 
 
-def _lane_lost_a_sandbox(lane: dict[str, Any]) -> bool:
-    return any(is_sandbox_lost(step) for step in lane.get("steps", []))
+def _lane_problems(lane: dict[str, Any], *, judge_by_last_step: bool) -> set[str]:
+    failed = [step for step in lane.get("steps", []) if not step.get("ok", False)]
+    problems: set[str] = set()
+    if any(step.get("error_type") in BUSY_ERRORS for step in failed):
+        problems.add(BUSY)
+    if any(is_sandbox_lost(step) for step in failed):
+        problems.add(LOST)
+    if any(
+        step.get("error_type") in TIMEOUT_ERRORS and not is_sandbox_lost(step) for step in failed
+    ):
+        problems.add(TIMEOUT)
+    if not _lane_ok(lane, judge_by_last_step=judge_by_last_step):
+        problems.add(FAILED)
+    return problems
+
+
+def _lane_ok(lane: dict[str, Any], *, judge_by_last_step: bool) -> bool:
+    """Whether a lane finished its work.
+
+    For an item that breaks on purpose, the session counts as ok when its last step
+    succeeded: it ended repaired, whatever the steps on the way did.
+    """
+    if lane.get("ok", False):
+        return True
+    steps = lane.get("steps", [])
+    return judge_by_last_step and bool(steps) and bool(steps[-1].get("ok", False))
 
 
 def load_progress(path: Path) -> tuple[set[tuple[str, int]], Counter[str]]:
@@ -143,11 +188,12 @@ def load_progress(path: Path) -> tuple[set[tuple[str, int]], Counter[str]]:
             continue
         outcome = row.get("outcome")
         if "optimized" in row and "cold" in row:
-            outcome = classify({"optimized": row["optimized"], "cold": row["cold"]})
-        if outcome == BUSY:
+            lanes = {"optimized": row["optimized"], "cold": row["cold"]}
+            outcome = classify(lanes, source=row.get("source"))
+        if problem_of(str(outcome)) == BUSY:
             continue  # the worker was full; a later run tries the item again
         done.add((row["id"], int(row["repetition"])))
-        if row.get("outcome") == TIMEOUT:
+        if problem_of(str(outcome)) == TIMEOUT:
             timeouts[row["id"]] += 1
     return done, timeouts
 
@@ -205,7 +251,7 @@ def run_evaluation(
                         continue
                 row = _run_once(item, ident, repetition, server, options=options, now=now)
                 for retry in range(busy_retries):
-                    if row["outcome"] != BUSY:
+                    if problem_of(row["outcome"]) != BUSY:
                         break
                     wait = busy_wait_s * 2**retry
                     on_line(f"    the worker is full; trying again in {wait:g} s")
@@ -216,7 +262,7 @@ def run_evaluation(
                     sink.flush()
                     report.runs += 1
                     report.outcomes[row["outcome"]] += 1
-                    if row["outcome"] == TIMEOUT:
+                    if problem_of(row["outcome"]) == TIMEOUT:
                         timeouts[ident] += 1
                     on_line(_progress(number, len(items), repetition, row, clock() - started))
 
@@ -252,7 +298,7 @@ def _run_once(
     except EvalError as exc:
         return {**row, "outcome": ERROR, "error": str(exc)[:_MAX_ERROR_CHARS]}
     lanes = {name: _trim(lane) for name, lane in response["lanes"].items()}
-    return {**row, "outcome": classify(lanes), **lanes}
+    return {**row, "outcome": classify(lanes, source=item.source.value), **lanes}
 
 
 def _trim(lane: dict[str, Any]) -> dict[str, Any]:
