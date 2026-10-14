@@ -20,6 +20,10 @@ message WorkerExecutionRequest {
   // request on. The worker sets each at container create and auto-expands up to
   // the budget's max where the runtime can enforce it.
   repeated ResourceBudget budgets = 11;
+  // PyPI requirement strings the worker installs in the sandbox before the
+  // payload reaches the executor. The router has already deduped them and
+  // removed what the base image carries.
+  repeated string packages = 12;
 }
 
 // Message used for code execution responses from workers

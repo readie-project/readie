@@ -620,6 +620,15 @@ func (m *Manager) Inspect(ctx context.Context, id, checkpointID string) (Handle,
 	}, nil
 }
 
+// Exec runs a command inside a live container and waits for it to exit.
+func (m *Manager) Exec(ctx context.Context, id string, args []string) (sandbox.ExecResult, error) {
+	result, err := m.runtime.Exec(ctx, id, sandbox.ExecSpec{Args: args})
+	if err != nil {
+		return sandbox.ExecResult{}, fmt.Errorf("exec in container %s: %w", id, err)
+	}
+	return result, nil
+}
+
 // Grow raises a live container's memory limit to memBytes.
 //
 // Checkpoint-safe: the memory limit is excluded from the sandbox fingerprint,

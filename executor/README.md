@@ -52,7 +52,7 @@ The protocol is at version 2. The worker dials, and the executor is the server.
 ```
 message:   ([8-byte big-endian length][chunk])* [8 zero bytes]
 
-request:   one message, the cloudpickle of {func, args, kwargs, packages}
+request:   one message, the cloudpickle of {func, args, kwargs}
 response:  one message, the cloudpickle of a result envelope
 
 envelope = {"ok": True,  "value": <return value>, "output": [str, ...]}
@@ -60,11 +60,11 @@ envelope = {"ok": True,  "value": <return value>, "output": [str, ...]}
             "output": [str, ...]}
 ```
 
-`packages` is optional and defaults to empty. It holds PyPI requirement specs
-that the executor installs with `uv pip install` before it invokes `func`. The
-specs travel with the call instead of through a separate channel, so a client
-that never sends them still decodes correctly. `output` holds text captured from
-the function's stdout and stderr, plus the package install log.
+The executor does not install packages. The router validates a request's
+packages and the worker installs them in the sandbox, with `uv pip install`,
+before it sends the request, so the call finds them already importable. A
+`packages` key in the pickle from an older client is ignored. `output` holds
+text captured from the function's stdout and stderr.
 
 A sender splits a message into chunks so that it can stream without knowing the
 total size. The worker relays request bytes directly from a gRPC stream and

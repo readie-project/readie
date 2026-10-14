@@ -9,17 +9,22 @@ from __future__ import annotations
 import grpc
 
 from readie_router.errors import (
+    CheckpointConflictError,
     InvalidRequestError,
     NoCapacityError,
     NoWorkersRegisteredError,
     OptimizedExecutionConflictError,
     SessionBusyError,
     SessionExpiredError,
+    UnknownCheckpointError,
     WorkerUnavailableError,
 )
 
 #: Codes that mean "try again", as opposed to "this request is wrong".
 _MAPPING: tuple[tuple[type[BaseException], grpc.StatusCode, str], ...] = (
+    # Matched first-wins by isinstance, so the specific subclass precedes its base.
+    # INVALID_ARGUMENT and not NOT_FOUND: the client reads NOT_FOUND as an expired session.
+    (UnknownCheckpointError, grpc.StatusCode.INVALID_ARGUMENT, "unknown checkpoint"),
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT, "invalid execution request"),
     (NoWorkersRegisteredError, grpc.StatusCode.UNAVAILABLE, "no workers are available"),
     (NoCapacityError, grpc.StatusCode.RESOURCE_EXHAUSTED, "no worker can accept this request"),
@@ -28,6 +33,11 @@ _MAPPING: tuple[tuple[type[BaseException], grpc.StatusCode, str], ...] = (
         OptimizedExecutionConflictError,
         grpc.StatusCode.FAILED_PRECONDITION,
         "the session is already running optimized execution",
+    ),
+    (
+        CheckpointConflictError,
+        grpc.StatusCode.FAILED_PRECONDITION,
+        "the session is not running on the requested checkpoint",
     ),
     # Distinct from a session_id that has simply never been seen, which is
     # not an error at all - only a *known*, expired one lands here.

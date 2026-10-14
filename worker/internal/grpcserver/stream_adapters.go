@@ -31,6 +31,7 @@ func toExecutionRequest(msg *pb.WorkerExecutionRequest) (execution.Request, erro
 		},
 		ContainerID:  msg.GetContainerId(),
 		CheckpointID: msg.GetCheckpointId(),
+		Packages:     msg.GetPackages(),
 		Alloc:        container.Allocation{Budgets: budgetsFromProto(msg.GetBudgets())},
 
 		InitialPayload: msg.GetPayload(),

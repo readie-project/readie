@@ -81,8 +81,8 @@ WORKDIR /
 RUN --mount=from=executor-wheel,source=/dist,target=/dist \
     uv pip install --system --no-cache-dir --no-deps /dist/*.whl
 
-# Clean up temporary build files. /bin/uv is kept: the executor shells out to
-# it to install a call's requested packages before running the function.
+# Clean up temporary build files. /bin/uv is kept: the worker runs it, through
+# `runsc exec`, to install a call's requested packages before the function runs.
 RUN rm -rf /tmp/build
 
 # Fail the build rather than the first restore if the entry point is not
@@ -234,7 +234,7 @@ ENV READIE_DATA_DIR="/app/data"
 ENV READIE_PLAN_DIR="/app/plan"
 
 # Must correspond to the rootfs stage above.
-ENV ROOTFS_PYTHONPATH="/lib/python3.12/dist-packages"
+ENV ROOTFS_PYTHONPATH="/usr/local/lib/python3.12/dist-packages"
 
 # Runtime modes. These are part of what a checkpoint is sensitive to, so they
 # must match the worker's configuration.

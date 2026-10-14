@@ -72,6 +72,11 @@ the host kernel. The worker adds the following controls:
   from a sandbox's egress. The network access exists to reach PyPI, and it is not
   a path back to the router (unauthenticated by default, see below) or to sibling
   containers.
+- Package requirements are validated by the router, not trusted from the client.
+  The router parses every `packages` entry as a PEP 508 requirement and rejects
+  anything else, which includes anything that could be read as a `uv` option
+  (such as `--index-url=...`). The worker then passes the entries to `uv` as
+  positional arguments after `--`, never through shell text.
 - A read-only shared rootfs with a per-sandbox copy-on-write overlay, so that one
   execution cannot alter what the next one starts from. The worker rejects an
   `all:` overlay, because it would hide the executor's socket, and any `:self`

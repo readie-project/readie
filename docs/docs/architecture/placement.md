@@ -23,7 +23,7 @@ flowchart TD
     G --> H{"Any left?"}
     H -- "no" --> X2["Reject: no capacity"]
     H -- "yes" --> I["Rank by load, lowest wins"]
-    I --> J["Choose checkpoint from that worker's catalogue"]
+    I --> J["Choose or validate the checkpoint in that worker's catalogue"]
     J --> K["Reserve memory and a slot, open a lease"]
     W --> K
 ```
@@ -38,6 +38,7 @@ Two special cases apply:
 
 - If the session was marked expired because its container was destroyed, the router rejects the call with a "session expired" error. An ID that the router has never seen is not an error, and the call starts cold.
 - If the call sets `disable_optimized_execution=True` and the container of the session was restored from a checkpoint, the router rejects the call. It does not silently ignore the flag, and it does not destroy the session state.
+- If the call pins a `checkpoint_id` that differs from the checkpoint of the warm container of the session, the router rejects the call with `FAILED_PRECONDITION`, for the same reason.
 
 Calls with no session ID skip this step.
 
@@ -76,7 +77,13 @@ Memory comes first because it is the tightest resource. In a fresh cluster, wher
 
 For a new container (not a reused one), the router looks up the catalogue for the flavor of the chosen worker. It then picks the cheapest checkpoint for the modules that the client sent. See [Cost model](/docs/concepts/cost-model). With `disable_optimized_execution=True`, the router picks no checkpoint. With no catalogue loaded, it also picks none.
 
-### 6. Reservation
+If the client pinned a `checkpoint_id`, the router skips the scoring. It accepts the id only if that catalogue lists a checkpoint with exactly that id, with no special case for `checkpoint_0`, and otherwise rejects the call with `INVALID_ARGUMENT` before it reserves anything. The router cannot know whether the worker can restore the checkpoint, so the worker still starts cold if the restore fails.
+
+### 6. Packages
+
+The router validates and dedupes the `packages` of the call, then removes every entry whose distribution the catalogue of the chosen worker lists as present in the base image. The version in the entry is not compared, so a pin on a distribution that the image carries is ignored, and the router streams a log line to the client that names it. An entry with extras is kept. With no catalogue loaded, the router removes nothing. The remaining entries travel to the worker, which installs them.
+
+### 7. Reservation
 
 The router decides and reserves in one step, with no pause in between. It adds one to the in-flight count of the worker and adds the memory budget of the call to a "reserved" total. A second call that arrives a moment later therefore already sees the load of the first call. If the call has a session and reuses a container, the router also records the session-to-container pin immediately.
 

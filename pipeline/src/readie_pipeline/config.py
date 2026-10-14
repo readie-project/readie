@@ -57,7 +57,7 @@ class Settings:
     the image sets this to keep them out of it. None means output_dir, which is
     what a local `plan` run wants."""
 
-    rootfs_pythonpath: str = "/lib/python3.12/dist-packages"
+    rootfs_pythonpath: str = "/usr/local/lib/python3.12/dist-packages"
 
     # Runtime modes. Part of what a checkpoint is sensitive to, so they must
     # match the worker's configuration or a restore fails on the fingerprint.
@@ -222,7 +222,8 @@ class Settings:
             "output_dir": path_of("EXECUTOR_DIR", "/app/executor"),
             "data_dir": path_of("READIE_DATA_DIR", str(_default_data_dir())),
             "plan_dir": optional_path("READIE_PLAN_DIR"),
-            "rootfs_pythonpath": source.get("ROOTFS_PYTHONPATH") or "/lib/python3.12/dist-packages",
+            "rootfs_pythonpath": source.get("ROOTFS_PYTHONPATH")
+            or "/usr/local/lib/python3.12/dist-packages",
             "sandbox_network": source.get("SANDBOX_NETWORK") or "sandbox",
             "sandbox_host_uds": source.get("SANDBOX_HOST_UDS") or "create",
             "sandbox_overlay": source.get("SANDBOX_OVERLAY") or "root:memory",

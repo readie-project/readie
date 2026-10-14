@@ -116,7 +116,7 @@ checkpoints/
 
 - **`manifest.json`** records the gVisor version, a fingerprint of the sandbox spec, the executor command, the executor protocol version, the Python path, and the overlay and network modes. The worker refuses checkpoints whose protocol version it does not implement.
 - **`meta.json`** repeats the version and fingerprint for one checkpoint and lists its imports.
-- **`catalogue.json`** is for the router. It lists every measured package with its memory size, import time, and dependencies, plus the contents and size of each checkpoint. It also stores the measured `alpha`.
+- **`catalogue.json`** is for the router. It lists every measured package with its memory size, import time, and dependencies, plus the contents and size of each checkpoint. It also stores the measured `alpha`, and the `distributions` that the root filesystem contains. The pipeline lists them by running the shared inventory module with the Python of the root filesystem itself, and writes into the catalogue only the measured packages that the root filesystem has a distribution for, resolved the way `analyze` resolves it, so the metadata can come from a different image than the one the sandbox runs. If the listing fails, the pipeline prints a warning and writes the catalogue without filtering.
 
 The worker checks the fingerprint and the gVisor version at startup. If either differs from its own, the worker drops all checkpoints and serves cold starts only. This is the default, and `CHECKPOINT_STRICT_COMPAT` turns the check into a warning. For this reason, the checkpoints, the filesystem, and the gVisor binary are baked into one image.
 

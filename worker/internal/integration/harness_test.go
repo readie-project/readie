@@ -410,7 +410,7 @@ func buildTestArtifacts(t *testing.T) (string, container.Artifacts) {
 		SpecFingerprint:  "sha256:test-spec",
 		ExecutorArgv:     []string{"python", "-u", "-m", "readie_executor"},
 		ExecutorProtocol: executor.ProtocolVersion,
-		PythonPath:       "/lib/python3.12/dist-packages",
+		PythonPath:       "/usr/local/lib/python3.12/dist-packages",
 		CreatedAt:        time.Now().UTC(),
 	}))
 

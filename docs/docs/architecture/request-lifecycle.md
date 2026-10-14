@@ -19,9 +19,9 @@ sequenceDiagram
     N->>R: same stream
     R->>R: wait for session turn, place call
     R->>W: header, then payload chunks
-    W->>W: get container, report busy
+    W->>W: get container, report busy, install packages
     W->>E: framed request over unix socket
-    E->>E: install packages, run function
+    E->>E: run function
     E-->>W: framed result envelope
     W-->>R: payload chunks
     R-->>C: payload chunks
@@ -33,11 +33,11 @@ sequenceDiagram
 When a decorated function is called, the `readie` client (`pkg/`) performs these actions:
 
 - Creates a request ID (`req-` plus a random hex string). If the call uses a [session](/docs/concepts/sessions), the client also sends the session ID. Without a session, the ID is empty and the router does no session bookkeeping for the call.
-- Serializes the function, arguments, keyword arguments, and the `packages=` list with cloudpickle. For this reason the function must be picklable, and the client Python version must match the sandbox version (3.12).
+- Serializes the function, arguments, and keyword arguments with cloudpickle. For this reason the function must be picklable, and the client Python version must match the sandbox version (3.12).
 - Reads the source of the function to list the top-level modules that it uses. These modules are hints for [checkpoint selection](/docs/concepts/checkpoints).
 - Opens one bidirectional gRPC stream, `ProxyService.RequestExecution`, over TLS by default. If `READIE_AUTH_TOKEN` is set, the client sends it as a bearer token.
 
-The first message on the stream carries only the **config**: import hints, memory and GPU-memory budgets, whether the call needs a GPU, and whether to skip checkpoints. Every later message carries a **payload chunk** of up to 1 MiB. A message never carries both config and payload.
+The first message on the stream carries only the **config**: import hints, memory and GPU-memory budgets, whether the call needs a GPU, whether to skip checkpoints, the `packages=` list, and the pinned `checkpoint_id` if the function sets one. Every later message carries a **payload chunk** of up to 1 MiB. A message never carries both config and payload.
 
 Blocking calls use a blocking channel, and `.aio()` calls use an async channel. The protocol is identical.
 
@@ -51,13 +51,13 @@ nginx passes the HTTP/2 stream to `router:50051`. It adds no logic. Its read and
 
 1. Reads the first message. The message must be a config message with a request ID, or the call fails with `INVALID_ARGUMENT`.
 2. If the call has a session ID, waits for the turn of that session. Only one call per session runs at a time.
-3. Converts the config into a demand. A missing memory budget becomes the router default (1 GiB). A call is a GPU call if the config says so or if any GPU memory budget is set.
-4. Runs [placement](/docs/architecture/placement), which returns a worker, optionally a container to reuse, and a checkpoint ID.
+3. Converts the config into a demand. A missing memory budget becomes the router default (1 GiB). A call is a GPU call if the config says so or if any GPU memory budget is set. The router also validates and dedupes the `packages=` list, and rejects the call with `INVALID_ARGUMENT` if an entry is not a valid requirement.
+4. Runs [placement](/docs/architecture/placement), which returns a worker, optionally a container to reuse, a checkpoint ID, and the packages that the worker still has to install.
 5. Opens a stream to the chosen worker with a deadline of `EXECUTION_TIMEOUT` (one hour by default).
 
 ## 4. Router relays both directions
 
-Two tasks run concurrently. The first copies the payload chunks of the client to the worker. Its first message to the worker is a header that carries the request, session, worker, container, and checkpoint IDs, the budgets, and the import hints, with an empty payload. Each client chunk follows. The second task copies the answers of the worker back to the client.
+Two tasks run concurrently. The first copies the payload chunks of the client to the worker. Its first message to the worker is a header that carries the request, session, worker, container, and checkpoint IDs, the budgets, the import hints, and the packages to install, with an empty payload. Each client chunk follows. The second task copies the answers of the worker back to the client.
 
 On the first answer, the router learns which container ran the call and records it for the session. If the client disconnects, the router cancels the worker call. When the call ends, the router always releases its reservation.
 
@@ -68,7 +68,8 @@ On the first answer, the router learns which container ran the call and records 
 1. Reads the first message and builds the request.
 2. Acquires a container. If the router named a container, the worker resumes it by re-applying its memory limit. Otherwise, the worker creates a new sandbox and starts it from the named checkpoint. If the checkpoint is empty, is missing, or fails to restore, the worker cold-starts the sandbox and records that no checkpoint was used. See [Container lifecycle](/docs/architecture/container-lifecycle).
 3. Reports the container as busy to the router.
-4. Connects to the unix socket of the executor. While the sandbox starts, the worker retries for up to 60 seconds (`DIAL_TOTAL_TIMEOUT`).
+4. If the request names packages, runs `uv pip install` for them inside the sandbox, after it bootstraps DNS, and streams the installer output to the client as logs. A failed install ends the request with `FAILED_PRECONDITION` and leaves the container reusable.
+5. Connects to the unix socket of the executor. While the sandbox starts, the worker retries for up to 60 seconds (`DIAL_TOTAL_TIMEOUT`).
 
 ## 6. Executor runs the function
 
@@ -76,9 +77,8 @@ The worker streams the request to the executor in length-prefixed frames, withou
 
 1. Unpickles the call.
 2. Ensures that DNS works inside the sandbox.
-3. Installs any `packages=` with `uv pip install`.
-4. Runs the function with stdout and stderr captured.
-5. Sends back a **result envelope**: `ok` and the value, or the exception type, message, and traceback.
+3. Runs the function with stdout and stderr captured.
+4. Sends back a **result envelope**: `ok` and the value, or the exception type, message, and traceback.
 
 An exception inside the function is data in the envelope and not a failure of the worker. The container stays healthy and reusable.
 

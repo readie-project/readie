@@ -199,30 +199,50 @@ def test_bind_carries_disable_optimized_execution_through(rig: Rig) -> None:
     assert rig.sent.last[6] is True
 
 
-def test_packages_reach_the_payload_normalized_and_deduped(rig: Rig) -> None:
-    # packages travel inside the pickled call itself, alongside func/args/kwargs
-    # -- like the function body, the transport never sees them.
-    import cloudpickle
-
+def test_packages_reach_the_transport_normalized_and_deduped(rig: Rig) -> None:
     @remote(client=rig.client, packages=["Requests", "requests==2.31.0", "numpy"])
     def f():
         return None
 
     f()
-    loaded = cloudpickle.loads(rig.sent.last[1])
-    assert loaded["packages"] == ["numpy", "Requests"]
+    # Recorded tuple: (..., gpu, disable_optimized_execution, packages, checkpoint_id).
+    assert rig.sent.last[7] == ("numpy", "Requests")
 
 
 def test_packages_default_to_empty(rig: Rig) -> None:
-    import cloudpickle
-
     @remote(client=rig.client)
     def f():
         return None
 
     f()
-    loaded = cloudpickle.loads(rig.sent.last[1])
-    assert loaded["packages"] == []
+    assert rig.sent.last[7] == ()
+
+
+def test_checkpoint_id_reaches_the_transport(rig: Rig) -> None:
+    @remote(client=rig.client, checkpoint_id="checkpoint_3")
+    def f():
+        return None
+
+    f()
+    assert rig.sent.last[8] == "checkpoint_3"
+
+
+def test_checkpoint_id_defaults_to_unpinned(rig: Rig) -> None:
+    @remote(client=rig.client)
+    def f():
+        return None
+
+    f()
+    assert rig.sent.last[8] == ""
+
+
+def test_checkpoint_id_contradicts_disable_optimized_execution() -> None:
+    # Pinning a checkpoint to restore while asking never to restore one.
+    with pytest.raises(readie.ConfigurationError):
+
+        @remote(checkpoint_id="checkpoint_3", disable_optimized_execution=True)
+        def f():
+            return None
 
 
 def test_an_invalid_package_spec_is_rejected_at_decoration() -> None:
@@ -233,16 +253,14 @@ def test_an_invalid_package_spec_is_rejected_at_decoration() -> None:
             return None
 
 
-def test_bind_preserves_the_packages(rig: Rig) -> None:
-    import cloudpickle
-
-    @remote(client=rig.client, packages=["numpy"])
+def test_bind_preserves_the_packages_and_the_checkpoint(rig: Rig) -> None:
+    @remote(client=rig.client, packages=["numpy"], checkpoint_id="checkpoint_3")
     def f():
         return None
 
     f.bind(readie.Session("s"))()
-    loaded = cloudpickle.loads(rig.sent.last[1])
-    assert loaded["packages"] == ["numpy"]
+    assert rig.sent.last[7] == ("numpy",)
+    assert rig.sent.last[8] == "checkpoint_3"
 
 
 def test_bind_preserves_the_budgets(rig: Rig) -> None:

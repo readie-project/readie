@@ -24,7 +24,7 @@ A function in a sandbox can do the following:
 
 - Run Python as the root user of the sandbox. The process has user ID 0 but only a short list of Linux capabilities: audit write, kill, bind to low ports, and the file-ownership overrides needed to replace files in the shared base filesystem. It cannot gain new privileges.
 - Use the pre-installed Python environment. The root filesystem already carries the packages that Readie targets.
-- Install more packages. Names passed as `@remote(packages=[...])` are installed with `uv pip install` before the function runs. This requires outbound network access to the package index.
+- Install more packages. The worker installs names passed as `@remote(packages=[...])` with `uv pip install` before the function runs, except those that the root filesystem already carries. This requires outbound network access to the package index.
 - Write files. The root filesystem is a copy-on-write overlay held in sandbox memory (setting `SANDBOX_OVERLAY`, default `root:memory`). Writes succeed, use memory, and disappear when the sandbox is destroyed. `/tmp` is a folder shared with the worker and is also removed with the container. `/dev/shm` is 1 GiB.
 - Reach the internet, as described in [Network](#network).
 - Use a GPU, on a GPU worker only. GPU workers turn on the `nvproxy` passthrough of gVisor. See [Flavors and catalogues](/docs/concepts/flavors-and-catalogues).

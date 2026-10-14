@@ -8,16 +8,20 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class ExecutionConfig(_message.Message):
-    __slots__ = ("imports", "budgets", "gpu", "disable_optimized_execution")
+    __slots__ = ("imports", "budgets", "gpu", "disable_optimized_execution", "packages", "checkpoint_id")
     IMPORTS_FIELD_NUMBER: _ClassVar[int]
     BUDGETS_FIELD_NUMBER: _ClassVar[int]
     GPU_FIELD_NUMBER: _ClassVar[int]
     DISABLE_OPTIMIZED_EXECUTION_FIELD_NUMBER: _ClassVar[int]
+    PACKAGES_FIELD_NUMBER: _ClassVar[int]
+    CHECKPOINT_ID_FIELD_NUMBER: _ClassVar[int]
     imports: _containers.RepeatedScalarFieldContainer[str]
     budgets: _containers.RepeatedCompositeFieldContainer[_resources_pb2.ResourceBudget]
     gpu: bool
     disable_optimized_execution: bool
-    def __init__(self, imports: _Optional[_Iterable[str]] = ..., budgets: _Optional[_Iterable[_Union[_resources_pb2.ResourceBudget, _Mapping]]] = ..., gpu: _Optional[bool] = ..., disable_optimized_execution: _Optional[bool] = ...) -> None: ...
+    packages: _containers.RepeatedScalarFieldContainer[str]
+    checkpoint_id: str
+    def __init__(self, imports: _Optional[_Iterable[str]] = ..., budgets: _Optional[_Iterable[_Union[_resources_pb2.ResourceBudget, _Mapping]]] = ..., gpu: _Optional[bool] = ..., disable_optimized_execution: _Optional[bool] = ..., packages: _Optional[_Iterable[str]] = ..., checkpoint_id: _Optional[str] = ...) -> None: ...
 
 class ClientExecutionRequest(_message.Message):
     __slots__ = ("request_id", "session_id", "payload", "config")

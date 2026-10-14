@@ -73,16 +73,14 @@ def test_a_non_callable_func_is_rejected_before_it_is_called():
         decode_call(encode({"func": 42, "args": (), "kwargs": {}}))
 
 
-def test_packages_are_read_when_present():
-    raw = encode({"func": add, "args": (1, 2), "kwargs": {}, "packages": ["numpy", "requests"]})
-    assert decode_call(raw).packages == ("numpy", "requests")
+def test_a_packages_key_from_an_older_client_is_ignored():
+    # Packages are installed by the worker now. An older client that still
+    # pickles the key must decode, and nothing here acts on it.
+    raw = encode({"func": add, "args": (1, 2), "kwargs": {}, "packages": ["numpy"]})
+    call = decode_call(raw)
 
-
-def test_packages_default_to_empty_when_absent():
-    # An older client that never sends the key still decodes -- packages are
-    # additional, not part of the three-key minimum contract.
-    raw = encode({"func": add, "args": (1, 2), "kwargs": {}})
-    assert decode_call(raw).packages == ()
+    assert not hasattr(call, "packages")
+    assert call.invoke() == 3
 
 
 def test_a_user_exception_propagates_out_of_invoke():

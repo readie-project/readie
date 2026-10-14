@@ -279,39 +279,35 @@ def test_imports_and_budgets_reach_the_transport() -> None:
     assert sync.last[3] == budgets
 
 
-def test_packages_reach_the_payload() -> None:
-    # packages travel inside the pickled call itself -- like the function body,
-    # the transport never sees them.
+def test_packages_reach_the_transport_and_not_the_payload() -> None:
+    # They ride in the execution config, where the router can see them.
     import cloudpickle
 
     sync = RecordingTransport(1)
     client = Client(SETTINGS, transport=sync, async_transport=AsyncRecordingTransport(1))
     client.call(add, (1, 2), packages=("numpy",))
 
-    loaded = cloudpickle.loads(sync.last[1])
-    assert loaded["packages"] == ["numpy"]
+    # Recorded tuple: (..., gpu, disable_optimized_execution, packages, checkpoint_id).
+    assert sync.last[7] == ("numpy",)
+    assert "packages" not in cloudpickle.loads(sync.last[1])
 
 
-async def test_packages_reach_the_payload_on_the_async_path() -> None:
-    import cloudpickle
-
+async def test_packages_reach_the_transport_on_the_async_path() -> None:
     a_sync = AsyncRecordingTransport(1)
     client = Client(SETTINGS, transport=RecordingTransport(1), async_transport=a_sync)
-    await client.acall(add, (1, 2), packages=("numpy",))
+    await client.acall(add, (1, 2), packages=("numpy",), checkpoint_id="checkpoint_3")
 
-    loaded = cloudpickle.loads(a_sync.last[1])
-    assert loaded["packages"] == ["numpy"]
+    assert a_sync.last[7] == ("numpy",)
+    assert a_sync.last[8] == "checkpoint_3"
 
 
-def test_packages_default_to_empty() -> None:
-    import cloudpickle
-
+def test_packages_and_checkpoint_default_to_empty() -> None:
     sync = RecordingTransport(1)
     client = Client(SETTINGS, transport=sync, async_transport=AsyncRecordingTransport(1))
     client.call(add, (1, 2))
 
-    loaded = cloudpickle.loads(sync.last[1])
-    assert loaded["packages"] == []
+    assert sync.last[7] == ()
+    assert sync.last[8] == ""
 
 
 def test_repr_names_the_router() -> None:

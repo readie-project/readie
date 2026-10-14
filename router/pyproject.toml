@@ -10,6 +10,7 @@ dependencies = [
     "grpcio>=1.78.1",
     "grpcio-health-checking>=1.78.0",
     "grpcio-reflection>=1.78.0",
+    "packaging>=24.0",
     "protobuf>=6.0",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",

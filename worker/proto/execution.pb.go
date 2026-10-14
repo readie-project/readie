@@ -36,7 +36,11 @@ type WorkerExecutionRequest struct {
 	// The resource budgets (memory, GPU memory, ...) the router placed this
 	// request on. The worker sets each at container create and auto-expands up to
 	// the budget's max where the runtime can enforce it.
-	Budgets       []*ResourceBudget `protobuf:"bytes,11,rep,name=budgets,proto3" json:"budgets,omitempty"`
+	Budgets []*ResourceBudget `protobuf:"bytes,11,rep,name=budgets,proto3" json:"budgets,omitempty"`
+	// PyPI requirement strings the worker installs in the sandbox before the
+	// payload reaches the executor. The router has already deduped them and
+	// removed what the base image carries.
+	Packages      []string `protobuf:"bytes,12,rep,name=packages,proto3" json:"packages,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -123,6 +127,13 @@ func (x *WorkerExecutionRequest) GetResources() []string {
 func (x *WorkerExecutionRequest) GetBudgets() []*ResourceBudget {
 	if x != nil {
 		return x.Budgets
+	}
+	return nil
+}
+
+func (x *WorkerExecutionRequest) GetPackages() []string {
+	if x != nil {
+		return x.Packages
 	}
 	return nil
 }
@@ -271,7 +282,7 @@ var File_execution_proto protoreflect.FileDescriptor
 
 const file_execution_proto_rawDesc = "" +
 	"\n" +
-	"\x0fexecution.proto\x1a\x0fresources.proto\"\xc0\x02\n" +
+	"\x0fexecution.proto\x1a\x0fresources.proto\"\xdc\x02\n" +
 	"\x16WorkerExecutionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -282,7 +293,8 @@ const file_execution_proto_rawDesc = "" +
 	"\rcheckpoint_id\x18\x05 \x01(\tR\fcheckpointId\x12\x18\n" +
 	"\apayload\x18\x06 \x01(\fR\apayload\x12\x1c\n" +
 	"\tresources\x18\t \x03(\tR\tresources\x12)\n" +
-	"\abudgets\x18\v \x03(\v2\x0f.ResourceBudgetR\abudgetsB\x0f\n" +
+	"\abudgets\x18\v \x03(\v2\x0f.ResourceBudgetR\abudgets\x12\x1a\n" +
+	"\bpackages\x18\f \x03(\tR\bpackagesB\x0f\n" +
 	"\r_container_idJ\x04\b\a\x10\bJ\x04\b\b\x10\t\"\xc7\x02\n" +
 	"\x17WorkerExecutionResponse\x12\x1d\n" +
 	"\n" +

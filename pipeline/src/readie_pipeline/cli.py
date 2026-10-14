@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 
 from readie_pipeline.capture.build import CaptureError, capture, measure_time
+from readie_pipeline.capture.rootfs import discover_rootfs_inventory
 from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, runsc_version
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
 from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
@@ -441,7 +442,10 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         f"computed alpha: {computed_alpha}, drift: {drift}"
     )
     # The catalogue the router selects from: every measured item's cost plus each
-    # checkpoint's contents and precomputed size term.
+    # checkpoint's contents and precomputed size term. The metadata may have been
+    # measured in a different image than the rootfs the sandbox runs, so the
+    # catalogue only ports what that rootfs provides (same discovery as `analyze`).
+    inventory = discover_rootfs_inventory(settings.rootfs_path, settings.rootfs_pythonpath)
     write_catalogue(
         settings.catalogue_path,
         build_catalogue(
@@ -449,6 +453,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
             alpha=computed_alpha,
             metadata=metadata,
             entries=entries,
+            inventory=inventory,
         ),
     )
 

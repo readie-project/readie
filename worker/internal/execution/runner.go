@@ -281,6 +281,17 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 		return Result{}, fmt.Errorf("provision sink: %w", provisionErr)
 	}
 
+	// Packages go in before the executor is dialled, so the call finds them
+	// importable. A failed install leaves the container healthy, so it is
+	// released for reuse rather than destroyed: it would otherwise cost a
+	// session its warm state over a typo in a requirement.
+	if installErr := r.installPackages(execCtx, handle, req.Packages, sink); installErr != nil {
+		if errors.Is(installErr, ErrPackageInstall) {
+			outcome = container.OutcomeSuccess
+		}
+		return Result{}, installErr
+	}
+
 	conn, err := r.dialer.Dial(execCtx, handle.ID)
 	if err != nil {
 		return Result{}, fmt.Errorf("dial executor: %w", err)

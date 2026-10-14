@@ -85,6 +85,21 @@ Placement proceeds in three steps:
 Placement uses no randomness, so the same cluster state always yields the same
 decision.
 
+After the worker is chosen, `Scheduler.provision` also settles two things that
+depend on the worker's flavor, using that flavor's catalogue:
+
+- The checkpoint. The catalogue selects one, unless the client pinned a
+  `checkpoint_id`. A pin is accepted only if the catalogue lists exactly that id
+  (`UnknownCheckpointError`, `INVALID_ARGUMENT`, and never `NOT_FOUND`, which the
+  client reads as an expired session). A warm session container that was restored
+  from a different checkpoint raises `CheckpointConflictError`
+  (`FAILED_PRECONDITION`).
+- The packages. `scheduling/packages.py` validates and dedupes the request's
+  `packages` (the same rules as the client's `normalize_packages`, shared through
+  `pkg/tests/data/package_specs.json`), and the catalogue's `distributions` list
+  removes every entry the rootfs already has, whatever version it asks for. The
+  proxy service streams a log line to the client for each entry it removed.
+
 ### Provision and reconcile
 
 Two concurrent requests for one session would otherwise both see an empty

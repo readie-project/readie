@@ -456,6 +456,48 @@ func (a *Adapter) forceDelete(ctx context.Context, id string) {
 	}
 }
 
+// Exec runs a command inside a live sandbox and waits for it.
+//
+// runsc exec does not reliably hand the command the sandbox's environment, so
+// the environment from the bundle's spec is passed explicitly: without
+// PATH and PYTHONPATH a command would not find uv or the executor's modules.
+//
+// runsc exits with the command's own status, so a non-zero exit is reported as
+// the command's ExitCode rather than as an error, and its message, if runsc
+// itself was what failed, is in the Output. Only a command that could not be
+// launched at all (the binary is missing) or a context that ended is an error.
+func (a *Adapter) Exec(ctx context.Context, id string, spec sandbox.ExecSpec) (sandbox.ExecResult, error) {
+	if len(spec.Args) == 0 {
+		return sandbox.ExecResult{}, sandbox.Errorf("exec", id, sandbox.ErrInvalidSpec, "no command")
+	}
+
+	ociSpec, err := readSpec(filepath.Join(a.BundleDir(id), configFileName))
+	if err != nil {
+		return sandbox.ExecResult{}, sandbox.Wrap("exec", id, a.classifyPath(id, err), err)
+	}
+
+	argv := []string{"exec"}
+	if ociSpec.Process != nil {
+		for _, env := range ociSpec.Process.Env {
+			argv = append(argv, "--env="+env)
+		}
+	}
+	argv = append(argv, id)
+	argv = append(argv, spec.Args...)
+
+	res, runErr := a.runner.Output(ctx, a.args(argv...)...)
+	output := append(append([]byte(nil), res.Stdout...), res.Stderr...)
+
+	if runErr != nil {
+		var cmdErr *CommandError
+		if errors.As(runErr, &cmdErr) && ctx.Err() == nil && cmdErr.ExitCode > 0 {
+			return sandbox.ExecResult{ExitCode: cmdErr.ExitCode, Output: output}, nil
+		}
+		return sandbox.ExecResult{}, sandbox.Wrap("exec", id, a.classify(id, runErr), runErr)
+	}
+	return sandbox.ExecResult{ExitCode: 0, Output: output}, nil
+}
+
 // Pause suspends a sandbox's processes.
 func (a *Adapter) Pause(ctx context.Context, id string) error {
 	return a.simple(ctx, "pause", id)

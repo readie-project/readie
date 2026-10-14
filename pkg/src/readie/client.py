@@ -133,6 +133,7 @@ class Client:
         gpu: bool = False,
         packages: tuple[str, ...] = (),
         disable_optimized_execution: bool = False,
+        checkpoint_id: str = "",
     ) -> Any:
         """Execute ``func`` remotely and return its result.
 
@@ -140,7 +141,7 @@ class Client:
         loop, where blocking would stall the loop the response must arrive on.
         """
         _reject_running_loop()
-        ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
+        ref, payload, imports = self._prepare(func, args, kwargs, session)
         outcome = self._transport.execute(
             ref,
             payload,
@@ -148,6 +149,8 @@ class Client:
             budgets,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            packages=packages,
+            checkpoint_id=checkpoint_id,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -165,9 +168,10 @@ class Client:
         gpu: bool = False,
         packages: tuple[str, ...] = (),
         disable_optimized_execution: bool = False,
+        checkpoint_id: str = "",
     ) -> Any:
         """Execute ``func`` remotely and return its result, without blocking."""
-        ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
+        ref, payload, imports = self._prepare(func, args, kwargs, session)
         outcome = await self._async_transport.execute(
             ref,
             payload,
@@ -175,6 +179,8 @@ class Client:
             budgets,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            packages=packages,
+            checkpoint_id=checkpoint_id,
             timeout=self._deadline(timeout),
             on_log=self._on_log(),
         )
@@ -229,7 +235,6 @@ class Client:
         args: Sequence[Any],
         kwargs: Mapping[str, Any] | None,
         session: Session | None,
-        packages: tuple[str, ...] = (),
     ) -> tuple[CallRef, bytes, tuple[str, ...]]:
         self._check_open()
         if session is not None:
@@ -242,7 +247,7 @@ class Client:
         # going to be resumed anyway.
         session_id = session.id if session is not None else ""
         ref = CallRef(request_id=new_request_id(), session_id=session_id)
-        payload = self._codec.encode_call(func, args, kwargs or {}, packages)
+        payload = self._codec.encode_call(func, args, kwargs or {})
         imports = extract_imports(func)
         return ref, payload, imports
 

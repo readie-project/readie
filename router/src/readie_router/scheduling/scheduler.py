@@ -14,10 +14,12 @@ from dataclasses import dataclass
 
 from readie_router.clock import Clock
 from readie_router.errors import (
+    CheckpointConflictError,
     NoCapacityError,
     NoWorkersRegisteredError,
     OptimizedExecutionConflictError,
     SessionExpiredError,
+    UnknownCheckpointError,
 )
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
@@ -95,6 +97,13 @@ class Scheduler:
         if worker is None:  # pragma: no cover - _resolve_target only returns live workers
             raise NoWorkersRegisteredError
 
+        # What the worker installs depends on the image it runs, so this follows
+        # the chosen worker's flavor, as checkpoint selection does.
+        catalogue = self._catalogues.get(worker.flavor)
+        packages, ignored = (
+            catalogue.filter_packages(demand.packages) if catalogue else (demand.packages, ())
+        )
+
         worker.inflight += 1
         # Only memory is reserved: it is the tight resource and the one the
         # cluster reports capacity for. The reservation covers the initial
@@ -113,6 +122,8 @@ class Scheduler:
             resources=demand.resources,
             warm=warm,
             opened_at=now,
+            packages=packages,
+            ignored_packages=ignored,
         )
         self._state.open_lease(placement)
 
@@ -146,6 +157,12 @@ class Scheduler:
                         # tearing it down would silently lose the session's state.
                         # Neither is a good default, so this is the caller's call.
                         raise OptimizedExecutionConflictError(session.session_id)
+                    if demand.checkpoint_id and demand.checkpoint_id != executor.checkpoint_id:
+                        # Same reasoning: the warm container is the session's
+                        # state, and it was not restored from the pinned checkpoint.
+                        raise CheckpointConflictError(
+                            session.session_id, requested=demand.checkpoint_id
+                        )
                     return (
                         affinity.worker_id,
                         affinity.container_id,
@@ -169,12 +186,29 @@ class Scheduler:
         # A cold start: pick the cheapest checkpoint from the chosen worker's
         # flavor catalogue. A GPU worker serving a CPU request restores a GPU
         # checkpoint, so selection follows the worker, not the request.
-        checkpoint_id = (
-            "" if demand.disable_optimized_execution else self._select_checkpoint(chosen, demand)
-        )
+        if demand.disable_optimized_execution:
+            checkpoint_id = ""
+        elif demand.checkpoint_id:
+            checkpoint_id = self._pinned_checkpoint(chosen, demand)
+        else:
+            checkpoint_id = self._select_checkpoint(chosen, demand)
 
         # An empty container id is the worker's "provision a new one" sentinel.
         return chosen, "", checkpoint_id, False
+
+    def _pinned_checkpoint(self, worker_id: str, demand: Demand) -> str:
+        """Return the checkpoint the client pinned, if its flavor's catalogue lists it.
+
+        Membership in the catalogue is the only test: no id, ``checkpoint_0``
+        included, is assumed valid. Raises ``UnknownCheckpointError`` otherwise,
+        before any capacity is reserved.
+        """
+        worker = self._state.worker(worker_id)
+        flavor = worker.flavor if worker is not None else demand.flavor
+        catalogue = self._catalogues.get(flavor)
+        if catalogue is None or not catalogue.has_checkpoint(demand.checkpoint_id):
+            raise UnknownCheckpointError(demand.checkpoint_id, flavor=flavor)
+        return demand.checkpoint_id
 
     def _select_checkpoint(self, worker_id: str, demand: Demand) -> str:
         """Choose a checkpoint for a cold start on ``worker_id``, or ``""``."""

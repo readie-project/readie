@@ -80,10 +80,10 @@ An empty payload is encoded as the last line only: eight zero bytes.
 A request is one message that contains a [cloudpickle](/docs/concepts/glossary) of a dictionary:
 
 ```python
-{"func": <callable>, "args": (...), "kwargs": {...}, "packages": ["..."]}
+{"func": <callable>, "args": (...), "kwargs": {...}}
 ```
 
-The `packages` key is optional. If it is present, the executor runs `uv pip install` for those requirements before it calls the function. This happens on every call, including for packages that the filesystem already contains. If the sandbox has no resolver configured, the executor sets up DNS first.
+The dictionary has no `packages` key. The router validates a request's packages and the worker installs them in the sandbox, with `uv pip install`, before it sends the request, so the function finds them already importable. An older client that still pickles a `packages` key is accepted, and the executor ignores the key. Before every call, the executor sets up DNS if the sandbox has no resolver configured, because a function can reach the network on its own.
 
 ### Response
 

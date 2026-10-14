@@ -39,6 +39,8 @@ type ContainerService interface {
 	Stats(ctx context.Context, id string) (sandbox.StatsStream, error)
 	// Grow raises a live container's memory limit, for proactive auto-expand.
 	Grow(ctx context.Context, id string, memBytes int64) error
+	// Exec runs a command inside a live container and waits for it to exit.
+	Exec(ctx context.Context, id string, args []string) (sandbox.ExecResult, error)
 }
 
 // PayloadSource yields request-body chunks after the first message.
@@ -79,7 +81,10 @@ type Request struct {
 	// ContainerID names a warm container to reuse. Empty provisions a new one.
 	ContainerID  string
 	CheckpointID string
-	Alloc        container.Allocation
+	// Packages are PyPI requirement strings to install in the sandbox before
+	// the executor receives the payload.
+	Packages []string
+	Alloc    container.Allocation
 	// InitialPayload is the body carried by the first message.
 	InitialPayload []byte
 }

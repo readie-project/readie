@@ -454,12 +454,27 @@ The `manifest.json` and `checkpoints/` layout is the shape that
 checkpoint and shipping it.
 
 `catalogue.json` is what the router reads to select a checkpoint. It records
-the alpha measured during `build`, every measured item's cost, and each
-checkpoint's contents and precomputed size term. `make capture` copies it to
-`catalogues/<flavor>.json`, which the router mounts as `CATALOGUE_DIR`. The
-shared `alpha` constant must match between `READIE_ALPHA` here and `ALPHA` in
-the router. See [Cost
-model](https://readie.org/docs/concepts/cost-model).
+the alpha measured during `build`, every measured item's cost, each
+checkpoint's contents and precomputed size term, and the `distributions` the
+rootfs provides. `make capture` copies it to
+`catalogues/<flavor>.json`, which the router mounts as `CATALOGUE_DIR`.
+
+The metadata can be measured in a different image than the rootfs the sandbox
+runs (`analyze` runs in `ROOTFS_BASE_IMAGE`, the rootfs adds the executor's
+dependencies), so `build` filters at the end. It runs
+`metadata/inventory.py` with the rootfs's own `python`, in a `chroot` with the
+sandbox's `PYTHONPATH` (the source goes in on stdin, so nothing is copied into
+the rootfs), which lists the installed distributions the way the interpreter
+really sees them. `analyze` resolves each package's distribution with the same
+module, so a change to that rule applies to both. The catalogue then carries over
+only the measured packages that the rootfs has a distribution for. If the rootfs
+cannot be listed, `build` prints a `[!]` line and writes the catalogue without
+filtering. Planning and capture are unchanged and still use all of the metadata.
+The catalogue format is documented in
+[`catalogues/README.md`](../catalogues/README.md).
+
+The shared `alpha` constant must match between `READIE_ALPHA` here and `ALPHA` in
+the router. See [Cost model](https://readie.org/docs/concepts/cost-model).
 
 Neither the manifest nor the checkpoint metadata carries a `rootfs_id`. A
 generation has one rootfs, baked in beside its checkpoints, so there is nothing

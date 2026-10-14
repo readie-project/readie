@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, TextIO
 from readie_executor import protocol
 from readie_executor.codec import DecodeError, decode_call, encode_result
 from readie_executor.config import Settings
-from readie_executor.install import install_packages
 from readie_executor.network import ensure_dns
 
 if TYPE_CHECKING:
@@ -166,16 +165,16 @@ class ExecutorServer:
             print(f"[executor] could not send response: {exc}", file=sys.stderr, flush=True)
 
     def _run(self, raw: bytes) -> tuple[dict[str, Any], list[str]]:
-        """Decode, install packages, and invoke, turning any failure into a response.
+        """Decode and invoke, turning any failure into a response.
 
         Every path returns an envelope. Version 1 returned nothing when the
         function raised, so the caller saw an empty response and had to infer
         what happened from log lines; that inference is what this removes.
 
-        Installing runs unconditionally, even for a package the rootfs already
-        carries: every request restores a fresh container, so there is no warm
-        state to check an "already installed" claim against. DNS is bootstrapped
-        unconditionally too, before anything that might need it.
+        Packages are already installed by the time a request arrives: the worker
+        installs them in the sandbox before it sends this one. DNS is still
+        bootstrapped unconditionally, before anything that might need it, since
+        a task can reach the network on its own.
         """
         try:
             call = decode_call(raw)
@@ -185,16 +184,6 @@ class ExecutorServer:
 
         ensure_dns()
         output: list[str] = []
-        if call.packages:
-            print(f"[executor] installing packages: {sorted(call.packages)}", flush=True)
-        try:
-            install_output = install_packages(list(call.packages))
-        except Exception as exc:  # noqa: BLE001 - any install failure must produce a response, not a crash
-            print(f"[executor] {exc}", file=sys.stderr, flush=True)
-            return protocol.failure_envelope(exc, traceback.format_exc()), output
-        if install_output:
-            output.append(install_output)
-            print("[executor] packages installed", flush=True)
 
         try:
             with (

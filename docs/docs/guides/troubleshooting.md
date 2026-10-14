@@ -14,7 +14,7 @@ Find the error in the following table. Each row links to a longer explanation. E
 | `NOT_FOUND ...: the session has expired` | The sandbox of the session was cleaned up. | [Session expired](#session-expired) |
 | `RESOURCE_EXHAUSTED ...: the session is busy` | Another call held the session too long. | [Session expired](#session-expired) |
 | The call fails, or appears to have run out of memory | The memory budget is too small. | [Out of memory](#out-of-memory) |
-| `uv pip install failed (exit ...)` | Bad package specification, or the package cannot be fetched. | [Package install failures](#package-install-failures) |
+| `FAILED_PRECONDITION ...: could not install the requested packages` | Bad package specification, or the package cannot be fetched. | [Package install failures](#package-install-failures) |
 | `RemoteTimeoutError` | The call exceeded its deadline. | [Timeouts](#timeouts) |
 
 ## Python version mismatch
@@ -65,16 +65,17 @@ See [Packages and resources](/docs/getting-started/packages-and-resources).
 
 ## Package install failures
 
-If `packages=[...]` is passed to `@remote`, the packages are installed with `uv` before every call. A failure ends the call with the following text, which also appears in the output:
+If `packages=[...]` is passed to `@remote`, the packages that the sandbox image does not already contain are installed with `uv` before every call. A failure ends the call with `InvalidRequestError`, and the `uv` output arrives as log lines before the exception. The output looks like this:
 
 ```text
-uv pip install failed (exit 1): <uv output>
+error: No solution found when resolving dependencies: ...
 ```
 
 The usual causes are:
 
 - **The name or version does not exist.** Read the `uv` output for the package that it could not find.
 - **The package cannot be fetched.** The output shows a failure to reach the package index. Retry, and if the failure persists, try a different version.
+- **The requested version is ignored.** A package that the image already carries is never installed again, so a different pinned version has no effect. The call output names each ignored entry.
 
 Entries that are not valid requirement strings are rejected on the local machine, before the call, with `InvalidPackageError`. Packages are installed on every call and nothing is cached, so a large install slows every call. Prefer libraries that are already in the sandbox. See [Packages and resources](/docs/getting-started/packages-and-resources).
 

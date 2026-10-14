@@ -36,6 +36,7 @@ type fakeContainers struct {
 	acquired []container.AcquireRequest
 	released []container.Outcome
 	grown    []int64
+	execs    []execCall
 
 	handle     container.Handle
 	acquireErr error
@@ -46,6 +47,15 @@ type fakeContainers struct {
 	logsHang     bool
 	statsFrames  []sandbox.Stats
 	releaseDelay time.Duration
+
+	execResult sandbox.ExecResult
+	execErr    error
+}
+
+// execCall records a command run inside a container.
+type execCall struct {
+	id   string
+	args []string
 }
 
 func memAlloc(n int64) container.Allocation {
@@ -109,6 +119,19 @@ func (f *fakeContainers) Grow(_ context.Context, _ string, memBytes int64) error
 	defer f.mu.Unlock()
 	f.grown = append(f.grown, memBytes)
 	return nil
+}
+
+func (f *fakeContainers) Exec(_ context.Context, id string, args []string) (sandbox.ExecResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.execs = append(f.execs, execCall{id: id, args: args})
+	return f.execResult, f.execErr
+}
+
+func (f *fakeContainers) Execs() []execCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]execCall(nil), f.execs...)
 }
 
 func (f *fakeContainers) Grown() []int64 {
