@@ -1181,13 +1181,9 @@ corpus = [
     { name = "kaggle" },
     { name = "python-dotenv" },
 ]
-evals = [
-    { name = "httpx" },
-]
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -1198,18 +1194,16 @@ dev = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'corpus'", specifier = ">=0.40" },
     { name = "httpx", marker = "extra == 'corpus'", specifier = ">=0.27" },
-    { name = "httpx", marker = "extra == 'evals'", specifier = ">=0.27" },
     { name = "huggingface-hub", marker = "extra == 'corpus'", specifier = ">=0.30" },
     { name = "kaggle", marker = "extra == 'corpus'", specifier = ">=1.8" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "python-dotenv", marker = "extra == 'corpus'", specifier = ">=1.0" },
 ]
-provides-extras = ["corpus", "evals"]
+provides-extras = ["corpus"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-cov", specifier = ">=6.0" },

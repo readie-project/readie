@@ -30,7 +30,6 @@ readie-pipeline analyze   # measure every package installed here, and their deps
 readie-pipeline plan      # choose checkpoint contents, write the OCI spec
 readie-pipeline build     # capture one gVisor checkpoint per planned set
 readie-pipeline capture   # plan and then build, in one process
-readie-pipeline eval      # time corpus code through Readie, optimized start against cold start
 ```
 
 Each stage runs on its own. `plan` needs only the committed data (no runsc, no
@@ -184,76 +183,6 @@ readie-pipeline corpus --revalidate                       # re-check every resou
 The stage needs the `corpus` extra (`uv sync --extra corpus`) and credentials,
 which are listed in [Configuration](#configuration). It is an authoring step, so
 the pipeline image does not include it. `plan` and `analyze` read the result.
-
-### eval
-
-`eval` measures how long a piece of code takes to run on a running Readie stack
-when the sandbox starts from a checkpoint restore (the optimized start) and when it
-starts cold. It is a Python application run by hand against the playground's
-`/eval/run` route (see `playground/README.md`); it is separate from corpus
-generation and reads whatever corpus-format file it is given.
-
-```sh
-# 1. make an eval set the way the corpus is made, into another file
-readie-pipeline corpus --output data/evals/cpu.json --total 500
-
-# 2. start the playground with the eval route on, against your Readie stack
-PLAYGROUND_EVAL_TOKEN=... PLAYGROUND_ROUTER_URI=localhost:50051 PLAYGROUND_ROUTER_TLS=false \
-  uv run --directory playground python -m readie_playground
-
-# 3. run it, then read the report
-readie-pipeline eval run --corpus data/evals/cpu.json --server http://127.0.0.1:8080 \
-    --token ... --repetitions 3
-readie-pipeline eval report --results data/evals/cpu.results.jsonl
-```
-
-`eval run` needs the `evals` extra (`uv sync --extra evals`). The token and server can
-also come from `READIE_EVAL_TOKEN` and `READIE_EVAL_SERVER`.
-
-- **One item per request, one item at a time by default.** Each item is one request. `--parallel N`
-  runs `N` items at once; each uses two sandboxes, so keep `N` at or below half the worker's
-  executors and within its memory (`--memory` times two sandboxes times `N`). The playground's
-  `PLAYGROUND_EVAL_MAX_CONCURRENT_RUNS` must be at least `N`. The server runs its two lanes at
-  once, and an item with several steps (a notebook's cells) runs them one after another
-  in each lane under one session id, so the steps share an interpreter. A failing step
-  does not stop the next one.
-- **The time that counts is the `duration_s` the server returns**, a monotonic clock
-  around the whole backend call, the same number the playground reports.
-- **Options.** `--memory` (default `8Gi`) and `--timeout` (default `300` seconds) are
-  passed to the Readie remote function. `--timeout` is the deadline of each step and
-  the budget of all the steps of an item together. Nothing is installed: no
-  `packages` are passed, and the `pip install` lines the cleaning step commented out stay
-  commented.
-- **A full worker is retried.** When the worker has no free sandbox slot or memory, the item never
-  ran, so it is not a result. The item is tried again after `--busy-wait` seconds (default `20`),
-  waiting twice as long before each further try, up to `--busy-retries` times (default `5`,
-  `0` never retries). An item still rejected is recorded as `busy`, left out of the comparison, and
-  run again by an `eval run --resume` on the same results file.
-- **Heavy notebooks.** An item that runs out of time is recorded as a `timeout` and kept
-  in the file, and it is not repeated (`--skip-timeouts-after`, default `1`), so one
-  slow item does not cost every repetition its full budget. The report leaves timeouts out
-  of the comparison and counts them. It also groups items by cold duration, because a
-  start difference of seconds only shows against runs of seconds to a minute.
-- **Outcomes.** A run is `ok`, `error` (the server could not be used), or it names a problem and the
-  start that had it. The problems, looked for in this order, are `busy` (the worker had no room, so the
-  code never ran), `lost` (a sandbox died; Readie reports it as a deadline error with the text "the worker
-  could not complete the execution"), `timeout` (a step or the item ran out of time) and `failed` (the code
-  raised). When both starts have the first problem found the outcome is the bare name (`lost`). When one
-  start has it, the name says which: `restore_lost`, `restore_timeout` and so on for the optimized start,
-  `cold_start_lost`, `cold_start_timeout` and so on for the cold start. So a restored sandbox that died
-  while the cold start finished, or ran out of time, is `restore_lost`, which points at the checkpoint
-  restore and not at the code. A run with any problem does not enter the comparison, and the report counts
-  each problem by the starts that had it. A `busy` run is run again by `eval run --resume`. The last step
-  of an `agent_fix` item decides whether it failed: the item breaks on purpose and is repaired, so it is
-  `ok` while its last step succeeds, whatever the steps before it did.
-- **Results** are appended to a JSONL file, one line per item and repetition, as they
-  arrive. Each run starts the file over, so it holds only that run; `--resume` continues the file
-  and skips the runs it holds instead. Filters:
-  `--source`, `--domain`, `--id`, `--limit`.
-
-The report gives medians over the repetitions, for all items, for the first step of
-multi-step items (where the start happens), by source, by domain and by cold
-duration, and lists failures by kind.
 
 ### analyze
 

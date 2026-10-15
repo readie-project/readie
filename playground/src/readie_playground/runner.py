@@ -6,8 +6,10 @@ script into a ``@remote`` function (``userfn``) and calls it through the Readie
 client, as any user would.
 
 ``Runner.stream`` serves the public playground: one script, both lanes streamed.
-``Runner.run_eval`` serves an evaluation: a list of steps run one after another
-in each lane, under one session id per lane, with per-step timings.
+``Runner.run_eval`` serves an evaluation: a list of steps run one after another,
+once, with per-step timings. It makes no choices of its own: every argument of the
+Readie remote function comes from the request and goes to ``readie.remote`` as given
+(so a caller compares optimized and cold starts by sending two requests).
 """
 
 from __future__ import annotations
@@ -15,13 +17,21 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable
-from dataclasses import dataclass, replace
+from collections.abc import AsyncGenerator, Callable, Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from readie import Client, ReadieError, RemoteExecutionError, RemoteFunction, Session, Settings
+from readie import (
+    Client,
+    ReadieError,
+    RemoteExecutionError,
+    RemoteFunction,
+    Session,
+    Settings,
+    remote,
+)
 from readie.budget import build_budgets
 
 from readie_playground import userfn
@@ -52,17 +62,10 @@ class Event:
 class EvalOptions:
     """What an evaluation passes to the Readie remote function for every step."""
 
-    memory: str = MEMORY
-    max_memory: str = MEMORY
-    gpu: bool = False
-    gpu_memory: str | None = None
-    max_gpu_memory: str | None = None
-    packages: tuple[str, ...] = ()
-    timeout_s: float = 30.0
-    """Deadline of each step."""
-    total_timeout_s: float | None = None
-    """Budget for all the steps of one lane together; ``None`` for no budget."""
+    remote: Mapping[str, Any] = field(default_factory=dict)
+    """Keyword arguments of ``readie.remote``, exactly as the request gave them."""
     continue_on_error: bool = True
+    """Whether a failed step lets the later ones run. Not a ``remote`` argument."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,10 +86,9 @@ class StepResult:
 
 
 @dataclass(frozen=True, slots=True)
-class LaneResult:
-    """Every step of one lane."""
+class EvalResult:
+    """Every step of one evaluation request."""
 
-    lane: Lane
     session_id: str | None
     steps: tuple[StepResult, ...]
 
@@ -99,14 +101,6 @@ class LaneResult:
     def ok(self) -> bool:
         """Whether every step succeeded."""
         return all(step.ok for step in self.steps)
-
-
-@dataclass(frozen=True, slots=True)
-class EvalOutcome:
-    """Both lanes of one evaluation request."""
-
-    session_id: str | None
-    lanes: dict[Lane, LaneResult]
 
 
 class Backend(Protocol):
@@ -122,12 +116,10 @@ class Backend(Protocol):
         *,
         index: int,
         key: str,
-        session_id: str | None,
-        cold: bool,
         options: EvalOptions,
         on_log: Callable[[str], None],
     ) -> None:
-        """Run one step remotely under ``session_id`` (``None``: no session)."""
+        """Run one step remotely with the request's ``remote`` arguments."""
         ...
 
 
@@ -160,30 +152,17 @@ class ReadieBackend:
         *,
         index: int,
         key: str,
-        session_id: str | None,
-        cold: bool,
         options: EvalOptions,
         on_log: Callable[[str], None],
     ) -> None:
-        """Run one step through the client, with every option the caller passed."""
-        budgets = build_budgets(
-            memory=options.memory,
-            max_memory=options.max_memory,
-            gpu_memory=options.gpu_memory,
-            max_gpu_memory=options.max_gpu_memory,
-        )
+        """Run one step through ``readie.remote``, with the arguments as the caller sent them."""
+        arguments = dict(options.remote)
+        if arguments.get("session") is not None:
+            # The request carries a session id; ``remote`` takes a ``Session``.
+            arguments["session"] = Session(arguments["session"])
         with userfn.loaded_step(source, key, index, self._workdir) as main:
             async with Client(self._settings, log_sink=on_log) as client:
-                remote_main = RemoteFunction(
-                    main,
-                    client=client,
-                    budgets=budgets,
-                    gpu=options.gpu,
-                    packages=options.packages,
-                    timeout=options.timeout_s,
-                    session=Session(session_id) if session_id is not None else None,
-                    disable_optimized_execution=cold,
-                )
+                remote_main = remote(client=client, **arguments)(main)
                 await remote_main.aio()
 
 
@@ -262,80 +241,29 @@ class Runner:
             )
         )
 
-    async def run_eval(
-        self, steps: list[str], options: EvalOptions, *, session: str | None = None
-    ) -> EvalOutcome:
-        """Run ``steps`` in both lanes at once, each lane's steps one after another.
+    async def run_eval(self, steps: list[str], options: EvalOptions) -> EvalResult:
+        """Run ``steps`` one after another, once, as the request's options say.
 
-        More than one step, or an explicit ``session``, runs each lane under its own
-        session id (``<id>-optimized`` and ``<id>-cold``) so the steps share one
-        container and one interpreter. A single step with no session id is a plain
-        call whose container is released at once. The lanes never share a session,
-        because an optimized session cannot be asked to start cold.
+        Whether the steps share a container is the caller's choice (a ``session``
+        in ``options.remote``), as is whether they restore a checkpoint.
         """
-        base = session or (uuid.uuid4().hex if len(steps) > 1 else None)
-        run_key = uuid.uuid4().hex
-        lanes = await asyncio.gather(
-            *(
-                self._eval_lane(
-                    lane,
-                    steps,
-                    options,
-                    session_id=f"{base}-{lane.value}" if base else None,
-                    key=f"{run_key}-{lane.value}",
-                )
-                for lane in Lane
-            )
-        )
-        return EvalOutcome(base, {result.lane: result for result in lanes})
-
-    async def _eval_lane(
-        self,
-        lane: Lane,
-        steps: list[str],
-        options: EvalOptions,
-        *,
-        session_id: str | None,
-        key: str,
-    ) -> LaneResult:
+        key = uuid.uuid4().hex
         results: list[StepResult] = []
-        spent = 0.0
         for index, source in enumerate(steps):
             if results and not results[-1].ok and not options.continue_on_error:
                 results.append(
                     StepResult(index, False, 0.0, "skipped after an earlier step failed", "Skipped")
                 )
                 continue
-            step_options = options
-            if options.total_timeout_s is not None:
-                left = options.total_timeout_s - spent
-                if left <= 0:
-                    results.append(
-                        StepResult(
-                            index,
-                            False,
-                            0.0,
-                            "the time budget for the item was used up",
-                            "OutOfTime",
-                        )
-                    )
-                    continue
-                step_options = replace(options, timeout_s=min(options.timeout_s, left))
-            result = await self._eval_step(
-                lane, source, index, options=step_options, session_id=session_id, key=key
-            )
-            spent += result.duration_s
-            results.append(result)
-        return LaneResult(lane, session_id, tuple(results))
+            results.append(await self._eval_step(source, index, options=options, key=key))
+        return EvalResult(options.remote.get("session"), tuple(results))
 
     async def _eval_step(
         self,
-        lane: Lane,
         source: str,
         index: int,
         *,
         options: EvalOptions,
-        session_id: str | None,
         key: str,
     ) -> StepResult:
         syntax = userfn.check_step(source)
@@ -364,8 +292,6 @@ class Runner:
                 source,
                 index=index,
                 key=key,
-                session_id=session_id,
-                cold=lane is Lane.COLD,
                 options=options,
                 on_log=on_log,
             )

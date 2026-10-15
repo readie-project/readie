@@ -1,72 +1,50 @@
-import asyncio
+import inspect
 
 import httpx
 import pytest
+from readie import remote
 
-from readie_playground.app import create_app
+from readie_playground.app import EvalRequest, create_app
 from readie_playground.config import PlaygroundSettings
 from readie_playground.runner import Runner
 from tests.fakes import FakeBackend
-
-TOKEN = "s3cret"  # noqa: S105 - a test value
-AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
 def make(
     backend: FakeBackend | None = None, **overrides: object
 ) -> tuple[httpx.AsyncClient, FakeBackend]:
     backend = backend or FakeBackend()
-    settings = PlaygroundSettings(**{"eval_token": TOKEN, **overrides})  # type: ignore[arg-type]
+    settings = PlaygroundSettings(**overrides)  # type: ignore[arg-type]
     app = create_app(settings, Runner(backend, settings.max_output_chars))
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t"), backend
 
 
-async def post(
-    client: httpx.AsyncClient, body: dict[str, object], headers: dict[str, str] = AUTH
-) -> httpx.Response:
-    return await client.post("/eval/run", json=body, headers=headers)
+async def post(client: httpx.AsyncClient, body: dict[str, object]) -> httpx.Response:
+    return await client.post("/eval/run", json=body)
 
 
-async def test_the_route_does_not_exist_without_a_configured_token() -> None:
-    client, _ = make(eval_token="")
-    async with client:
-        res = await post(client, {"steps": ["a = 1"]})
-    assert res.status_code == 404
-
-
-@pytest.mark.parametrize(
-    "headers",
-    [
-        {},
-        {"Authorization": "Bearer wrong"},
-        {"Authorization": f"Basic {TOKEN}"},
-        {"Authorization": TOKEN},
-    ],
-)
-async def test_a_missing_or_wrong_token_is_refused_before_anything_runs(
-    headers: dict[str, str],
-) -> None:
+async def test_the_route_is_served_without_a_token() -> None:
+    # There is no token: nginx is what keeps the route off the public path (see nginx/).
     client, backend = make()
     async with client:
-        res = await post(client, {"steps": ["a = 1"]}, headers=headers)
-    assert res.status_code == 401
-    assert backend.steps == []
+        res = await post(client, {"steps": ["a = 1"]})
+    assert res.status_code == 200
+    assert len(backend.steps) == 1
 
 
-async def test_a_run_returns_both_lanes_with_a_duration_per_step() -> None:
+async def test_a_run_returns_one_result_with_a_duration_per_step() -> None:
     client, _ = make()
     async with client:
         res = await post(client, {"steps": ["a = 1", "b = 2"]})
 
     body = res.json()
     assert res.status_code == 200
-    assert set(body["lanes"]) == {"optimized", "cold"}
-    for lane in body["lanes"].values():
-        assert lane["ok"] is True
-        assert [s["index"] for s in lane["steps"]] == [0, 1]
-        assert all(isinstance(s["duration_s"], float) for s in lane["steps"])
-        assert lane["total_s"] >= 0
-        assert lane["session_id"].startswith(body["session_id"])
+    assert "lanes" not in body
+    assert body["ok"] is True
+    assert [s["index"] for s in body["steps"]] == [0, 1]
+    assert all(isinstance(s["duration_s"], float) for s in body["steps"])
+    assert body["total_s"] >= 0
+    assert body["session_id"] is None
 
 
 async def test_a_failure_is_reported_in_the_response_not_as_an_http_error() -> None:
@@ -74,53 +52,57 @@ async def test_a_failure_is_reported_in_the_response_not_as_an_http_error() -> N
     async with client:
         res = await post(client, {"steps": ["a = 1", "b = 2"]})
 
-    steps = res.json()["lanes"]["cold"]["steps"]
+    steps = res.json()["steps"]
     assert res.status_code == 200
     assert [s["ok"] for s in steps] == [False, True]  # the next step ran
     assert steps[0]["error_type"] == "RemoteExecutionError"
 
 
-async def test_the_readie_options_are_passed_through_to_every_step() -> None:
+async def test_every_remote_argument_is_passed_through_untouched() -> None:
+    # Spelled as @remote spells them. Pinned so a new @remote argument is not
+    # silently dropped here (see AGENTS.md).
+    sent = {
+        "timeout": 300,
+        "session": "abc",
+        "gpu": True,
+        "memory": "8Gi",
+        "max_memory": "16Gi",
+        "gpu_memory": "4Gi",
+        "max_gpu_memory": "8Gi",
+        "packages": ["lightgbm==4.*", "numpy"],
+        "disable_optimized_execution": False,
+        "checkpoint_id": "checkpoint_3",
+    }
     client, backend = make()
     async with client:
-        await post(
-            client,
-            {
-                "steps": ["a = 1", "b = 2"],
-                "memory": "8Gi",
-                "timeout_s": 300,
-                "total_timeout_s": 600,
-                "gpu": True,
-                "gpu_memory": "4Gi",
-                "packages": ["lightgbm==4.*", "numpy"],
-                "continue_on_error": False,
-            },
-        )
-    options = {call.options for call in backend.steps}
-    assert len(options) == 1
-    (only,) = options
-    assert (only.memory, only.max_memory, only.timeout_s, only.gpu) == ("8Gi", "8Gi", 300.0, True)
-    assert only.gpu_memory == "4Gi"
-    assert only.total_timeout_s == 600.0
-    assert only.packages == ("lightgbm==4.*", "numpy")
-    assert only.continue_on_error is False
+        res = await post(client, {"steps": ["a = 1", "b = 2"], "continue_on_error": False, **sent})
+
+    assert res.json()["session_id"] == "abc"
+    options = backend.steps[0].options
+    assert all(call.options == options for call in backend.steps)
+    assert dict(options.remote) == sent
+    assert options.continue_on_error is False
 
 
-async def test_without_options_the_playgrounds_own_defaults_apply() -> None:
+async def test_the_route_accepts_exactly_the_arguments_of_remote() -> None:
+    # Every parameter of @remote (except the process-local `client`) is a field.
+    remote_args = set(inspect.signature(remote).parameters) - {"func", "client"}
+    route_args = set(EvalRequest.model_fields) - {"steps", "continue_on_error"}
+    assert route_args == remote_args
+
+
+async def test_without_arguments_nothing_is_decided_on_the_callers_behalf() -> None:
     client, backend = make(timeout_s=45.0)
     async with client:
         await post(client, {"steps": ["a = 1"]})
-    (options,) = {call.options for call in backend.steps}
-    assert (options.memory, options.max_memory, options.timeout_s) == ("1Gi", "1Gi", 45.0)
+
+    (call,) = backend.steps
+    options = call.options
+    # remote's own defaults apply: no memory, no timeout, no session.
+    assert options.remote["memory"] is None
+    assert options.remote["timeout"] is None
+    assert options.remote["session"] is None
     assert options.continue_on_error is True
-
-
-async def test_an_explicit_session_id_names_both_lanes_sessions() -> None:
-    client, backend = make()
-    async with client:
-        res = await post(client, {"steps": ["a = 1"], "session": "abc"})
-    assert res.json()["session_id"] == "abc"
-    assert {c.session_id for c in backend.steps} == {"abc-optimized", "abc-cold"}
 
 
 @pytest.mark.parametrize(
@@ -128,14 +110,14 @@ async def test_an_explicit_session_id_names_both_lanes_sessions() -> None:
     [
         ({"steps": []}, 422),
         ({"steps": ["  "]}, 422),
-        ({"steps": ["a = 1"], "timeout_s": 0}, 422),
-        ({"steps": ["a = 1"], "timeout_s": 99999}, 422),
-        ({"steps": ["a = 1"], "total_timeout_s": 0}, 422),
-        ({"steps": ["a = 1"], "total_timeout_s": 99999}, 422),
         ({"steps": ["a = 1"], "memory": "lots"}, 422),
-        ({"steps": ["a = 1"], "memory": "128Gi"}, 422),
         ({"steps": ["a = 1"], "memory": "2Gi", "max_memory": "1Gi"}, 422),
         ({"steps": ["a = 1"], "packages": ["not a requirement!!"]}, 422),
+        # @remote rejects this pair itself, and the route does not second-guess it.
+        ({"steps": ["a = 1"], "checkpoint_id": "c", "disable_optimized_execution": True}, 422),
+        # Fields that are no longer part of the route are refused, not ignored.
+        ({"steps": ["a = 1"], "timeout_s": 30}, 422),
+        ({"steps": ["a = 1"], "total_timeout_s": 30}, 422),
         ({"steps": "a = 1"}, 422),
         ({}, 422),
     ],
@@ -148,6 +130,17 @@ async def test_bad_requests_are_rejected_before_anything_runs(
         res = await post(client, body)
     assert res.status_code == status
     assert backend.steps == []
+
+
+async def test_large_values_are_not_capped_by_the_route() -> None:
+    client, backend = make()
+    async with client:
+        res = await post(client, {"steps": ["a = 1"], "memory": "512Gi", "timeout": 99999})
+
+    assert res.status_code == 200
+    (call,) = backend.steps
+    options = call.options
+    assert (options.remote["memory"], options.remote["timeout"]) == ("512Gi", 99999.0)
 
 
 async def test_too_many_steps_and_too_much_code_are_refused() -> None:
@@ -165,19 +158,6 @@ async def test_the_limits_are_larger_than_the_public_playgrounds() -> None:
     async with client:
         res = await post(client, {"steps": ["x = 1\n" * 10_000]})
     assert res.status_code == 200
-
-
-async def test_a_second_evaluation_while_one_runs_is_refused_not_queued() -> None:
-    client, backend = make(FakeBackend(hang=True))
-    async with client:
-        first = asyncio.create_task(post(client, {"steps": ["a = 1"]}))
-        await asyncio.sleep(0.05)
-        second = await post(client, {"steps": ["a = 1"]})
-        first.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await first
-    assert second.status_code == 503
-    assert backend.cancelled >= 1
 
 
 async def test_the_public_run_route_is_unchanged_and_needs_no_token() -> None:
