@@ -17,8 +17,8 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // Bundle file names.

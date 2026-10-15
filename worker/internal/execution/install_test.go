@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 func withPackages(specs ...string) execution.Request {

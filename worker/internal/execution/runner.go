@@ -10,10 +10,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/registry"
 )
 
 // RunnerConfig tunes execution behaviour.

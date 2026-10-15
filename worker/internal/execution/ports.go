@@ -12,9 +12,9 @@ import (
 	"errors"
 	"io"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // Sentinel errors returned by a Runner.

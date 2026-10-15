@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/illinoisdata/readie/worker/internal/network"
+	"github.com/readie-project/readie/worker/internal/network"
 )
 
 // Provisioner is an in-memory network.Provisioner, safe for concurrent use.

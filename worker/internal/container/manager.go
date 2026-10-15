@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/clock"
-	"github.com/illinoisdata/readie/worker/internal/config"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/network"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/clock"
+	"github.com/readie-project/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/network"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // Sentinel errors returned by a Manager.

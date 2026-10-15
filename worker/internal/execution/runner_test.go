@@ -15,15 +15,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
-	"github.com/illinoisdata/readie/worker/internal/testutil"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakesink"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/testutil"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeregistry"
+	"github.com/readie-project/readie/worker/internal/testutil/fakesink"
 )
 
 // ---------------------------------------------------------------------------

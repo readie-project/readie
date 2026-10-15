@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // event is one `runsc events` document.

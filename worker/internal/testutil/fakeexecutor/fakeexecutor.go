@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/executor"
 )
 
 // Mode selects how the fake behaves once connected.

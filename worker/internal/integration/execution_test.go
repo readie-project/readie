@@ -15,12 +15,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/config"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeexecutor"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakesandbox"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeexecutor"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeregistry"
+	"github.com/readie-project/readie/worker/internal/testutil/fakesandbox"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 const cpuAlloc = int64(512 << 20)

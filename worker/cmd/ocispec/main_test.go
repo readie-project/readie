@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/runsc"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/runsc"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // This is the test the whole helper exists for. The offline pipeline captures

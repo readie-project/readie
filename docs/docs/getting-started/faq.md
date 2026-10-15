@@ -62,4 +62,4 @@ User code runs inside a [gVisor](/docs/concepts/glossary) sandbox with a shared 
 
 ### Where do I report a bug or ask a question?
 
-Open an issue on [GitHub](https://github.com/illinoisdata/readie/issues/new/choose) and use the bug report template. For anything exploitable, use the private route described in [Security](/docs/architecture/security).
+Open an issue on [GitHub](https://github.com/readie-project/readie/issues/new/choose) and use the bug report template. For anything exploitable, use the private route described in [Security](/docs/architecture/security).

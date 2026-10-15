@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/clock"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeexecutor"
+	"github.com/readie-project/readie/worker/internal/clock"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeexecutor"
 )
 
 func newDialer(path string, retry executor.RetryPolicy) *executor.UnixDialer {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/container"
 )
 
 // ErrPackageInstall indicates a request's packages could not be installed in

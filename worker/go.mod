@@ -1,4 +1,4 @@
-module github.com/illinoisdata/readie/worker
+module github.com/readie-project/readie/worker
 
 go 1.25.0
 

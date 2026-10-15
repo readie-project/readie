@@ -12,12 +12,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // ErrInvalidRequest indicates the caller sent something unusable.

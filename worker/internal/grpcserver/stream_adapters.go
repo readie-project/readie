@@ -6,10 +6,10 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/registry"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // executionStream is the bidirectional stream this service serves.

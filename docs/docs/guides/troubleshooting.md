@@ -85,4 +85,4 @@ The message `RemoteTimeoutError: DEADLINE_EXCEEDED from ...: the execution timed
 
 ## Get help
 
-If the problem remains, see the [FAQ](/docs/getting-started/faq). Alternatively, [open an issue](https://github.com/illinoisdata/readie/issues/new/choose) that includes the full error message and the Python version.
+If the problem remains, see the [FAQ](/docs/getting-started/faq). Alternatively, [open an issue](https://github.com/readie-project/readie/issues/new/choose) that includes the full error message and the Python version.

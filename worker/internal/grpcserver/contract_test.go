@@ -10,12 +10,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // The protos deliberately declare no package, so the full method name is

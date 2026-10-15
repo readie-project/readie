@@ -10,7 +10,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // ociVersion is the runtime-spec version written into every bundle.

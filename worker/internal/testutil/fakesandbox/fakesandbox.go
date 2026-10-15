@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // State is a fake sandbox's lifecycle position.

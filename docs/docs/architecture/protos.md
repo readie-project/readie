@@ -6,7 +6,7 @@ description: The gRPC services and messages that connect the client, router, and
 
 
 :::note[Generated page]
-This page is generated from the comments in [`protos/`](https://github.com/illinoisdata/readie/tree/main/protos). To change it, edit the `.proto` files and run `make docs-protos`.
+This page is generated from the comments in [`protos/`](https://github.com/readie-project/readie/tree/main/protos). To change it, edit the `.proto` files and run `make docs-protos`.
 :::
 
 The protos declare no `package`, so service names are bare on the wire, for example `/ProxyService/RequestExecution`. Changes are additive only: new fields use new numbers, and numbers are never reused or renumbered. See [Changing protos](/docs/contributing/changing-protos).
