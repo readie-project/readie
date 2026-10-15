@@ -30,16 +30,16 @@ def _metadata() -> Metadata:
                 disk_size_mb=500.0,
                 memory_size_mb=500.0,
                 import_time=2.0,
-                resource_type=ResourceType.MODEL,
+                resource_type=ResourceType.HF_MODEL,
             ),
         }
     )
 
 
 def test_items_are_keyed_by_kind() -> None:
-    assert item_key("pandas", ResourceType.PACKAGE) == "pandas"
-    assert item_key("gpt2", ResourceType.MODEL) == "model:gpt2"
-    assert item_key("squad", ResourceType.DATASET) == "dataset:squad"
+    assert item_key("pandas", ResourceType.PACKAGE) == "package:pandas"
+    assert item_key("gpt2", ResourceType.HF_MODEL) == "hf_model:gpt2"
+    assert item_key("squad", ResourceType.KAGGLE_DATASET) == "kaggle_dataset:squad"
 
 
 def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
@@ -56,20 +56,20 @@ def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
     assert doc["alpha"] == 0.005
 
     # Every measured item, keyed the way a request names it.
-    assert doc["items"]["pandas"] == {
+    assert doc["items"]["package:pandas"] == {
         "size_mb": 30.0,
         "load_time": 0.25,
         "resource_type": "package",
     }
-    assert doc["items"]["model:gpt2"]["resource_type"] == "model"
+    assert doc["items"]["hf_model:gpt2"]["resource_type"] == "hf_model"
 
     ckpt = doc["checkpoints"][0]
     assert ckpt["id"] == "checkpoint_1"
-    assert ckpt["items"] == ["model:gpt2", "numpy", "pandas"], "sorted, kind-prefixed"
+    assert ckpt["items"] == ["hf_model:gpt2", "package:numpy", "package:pandas"]
     # No dependencies measured here, so canonical (plan.imports) and the
     # closure (items) coincide -- see the trimmed-plan test below for a case
     # where they differ.
-    assert ckpt["canonical"] == ["model:gpt2", "numpy", "pandas"]
+    assert ckpt["canonical"] == ["hf_model:gpt2", "package:numpy", "package:pandas"]
     # Raw total size; the router applies its own alpha. 30 + 20 + 500.
     assert ckpt["size_mb"] == pytest.approx(550.0)
 
@@ -100,10 +100,10 @@ def test_catalogue_carries_a_packages_resolved_dependencies() -> None:
         entries=[("checkpoint_1", CheckpointPlan(imports=("pandas", "numpy")))],
     )
 
-    assert doc["items"]["pandas"]["dependencies"] == ["numpy"]
+    assert doc["items"]["package:pandas"]["dependencies"] == ["package:numpy"]
     # A package with nothing measured to depend on carries no key at all,
     # rather than an empty list every reader has to handle.
-    assert "dependencies" not in doc["items"]["numpy"]
+    assert "dependencies" not in doc["items"]["package:numpy"]
 
 
 def test_catalogue_carries_the_closure_and_the_canonical_list_separately() -> None:
@@ -143,8 +143,8 @@ def test_catalogue_carries_the_closure_and_the_canonical_list_separately() -> No
     )
 
     ckpt = doc["checkpoints"][0]
-    assert ckpt["items"] == ["numpy", "pandas"]
-    assert ckpt["canonical"] == ["pandas"]
+    assert ckpt["items"] == ["package:numpy", "package:pandas"]
+    assert ckpt["canonical"] == ["package:pandas"]
     # size_mb prices the full closure, not just the canonical list.
     assert ckpt["size_mb"] == pytest.approx(50.0)
 

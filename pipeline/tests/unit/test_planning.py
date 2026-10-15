@@ -93,7 +93,7 @@ def test_it_does_not_select_datasets_before_capture_support_exists():
                 disk_size_mb=12,
                 memory_size_mb=24,
                 import_time=1.5,
-                resource_type=ResourceType.DATASET,
+                resource_type=ResourceType.KAGGLE_DATASET,
             )
         }
     )

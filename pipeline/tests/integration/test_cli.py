@@ -97,12 +97,12 @@ def test_analyze_writes_dataset_measurements_with_package_metadata(tmp_path: Pat
     def fake_measure_datasets(_slugs, *, on_progress):
         del on_progress
         return {
-            "owner/data": PackageFacts(
+            "kaggle_dataset:owner/data": PackageFacts(
                 base_import="owner/data",
                 disk_size_mb=20,
                 memory_size_mb=30,
                 import_time=1.5,
-                resource_type=ResourceType.DATASET,
+                resource_type=ResourceType.KAGGLE_DATASET,
             )
         }
 
@@ -117,9 +117,9 @@ def test_analyze_writes_dataset_measurements_with_package_metadata(tmp_path: Pat
 
     written = json.loads((data / "metadata" / "cpu.json").read_text())
     packages = written["resources"]
-    assert packages["pandas"]["resource_type"] == "package"
-    assert packages["owner/data"]["resource_type"] == "dataset"
-    assert packages["owner/data"]["memory_size_mb"] == 30
+    assert packages["package:pandas"]["resource_type"] == "package"
+    assert packages["kaggle_dataset:owner/data"]["resource_type"] == "kaggle_dataset"
+    assert packages["kaggle_dataset:owner/data"]["memory_size_mb"] == 30
 
 
 def test_the_fixed_planner_is_selectable(workspace: Path):

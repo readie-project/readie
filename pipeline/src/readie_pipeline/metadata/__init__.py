@@ -1,1 +1,1 @@
-"""Measured package facts."""
+"""Measured resource facts and resource analyzers."""

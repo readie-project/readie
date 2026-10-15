@@ -1,162 +1,76 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
-from kagglehub.exceptions import (  # type: ignore[import-untyped]
-    DataCorruptionError,
-    KaggleApiHTTPError,
-)
+import pandas as pd  # type: ignore[import-untyped]
+import pytest
 
 from readie_pipeline.metadata.datasets import (
-    DatasetMeasurement,
     DatasetReferenceKind,
     dataset_handle,
     dataset_reference_kind,
+    dependencies,
     measure_dataset,
     measure_datasets,
 )
-from readie_pipeline.metadata.models import PackageFacts, ResourceType
+from readie_pipeline.metadata.models import ResourceType
 
 
-class FakeFrame:
-    def __init__(self, memory_bytes: int) -> None:
-        self._memory_bytes = memory_bytes
-
-    def memory_usage(self, *, index: bool, deep: bool) -> FakeMemoryUsage:
-        assert index
-        assert deep
-        return FakeMemoryUsage(self._memory_bytes)
-
-
-class FakeMemoryUsage:
-    def __init__(self, value: int) -> None:
-        self._value = value
-
-    def sum(self) -> int:
-        return self._value
-
-
-class FakeLoader:
+class FakeDownloader:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.sizes: dict[str, int] = {}
-        self.loaded: list[str] = []
-        self.load_calls: list[tuple[str, str | None]] = []
-        self.adapters: list[object] = []
         self.handles: list[str] = []
-        self.slugs: list[str] = []
 
     def dataset_download(
         self,
-        slug: str,
+        handle: str,
         path: str | None = None,
         *,
         force_download: bool | None = False,
     ) -> Path:
         del path, force_download
-        self.slugs.append(slug)
-        return self.path
-
-    def dataset_load(
-        self,
-        adapter: object,
-        handle: str,
-        path: str,
-        *,
-        sql_query: str | None = None,
-    ) -> FakeFrame:
-        self.adapters.append(adapter)
         self.handles.append(handle)
-        self.load_calls.append((path, sql_query))
-        self.loaded.append(path)
-        if Path(path).suffix.lower() not in {".csv", ".sqlite"}:
-            message = f"unsupported dataset file type: {path}"
-            raise ValueError(message)
-        return FakeFrame(self.sizes[Path(path).name])
-
-
-class FailingLoader:
-    def dataset_download(
-        self,
-        slug: str,
-        path: str | None = None,
-        *,
-        force_download: bool | None = False,
-    ) -> Path:
-        del slug, path, force_download
-        raise RuntimeError("cannot download owner/data")
-
-    def dataset_load(self, *args: object, **kwargs: object) -> FakeFrame:
-        raise AssertionError("dataset_load should not be called")
-
-
-class FailingLoad:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-
-    def dataset_download(
-        self,
-        slug: str,
-        path: str | None = None,
-        *,
-        force_download: bool | None = False,
-    ) -> Path:
-        del slug, path, force_download
         return self.path
-
-    def dataset_load(self, *args: object, **kwargs: object) -> FakeFrame:
-        msg = "cannot load data.csv"
-        raise RuntimeError(msg)
-
-
-class FailingKaggleLoader:
-    def __init__(self, error: Exception) -> None:
-        self.error = error
-
-    def dataset_download(
-        self,
-        slug: str,
-        path: str | None = None,
-        *,
-        force_download: bool | None = False,
-    ) -> Path:
-        del slug, path, force_download
-        raise self.error
-
-    def dataset_load(self, *args: object, **kwargs: object) -> FakeFrame:
-        raise AssertionError("dataset_load should not be called")
-
-
-class RetryingKaggleLoader(FakeLoader):
-    def __init__(self, path: Path) -> None:
-        super().__init__(path)
-        self.force_downloads: list[tuple[str, str | None]] = []
-        self._failed = False
-
-    def dataset_download(
-        self,
-        slug: str,
-        path: str | None = None,
-        *,
-        force_download: bool | None = False,
-    ) -> Path:
-        if force_download:
-            self.force_downloads.append((slug, path))
-        return super().dataset_download(slug)
 
     def dataset_load(
         self,
-        adapter: object,
-        handle: str,
+        _adapter: object,
+        _handle: str,
         path: str,
         *,
         sql_query: str | None = None,
-    ) -> FakeFrame:
-        if not self._failed:
-            self._failed = True
-            raise DataCorruptionError("checksum mismatch")
-        return super().dataset_load(adapter, handle, path, sql_query=sql_query)
+    ) -> object:
+        del sql_query
+        file_path = self.path / path
+        if file_path.suffix == ".csv":
+            return pd.read_csv(file_path)
+        if file_path.suffix == ".json":
+            return pd.read_json(file_path)
+        msg = f"unsupported test file: {path}"
+        raise ValueError(msg)
+
+
+class FailingDownloader:
+    def dataset_download(
+        self,
+        handle: str,
+        path: str | None = None,
+        *,
+        force_download: bool | None = False,
+    ) -> Path:
+        del handle, path, force_download
+        raise RuntimeError("download failed")
+
+    def dataset_load(
+        self,
+        _adapter: object,
+        _handle: str,
+        _path: str,
+        *,
+        sql_query: str | None = None,
+    ) -> object:
+        del sql_query
+        raise AssertionError("dataset_load must not run after download failure")
 
 
 def test_dataset_handle_extracts_a_kaggle_dataset_url() -> None:
@@ -164,13 +78,6 @@ def test_dataset_handle_extracts_a_kaggle_dataset_url() -> None:
     assert dataset_handle("https://www.kaggle.com/datasets/owner/name/data") == "owner/name"
     assert dataset_handle("https://www.kaggle.com/owner/name") == "owner/name"
     assert dataset_handle("owner/name") == "owner/name"
-
-
-def test_dataset_handle_leaves_non_dataset_references_unchanged() -> None:
-    value = "https://www.kaggle.com/c/competition/data"
-    assert dataset_handle(value) == value
-    ownerless = "https://www.kaggle.com/datasets/book-recommendation-dataset"
-    assert dataset_handle(ownerless) == ownerless
 
 
 def test_dataset_reference_kind_distinguishes_supported_and_unsupported_entries() -> None:
@@ -189,202 +96,137 @@ def test_dataset_reference_kind_distinguishes_supported_and_unsupported_entries(
     )
 
 
-def test_measure_dataset_rejects_non_dataset_references_before_download() -> None:
-    measurement = measure_dataset("https://www.kaggle.com/c/digit-recognizer/data")
-
-    assert not measurement.facts.usable
-    assert "competition reference" in measurement.facts.error
+def test_dataset_dependencies_are_static() -> None:
+    assert dependencies() == ("package:pandas", "package:kagglehub")
 
 
-def test_measure_dataset_reports_malformed_dataset_references() -> None:
-    measurement = measure_dataset("https://www.kaggle.com/datasets/name-only")
+def test_measure_dataset_uses_kagglehub_pandas_adapter(tmp_path: Path) -> None:
+    path = tmp_path / "data.csv"
+    path.write_text("name,value\niris,1\n")
 
-    assert not measurement.facts.usable
-    assert "malformed Kaggle dataset reference" in measurement.facts.error
+    measurement = measure_dataset("owner/data", downloader=FakeDownloader(tmp_path))
+
+    assert measurement.values["data.csv"].to_dict("records") == [{"name": "iris", "value": 1}]
 
 
-def test_measure_dataset_aggregates_all_files_serially(tmp_path: Path) -> None:
-    (tmp_path / "train.csv").write_bytes(b"a" * 3)
-    (tmp_path / "test.csv").write_bytes(b"b" * 5)
-    loader = FakeLoader(tmp_path)
-    loader.sizes = {"train.csv": 10, "test.csv": 20}
-    ticks = iter((10.0, 17.5))
+def test_measure_dataset_keeps_unsupported_file_types_as_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "model.bin"
+    path.write_bytes(b"\x00\x01\x02")
+
+    measurement = measure_dataset("owner/data", downloader=FakeDownloader(tmp_path))
+
+    assert measurement.values["model.bin"] == b"\x00\x01\x02"
+
+
+def test_measure_dataset_loads_every_file_in_sorted_order(tmp_path: Path) -> None:
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "z.csv").write_text("value\n2\n")
+    (tmp_path / "nested" / "a.json").write_text('[{"value": 1}]')
+    (tmp_path / "model.bin").write_bytes(b"\x00\x01")
+    downloader = FakeDownloader(tmp_path)
+    ticks = iter((10.0, 12.5))
 
     measurement = measure_dataset(
         "owner/data",
-        downloader=loader,
+        downloader=downloader,
         clock=lambda: next(ticks),
     )
 
-    assert loader.slugs == ["owner/data"]
-    assert loader.loaded == ["test.csv", "train.csv"]
-    assert loader.handles == ["owner/data", "owner/data"]
-    assert all(str(adapter).endswith("PANDAS") for adapter in loader.adapters)
-    assert loader.load_calls == [("test.csv", None), ("train.csv", None)]
-    assert measurement.facts.resource_type == ResourceType.DATASET
-    assert measurement.facts.disk_size_mb == 8 / (1024 * 1024)
-    assert measurement.facts.memory_size_mb == 30 / (1024 * 1024)
-    assert measurement.facts.import_time == 7.5
-    assert set(measurement.frames) == {"train.csv", "test.csv"}
-
-
-def test_measure_dataset_reports_unsupported_files(tmp_path: Path) -> None:
-    (tmp_path / "README.txt").write_text("not tabular data")
-    measurement = measure_dataset(
-        "owner/data",
-        downloader=FakeLoader(tmp_path),
-    )
-
-    assert not measurement.facts.usable
-    assert "unsupported dataset file type" in measurement.facts.error
-    assert measurement.frames == {}
-
-
-def test_measure_dataset_keeps_supported_files_when_another_file_is_unsupported(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "data.csv").write_bytes(b"valid")
-    (tmp_path / "README.txt").write_text("not tabular data")
-    loader = FakeLoader(tmp_path)
-    loader.sizes = {"data.csv": 10}
-
-    measurement = measure_dataset("owner/data", downloader=loader)
-
-    assert measurement.frames.keys() == {"data.csv"}
-    assert not measurement.facts.usable
-    assert "README.txt" in measurement.facts.error
-    assert "unsupported dataset file type" in measurement.facts.error
-
-
-def test_measure_dataset_reports_an_unavailable_dataset() -> None:
-    measurement = measure_dataset(
-        "owner/data",
-        downloader=FailingLoader(),
-    )
-
-    assert not measurement.facts.usable
-    assert "cannot download owner/data" in measurement.facts.error
-
-
-def test_measure_dataset_reports_a_missing_download_path(tmp_path: Path) -> None:
-    missing = tmp_path / "missing"
-    measurement = measure_dataset("owner/data", downloader=FakeLoader(missing))
-
-    assert not measurement.facts.usable
-    assert "no file or directory" in measurement.facts.error
-
-
-def test_measure_dataset_reports_a_pandas_loading_error(tmp_path: Path) -> None:
-    (tmp_path / "data.csv").write_bytes(b"not a valid frame")
-    measurement = measure_dataset("owner/data", downloader=FailingLoad(tmp_path))
-
-    assert not measurement.facts.usable
-    assert "cannot load data.csv" in measurement.facts.error
-
-
-def test_measure_dataset_loads_each_sqlite_table_as_a_dataframe(tmp_path: Path) -> None:
-    database = tmp_path / "database.sqlite"
-    connection = sqlite3.connect(database)
-    try:
-        connection.execute("create table Iris (name text, value integer)")
-        connection.executemany("insert into Iris values (?, ?)", [("a", 1), ("b", 2)])
-        connection.commit()
-    finally:
-        connection.close()
-
-    loader = FakeLoader(database)
-    loader.sizes = {"database.sqlite": 1}
-    measurement = measure_dataset("owner/data", downloader=loader)
-
-    assert measurement.facts.usable
-    assert list(measurement.frames) == ["database.sqlite::Iris"]
+    assert downloader.handles == ["owner/data"]
+    assert list(measurement.values) == ["model.bin", "nested/a.json", "z.csv"]
+    assert isinstance(measurement.values["nested/a.json"], pd.DataFrame)
+    assert measurement.values["model.bin"] == b"\x00\x01"
+    assert measurement.facts.resource_type == ResourceType.KAGGLE_DATASET
     assert measurement.facts.disk_size_mb > 0
     assert measurement.facts.memory_size_mb > 0
-    assert measurement.facts.import_time >= 0
-    assert loader.loaded == ["database.sqlite"]
-    assert loader.load_calls == [("database.sqlite", 'SELECT * FROM "Iris"')]
+    assert measurement.facts.import_time == 2.5
+    assert measurement.facts.usable
+
+
+def test_unsupported_files_are_retained_without_dataset_specific_parsing(tmp_path: Path) -> None:
+    path = tmp_path / "model.bin"
+    path.write_bytes(b"binary contents")
+
+    measurement = measure_dataset("owner/data", downloader=FakeDownloader(tmp_path))
+
+    assert measurement.values["model.bin"] == b"binary contents"
+    assert measurement.facts.usable
+
+
+def test_one_invalid_file_does_not_discard_other_files(tmp_path: Path) -> None:
+    (tmp_path / "valid.csv").write_text("value\n1\n")
+    (tmp_path / "invalid.json").write_text("{not json")
+
+    measurement = measure_dataset("owner/data", downloader=FakeDownloader(tmp_path))
+
+    assert set(measurement.values) == {"valid.csv"}
+    assert measurement.facts.error == "resource could not be loaded"
+    assert not measurement.facts.usable
+
+
+def test_one_file_stat_failure_does_not_discard_other_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    valid = tmp_path / "valid.csv"
+    failed = tmp_path / "failed.csv"
+    valid.write_text("value\n1\n")
+    failed.write_text("value\n2\n")
+    monkeypatch.setattr(
+        "readie_pipeline.metadata.datasets._files",
+        lambda _downloaded: (tmp_path, [failed, valid]),
+    )
+    original_stat = Path.stat
+
+    def stat(path: Path, *, follow_symlinks: bool = True):
+        if path == failed:
+            raise OSError("stat failed")
+        return original_stat(path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    measurement = measure_dataset("owner/data", downloader=FakeDownloader(tmp_path))
+
+    assert set(measurement.values) == {"valid.csv"}
+    assert measurement.facts.error == "resource could not be loaded"
+
+
+def test_measure_dataset_reports_generic_download_failure() -> None:
+    measurement = measure_dataset("owner/data", downloader=FailingDownloader())
+
+    assert measurement.facts.error == "resource could not be loaded"
+    assert not measurement.facts.usable
+
+
+def test_invalid_reference_is_generic_and_does_not_download() -> None:
+    measurement = measure_dataset("https://www.kaggle.com/c/competition/data")
+
+    assert measurement.facts.error == "resource could not be loaded"
+    assert not measurement.facts.usable
 
 
 def test_measure_datasets_deduplicates_and_reports_progress(tmp_path: Path) -> None:
-    (tmp_path / "data.csv").write_bytes(b"x")
+    (tmp_path / "data.csv").write_text("value\n1\n")
     seen: list[str] = []
+    downloader = FakeDownloader(tmp_path)
 
-    loader = FakeLoader(tmp_path)
-    loader.sizes = {"data.csv": 1}
     facts = measure_datasets(
         ["owner/data", "owner/data"],
-        downloader=loader,
+        downloader=downloader,
         on_progress=lambda name, _facts: seen.append(name),
     )
 
-    assert list(facts) == ["owner/data"]
+    assert list(facts) == ["kaggle_dataset:owner/data"]
     assert seen == ["owner/data"]
+    assert downloader.handles == ["owner/data"]
 
 
-def test_measure_datasets_retries_rate_limited_datasets(monkeypatch, tmp_path: Path) -> None:
-    del tmp_path
-    measurements = iter(
-        (
-            DatasetMeasurement(
-                facts=PackageFacts(
-                    base_import="owner/data",
-                    error="could not measure dataset: 429 Client Error: Too Many Requests",
-                    resource_type=ResourceType.DATASET,
-                ),
-                frames={},
-            ),
-            DatasetMeasurement(
-                facts=PackageFacts(
-                    base_import="owner/data",
-                    resource_type=ResourceType.DATASET,
-                ),
-                frames={},
-            ),
-        )
+def test_measure_datasets_accepts_typed_corpus_keys(tmp_path: Path) -> None:
+    (tmp_path / "data.csv").write_text("value\n1\n")
+    downloader = FakeDownloader(tmp_path)
+
+    facts = measure_datasets(
+        ["kaggle_dataset:owner/data"],
+        downloader=downloader,
     )
 
-    def measure_once(*args: object, **kwargs: object) -> DatasetMeasurement:
-        del args, kwargs
-        return next(measurements)
-
-    monkeypatch.setattr(
-        "readie_pipeline.metadata.datasets._measure_dataset_once",
-        measure_once,
-    )
-    monkeypatch.setattr("readie_pipeline.metadata.datasets.time.sleep", lambda _seconds: None)
-
-    facts = measure_datasets(["owner/data"])
-
-    assert facts["owner/data"].usable
-
-
-def test_measure_dataset_turns_kaggle_http_errors_into_dataset_facts() -> None:
-    measurement = measure_dataset(
-        "owner/data",
-        downloader=FailingKaggleLoader(KaggleApiHTTPError("403 forbidden")),
-    )
-
-    assert not measurement.facts.usable
-    assert "403 forbidden" in measurement.facts.error
-
-
-def test_measure_dataset_turns_kaggle_corruption_into_dataset_facts() -> None:
-    measurement = measure_dataset(
-        "owner/data",
-        downloader=FailingKaggleLoader(DataCorruptionError("checksum mismatch")),
-    )
-
-    assert not measurement.facts.usable
-    assert "checksum mismatch" in measurement.facts.error
-
-
-def test_measure_dataset_refreshes_a_corrupted_file_before_loading(tmp_path: Path) -> None:
-    path = tmp_path / "data.csv"
-    path.write_bytes(b"data")
-    loader = RetryingKaggleLoader(tmp_path)
-    loader.sizes = {"data.csv": 1}
-
-    measurement = measure_dataset("owner/data", downloader=loader)
-
-    assert measurement.facts.usable
-    assert loader.force_downloads == [("owner/data", "data.csv")]
+    assert list(facts) == ["kaggle_dataset:owner/data"]
+    assert downloader.handles == ["owner/data"]

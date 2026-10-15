@@ -65,12 +65,13 @@ Each entry of `items` has these fields:
 | ----- | ------- |
 | `load_time` | Seconds to import the item when its dependencies are already resident. |
 | `size_mb` | Memory the item occupies, in MB. Memory is what a restore copies back, not disk size. |
-| `resource_type` | `package`, `dataset`, `model` or `tokenizer`. |
+| `resource_type` | `package`, `kaggle_dataset`, `hf_dataset`, `hf_model` or `hf_tokenizer`. |
 | `dependencies` | Item keys the item depends on (packages only). The list is already transitive. |
 
-Packages are keyed by their dotted import name (`numpy`, `sklearn.svm`). Datasets,
-models and tokenizers carry a kind prefix (`model:gpt2`). The names match how the
-client lists a function's requirements.
+Packages are keyed by their dotted import name with a `package:` prefix
+(`package:numpy`, `package:sklearn.svm`). Datasets, models and tokenizers carry
+a source-qualified prefix (`kaggle_dataset:owner/name`, `hf_model:gpt2`). The
+names match how the client lists a function's requirements.
 
 Each entry of `checkpoints` has these fields:
 

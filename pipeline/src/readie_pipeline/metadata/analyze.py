@@ -8,7 +8,7 @@ dictionary lookup, not the real cost. Disk size and resident memory are not
 proportional to each other per package (a package can unpack to a small
 on-disk footprint but allocate a much larger one in memory, or the reverse),
 and it is memory, not disk, that gVisor actually has to copy back on restore --
-see ``PackageFacts.memory_size_mb``.
+see ``ResourceFacts.memory_size_mb``.
 
 What a package actually loads is discovered empirically, not declared: a raw
 dotted import string (e.g. ``sklearn.svm.LinearSVC``, which is not itself an
@@ -36,7 +36,7 @@ from dataclasses import dataclass, field, replace
 from importlib.metadata import PackageNotFoundError, distribution, packages_distributions
 from pathlib import Path
 
-from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata.models import Metadata, ResourceFacts
 
 #: Imports the dependencies first, then times and memory-samples the target
 #: alone. Without the warm-up both measurements are dominated by whatever the
@@ -362,7 +362,7 @@ def _start_frame(
     *,
     exclude: frozenset[str],
     discovered: dict[str, tuple[str | None, frozenset[str]]],
-    results: dict[str, PackageFacts],
+    results: dict[str, ResourceFacts],
     visiting: set[str],
 ) -> tuple[str | None, _Frame | None]:
     """Resolve ``candidate`` and either settle it immediately or open a frame.
@@ -388,13 +388,13 @@ def _start_frame(
     return resolved, _Frame(resolved=resolved, loaded=loaded, eligible=eligible)
 
 
-def _finalize(frame: _Frame, *, provided: Mapping[str, list[str]]) -> PackageFacts:
+def _finalize(frame: _Frame, *, provided: Mapping[str, list[str]]) -> ResourceFacts:
     """Profile a frame whose eligible names have all been walked already."""
     dist = _distribution_for(frame.resolved, provided)
-    facts = PackageFacts(
+    facts = ResourceFacts(
         base_import=frame.resolved,
         distribution=dist,
-        loaded_modules=frame.loaded,
+        dependencies=frozenset(f"package:{name}" for name in frame.loaded),
         disk_size_mb=_installed_size_mb(dist, frame.resolved) if dist else 0.0,
     )
     measured = _profile(frame.warm, frame.resolved)
@@ -411,7 +411,7 @@ def _visit(
     candidate: str,
     *,
     provided: Mapping[str, list[str]],
-    results: dict[str, PackageFacts],
+    results: dict[str, ResourceFacts],
     visiting: set[str],
     exclude: frozenset[str],
     discovered: dict[str, tuple[str | None, frozenset[str]]],
@@ -538,7 +538,7 @@ def _visit(
             other_facts = results.get(other)
             if other_facts is not None:
                 frame.warm.append(other)
-                frame.covered |= other_facts.loaded_modules
+                frame.covered |= {name.partition(":")[2] for name in other_facts.dependencies}
             frame.pos += 1
             continue
 
@@ -558,7 +558,7 @@ def _visit(
         if other in results:
             other_facts = results[other]
             frame.warm.append(other)
-            frame.covered |= other_facts.loaded_modules
+            frame.covered |= {name.partition(":")[2] for name in other_facts.dependencies}
             frame.pos += 1
             continue
         if other not in all_requested and _is_owned_by_a_private_ancestor(other):
@@ -628,7 +628,7 @@ def analyze(
     all_requested = frozenset(name for name in import_names if name)
     discovered: dict[str, tuple[str | None, frozenset[str]]] = {}
 
-    results: dict[str, PackageFacts] = {}
+    results: dict[str, ResourceFacts] = {}
     resolved_map: dict[str, str] = {}
     visiting: set[str] = set()
 
@@ -651,9 +651,10 @@ def analyze(
                 if _is_excluded(raw, excluded)
                 else "could not be resolved to an importable module"
             )
-            facts = PackageFacts(base_import=raw, error=error)
+            facts = ResourceFacts(base_import=raw, error=error)
             results[raw] = facts
             if callable(on_progress):
                 on_progress(raw, facts)
 
-    return Metadata(results, resolved=resolved_map)
+    typed_results = {f"package:{name}": facts for name, facts in results.items()}
+    return Metadata(typed_results, resolved=resolved_map)

@@ -82,10 +82,10 @@ def test_resources_collects_every_distinct_reference():
     )
     resources = corpus.resources(_metadata_for("pandas", "numpy"))
 
-    assert resources.packages == {"pandas", "numpy"}
-    assert resources.datasets == {"d1"}
-    assert resources.models == {"m1"}
-    assert resources.tokenizers == {"t1"}
+    assert resources.packages == {"package:pandas", "package:numpy"}
+    assert resources.datasets == {"kaggle_dataset:d1"}
+    assert resources.models == {"hf_model:m1"}
+    assert resources.tokenizers == {"hf_tokenizer:t1"}
 
 
 def test_an_empty_corpus_has_no_resources():
@@ -158,11 +158,16 @@ def test_an_errored_entry_is_dropped_from_the_written_metadata():
         {
             "pandas": PackageFacts(base_import="pandas", import_time=0.3),
             "broken": PackageFacts(base_import="broken", error="not installed"),
+            "broken-dataset": PackageFacts(
+                base_import="broken-dataset",
+                resource_type=ResourceType.KAGGLE_DATASET,
+                error="resource could not be loaded",
+            ),
         }
     )
     payload = metadata.to_json()
-    assert set(payload["resources"]) == {"pandas"}
-    assert "error" not in payload["resources"]["pandas"]
+    assert set(payload["resources"]) == {"package:pandas"}
+    assert "error" not in payload["resources"]["package:pandas"]
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +192,7 @@ def test_direct_dependencies_is_everything_a_package_loads_besides_itself():
             "numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"})),
         }
     )
-    assert metadata.direct_dependencies("pandas") == {"numpy"}
+    assert metadata.direct_dependencies("pandas") == {"package:numpy"}
 
 
 def test_direct_dependencies_of_an_unmeasured_package_is_empty():
@@ -203,7 +208,7 @@ def test_closure_includes_the_starting_names_and_everything_they_load():
             "numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"})),
         }
     )
-    assert metadata.closure(["pandas"]) == {"pandas", "numpy"}
+    assert metadata.closure(["pandas"]) == {"package:pandas", "package:numpy"}
 
 
 def test_closure_is_a_flat_union_not_a_graph_walk():
@@ -218,7 +223,7 @@ def test_closure_is_a_flat_union_not_a_graph_walk():
             "c": PackageFacts(base_import="c", loaded_modules=frozenset({"c"})),
         }
     )
-    assert metadata.closure(["a"]) == {"a", "b", "c"}
+    assert metadata.closure(["a"]) == {"package:a", "package:b", "package:c"}
 
 
 def test_closure_visits_a_shared_dependency_once_despite_two_paths_to_it():
@@ -233,11 +238,15 @@ def test_closure_visits_a_shared_dependency_once_despite_two_paths_to_it():
             "numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"})),
         }
     )
-    assert metadata.closure(["pandas", "scipy"]) == {"pandas", "scipy", "numpy"}
+    assert metadata.closure(["pandas", "scipy"]) == {
+        "package:pandas",
+        "package:scipy",
+        "package:numpy",
+    }
 
 
 def test_closure_of_a_package_with_no_metadata_is_just_itself():
-    assert Metadata({}).closure(["unknown"]) == {"unknown"}
+    assert Metadata({}).closure(["unknown"]) == {"package:unknown"}
 
 
 def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
@@ -250,7 +259,7 @@ def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
     path = tmp_path / "metadata.json"
     path.write_text(json.dumps(metadata.to_json()))
 
-    assert list(json.loads(path.read_text())["resources"]) == ["abc", "zlib"]
+    assert list(json.loads(path.read_text())["resources"]) == ["package:abc", "package:zlib"]
     assert Metadata.load(path).import_time("abc") == 0.2
 
 
@@ -264,6 +273,30 @@ def test_metadata_still_loads_the_old_flat_format_predating_resolved(tmp_path: P
     metadata = Metadata.load(path)
     assert metadata.import_time("pandas") == 0.3
     assert metadata.resolved == {}
+
+
+def test_metadata_load_normalizes_legacy_dependency_names(tmp_path: Path):
+    path = tmp_path / "metadata.json"
+    path.write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "pandas": {
+                        "base_import": "pandas",
+                        "loaded_modules": ["pandas", "numpy"],
+                    },
+                    "numpy": {
+                        "base_import": "numpy",
+                        "loaded_modules": ["numpy"],
+                    },
+                }
+            }
+        )
+    )
+
+    metadata = Metadata.load(path)
+
+    assert metadata.closure(["pandas"]) == {"package:pandas", "package:numpy"}
 
 
 def test_a_missing_metadata_file_says_how_to_make_one(tmp_path: Path):

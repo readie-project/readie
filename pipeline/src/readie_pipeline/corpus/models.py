@@ -143,14 +143,16 @@ class Corpus:
     def resources(self, metadata: Metadata) -> Resources:
         """Every distinct resource the corpus refers to."""
         return Resources(
-            packages=frozenset().union(
-                *(metadata.resolve_imports(r.imports) for r in self.requests)
+            packages=frozenset(
+                f"package:{name}"
+                for r in self.requests
+                for name in metadata.resolve_imports(r.imports)
             )
             if self.requests
             else frozenset(),
-            datasets=frozenset(d for r in self.requests for d in r.datasets),
-            models=frozenset(m for r in self.requests for m in r.models),
-            tokenizers=frozenset(t for r in self.requests for t in r.tokenizers),
+            datasets=frozenset(f"kaggle_dataset:{d}" for r in self.requests for d in r.datasets),
+            models=frozenset(f"hf_model:{m}" for r in self.requests for m in r.models),
+            tokenizers=frozenset(f"hf_tokenizer:{t}" for r in self.requests for t in r.tokenizers),
         )
 
 

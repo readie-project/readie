@@ -207,14 +207,21 @@ def generate(
     ``client`` is injected so this is testable without a network call and
     without importing openai at module scope.
     """
+    use_responses = settings.endpoint.rstrip("/").endswith("/openai/v1")
     if client is None:  # pragma: no cover - exercised only against the real API
-        from openai import AzureOpenAI  # noqa: PLC0415 - optional extra, imported on use
+        from openai import AzureOpenAI, OpenAI  # noqa: PLC0415 - optional extra
 
-        client = AzureOpenAI(
-            api_version=settings.api_version,
-            azure_endpoint=settings.endpoint,
-            api_key=settings.api_key,
-        )
+        if use_responses:
+            client = OpenAI(
+                base_url=f"{settings.endpoint.rstrip('/')}/",
+                api_key=settings.api_key,
+            )
+        else:
+            client = AzureOpenAI(
+                api_version=settings.api_version,
+                azure_endpoint=settings.endpoint,
+                api_key=settings.api_key,
+            )
 
     corpus = Corpus.load(corpus_path) if corpus_path.exists() else Corpus.of([])
     wanted = tuple(categories or settings.categories or DEFAULT_CATEGORIES)
@@ -224,20 +231,27 @@ def generate(
             on_line(f"[*] {category}: batch {batch}/{settings.batches_per_category}")
 
             avoid = [r.task_name for r in corpus]
-            response = client.chat.completions.create(
-                model=settings.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": build_prompt(category, settings.requests_per_batch, avoid),
-                    },
-                ],
-            )
+            prompt = build_prompt(category, settings.requests_per_batch, avoid)
+            if use_responses:
+                response = client.responses.create(
+                    model=settings.model,
+                    instructions=SYSTEM_PROMPT,
+                    input=prompt,
+                )
+                content = response.output_text or ""
+            else:
+                response = client.chat.completions.create(
+                    model=settings.model,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                content = response.choices[0].message.content or ""
 
             try:
                 fresh = parse_batch(
-                    response.choices[0].message.content or "",
+                    content,
                     on_skip=lambda name, why: on_line(f"    skipped {name}: {why}"),
                 )
             except CorpusError as exc:

@@ -52,15 +52,16 @@ result is written on the host to `data/metadata/<flavor>.json`.
 contains. They do not regenerate it.
 
 Dataset references in the corpus are measured during `analyze`. The pipeline
-first uses KaggleHub to enumerate every downloaded file, then loads each file
-serially through KaggleHub's pandas adapter. This keeps file discovery separate
-from conversion and records SQLite tables and multi-sheet files as separate
-frames. A conversion error is recorded for the individual file while other
-files continue to be measured. Invalid, competition, inaccessible,
-checksum-failed, and rate-limited references are recorded as dataset
-measurement errors; datasets are not chosen for checkpoint plans until dataset
-capture and restore support is implemented. Package and dataset facts are
-stored together under the metadata `resources` key.
+uses KaggleHub to download and enumerate every file, then loads files
+sequentially: CSV and JSON files become pandas DataFrames, and all other files
+are retained as raw bytes. This keeps the file inventory complete without
+requiring a parser for every format. A file failure does not discard other
+files, and the persisted metadata contains only the generic resource facts.
+Datasets are not chosen for checkpoint plans until dataset capture and restore
+support is implemented. Package and dataset facts are stored together under
+the metadata `resources` key. Resource keys include their source, such as
+`package:pandas`, `kaggle_dataset:owner/name`, `hf_model:gpt2`, and
+`hf_tokenizer:gpt2`.
 
 ### capture
 

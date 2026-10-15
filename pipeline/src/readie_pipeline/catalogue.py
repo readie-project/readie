@@ -14,7 +14,7 @@ startup. It is the whole input to request-time checkpoint selection:
   recursive expansion over it is still correct, just redundant now. ``size_mb``
   here is memory, not disk: what gVisor actually copies back on restore, and
   what the ``alpha * size`` term below is charging for -- see
-  ``PackageFacts.memory_size_mb``.
+  ``ResourceFacts.memory_size_mb``.
 * ``checkpoints`` - each checkpoint's item set and its raw total size (MB). Two
   item lists per checkpoint: ``items`` is the full dependency closure (what is
   actually resident, and what pricing needs), ``canonical`` is only what some
@@ -29,7 +29,8 @@ of required items not in it)``, applying the catalogue's ``alpha`` to the raw si
 Items are keyed the way the client names them in a request's required set:
 packages by their resolved dotted import name (not necessarily top-level --
 ``sklearn`` and ``sklearn.svm`` are independent items), and
-datasets/models/tokenizers prefixed with their kind (``model:gpt2``), so the
+datasets/models/tokenizers prefixed with their source and kind
+(``hf_model:gpt2``), so the
 router can match a request's needs directly.
 """
 
@@ -50,21 +51,21 @@ CATALOGUE_VERSION = 1
 def item_key(name: str, resource_type: ResourceType | str) -> str:
     """Return an item's catalogue key.
 
-    Packages are keyed by their bare name; datasets, models and tokenizers are
-    prefixed with their kind (``model:gpt2``), matching how a request names them.
+    Every resource is keyed with its type prefix (for example
+    ``package:pandas`` or ``hf_model:gpt2``).
     """
     kind = str(resource_type)
-    if kind == ResourceType.PACKAGE:
+    if ":" in name:
         return name
     return f"{kind}:{name}"
 
 
 def _keyed_items(packages: Iterable[str], plan: CheckpointPlan) -> list[str]:
     """Keys a package set plus a plan's non-package resources for the catalogue."""
-    keys = list(packages)
-    keys += [item_key(n, ResourceType.DATASET) for n in plan.datasets]
-    keys += [item_key(n, ResourceType.MODEL) for n in plan.models]
-    keys += [item_key(n, ResourceType.TOKENIZER) for n in plan.tokenizers]
+    keys = [item_key(name, ResourceType.PACKAGE) for name in packages]
+    keys += [item_key(n, ResourceType.KAGGLE_DATASET) for n in plan.datasets]
+    keys += [item_key(n, ResourceType.HF_MODEL) for n in plan.models]
+    keys += [item_key(n, ResourceType.HF_TOKENIZER) for n in plan.tokenizers]
     return sorted(keys)
 
 
@@ -119,7 +120,9 @@ def build_catalogue(
     checkpoints = []
     for checkpoint_id, plan in entries:
         keys = _checkpoint_items(plan, metadata)
-        size_mb = sum(metadata.memory_size_mb(_bare(key)) for key in keys)
+        size_mb = sum(
+            metadata.resources[key].memory_size_mb for key in keys if key in metadata.resources
+        )
         checkpoints.append(
             {
                 "id": checkpoint_id,
@@ -137,12 +140,6 @@ def build_catalogue(
         "items": items,
         "checkpoints": checkpoints,
     }
-
-
-def _bare(key: str) -> str:
-    """Strip a ``kind:`` prefix to recover the metadata lookup name."""
-    _, sep, rest = key.partition(":")
-    return rest if sep else key
 
 
 def write_catalogue(path: Path, document: dict[str, Any]) -> None:

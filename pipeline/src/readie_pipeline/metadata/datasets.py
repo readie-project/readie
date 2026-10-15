@@ -12,61 +12,57 @@ from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
 import kagglehub  # type: ignore[import-untyped]
-from kagglehub.exceptions import (  # type: ignore[import-untyped]
-    BackendError,
-    DataCorruptionError,
-    KaggleApiHTTPError,
-    KaggleEnvironmentError,
-    NotFoundError,
-    UnauthenticatedError,
-)
 
-from readie_pipeline.metadata.models import PackageFacts, ResourceType
+from readie_pipeline.metadata.models import ResourceFacts, ResourceType
 
 _MB = 1024 * 1024
 _DATASET_PATH_PARTS = 3
 _OWNER_DATASET_PARTS = 2
-_RATE_LIMIT_RETRIES = 3
-_RATE_LIMIT_DELAYS = (30.0, 60.0, 120.0)
-_FILE_LOAD_ERRORS = (
-    OSError,
-    TypeError,
-    ValueError,
-    AttributeError,
-    RuntimeError,
-    BackendError,
-    DataCorruptionError,
-    KaggleApiHTTPError,
-    KaggleEnvironmentError,
-    NotFoundError,
-    UnauthenticatedError,
+_FILE_LOAD_ERRORS = (OSError, TypeError, ValueError, AttributeError, RuntimeError)
+_PANDAS_EXTENSIONS = frozenset(
+    {
+        ".csv",
+        ".tsv",
+        ".json",
+        ".jsonl",
+        ".xml",
+        ".parquet",
+        ".feather",
+        ".sqlite",
+        ".sqlite3",
+        ".db",
+        ".db3",
+        ".s3db",
+        ".dl3",
+        ".xls",
+        ".xlsx",
+        ".xlsm",
+        ".xlsb",
+        ".odf",
+        ".ods",
+        ".odt",
+    }
 )
+_SQLITE_EXTENSIONS = frozenset({".sqlite", ".sqlite3", ".db", ".db3", ".s3db", ".dl3"})
 
 
-class DatasetMeasurementError(ValueError):
-    """The downloaded dataset cannot be measured."""
-
-    @classmethod
-    def invalid_path(cls, path: Path) -> DatasetMeasurementError:
-        """Describe a KaggleHub path that cannot be read."""
-        return cls(f"KaggleHub returned no file or directory: {path}")
+class ResourceMeasurementError(ValueError):
+    """A resource could not be measured."""
 
     @classmethod
-    def unsupported_type(cls, path: Path) -> DatasetMeasurementError:
-        """Describe a file format without a configured pandas reader."""
-        return cls(f"unsupported dataset file type: {path.name}")
+    def invalid_path(cls, path: Path) -> ResourceMeasurementError:
+        """Describe a downloaded path that cannot be read."""
+        return cls(f"resource path is not a file or directory: {path}")
 
     @classmethod
-    def empty_dataset(cls, slug: str) -> DatasetMeasurementError:
+    def invalid_reference(cls, slug: str) -> ResourceMeasurementError:
+        """Describe a corpus reference that is not a dataset."""
+        return cls(f"resource reference is invalid: {slug}")
+
+    @classmethod
+    def empty_dataset(cls) -> ResourceMeasurementError:
         """Describe a dataset directory with no files."""
-        return cls(f"KaggleHub dataset contains no files: {slug}")
-
-    @classmethod
-    def unsupported_reference(cls, slug: str, kind: str) -> DatasetMeasurementError:
-        """Describe a corpus reference outside the dataset API."""
-        if kind == "competition":
-            return cls(f"unsupported Kaggle competition reference: {slug}")
-        return cls(f"malformed Kaggle dataset reference: {slug}")
+        return cls("resource contains no files")
 
 
 class DatasetReferenceKind(StrEnum):
@@ -113,7 +109,7 @@ def dataset_handle(value: str) -> str:
 
 
 class DatasetDownloader(Protocol):
-    """The KaggleHub operations needed by the measurer."""
+    """The KaggleHub operations needed to inventory and load a dataset."""
 
     def dataset_download(
         self,
@@ -137,10 +133,10 @@ class DatasetDownloader(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class DatasetMeasurement:
-    """Measured dataset facts and the DataFrames produced during loading."""
+    """Measured dataset facts and the variables produced during loading."""
 
-    facts: PackageFacts
-    frames: Mapping[str, Any]
+    facts: ResourceFacts
+    values: Mapping[str, Any]
 
 
 def _kagglehub() -> DatasetDownloader:
@@ -152,69 +148,52 @@ def _files(downloaded: str | Path) -> tuple[Path, list[Path]]:
     if path.is_file():
         return path.parent, [path]
     if not path.is_dir():
-        raise DatasetMeasurementError.invalid_path(path)
+        raise ResourceMeasurementError.invalid_path(path)
     return path, sorted(item for item in path.rglob("*") if item.is_file())
 
 
-def _load_frames(
+def dependencies() -> tuple[str, ...]:
+    """Return typed resources required by the dataset resource loader."""
+    return ("package:pandas", "package:kagglehub")
+
+
+def _load_values(
     loader: DatasetDownloader,
     handle: str,
     root: Path,
     path: Path,
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     relative = path.relative_to(root).as_posix()
-    adapter = cast(Any, kagglehub.KaggleDatasetAdapter.PANDAS)
-
-    def load(sql_query: str | None = None) -> Any:
-        try:
-            return loader.dataset_load(
-                adapter,
-                handle,
-                relative,
-                sql_query=sql_query,
-            )
-        except DataCorruptionError:
-            # KaggleHub can resume a stale partial file left in its cache. A
-            # forced refresh repairs that file before the adapter reads it.
-            loader.dataset_download(handle, relative, force_download=True)
-            return loader.dataset_load(
-                adapter,
-                handle,
-                relative,
-                sql_query=sql_query,
-            )
-
-    if path.suffix.lower() not in {".sqlite", ".sqlite3", ".db", ".db3", ".s3db", ".dl3"}:
-        try:
-            loaded = load()
-        except _FILE_LOAD_ERRORS as exc:
-            return {}, (f"{relative}: {exc}",)
-        if isinstance(loaded, dict):
-            return (
-                {f"{relative}::{sheet}": frame for sheet, frame in loaded.items()},
-                (),
-            )
-        return {relative: loaded}, ()
-
-    connection = sqlite3.connect(path)
+    if path.suffix.lower() not in _PANDAS_EXTENSIONS:
+        return {relative: path.read_bytes()}, ()
     try:
-        tables = connection.execute(
-            "select name from sqlite_master where type = 'table' order by name"
-        ).fetchall()
-    finally:
-        connection.close()
-
-    frames: dict[str, Any] = {}
-    errors: list[str] = []
-    for (table_name,) in tables:
-        quoted_name = table_name.replace('"', '""')
-        try:
-            frames[f"{relative}::{table_name}"] = load(
-                sql_query=f'SELECT * FROM "{quoted_name}"',  # noqa: S608 - table names are discovered locally and quoted
-            )
-        except _FILE_LOAD_ERRORS as exc:
-            errors.append(f"{relative}::{table_name}: {exc}")
-    return frames, tuple(errors)
+        adapter = cast(Any, kagglehub.KaggleDatasetAdapter.PANDAS)
+        if path.suffix.lower() in _SQLITE_EXTENSIONS:
+            with sqlite3.connect(path) as connection:
+                table_names = [
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+                    )
+                ]
+            values = {}
+            for table_name in table_names:
+                escaped_name = table_name.replace('"', '""')
+                values[f"{relative}::{table_name}"] = loader.dataset_load(
+                    adapter,
+                    handle,
+                    relative,
+                    sql_query=f'SELECT * FROM "{escaped_name}"',  # noqa: S608 - escaped SQLite identifier
+                )
+            return values, ()
+        loaded = loader.dataset_load(adapter, handle, relative)
+        if isinstance(loaded, dict):
+            values = {f"{relative}::{sheet}": frame for sheet, frame in loaded.items()}
+        else:
+            values = {relative: loaded}
+        return values, ()  # noqa: TRY300 - both result shapes share one exception handler
+    except _FILE_LOAD_ERRORS:
+        return {}, (relative,)
 
 
 def measure_dataset(
@@ -223,22 +202,25 @@ def measure_dataset(
     downloader: DatasetDownloader | None = None,
     clock: Callable[[], float] = time.perf_counter,
 ) -> DatasetMeasurement:
-    """Enumerate and load every file in one Kaggle dataset.
+    """Enumerate and load every file in one Kaggle dataset sequentially.
 
-    Downloading is used only to enumerate the complete dataset. Conversion is
-    delegated to KaggleHub's pandas adapter, one file at a time. Download time
-    is not included in ``import_time``.
+    Downloading provides the complete inventory. CSV and JSON files are loaded
+    through KaggleHub's pandas adapter; unsupported or failed files are retained
+    as raw bytes. Download time is excluded from ``import_time``.
     """
-    for attempt in range(_RATE_LIMIT_RETRIES + 1):
-        measurement = _measure_dataset_once(
-            slug,
-            downloader=downloader,
-            clock=clock,
-        )
-        if "429" not in measurement.facts.error or attempt == _RATE_LIMIT_RETRIES:
-            return measurement
-        time.sleep(_RATE_LIMIT_DELAYS[attempt])
-    raise AssertionError
+    return _measure_dataset_once(slug, downloader=downloader, clock=clock)
+
+
+def _failed_measurement(slug: str) -> DatasetMeasurement:
+    return DatasetMeasurement(
+        facts=ResourceFacts(
+            base_import=slug,
+            resource_type=ResourceType.KAGGLE_DATASET,
+            dependencies=frozenset(dependencies()),
+            error="resource could not be loaded",
+        ),
+        values={},
+    )
 
 
 def _measure_dataset_once(
@@ -247,11 +229,11 @@ def _measure_dataset_once(
     downloader: DatasetDownloader | None,
     clock: Callable[[], float],
 ) -> DatasetMeasurement:
-    """Measure once without retrying transient API rate limits."""
+    """Measure one sequential pass over the downloaded dataset."""
     try:
         reference_kind = dataset_reference_kind(slug)
         if reference_kind != DatasetReferenceKind.DATASET:
-            raise DatasetMeasurementError.unsupported_reference(slug, reference_kind)
+            return _failed_measurement(slug)
 
         if downloader is None:
             downloader = _kagglehub()
@@ -259,49 +241,51 @@ def _measure_dataset_once(
         downloaded = downloader.dataset_download(dataset_handle(slug))
         root, paths = _files(downloaded)
         if not paths:
-            raise DatasetMeasurementError.empty_dataset(slug)
+            return _failed_measurement(slug)
 
-        frames: dict[str, Any] = {}
+        values: dict[str, Any] = {}
         file_errors: list[str] = []
         disk_size = 0
         memory_size = 0
         start = clock()
         for path in paths:
-            disk_size += path.stat().st_size
-            loaded_frames, errors = _load_frames(
+            relative = path.relative_to(root).as_posix()
+            try:
+                disk_size += path.stat().st_size
+            except OSError:
+                file_errors.append(relative)
+                continue
+            loaded_values, errors = _load_values(
                 downloader,
                 dataset_handle(slug),
                 root,
                 path,
             )
-            frames.update(loaded_frames)
+            values.update(loaded_values)
             file_errors.extend(errors)
-            for frame_name, frame in loaded_frames.items():
+            for value_name, value in loaded_values.items():
                 try:
-                    memory_size += int(frame.memory_usage(index=True, deep=True).sum())
-                except _FILE_LOAD_ERRORS as exc:
-                    frames.pop(frame_name)
-                    file_errors.append(f"{frame_name}: could not measure memory: {exc}")
+                    if isinstance(value, bytes):
+                        memory_size += len(value)
+                    else:
+                        memory_size += int(value.memory_usage(index=True, deep=True).sum())
+                except _FILE_LOAD_ERRORS:
+                    values.pop(value_name)
+                    file_errors.append(value_name)
         load_time = clock() - start
 
-        facts = PackageFacts(
+        facts = ResourceFacts(
             base_import=slug,
             disk_size_mb=disk_size / _MB,
             memory_size_mb=memory_size / _MB,
             import_time=load_time,
-            resource_type=ResourceType.DATASET,
-            error="; ".join(file_errors),
+            resource_type=ResourceType.KAGGLE_DATASET,
+            dependencies=frozenset(dependencies()),
+            error="resource could not be loaded" if file_errors else "",
         )
-        return DatasetMeasurement(facts=facts, frames=frames)
-    except (*_FILE_LOAD_ERRORS, sqlite3.Error) as exc:
-        return DatasetMeasurement(
-            facts=PackageFacts(
-                base_import=slug,
-                resource_type=ResourceType.DATASET,
-                error=f"could not measure dataset: {exc}",
-            ),
-            frames={},
-        )
+        return DatasetMeasurement(facts=facts, values=values)
+    except Exception:  # noqa: BLE001 - external resource failures become one generic state
+        return _failed_measurement(slug)
 
 
 def measure_datasets(
@@ -309,12 +293,13 @@ def measure_datasets(
     *,
     downloader: DatasetDownloader | None = None,
     on_progress: object = None,
-) -> dict[str, PackageFacts]:
+) -> dict[str, ResourceFacts]:
     """Measure each distinct slug and return dataset facts keyed by slug."""
-    results: dict[str, PackageFacts] = {}
+    results: dict[str, ResourceFacts] = {}
     for slug in sorted(set(slugs)):
-        measurement = measure_dataset(slug, downloader=downloader)
-        results[slug] = measurement.facts
+        bare_slug = slug.removeprefix(f"{ResourceType.KAGGLE_DATASET}:")
+        measurement = measure_dataset(bare_slug, downloader=downloader)
+        results[f"{ResourceType.KAGGLE_DATASET}:{bare_slug}"] = measurement.facts
         if callable(on_progress):
-            on_progress(slug, measurement.facts)
+            on_progress(bare_slug, measurement.facts)
     return results
