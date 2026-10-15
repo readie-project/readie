@@ -43,9 +43,8 @@ before streaming return 413 (too large), 422 (empty), 429 (rate limited) or 503
 
 ### Evaluation route
 
-`POST /eval/run` runs a list of steps (a notebook's cells, a debugging session)
-once and returns every step's timing as JSON. The route has no token and is always
-served, so nothing in the service keeps a visitor out of it. Both nginx configs answer
+`POST /eval/run` runs one piece of code once and returns its timing as JSON. The route
+has no token and is always served, so nothing in the service keeps a visitor out of it. Both nginx configs answer
 404 for `/playground/eval/` (a rule that sits before `/playground/` and must stay), so
 the route is reachable only on the playground's own container network, at the
 service's address on port 8080 (for example `http://<container address>:8080/eval/run`
@@ -54,15 +53,14 @@ behind nginx, nginx's request limits do not apply to it: a large request, a long
 and many requests at once are all accepted, and the route has no rate limit or
 concurrency cap of its own.
 
-The route makes no decisions. Apart from `steps` and `continue_on_error`, every
+The route makes no decisions. Apart from `code`, every
 field is an argument of `@remote`, spelled as `@remote` spells it, and goes to
 `readie.remote` untouched. A field left out keeps `remote`'s own default (the
 playground adds no memory, deadline or session of its own).
 
 ```json
 {
-  "steps": ["import pandas as pd\nx = 41", "print(x + 1)"],
-  "continue_on_error": true,
+  "code": "import pandas as pd\nx = 41\nprint(x + 1)",
   "timeout": 300, "session": null,
   "memory": "8Gi", "max_memory": "8Gi",
   "gpu": false, "gpu_memory": null, "max_gpu_memory": null,
@@ -70,45 +68,46 @@ playground adds no memory, deadline or session of its own).
 }
 ```
 
-Only `steps` is required. Unknown fields are refused with a 422, so a removed one
+Only `code` is required. Unknown fields are refused with a 422, so a removed one
 (`timeout_s`, `total_timeout_s`) is not ignored without a word. The arguments of
 `@remote` are validated by `remote` itself, called once up front, so a bad size, a
 bad requirement or `checkpoint_id` together with `disable_optimized_execution=true`
-returns a 422 before anything runs. The route keeps its own limits on the request
-(step count and code size, `PLAYGROUND_EVAL_*`) and no cap on any `@remote` value.
+returns a 422 before anything runs. The route keeps one limit of its own, on the size
+of `code` (`PLAYGROUND_EVAL_MAX_CODE_BYTES`), and no cap on any `@remote` value.
 The set of fields follows `@remote`: when an argument is added or changed there,
 `EvalRequest` changes with it (see `AGENTS.md`), and a test pins that they match.
 
 - **One run per request.** Comparing an optimized start with a cold start is the
   caller's job: send the item twice, once with `disable_optimized_execution` false
   and once true.
-- **Sessions.** `session` is passed as given. With none, every step is an independent
-  call. With one, the steps share a container and an interpreter: names defined by one
-  step are visible to the next. The route never invents a session id.
-- **Steps run with module semantics** (`exec` in a namespace that lasts for the
+- **Sessions.** `session` is passed as given, except that an empty string means no
+  session (it would otherwise become a made-up id and leave a warm container behind).
+  With none, every request is an independent
+  call. Requests that name the same session share a container and an interpreter: names
+  defined by one request are visible to the next. The route never invents a session id.
+- **The code runs with module semantics** (`exec` in a namespace that lasts for the
   session, `__name__ == "__main__"`), so `from x import *`, classes and `global`
-  behave as in a script. The function the
-  client pickles repeats the step's import statements, so it records the same imports
-  as a function you wrote and the router can pick a checkpoint. `MPLBACKEND=Agg`
-  is set so plots need no display.
-- **A failing step does not stop the others** unless `continue_on_error` is false,
-  in which case the remaining steps are reported as skipped. A step that is not valid
-  Python is reported without a call.
+  behave as in a script. The function the client pickles repeats the code's import
+  statements, so it records the same imports as a function you wrote and the router can
+  pick a checkpoint. `MPLBACKEND=Agg` is set so plots need no display.
+- **Code that is not valid Python** is reported as a `SyntaxError` without a call.
 
 ```json
 {
   "session_id": "5f0c...",
   "ok": true,
-  "total_s": 2.41,
-  "steps": [{"index": 0, "ok": true, "duration_s": 1.93, "error": "",
-             "error_type": "", "output": "", "truncated": false}]
+  "duration_s": 1.93,
+  "error": "",
+  "error_type": "",
+  "output": "42\n",
+  "truncated": false
 }
 ```
 
 `duration_s` is measured exactly as for `/run`: a monotonic clock around the whole
 backend call (building the function, connecting, the call). `error_type` is
 `RemoteExecutionError` for code that raised, `RemoteTimeoutError` when the deadline
-passed, `SyntaxError`, `Skipped`, another Readie error name, or `InternalError`.
+passed, `SyntaxError`, another Readie error name, or `InternalError`.
 Errors before the run return 413 (too large) or 422 (invalid).
 
 ## Resource limits
@@ -139,8 +138,7 @@ Readie workers to match.
 | `PLAYGROUND_TRUST_PROXY` | off | Use the first `X-Forwarded-For` address as the client (on behind nginx) |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
-| `PLAYGROUND_EVAL_MAX_CODE_BYTES` | `8388608` | Largest total source of one evaluation request |
-| `PLAYGROUND_EVAL_MAX_STEPS` | `1000` | Most steps in one request |
+| `PLAYGROUND_EVAL_MAX_CODE_BYTES` | `8388608` | Largest `code` of one evaluation request |
 
 Point the service at a dedicated Readie server with `SANDBOX_NETWORK=none` on its workers
 rather than the one real users share, by setting `PLAYGROUND_ROUTER_URI`.

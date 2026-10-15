@@ -1,11 +1,11 @@
 """The FastAPI app.
 
 ``POST /run`` streams both lanes of one script as server-sent events; it is the
-public playground. ``POST /eval/run`` is for evaluations: it takes a list of steps
+public playground. ``POST /eval/run`` is for evaluations: it takes one piece of code
 and the arguments of the Readie remote function, passes them to it as given, runs
-the steps once, and returns every step's timing as JSON. It exists only when
-It has no token: it is always served, and the nginx configs answer 404 for
-``/playground/eval/`` so that it is reachable only on the playground's own network.
+the code once, and returns its timing as JSON. It has no token and is always served;
+the nginx configs answer 404 for ``/playground/eval/``, so it is reachable only on the
+playground's own network.
 """
 
 from __future__ import annotations
@@ -32,18 +32,17 @@ class RunRequest(BaseModel):
 
 
 class EvalRequest(BaseModel):
-    """Body of ``POST /eval/run``: the steps, and the arguments of ``readie.remote``.
+    """Body of ``POST /eval/run``: the code, and the arguments of ``readie.remote``.
 
-    Apart from ``steps`` and ``continue_on_error``, every field is an argument of
-    ``@remote`` under its own name, and goes to it untouched. ``session`` is the
+    Apart from ``code``, every field is an argument of ``@remote`` under its own
+    name, and goes to it untouched. ``session`` is the
     session id (``remote`` takes a ``Session`` made from it). A field left out
     keeps ``remote``'s own default. Unknown fields are refused.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    steps: list[str]
-    continue_on_error: bool = True
+    code: str
 
     timeout: float | None = None
     session: str | None = None
@@ -91,33 +90,29 @@ def _eval_options(body: EvalRequest) -> EvalOptions:
 
     Nothing is changed on the way. ``remote`` itself is called once, here, only so
     that its own validation (a bad size, a bad requirement, a contradiction) rejects
-    the request up front instead of failing every step.
+    the request up front instead of failing the call.
     """
-    arguments = body.model_dump(exclude={"steps", "continue_on_error"})
+    arguments = body.model_dump(exclude={"code"})
+    if not arguments["session"]:
+        # An empty id means no session. Passed on, it would become ``Session("")``, which
+        # makes up a random id and leaves a warm container nobody can reach again.
+        arguments["session"] = None
     try:
         remote(**arguments)
     except ReadieError as exc:
         raise HTTPException(422, str(exc)) from exc
-    return EvalOptions(remote=arguments, continue_on_error=body.continue_on_error)
+    return EvalOptions(remote=arguments)
 
 
 def _eval_payload(result: EvalResult) -> dict[str, object]:
     return {
         "session_id": result.session_id,
         "ok": result.ok,
-        "total_s": result.total_s,
-        "steps": [
-            {
-                "index": step.index,
-                "ok": step.ok,
-                "duration_s": step.duration_s,
-                "error": step.error,
-                "error_type": step.error_type,
-                "output": step.output,
-                "truncated": step.truncated,
-            }
-            for step in result.steps
-        ],
+        "duration_s": result.duration_s,
+        "error": result.error,
+        "error_type": result.error_type,
+        "output": result.output,
+        "truncated": result.truncated,
     }
 
 
@@ -171,14 +166,12 @@ def create_app(settings: PlaygroundSettings, runner: Runner | None = None) -> Fa
 
     @app.post("/eval/run")
     async def eval_run(body: EvalRequest) -> dict[str, object]:
-        if not 1 <= len(body.steps) <= settings.eval_max_steps:
-            raise HTTPException(422, f"Send between 1 and {settings.eval_max_steps} steps.")
-        if any(not step.strip() for step in body.steps):
-            raise HTTPException(422, "Every step needs some code.")
-        if sum(len(step.encode()) for step in body.steps) > settings.eval_max_code_bytes:
+        if not body.code.strip():
+            raise HTTPException(422, "Send some code to run.")
+        if len(body.code.encode()) > settings.eval_max_code_bytes:
             raise HTTPException(413, "The code is too large.")
         options = _eval_options(body)
-        result = await runner.run_eval(body.steps, options)
+        result = await runner.run_eval(body.code, options)
         return _eval_payload(result)
 
     return app

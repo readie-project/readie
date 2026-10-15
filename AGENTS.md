@@ -79,7 +79,7 @@ Most tests use fakes and run anywhere (see gVisor note below).
   under the same name and passes it to `readie.remote` untouched, and makes no
   choices of its own. When an argument of `@remote` is added, renamed, removed or
   has its default changed, update `EvalRequest` to match in the same change (and
-  `playground/README.md`). Only `steps` and `continue_on_error` belong to the route.
+  `playground/README.md`). Only `code` belongs to the route.
 - **`pkg` checks the Python version.** Functions are cloudpickled
   client-side and unpickled in the sandbox, and that is only safe within one minor
   version. `readie.Client()` calls `check_python_version()` (`pkg/src/readie/_compat.py`)

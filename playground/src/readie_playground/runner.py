@@ -6,10 +6,10 @@ script into a ``@remote`` function (``userfn``) and calls it through the Readie
 client, as any user would.
 
 ``Runner.stream`` serves the public playground: one script, both lanes streamed.
-``Runner.run_eval`` serves an evaluation: a list of steps run one after another,
-once, with per-step timings. It makes no choices of its own: every argument of the
-Readie remote function comes from the request and goes to ``readie.remote`` as given
-(so a caller compares optimized and cold starts by sending two requests).
+``Runner.run_eval`` serves an evaluation: one piece of code run once, with its timing.
+It makes no choices of its own: every argument of the Readie remote function comes
+from the request and goes to ``readie.remote`` as given (so a caller compares optimized
+and cold starts by sending two requests).
 """
 
 from __future__ import annotations
@@ -60,47 +60,27 @@ class Event:
 
 @dataclass(frozen=True, slots=True)
 class EvalOptions:
-    """What an evaluation passes to the Readie remote function for every step."""
+    """What an evaluation passes to the Readie remote function."""
 
     remote: Mapping[str, Any] = field(default_factory=dict)
     """Keyword arguments of ``readie.remote``, exactly as the request gave them."""
-    continue_on_error: bool = True
-    """Whether a failed step lets the later ones run. Not a ``remote`` argument."""
 
 
 @dataclass(frozen=True, slots=True)
-class StepResult:
-    """How one step of one lane went.
+class EvalResult:
+    """How one evaluation request went.
 
     ``duration_s`` is measured exactly as for the playground: a monotonic clock
     around the whole backend call (building the function, connecting, the call).
     """
 
-    index: int
+    session_id: str | None
     ok: bool
     duration_s: float
     error: str = ""
     error_type: str = ""
     output: str = ""
     truncated: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class EvalResult:
-    """Every step of one evaluation request."""
-
-    session_id: str | None
-    steps: tuple[StepResult, ...]
-
-    @property
-    def total_s(self) -> float:
-        """Sum of the step durations."""
-        return round(sum(step.duration_s for step in self.steps), 3)
-
-    @property
-    def ok(self) -> bool:
-        """Whether every step succeeded."""
-        return all(step.ok for step in self.steps)
 
 
 class Backend(Protocol):
@@ -110,16 +90,15 @@ class Backend(Protocol):
         """Run ``code`` remotely, calling ``on_log`` with output as it arrives."""
         ...
 
-    async def execute_step(
+    async def execute_eval(
         self,
-        source: str,
+        code: str,
         *,
-        index: int,
         key: str,
         options: EvalOptions,
         on_log: Callable[[str], None],
     ) -> None:
-        """Run one step remotely with the request's ``remote`` arguments."""
+        """Run ``code`` remotely with the request's ``remote`` arguments."""
         ...
 
 
@@ -146,21 +125,22 @@ class ReadieBackend:
                 )
                 await remote_main.aio()
 
-    async def execute_step(
+    async def execute_eval(
         self,
-        source: str,
+        code: str,
         *,
-        index: int,
         key: str,
         options: EvalOptions,
         on_log: Callable[[str], None],
     ) -> None:
-        """Run one step through ``readie.remote``, with the arguments as the caller sent them."""
+        """Run ``code`` through ``readie.remote``, with the arguments as the caller sent them."""
         arguments = dict(options.remote)
         if arguments.get("session") is not None:
             # The request carries a session id; ``remote`` takes a ``Session``.
             arguments["session"] = Session(arguments["session"])
-        with userfn.loaded_step(source, key, index, self._workdir) as main:
+        # Module semantics, in a namespace that lasts for the session, so requests that
+        # name the same session see each other's names.
+        with userfn.loaded_step(code, key, 0, self._workdir) as main:
             async with Client(self._settings, log_sink=on_log) as client:
                 remote_main = remote(client=client, **arguments)(main)
                 await remote_main.aio()
@@ -241,35 +221,17 @@ class Runner:
             )
         )
 
-    async def run_eval(self, steps: list[str], options: EvalOptions) -> EvalResult:
-        """Run ``steps`` one after another, once, as the request's options say.
+    async def run_eval(self, code: str, options: EvalOptions) -> EvalResult:
+        """Run ``code`` once, as the request's options say.
 
-        Whether the steps share a container is the caller's choice (a ``session``
-        in ``options.remote``), as is whether they restore a checkpoint.
+        Whether it shares a container with other requests is the caller's choice (a
+        ``session`` in ``options.remote``), as is whether it restores a checkpoint.
         """
-        key = uuid.uuid4().hex
-        results: list[StepResult] = []
-        for index, source in enumerate(steps):
-            if results and not results[-1].ok and not options.continue_on_error:
-                results.append(
-                    StepResult(index, False, 0.0, "skipped after an earlier step failed", "Skipped")
-                )
-                continue
-            results.append(await self._eval_step(source, index, options=options, key=key))
-        return EvalResult(options.remote.get("session"), tuple(results))
-
-    async def _eval_step(
-        self,
-        source: str,
-        index: int,
-        *,
-        options: EvalOptions,
-        key: str,
-    ) -> StepResult:
-        syntax = userfn.check_step(source)
+        session = options.remote.get("session")
+        syntax = userfn.check_step(code)
         if syntax is not None:
             # Not valid Python: report it without a call, which would only time a failure.
-            return StepResult(index, False, 0.0, syntax, "SyntaxError")
+            return EvalResult(session, False, 0.0, syntax, "SyntaxError")
 
         chunks: list[str] = []
         sent = 0
@@ -288,12 +250,8 @@ class Runner:
         start = self._clock()
         ok, error, error_type = True, "", ""
         try:
-            await self._backend.execute_step(
-                source,
-                index=index,
-                key=key,
-                options=options,
-                on_log=on_log,
+            await self._backend.execute_eval(
+                code, key=uuid.uuid4().hex, options=options, on_log=on_log
             )
         except asyncio.CancelledError:
             raise
@@ -303,8 +261,8 @@ class Runner:
             ok, error, error_type = False, f"{type(exc).__name__}: {exc}", type(exc).__name__
         except Exception as exc:
             ok, error, error_type = False, f"{type(exc).__name__}: {exc}", "InternalError"
-        return StepResult(
-            index,
+        return EvalResult(
+            session,
             ok,
             round(self._clock() - start, 3),
             error,

@@ -137,7 +137,7 @@ visitor-derived input, so it is contained:
   `SANDBOX_NETWORK=none` on its workers where possible.
 - Readie has no quotas, so nginx (`limit_req`, body size) and the service (rate limit,
   size, output and concurrency caps) add their own.
-- `POST /eval/run` runs lists of steps with options a visitor must not control (memory,
+- `POST /eval/run` runs code with options a visitor must not control (memory,
   timeout, packages, sessions, a pinned checkpoint, large bodies), and passes every
   `@remote` argument through without capping it. It has no token and is always served,
   so the only thing keeping it from the public is nginx: both configs answer 404 for

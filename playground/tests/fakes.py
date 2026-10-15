@@ -12,11 +12,10 @@ from readie_playground.runner import EvalOptions
 
 
 @dataclass(frozen=True, slots=True)
-class StepCall:
-    """One ``execute_step`` call as the backend received it."""
+class EvalCall:
+    """One ``execute_eval`` call as the backend received it."""
 
     source: str
-    index: int
     key: str
     options: EvalOptions
 
@@ -27,19 +26,19 @@ class FakeBackend:
         *,
         fail_cold: bool = False,
         hang: bool = False,
-        fail_steps: frozenset[int] = frozenset(),
-        timeout_steps: frozenset[int] = frozenset(),
-        crash_steps: frozenset[int] = frozenset(),
+        fail_eval: bool = False,
+        timeout_eval: bool = False,
+        crash_eval: bool = False,
         output: str = "",
     ) -> None:
         self.calls: list[tuple[str, bool]] = []
-        self.steps: list[StepCall] = []
+        self.evals: list[EvalCall] = []
         self.cancelled = 0
         self._fail_cold = fail_cold
         self._hang = hang
-        self._fail_steps = fail_steps
-        self._timeout_steps = timeout_steps
-        self._crash_steps = crash_steps
+        self._fail_eval = fail_eval
+        self._timeout_eval = timeout_eval
+        self._crash_eval = crash_eval
         self._output = output
 
     async def execute(self, code: str, *, cold: bool, on_log: Callable[[str], None]) -> None:
@@ -54,27 +53,26 @@ class FakeBackend:
             self.cancelled += 1
             raise
 
-    async def execute_step(
+    async def execute_eval(
         self,
-        source: str,
+        code: str,
         *,
-        index: int,
         key: str,
         options: EvalOptions,
         on_log: Callable[[str], None],
     ) -> None:
-        self.steps.append(StepCall(source, index, key, options))
+        self.evals.append(EvalCall(code, key, options))
         try:
             if self._hang:
                 await asyncio.sleep(3600)
             if self._output:
                 on_log(self._output)
-            if index in self._fail_steps:
+            if self._fail_eval:
                 raise RemoteExecutionError("boom", remote_traceback="Traceback: ValueError")
-            if index in self._timeout_steps:
+            if self._timeout_eval:
                 message = "deadline exceeded"
                 raise RemoteTimeoutError(message)
-            if index in self._crash_steps:
+            if self._crash_eval:
                 message = "unexpected"
                 raise RuntimeError(message)
         except asyncio.CancelledError:
