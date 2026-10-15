@@ -34,7 +34,7 @@ A `TransportError` indicates that the call did not complete because of the route
 | --- | --- | --- | --- |
 | `ClusterUnavailableError` | `UNAVAILABLE` | The service is unreachable or no worker is available. | Retry later. |
 | `RemoteTimeoutError` | `DEADLINE_EXCEEDED` | The `timeout` passed. | Raise or remove `timeout`. |
-| `InvalidRequestError` | `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, `OUT_OF_RANGE` | The router rejected the request. One case is `disable_optimized_execution=True` on a session already restored from a snapshot. | Correct the request. |
+| `InvalidRequestError` | `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, `OUT_OF_RANGE` | The router or worker rejected the request. The cases are `disable_optimized_execution=True` on a session already restored from a snapshot, a `checkpoint_id` that the router does not list (`INVALID_ARGUMENT`) or that differs from the snapshot the session runs on (`FAILED_PRECONDITION`), an invalid `packages=` requirement (`INVALID_ARGUMENT`), and a failed `packages=` install (`FAILED_PRECONDITION`). | Correct the request. For a failed install, read the log lines that precede the exception. |
 | `ResourceExhaustedError` | `RESOURCE_EXHAUSTED` | No worker has room, a session's queue wait exceeded 60 s (router default), or a message was too large. | Retry later, or use more sessions. |
 | `ExecutionCancelledError` | `CANCELLED` | The call was cancelled. | Retry if the cancellation was unintended. |
 | `PermissionDeniedError` | `PERMISSION_DENIED`, `UNAUTHENTICATED` | The auth token is missing or wrong. | Set `READIE_AUTH_TOKEN`. |
@@ -47,7 +47,7 @@ An `ExecutionError` indicates that the call ran but produced no usable result. T
 
 | Exception | Condition | Action |
 | --- | --- | --- |
-| `RemoteExecutionError` | The function raised, a `packages=` install failed, or the worker marked the run as failed. Has the attributes `remote_type`, `remote_message`, and `remote_traceback`. | Read the traceback. |
+| `RemoteExecutionError` | The function raised, or the worker marked the run as failed. Has the attributes `remote_type`, `remote_message`, and `remote_traceback`. | Read the traceback. |
 | `EmptyResultError` | The worker sent no result, or sent something that is not a result envelope, for example from an executor that speaks an older protocol. A function that returns `None` does not raise this error. | Check `logs` and consider a larger `memory` value. If the error repeats, report it to the operator. |
 
 ## See also

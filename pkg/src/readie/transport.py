@@ -54,6 +54,8 @@ class Transport(Protocol):
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Outcome:
         """Run one call to completion."""
         ...
@@ -78,6 +80,8 @@ class AsyncTransport(Protocol):
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Outcome:
         """Run one call to completion."""
         ...
@@ -107,6 +111,8 @@ class GrpcTransport:
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Outcome:
         """Stream the call to the router and assemble the response."""
         stub = proxy_pb2_grpc.ProxyServiceStub(self._channels.get())
@@ -118,6 +124,8 @@ class GrpcTransport:
             budgets,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            packages=packages,
+            checkpoint_id=checkpoint_id,
         )
 
         call = stub.RequestExecution(requests, timeout=timeout, metadata=self._metadata)
@@ -163,6 +171,8 @@ class AsyncGrpcTransport:
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Outcome:
         """Stream the call to the router and assemble the response."""
         stub = proxy_pb2_grpc.ProxyServiceStub(self._channels.get())
@@ -178,6 +188,8 @@ class AsyncGrpcTransport:
             budgets,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            packages=packages,
+            checkpoint_id=checkpoint_id,
         )
 
         call = stub.RequestExecution(requests, timeout=timeout, metadata=self._metadata)

@@ -175,7 +175,7 @@ The pipeline builds checkpoints offline. Settings come from environment variable
 | `READIE_PLAN_DIR` | empty (use the output folder) | Where the plan and spec fingerprint go. |
 | `BASE_DIR` | `/app/executorfs` | The sandbox bundle (config plus root filesystem). |
 | `EXECUTOR_DIR` | `/app/executor` | Host-side output folder for checkpoints and the manifest. |
-| `ROOTFS_PYTHONPATH` | `/lib/python3.12/dist-packages` | Python path inside the root filesystem. |
+| `ROOTFS_PYTHONPATH` | `/usr/local/lib/python3.12/dist-packages` | Python path inside the root filesystem. |
 | `SANDBOX_NETWORK` | `sandbox` | Must match the worker. |
 | `SANDBOX_HOST_UDS` | `create` | Must match the worker. |
 | `SANDBOX_OVERLAY` | `root:memory` | Must match the worker. Same restrictions as above. |

@@ -157,6 +157,21 @@ stats sampler publish to a single channel, and only the goroutine that called
 and corrupt frames rather than failing cleanly, so this single-owner rule is
 required.
 
+When the request names `packages`, the runner installs them after the container
+is acquired and before it dials the executor. `execution/install.go` runs one
+`runsc exec` in the sandbox (`sandbox.Port.Exec`): the executor's own DNS bootstrap
+(`python -m readie_executor.network`), then
+`uv pip install --system --no-cache-dir -- <specs>`. The specs are positional
+parameters of a fixed `sh -c` script, so a requirement string is never parsed as
+shell, and the `--` stops `uv` from reading one as an option. The router has
+already validated the list and removed what the rootfs carries. The command's
+output goes to the client as logs, and a non-zero exit fails the request with
+`FAILED_PRECONDITION`. The container is released as a success, so a typo in a
+requirement does not destroy a session's warm container. The adapter passes the
+bundle's `process.env` to `runsc exec` as `--env` flags, so the command sees the
+same `PATH` and `PYTHONPATH` as the executor. Nothing records what an earlier
+request installed, so a reused container installs again.
+
 The worker does not currently run a log tailer. The code never emits log
 events, and `STREAM_LOGS` is read but has no effect. The function's captured
 output (stdout and stderr) arrives in the executor's result envelope, and the

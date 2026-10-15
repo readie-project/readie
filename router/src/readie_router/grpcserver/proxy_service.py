@@ -40,6 +40,7 @@ from readie_router.scheduling.models import (
     Outcome,
     Placement,
 )
+from readie_router.scheduling.packages import normalize_packages
 from readie_router.scheduling.scheduler import ProvisionRequest, Scheduler
 from readie_router.workers.ports import ExecutionClient, ExecutionStream
 
@@ -163,6 +164,13 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             warm=placement.warm,
         )
         log.info("execution placed")
+        if placement.ignored_packages:
+            # Not installed: the base image already carries them, whatever
+            # version was asked for. The client is told too (see _relay).
+            log.info(
+                "packages already in the base image were not installed",
+                ignored_packages=list(placement.ignored_packages),
+            )
 
         outcome = Outcome.FAILURE  # zero value: fail safe, as the worker does
         relay = _Relay()
@@ -197,6 +205,23 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         """Pump the client stream to the worker and the worker's back."""
         stream = self._executions.open(placement.worker_uri, timeout=self._execution_timeout)
         try:
+            for spec in placement.ignored_packages:
+                # The client asked for something the base image already has, and
+                # it will not be installed. Say so, since a different pinned
+                # version is otherwise silently not the one that runs.
+                #
+                # success=True is load-bearing: the client treats any message
+                # with success=False as a failed execution, and the default for
+                # a bool is False, so leaving it unset made this note fail the call.
+                await context.write(
+                    proxy_pb2.ClientExecutionResponse(
+                        request_id=placement.request_id,
+                        session_id=placement.session_id,
+                        success=True,
+                        worker_id=placement.worker_id,
+                        logs=f"ignored {spec}: already provided by the base image\n",
+                    )
+                )
             async with asyncio.TaskGroup() as tasks:
                 tasks.create_task(self._pump_requests(placement, request_iterator, stream))
                 tasks.create_task(
@@ -273,7 +298,8 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
 
         A memory budget the client omits or leaves at 0 gets the cluster
         default; other kinds are forwarded as sent. Import hints are deduped and
-        sorted for a stable worker-facing order.
+        sorted for a stable worker-facing order. Packages are validated and
+        deduped here, so an invalid requirement is rejected before placement.
         """
         budgets: list[Budget] = []
         has_memory = False
@@ -287,6 +313,10 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         if not has_memory:
             budgets.append(Budget(kind=RESOURCE_MEMORY, alloc=self._default_memory, max=0))
 
+        if config.checkpoint_id and config.disable_optimized_execution:
+            msg = "checkpoint_id cannot be combined with disable_optimized_execution"
+            raise InvalidRequestError(msg)
+
         imports = tuple(sorted({name for name in config.imports if name}))
         # A request is GPU if it says so or if it carries any GPU-memory budget.
         gpu = config.gpu or any(b.kind == RESOURCE_GPU_MEMORY for b in budgets)
@@ -295,6 +325,8 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             resources=imports,
             flavor="gpu" if gpu else "cpu",
             disable_optimized_execution=config.disable_optimized_execution,
+            packages=normalize_packages(config.packages),
+            checkpoint_id=config.checkpoint_id,
         )
 
 
@@ -341,9 +373,10 @@ def _worker_budgets(placement: Placement) -> list[resources_pb2.ResourceBudget]:
 def _worker_header(placement: Placement) -> execution_pb2.WorkerExecutionRequest:
     """Build the first message sent to the worker.
 
-    ``resources`` (import hints) and ``budgets`` are populated here: the worker
-    reads its provisioning fields off this first message and uses the imports
-    for checkpoint selection.
+    ``resources`` (import hints), ``budgets`` and ``packages`` are populated
+    here: the worker reads its provisioning fields off this first message,
+    uses the imports for checkpoint selection and installs the packages before
+    the payload runs.
     """
     return execution_pb2.WorkerExecutionRequest(
         request_id=placement.request_id,
@@ -353,6 +386,7 @@ def _worker_header(placement: Placement) -> execution_pb2.WorkerExecutionRequest
         checkpoint_id=placement.checkpoint_id,
         budgets=_worker_budgets(placement),
         resources=list(placement.resources),
+        packages=list(placement.packages),
         payload=b"",
     )
 

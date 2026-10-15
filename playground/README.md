@@ -44,37 +44,47 @@ before streaming return 413 (too large), 422 (empty), 429 (rate limited) or 503
 ### Evaluation route
 
 `POST /eval/run` runs a list of steps (a notebook's cells, a debugging session)
-through both lanes and returns every step's timing as JSON. It exists only when
-`PLAYGROUND_EVAL_TOKEN` is set, needs `Authorization: Bearer <token>`, is not
-published by nginx, and is meant for a harness run by the operator.
+once and returns every step's timing as JSON. The route has no token and is always
+served, so nothing in the service keeps a visitor out of it. Both nginx configs answer
+404 for `/playground/eval/` (a rule that sits before `/playground/` and must stay), so
+the route is reachable only on the playground's own container network, at the
+service's address on port 8080 (for example `http://<container address>:8080/eval/run`
+from the host). It is meant for a harness run by the operator. Because it is not
+behind nginx, nginx's request limits do not apply to it: a large request, a long run
+and many requests at once are all accepted, and the route has no rate limit or
+concurrency cap of its own.
+
+The route makes no decisions. Apart from `steps` and `continue_on_error`, every
+field is an argument of `@remote`, spelled as `@remote` spells it, and goes to
+`readie.remote` untouched. A field left out keeps `remote`'s own default (the
+playground adds no memory, deadline or session of its own).
 
 ```json
 {
   "steps": ["import pandas as pd\nx = 41", "print(x + 1)"],
-  "session": null,
-  "memory": "8Gi", "max_memory": "8Gi", "timeout_s": 300, "total_timeout_s": 300,
+  "continue_on_error": true,
+  "timeout": 300, "session": null,
+  "memory": "8Gi", "max_memory": "8Gi",
   "gpu": false, "gpu_memory": null, "max_gpu_memory": null,
-  "packages": [],
-  "continue_on_error": true
+  "packages": [], "disable_optimized_execution": false, "checkpoint_id": null
 }
 ```
 
-Only `steps` is required. The other fields are the options of the Readie remote
-function, and each defaults to the playground's own value (1 GiB, 30 seconds, no
-GPU, no packages, no total budget). `timeout_s` is the deadline of each step;
-`total_timeout_s` is an optional budget for all the steps of one lane: a step gets
-what is left of it, and once it is spent the remaining steps are reported as `OutOfTime`
-without a call. The service caps memory, timeouts, step count and code size
-(`PLAYGROUND_EVAL_*`).
+Only `steps` is required. Unknown fields are refused with a 422, so a removed one
+(`timeout_s`, `total_timeout_s`) is not ignored without a word. The arguments of
+`@remote` are validated by `remote` itself, called once up front, so a bad size, a
+bad requirement or `checkpoint_id` together with `disable_optimized_execution=true`
+returns a 422 before anything runs. The route keeps its own limits on the request
+(step count and code size, `PLAYGROUND_EVAL_*`) and no cap on any `@remote` value.
+The set of fields follows `@remote`: when an argument is added or changed there,
+`EvalRequest` changes with it (see `AGENTS.md`), and a test pins that they match.
 
-- **Both lanes run at once, as `/run` does, each lane's steps one after another.** The
-  optimized lane sends `disable_optimized_execution=False` and the cold lane
-  `True` on every step. The harness sends one request per item and may have several in flight, up to `PLAYGROUND_EVAL_MAX_CONCURRENT_RUNS`.
-- **Sessions.** More than one step, or a `session` id, runs each lane under its
-  own session (`<id>-optimized`, `<id>-cold`), so its steps share one container
-  and one interpreter: names defined by one step are visible to the next. A single
-  step with no session is a plain call. The lanes never share a session, because
-  an optimized session cannot be asked to start cold.
+- **One run per request.** Comparing an optimized start with a cold start is the
+  caller's job: send the item twice, once with `disable_optimized_execution` false
+  and once true.
+- **Sessions.** `session` is passed as given. With none, every step is an independent
+  call. With one, the steps share a container and an interpreter: names defined by one
+  step are visible to the next. The route never invents a session id.
 - **Steps run with module semantics** (`exec` in a namespace that lasts for the
   session, `__name__ == "__main__"`), so `from x import *`, classes and `global`
   behave as in a script. The function the
@@ -88,23 +98,18 @@ without a call. The service caps memory, timeouts, step count and code size
 ```json
 {
   "session_id": "5f0c...",
-  "lanes": {
-    "optimized": {
-      "session_id": "5f0c...-optimized", "ok": true, "total_s": 2.41,
-      "steps": [{"index": 0, "ok": true, "duration_s": 1.93, "error": "",
-                 "error_type": "", "output": "", "truncated": false}]
-    },
-    "cold": {"session_id": "5f0c...-cold", "ok": true, "total_s": 6.02, "steps": ["..."]}
-  }
+  "ok": true,
+  "total_s": 2.41,
+  "steps": [{"index": 0, "ok": true, "duration_s": 1.93, "error": "",
+             "error_type": "", "output": "", "truncated": false}]
 }
 ```
 
 `duration_s` is measured exactly as for `/run`: a monotonic clock around the whole
 backend call (building the function, connecting, the call). `error_type` is
 `RemoteExecutionError` for code that raised, `RemoteTimeoutError` when the deadline
-passed, `OutOfTime` when the total budget was used up, `SyntaxError`, `Skipped`, another Readie error name, or `InternalError`.
-Errors before the run return 401 (token), 413 (too large), 422 (invalid) or 503
-(an evaluation is already running).
+passed, `SyntaxError`, `Skipped`, another Readie error name, or `InternalError`.
+Errors before the run return 413 (too large) or 422 (invalid).
 
 ## Resource limits
 
@@ -134,12 +139,8 @@ Readie workers to match.
 | `PLAYGROUND_TRUST_PROXY` | off | Use the first `X-Forwarded-For` address as the client (on behind nginx) |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
-| `PLAYGROUND_EVAL_TOKEN` | empty | Bearer token for `/eval/run`. Empty does not serve the route |
 | `PLAYGROUND_EVAL_MAX_CODE_BYTES` | `8388608` | Largest total source of one evaluation request |
 | `PLAYGROUND_EVAL_MAX_STEPS` | `1000` | Most steps in one request |
-| `PLAYGROUND_EVAL_MAX_TIMEOUT_S` | `1800` | Largest `timeout_s` a request may ask for |
-| `PLAYGROUND_EVAL_MAX_MEMORY` | `64Gi` | Largest `memory` or `max_memory` a request may ask for |
-| `PLAYGROUND_EVAL_MAX_CONCURRENT_RUNS` | `1` | Evaluation requests at once; another gets 503 |
 
 Point the service at a dedicated Readie server with `SANDBOX_NETWORK=none` on its workers
 rather than the one real users share, by setting `PLAYGROUND_ROUTER_URI`.

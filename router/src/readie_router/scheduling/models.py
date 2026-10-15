@@ -70,6 +70,10 @@ class Demand:
     #: Session affinity still applies; the scheduler rejects this only when the
     #: session's warm container was itself restored from a checkpoint.
     disable_optimized_execution: bool = False
+    #: Requirement strings to install, already validated, deduped and sorted.
+    packages: tuple[str, ...] = ()
+    #: A checkpoint the client pinned, or "" to let the catalogue choose.
+    checkpoint_id: str = ""
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""
@@ -203,6 +207,11 @@ class Placement:
     resources: tuple[str, ...]
     warm: bool
     opened_at: float
+    #: What the worker still has to install: the request's packages minus
+    #: whatever the chosen worker's base image already carries.
+    packages: tuple[str, ...] = ()
+    #: What was left out because the base image already has it.
+    ignored_packages: tuple[str, ...] = ()
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""

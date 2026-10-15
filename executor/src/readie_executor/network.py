@@ -3,6 +3,11 @@
 Nothing populates /etc/resolv.conf for a gVisor sandbox the way a normal
 container runtime would at container-create time, so without this every DNS
 lookup -- a package install's, or a task's own -- fails.
+
+Two callers share this one implementation. The server runs ``ensure_dns`` for
+every call, since a task can reach the network on its own. The worker runs
+``python -m readie_executor.network`` in the sandbox right before it installs
+a request's packages, which happens before the executor sees the request.
 """
 
 from __future__ import annotations
@@ -20,14 +25,17 @@ _RESOLV_CONF = Path("/etc/resolv.conf")
 def ensure_dns() -> None:
     """Copy in a working /etc/resolv.conf if the rootfs shipped an empty one.
 
-    Called unconditionally for every call, not just one that installs
-    packages: a task that downloads its own dataset needs this exactly as
-    much as `uv` does. Best-effort: an older rootfs built before
-    _RESOLV_CONF_DEFAULT existed just leaves this a no-op rather than failing
-    the call outright.
+    Called unconditionally for every call, not just one with packages: a task
+    that downloads its own dataset needs this exactly as much as `uv` does.
+    Best-effort: an older rootfs built before _RESOLV_CONF_DEFAULT existed just
+    leaves this a no-op rather than failing the call outright.
     """
     try:
         if _RESOLV_CONF.stat().st_size == 0 and _RESOLV_CONF_DEFAULT.exists():
             shutil.copyfile(_RESOLV_CONF_DEFAULT, _RESOLV_CONF)
     except OSError:
         pass
+
+
+if __name__ == "__main__":
+    ensure_dns()

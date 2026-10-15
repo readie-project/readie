@@ -25,7 +25,7 @@ func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 	const (
 		rootfs     = "/opt/executor-rootfs"
 		entrypoint = "/app/executor/app.py"
-		pythonPath = "/lib/python3.12/dist-packages"
+		pythonPath = "/usr/local/lib/python3.12/dist-packages"
 		socketDir  = "/shared/exec_container-abc"
 		overlay    = "root:memory"
 		network    = "none"
@@ -97,7 +97,7 @@ func TestRun_WritesAConfigTheRuntimeWouldAccept(t *testing.T) {
 		"bundle_dir":  dir,
 		"rootfs_path": "/opt/executor-rootfs",
 		"args":        []string{"python", "-u", "/app/executor/app.py"},
-		"env":         []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/lib/python3.12/dist-packages"},
+		"env":         []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/usr/local/lib/python3.12/dist-packages"},
 		"cwd":         "/",
 		"mounts": []map[string]any{{
 			"source": "/shared/x", "destination": "/tmp",

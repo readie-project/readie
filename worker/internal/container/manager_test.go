@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	pythonPath = "/lib/python3.12/dist-packages"
+	pythonPath = "/usr/local/lib/python3.12/dist-packages"
 )
 
 var executorArgv = []string{"python", "-u", "-m", "readie_executor"}

@@ -26,6 +26,10 @@ A JSON file, one per flavor, that lists every checkpoint the pipeline built and 
 
 A saved copy of a running Python process, taken after the process has imported a set of packages. Restoring a checkpoint is faster than starting Python and importing those packages again. See [Checkpoints](/docs/concepts/checkpoints).
 
+### checkpoint id
+
+The name of one checkpoint in a catalogue, for example `checkpoint_3`. The router sends it to the worker. A function can pin one with `@remote(checkpoint_id=...)`. The same number can name different checkpoints in two generations or two flavors, so an id is meaningful only for one catalogue. See [Checkpoints](/docs/concepts/checkpoints).
+
 ### cloudpickle
 
 A Python library that serializes functions, including functions defined in a script. The client uses it to turn the function and its arguments into bytes, and the executor turns the bytes back into a function. Both sides must run the same Python minor version. See the [FAQ](/docs/getting-started/faq).
@@ -47,6 +51,10 @@ A collection of example workloads that the pipeline analyzes to decide which pac
 ### dependency closure
 
 A set of packages that contains a package, everything it imports, and everything those packages import in turn. The router prices a checkpoint by the closure of what a request needs, not only by the names that the request lists. See [Cost model](/docs/concepts/cost-model).
+
+### distribution
+
+A package as PyPI publishes it, such as `scikit-learn`, as opposed to the module that it provides for `import`, such as `sklearn`. A catalogue lists the distributions that the root filesystem of a flavor contains, and the router skips any requested package that is already one of them. See [Flavors and catalogues](/docs/concepts/flavors-and-catalogues).
 
 ## E
 

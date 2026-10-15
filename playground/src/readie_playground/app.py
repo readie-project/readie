@@ -2,14 +2,14 @@
 
 ``POST /run`` streams both lanes of one script as server-sent events; it is the
 public playground. ``POST /eval/run`` is for evaluations: it takes a list of steps
-and the options of the Readie remote function, runs both lanes, and returns every
-step's timing as JSON. It exists only when ``PLAYGROUND_EVAL_TOKEN`` is set, needs
-that token, and is not published by nginx.
+and the arguments of the Readie remote function, passes them to it as given, runs
+the steps once, and returns every step's timing as JSON. It exists only when
+It has no token: it is always served, and the nginx configs answer 404 for
+``/playground/eval/`` so that it is reachable only on the playground's own network.
 """
 
 from __future__ import annotations
 
-import hmac
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -17,14 +17,12 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from readie import ReadieError, ResourceKind, Settings
-from readie.budget import build_budgets
-from readie.packages import normalize_packages
+from pydantic import BaseModel, ConfigDict
+from readie import ReadieError, Settings, remote
 
-from readie_playground.config import MEMORY, PlaygroundSettings
+from readie_playground.config import PlaygroundSettings
 from readie_playground.limits import RateLimiter, RunSlots
-from readie_playground.runner import EvalOptions, EvalOutcome, Event, ReadieBackend, Runner
+from readie_playground.runner import EvalOptions, EvalResult, Event, ReadieBackend, Runner
 
 
 class RunRequest(BaseModel):
@@ -34,19 +32,29 @@ class RunRequest(BaseModel):
 
 
 class EvalRequest(BaseModel):
-    """Body of ``POST /eval/run``: the steps to run and how to run them."""
+    """Body of ``POST /eval/run``: the steps, and the arguments of ``readie.remote``.
+
+    Apart from ``steps`` and ``continue_on_error``, every field is an argument of
+    ``@remote`` under its own name, and goes to it untouched. ``session`` is the
+    session id (``remote`` takes a ``Session`` made from it). A field left out
+    keeps ``remote``'s own default. Unknown fields are refused.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     steps: list[str]
-    session: str | None = None
-    memory: str = MEMORY
-    max_memory: str | None = None
-    gpu: bool = False
-    gpu_memory: str | None = None
-    max_gpu_memory: str | None = None
-    packages: list[str] = Field(default_factory=list)
-    timeout_s: float | None = None
-    total_timeout_s: float | None = None
     continue_on_error: bool = True
+
+    timeout: float | None = None
+    session: str | None = None
+    gpu: bool = False
+    memory: str | int | None = None
+    max_memory: str | int | None = None
+    gpu_memory: str | int | None = None
+    max_gpu_memory: str | int | None = None
+    packages: list[str] | None = None
+    disable_optimized_execution: bool = False
+    checkpoint_id: str | None = None
 
 
 def _frame(event: Event) -> str:
@@ -78,74 +86,38 @@ def _client_settings(settings: PlaygroundSettings) -> Settings:
     return Settings(tls=settings.router_tls)
 
 
-def _authorise(request: Request, token: str) -> None:
-    """Require ``Authorization: Bearer <token>``, compared in constant time."""
-    scheme, _, supplied = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not hmac.compare_digest(
-        supplied.strip().encode(), token.encode()
-    ):
-        raise HTTPException(401, "Missing or wrong token.", headers={"WWW-Authenticate": "Bearer"})
+def _eval_options(body: EvalRequest) -> EvalOptions:
+    """Turn a request into the options passed to ``readie.remote``.
 
-
-def _eval_options(body: EvalRequest, settings: PlaygroundSettings) -> EvalOptions:
-    """Validate an evaluation request into options for the Readie remote function."""
-    timeout = settings.timeout_s if body.timeout_s is None else body.timeout_s
-    if not 0 < timeout <= settings.eval_max_timeout_s:
-        raise HTTPException(422, f"timeout_s must be between 0 and {settings.eval_max_timeout_s}.")
-    total = body.total_timeout_s
-    if total is not None and not 0 < total <= settings.eval_max_timeout_s:
-        raise HTTPException(
-            422, f"total_timeout_s must be between 0 and {settings.eval_max_timeout_s}."
-        )
+    Nothing is changed on the way. ``remote`` itself is called once, here, only so
+    that its own validation (a bad size, a bad requirement, a contradiction) rejects
+    the request up front instead of failing every step.
+    """
+    arguments = body.model_dump(exclude={"steps", "continue_on_error"})
     try:
-        budgets = build_budgets(
-            memory=body.memory,
-            max_memory=body.max_memory or body.memory,
-            gpu_memory=body.gpu_memory,
-            max_gpu_memory=body.max_gpu_memory,
-        )
-        cap = build_budgets(memory=settings.eval_max_memory)[0].alloc
-        packages = normalize_packages(body.packages)
+        remote(**arguments)
     except ReadieError as exc:
         raise HTTPException(422, str(exc)) from exc
-    if any(b.kind is ResourceKind.MEMORY and max(b.alloc, b.max) > cap for b in budgets):
-        raise HTTPException(422, f"memory may not exceed {settings.eval_max_memory}.")
-    return EvalOptions(
-        memory=body.memory,
-        max_memory=body.max_memory or body.memory,
-        gpu=body.gpu,
-        gpu_memory=body.gpu_memory,
-        max_gpu_memory=body.max_gpu_memory,
-        packages=packages,
-        timeout_s=timeout,
-        total_timeout_s=total,
-        continue_on_error=body.continue_on_error,
-    )
+    return EvalOptions(remote=arguments, continue_on_error=body.continue_on_error)
 
 
-def _eval_payload(outcome: EvalOutcome) -> dict[str, object]:
+def _eval_payload(result: EvalResult) -> dict[str, object]:
     return {
-        "session_id": outcome.session_id,
-        "lanes": {
-            lane.value: {
-                "session_id": result.session_id,
-                "ok": result.ok,
-                "total_s": result.total_s,
-                "steps": [
-                    {
-                        "index": step.index,
-                        "ok": step.ok,
-                        "duration_s": step.duration_s,
-                        "error": step.error,
-                        "error_type": step.error_type,
-                        "output": step.output,
-                        "truncated": step.truncated,
-                    }
-                    for step in result.steps
-                ],
+        "session_id": result.session_id,
+        "ok": result.ok,
+        "total_s": result.total_s,
+        "steps": [
+            {
+                "index": step.index,
+                "ok": step.ok,
+                "duration_s": step.duration_s,
+                "error": step.error,
+                "error_type": step.error_type,
+                "output": step.output,
+                "truncated": step.truncated,
             }
-            for lane, result in outcome.lanes.items()
-        },
+            for step in result.steps
+        ],
     }
 
 
@@ -197,25 +169,16 @@ def create_app(settings: PlaygroundSettings, runner: Runner | None = None) -> Fa
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
-    if settings.eval_token:
-        eval_slots = RunSlots(settings.eval_max_concurrent_runs)
-
-        @app.post("/eval/run")
-        async def eval_run(body: EvalRequest, request: Request) -> dict[str, object]:
-            _authorise(request, settings.eval_token)
-            if not 1 <= len(body.steps) <= settings.eval_max_steps:
-                raise HTTPException(422, f"Send between 1 and {settings.eval_max_steps} steps.")
-            if any(not step.strip() for step in body.steps):
-                raise HTTPException(422, "Every step needs some code.")
-            if sum(len(step.encode()) for step in body.steps) > settings.eval_max_code_bytes:
-                raise HTTPException(413, "The code is too large.")
-            options = _eval_options(body, settings)
-            if not eval_slots.try_acquire():
-                raise HTTPException(503, "An evaluation is already running.")
-            try:
-                outcome = await runner.run_eval(body.steps, options, session=body.session)
-            finally:
-                eval_slots.release()
-            return _eval_payload(outcome)
+    @app.post("/eval/run")
+    async def eval_run(body: EvalRequest) -> dict[str, object]:
+        if not 1 <= len(body.steps) <= settings.eval_max_steps:
+            raise HTTPException(422, f"Send between 1 and {settings.eval_max_steps} steps.")
+        if any(not step.strip() for step in body.steps):
+            raise HTTPException(422, "Every step needs some code.")
+        if sum(len(step.encode()) for step in body.steps) > settings.eval_max_code_bytes:
+            raise HTTPException(413, "The code is too large.")
+        options = _eval_options(body)
+        result = await runner.run_eval(body.steps, options)
+        return _eval_payload(result)
 
     return app

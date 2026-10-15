@@ -18,8 +18,6 @@ class StepCall:
     source: str
     index: int
     key: str
-    session_id: str | None
-    cold: bool
     options: EvalOptions
 
 
@@ -32,7 +30,6 @@ class FakeBackend:
         fail_steps: frozenset[int] = frozenset(),
         timeout_steps: frozenset[int] = frozenset(),
         crash_steps: frozenset[int] = frozenset(),
-        rendezvous: asyncio.Barrier | None = None,
         output: str = "",
     ) -> None:
         self.calls: list[tuple[str, bool]] = []
@@ -43,7 +40,6 @@ class FakeBackend:
         self._fail_steps = fail_steps
         self._timeout_steps = timeout_steps
         self._crash_steps = crash_steps
-        self._rendezvous = rendezvous
         self._output = output
 
     async def execute(self, code: str, *, cold: bool, on_log: Callable[[str], None]) -> None:
@@ -64,16 +60,11 @@ class FakeBackend:
         *,
         index: int,
         key: str,
-        session_id: str | None,
-        cold: bool,
         options: EvalOptions,
         on_log: Callable[[str], None],
     ) -> None:
-        self.steps.append(StepCall(source, index, key, session_id, cold, options))
+        self.steps.append(StepCall(source, index, key, options))
         try:
-            if self._rendezvous is not None and index == 0:
-                # Both lanes must be inside their first step at once to get past this.
-                await asyncio.wait_for(self._rendezvous.wait(), timeout=5)
             if self._hang:
                 await asyncio.sleep(3600)
             if self._output:

@@ -1,6 +1,7 @@
 """Normalizing the ``packages=`` list on ``@remote``.
 
-The executor installs these with ``uv`` before every call. Two entries that
+The worker installs these with ``uv`` before the call runs, after the router has
+validated them again and left out what the base image carries. Two entries that
 name the same distribution -- ``"Requests"`` and ``"requests"``, or
 ``"scikit_learn"`` and ``"scikit-learn"`` -- must dedupe to one, which is what
 PEP 503 name normalization (lowercase, runs of ``-._`` collapsed to a single

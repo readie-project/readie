@@ -73,6 +73,8 @@ The router makes the selection. It does not look inside checkpoints. It reads a 
 
 If a call belongs to a [session](/docs/concepts/sessions) that already has a warm container, no checkpoint is selected and the call returns to that container.
 
+A function can name the checkpoint to restore with `@remote(checkpoint_id="...")`. The router then skips the scoring and uses that checkpoint, after it checks that the catalogue of the chosen worker lists it. An id that the catalogue does not list is rejected with `InvalidRequestError`, and no id is assumed to be valid. The worker still starts cold if the restore itself fails, as in step 5. A pinned id cannot be combined with `disable_optimized_execution=True`. A session whose warm container was restored from a different checkpoint rejects the pin with a precondition error.
+
 A function can opt out with `@remote(disable_optimized_execution=True)`. The router then skips checkpoints and cold-starts. If the container of the session was already restored from a checkpoint, the router rejects the request with a precondition error instead of ignoring the flag.
 
 ## Origin of checkpoints

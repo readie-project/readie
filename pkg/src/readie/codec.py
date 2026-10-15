@@ -32,7 +32,6 @@ class ResultCodec(Protocol):
         func: Callable[..., Any],
         args: Sequence[Any],
         kwargs: Mapping[str, Any],
-        packages: Sequence[str] = (),
     ) -> bytes:
         """Serialise a call for the executor."""
         ...
@@ -48,10 +47,9 @@ class CloudpickleCodec:
     The executor unpickles a mapping and calls
     ``data['func'](*data['args'], **data['kwargs'])``. The three keys and their
     spelling are the contract; changing them requires changing the executor.
-    ``packages`` is a fourth, optional key: PyPI requirement specs the executor
-    installs with ``uv`` before invoking ``func``, so a caller's requested
-    packages travel with the call itself rather than through a separate
-    channel router and worker would otherwise have to know about.
+    Packages are not part of it: they travel in the execution config, so the
+    router can validate and dedupe them and the worker can install them before
+    the call reaches the executor.
     """
 
     def encode_call(
@@ -59,7 +57,6 @@ class CloudpickleCodec:
         func: Callable[..., Any],
         args: Sequence[Any],
         kwargs: Mapping[str, Any],
-        packages: Sequence[str] = (),
     ) -> bytes:
         """Pickle the function object together with its arguments."""
         # Print the Python interpreter version
@@ -74,7 +71,6 @@ class CloudpickleCodec:
                         "func": func,
                         "args": tuple(args),
                         "kwargs": dict(kwargs),
-                        "packages": list(packages),
                     }
                 )
             )

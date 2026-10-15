@@ -11,7 +11,7 @@ The `readie` package exposes the `@remote` decorator, the `Client` and `Session`
 ```python
 remote(func=None, /, *, client=None, timeout=None, session=None, gpu=False,
        memory=None, max_memory=None, gpu_memory=None, max_gpu_memory=None,
-       packages=None, disable_optimized_execution=False)
+       packages=None, disable_optimized_execution=False, checkpoint_id=None)
 ```
 
 The decorator is used bare (`@remote`) or with keywords (`@remote(memory="2Gi")`). Decorating performs no work and opens no connection.
@@ -28,8 +28,9 @@ The decorator is used bare (`@remote`) or with keywords (`@remote(memory="2Gi")`
 | `max_memory` | `str`, `int`, or `None` | `None` | Memory ceiling. |
 | `gpu_memory` | `str`, `int`, or `None` | `None` | GPU memory. Implies `gpu=True` at the router. |
 | `max_gpu_memory` | `str`, `int`, or `None` | `None` | GPU memory ceiling. |
-| `packages` | sequence of `str`, or `None` | `None` | PyPI requirements installed before every call. |
+| `packages` | sequence of `str`, or `None` | `None` | PyPI requirements installed before every call. Entries that the sandbox image already provides are skipped, whatever version they ask for. |
 | `disable_optimized_execution` | `bool` | `False` | Always cold-starts and never restores a snapshot. |
+| `checkpoint_id` | `str` or `None` | `None` | Restores exactly this snapshot instead of letting the router choose one. The router rejects the call when its catalogue has no snapshot with this id. The worker still starts cold if the restore itself fails. Cannot be combined with `disable_optimized_execution=True`. |
 
 Sizes are bytes (`int`) or strings such as `"512Mi"`, `"4Gi"`, and `"2G"`. For the unit table, see [Packages and resources](/docs/getting-started/packages-and-resources).
 
@@ -39,9 +40,9 @@ Sizes are bytes (`int`) or strings such as `"512Mi"`, `"4Gi"`, and `"2G"`. For t
 
 | Exception | Condition |
 | --- | --- |
-| `ConfigurationError` | A size is invalid, or a ceiling is below its starting value. Raised at decoration time. |
+| `ConfigurationError` | A size is invalid, a ceiling is below its starting value, or `checkpoint_id` is combined with `disable_optimized_execution=True`. Raised at decoration time. |
 | `InvalidPackageError` | A `packages` entry is not a valid requirement. Raised at decoration time. |
-| `InvalidRequestError` | `disable_optimized_execution=True` is used with a session whose sandbox was itself restored from a snapshot. |
+| `InvalidRequestError` | `disable_optimized_execution=True` is used with a session whose sandbox was itself restored from a snapshot, `checkpoint_id` names a snapshot that the router does not have or that differs from the one the session runs on, or the package install failed. |
 
 ## `RemoteFunction`
 
@@ -78,7 +79,7 @@ Creating a client checks the Python version and raises `IncompatiblePythonError`
 
 | Member | Description |
 | --- | --- |
-| `call(func, args=(), kwargs=None, *, session=None, timeout=None, budgets=(), gpu=False, packages=(), disable_optimized_execution=False)` | Runs `func` and blocks. Takes already-built `Budget` objects, which `remote` builds from its keywords. |
+| `call(func, args=(), kwargs=None, *, session=None, timeout=None, budgets=(), gpu=False, packages=(), disable_optimized_execution=False, checkpoint_id="")` | Runs `func` and blocks. Takes already-built `Budget` objects, which `remote` builds from its keywords. |
 | `await acall(...)` | Asynchronous form of `call` with the same parameters. |
 | `session(session_id=None)` | Context manager that yields a `Session`. |
 | `close()`, `await aclose()` | Release connections. Both are idempotent. After closing, calls raise `ClientClosedError`. |

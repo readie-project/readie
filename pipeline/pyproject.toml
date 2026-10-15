@@ -23,18 +23,11 @@ corpus = [
     "httpx>=0.27",
 ]
 
-# The evaluation talks to the playground's /eval/run route over HTTP.
-evals = [
-    "httpx>=0.27",
-]
-
 [project.scripts]
 readie-pipeline = "readie_pipeline.cli:main"
 
 [dependency-groups]
 dev = [
-    # The eval's HTTP client and its tests use httpx, which the `evals` extra
-    # installs for users; CI installs dependency groups only.
     "httpx>=0.27",
     "mypy>=1.13",
     "pytest>=8.3",

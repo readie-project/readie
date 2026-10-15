@@ -151,27 +151,6 @@ The worker could not restore a checkpoint. Check the worker log for the reason, 
 
 A new gVisor or executor version requires new checkpoints. Rebuild with `make generation`.
 
-## Time the checkpoints with the eval
-
-The `eval` stage measures how long code takes to run through a running Readie stack with checkpoint restore and without it. It is separate from the build and needs the `evals` extra of the pipeline and a running evaluation server. `pipeline/README.md` describes the server and every option.
-
-1. Generate an eval set into its own file. The command is the corpus generation with a different output path.
-
-   ```bash
-   readie-pipeline corpus --output data/evals/cpu.json --total 500
-   ```
-
-   Add `--exclude data/datasets/cpu.json` to keep the eval set free of items already in the main corpus.
-
-2. Run the set and read the report.
-
-   ```bash
-   readie-pipeline eval run --corpus data/evals/cpu.json --server "$READIE_EVAL_SERVER" --token "$READIE_EVAL_TOKEN"
-   readie-pipeline eval report --results data/evals/cpu.results.jsonl
-   ```
-
-Each item runs once per repetition. Its two starts run at the same time, and by default the items run one after another. A worker that is full delays an item and retries it, and the options of `eval run` set how many items run at once and how long a retry waits. The time that counts is the `duration_s` the evaluation server returns. An item that runs out of the time budget is recorded as a timeout and is left out of the comparison.
-
 ## What's next
 
 - [Run the stack locally](/docs/contributing/run-the-stack)

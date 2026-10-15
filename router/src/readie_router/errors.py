@@ -80,8 +80,33 @@ class OptimizedExecutionConflictError(SchedulingError):
         self.session_id = session_id
 
 
+class CheckpointConflictError(SchedulingError):
+    """A request pinned a checkpoint, but its session's warm container used another.
+
+    Session affinity reuses the existing warm container, so honouring the pin
+    would mean discarding the session's state. Rejected rather than guessed at,
+    like ``OptimizedExecutionConflictError``.
+    """
+
+    def __init__(self, session_id: str, *, requested: str) -> None:
+        super().__init__(
+            f"session {session_id} is not running on the requested checkpoint {requested}"
+        )
+        self.session_id = session_id
+        self.requested = requested
+
+
 class InvalidRequestError(RouterError):
     """The caller sent something the protocol does not allow."""
+
+
+class UnknownCheckpointError(InvalidRequestError):
+    """A request pinned a checkpoint the catalogue for its flavor does not list."""
+
+    def __init__(self, checkpoint_id: str, *, flavor: str) -> None:
+        super().__init__(f"no checkpoint {checkpoint_id!r} in the {flavor} catalogue")
+        self.checkpoint_id = checkpoint_id
+        self.flavor = flavor
 
 
 class WorkerUnavailableError(RouterError):

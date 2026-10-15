@@ -122,3 +122,28 @@ def test_a_bad_or_wrong_version_file_is_skipped(tmp_path: Path) -> None:
 
     assert catalogues == {}
     assert len(skipped) == 2
+
+
+def test_a_catalogue_knows_which_checkpoints_it_lists_and_no_id_is_special() -> None:
+    catalogue = Catalogue.from_document(_document())
+
+    assert catalogue.has_checkpoint("c-data")
+    assert not catalogue.has_checkpoint("missing")
+    # checkpoint_0 is only valid where the document lists it.
+    assert not catalogue.has_checkpoint("checkpoint_0")
+
+
+def test_packages_the_base_image_carries_are_filtered_by_canonical_name() -> None:
+    catalogue = Catalogue.from_document(_document(distributions=["Scikit_Learn", "numpy"]))
+
+    kept, ignored = catalogue.filter_packages(["scikit-learn>=1.6", "numpy", "flask"])
+
+    assert kept == ("flask",)
+    assert ignored == ("scikit-learn>=1.6", "numpy")
+
+
+def test_a_catalogue_without_distributions_filters_nothing() -> None:
+    kept, ignored = Catalogue.from_document(_document()).filter_packages(["numpy"])
+
+    assert kept == ("numpy",)
+    assert ignored == ()

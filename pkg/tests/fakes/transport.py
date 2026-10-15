@@ -10,8 +10,18 @@ from readie.budget import Budget
 from readie.protocol import Attribution, CallRef, Outcome
 
 # What the client handed the transport: ref, payload, imports, budgets, timeout,
-# gpu, disable_optimized_execution.
-Recorded = tuple[CallRef, bytes, tuple[str, ...], tuple[Budget, ...], float | None, bool, bool]
+# gpu, disable_optimized_execution, packages, checkpoint_id.
+Recorded = tuple[
+    CallRef,
+    bytes,
+    tuple[str, ...],
+    tuple[Budget, ...],
+    float | None,
+    bool,
+    bool,
+    tuple[str, ...],
+    str,
+]
 
 
 class RecordingTransport:
@@ -37,9 +47,21 @@ class RecordingTransport:
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Outcome:
         self.calls.append(
-            (ref, payload, imports, budgets, timeout, gpu, disable_optimized_execution)
+            (
+                ref,
+                payload,
+                imports,
+                budgets,
+                timeout,
+                gpu,
+                disable_optimized_execution,
+                packages,
+                checkpoint_id,
+            )
         )
         if self.error is not None:
             raise self.error
@@ -68,6 +90,8 @@ class RecordingTransport:
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Outcome:
         return self._run(
             ref,
@@ -78,6 +102,8 @@ class RecordingTransport:
             on_log=on_log,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            packages=packages,
+            checkpoint_id=checkpoint_id,
         )
 
     def close(self) -> None:
@@ -102,6 +128,8 @@ class AsyncRecordingTransport(RecordingTransport):
         on_log: Callable[[str], None] | None,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Outcome:
         return self._run(
             ref,
@@ -112,6 +140,8 @@ class AsyncRecordingTransport(RecordingTransport):
             on_log=on_log,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            packages=packages,
+            checkpoint_id=checkpoint_id,
         )
 
     async def aclose(self) -> None:

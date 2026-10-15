@@ -39,7 +39,7 @@ func validManifest() artifact.Manifest {
 		SpecFingerprint:  "sha256:spec",
 		ExecutorArgv:     []string{"python", "-u", "-m", "readie_executor"},
 		ExecutorProtocol: executor.ProtocolVersion,
-		PythonPath:       "/lib/python3.12/dist-packages",
+		PythonPath:       "/usr/local/lib/python3.12/dist-packages",
 		Overlay:          "root:memory",
 		Network:          "none",
 		CreatedAt:        time.Now().UTC().Truncate(time.Second),

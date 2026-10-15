@@ -33,9 +33,10 @@ import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from importlib.metadata import PackageNotFoundError, distribution, packages_distributions
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
+from readie_pipeline.metadata.inventory import distribution_for, provided_distributions
 from readie_pipeline.metadata.models import Metadata, PackageFacts
 
 #: Imports the dependencies first, then times and memory-samples the target
@@ -126,19 +127,7 @@ def installed_packages() -> list[str]:
     base image ships is still measured, so the planner can score it too.
     """
     excluded = _HARNESS_ONLY | {_SELF}
-    return sorted(name for name in packages_distributions() if name not in excluded)
-
-
-def _distribution_for(name: str, provided: Mapping[str, list[str]]) -> str:
-    """Best-effort PyPI distribution name for ``name``'s top-level segment.
-
-    Diagnostic only: ``loaded_modules``, ``memory_size_mb`` and ``import_time``
-    are all measured empirically and never depend on this being right, unlike
-    the previous ``Requires-Dist``-based walk, which needed a correct
-    distribution name to find a package's declared dependencies at all.
-    """
-    distributions = provided.get(name.split(".", 1)[0])
-    return distributions[0] if distributions else ""
+    return sorted(name for name in provided_distributions() if name not in excluded)
 
 
 def _installed_size_mb(dist_name: str, import_name: str) -> float:
@@ -390,7 +379,7 @@ def _start_frame(
 
 def _finalize(frame: _Frame, *, provided: Mapping[str, list[str]]) -> PackageFacts:
     """Profile a frame whose eligible names have all been walked already."""
-    dist = _distribution_for(frame.resolved, provided)
+    dist = distribution_for(frame.resolved, provided)
     facts = PackageFacts(
         base_import=frame.resolved,
         distribution=dist,
@@ -623,7 +612,7 @@ def analyze(
     and nothing to promote: profiling happens exactly once per resolved
     name, in the order raw names are walked.
     """
-    provided = packages_distributions()
+    provided = provided_distributions()
     excluded = frozenset(exclude)
     all_requested = frozenset(name for name in import_names if name)
     discovered: dict[str, tuple[str | None, frozenset[str]]] = {}

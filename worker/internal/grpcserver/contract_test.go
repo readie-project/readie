@@ -65,6 +65,7 @@ func TestToExecutionRequest_CarriesEveryField(t *testing.T) {
 		SessionId:    "sess-1",
 		ContainerId:  &containerID,
 		CheckpointId: "checkpoint_1",
+		Packages:     []string{"flask", "numpy==2.0"},
 		Payload:      []byte("body"),
 		Budgets: []*pb.ResourceBudget{
 			{Kind: pb.ResourceKind_RESOURCE_KIND_MEMORY, Alloc: 1 << 20},
@@ -75,6 +76,7 @@ func TestToExecutionRequest_CarriesEveryField(t *testing.T) {
 
 	assert.Equal(t, containerID, req.ContainerID)
 	assert.Equal(t, "checkpoint_1", req.CheckpointID)
+	assert.Equal(t, []string{"flask", "numpy==2.0"}, req.Packages)
 	assert.Equal(t, []byte("body"), req.InitialPayload)
 	assert.Equal(t, int64(1<<20), req.Alloc.Memory().Alloc)
 	assert.Equal(t, int64(2), req.Alloc.GPU().Alloc)
@@ -202,4 +204,10 @@ type recordingStream struct {
 func (r *recordingStream) Send(msg *pb.WorkerExecutionResponse) error {
 	r.sent = append(r.sent, msg)
 	return nil
+}
+
+func TestToStatus_APackageInstallFailureIsAFailedPrecondition(t *testing.T) {
+	err := toStatus(errors.Join(errors.New("run"), execution.ErrPackageInstall))
+
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 }

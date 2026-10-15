@@ -103,6 +103,15 @@ def test_the_config_carries_the_disable_optimized_execution_flag() -> None:
     assert to_config(("a",), ()).disable_optimized_execution is False
 
 
+def test_the_config_carries_the_packages_and_the_pinned_checkpoint() -> None:
+    config = to_config(("a",), (), packages=("numpy", "flask"), checkpoint_id="checkpoint_3")
+
+    assert list(config.packages) == ["numpy", "flask"]
+    assert config.checkpoint_id == "checkpoint_3"
+    assert list(to_config(("a",), ()).packages) == []
+    assert to_config(("a",), ()).checkpoint_id == ""
+
+
 # ---------------------------------------------------------------------------
 # Assembling
 # ---------------------------------------------------------------------------
@@ -130,6 +139,19 @@ def test_payload_messages_concatenate_in_order() -> None:
         assembler.accept(response(payload=piece))
 
     assert assembler.result() == b"abcdefghi"
+
+
+def test_a_router_note_before_the_result_is_just_a_log_line() -> None:
+    # The router sends "ignored <spec>: already provided by the base image" ahead
+    # of the worker's output. It must carry success=True: a success=False message
+    # marks the whole execution failed, whatever follows.
+    seen: list[str] = []
+    assembler = ResponseAssembler(on_log=seen.append)
+    assembler.accept(response(logs="ignored numpy==2.0: already provided by the base image\n"))
+    assembler.accept(response(payload=b"result"))
+
+    assert assembler.result() == b"result"
+    assert seen == ["ignored numpy==2.0: already provided by the base image\n"]
 
 
 def test_logs_are_collected_and_streamed_as_they_arrive() -> None:

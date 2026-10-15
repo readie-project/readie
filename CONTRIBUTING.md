@@ -22,7 +22,7 @@ the one thing they share.
 | [`worker/`](worker/)     | Go          | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
 | [`executor/`](executor/) | Python 3.12 | Runs _inside_ every sandbox; unpickles and calls the function             |
 | [`pkg/`](pkg/)           | Python 3.12 | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
-| [`pipeline/`](pipeline/) | Python 3.13 | Offline: corpus, package analysis, checkpoint planning, capture, eval     |
+| [`pipeline/`](pipeline/) | Python 3.13 | Offline: corpus, package analysis, checkpoint planning, capture           |
 | [`playground/`](playground/) | Python 3.12 | FastAPI service behind the docs playground; runs visitor code under gVisor; calls Readie like any client |
 
 `protos/` is the single source of truth for every wire contract.

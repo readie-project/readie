@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from readie.errors import InvalidPackageError
@@ -45,3 +48,18 @@ def test_leading_and_trailing_whitespace_is_stripped() -> None:
 def test_an_invalid_requirement_string_raises() -> None:
     with pytest.raises(InvalidPackageError):
         normalize_packages(["not a valid requirement!!"])
+
+
+_VECTORS = json.loads((Path(__file__).parent.parent / "data" / "package_specs.json").read_text())
+
+
+@pytest.mark.parametrize("case", _VECTORS["valid"], ids=lambda case: repr(case["input"]))
+def test_shared_vectors_normalize_as_the_router_does(case: dict[str, list[str]]) -> None:
+    # The router normalizes the same list again; both suites run this file.
+    assert normalize_packages(case["input"]) == tuple(case["expected"])
+
+
+@pytest.mark.parametrize("specs", _VECTORS["invalid"], ids=repr)
+def test_shared_invalid_vectors_are_rejected_as_the_router_rejects_them(specs: list[str]) -> None:
+    with pytest.raises(InvalidPackageError):
+        normalize_packages(specs)
