@@ -116,8 +116,6 @@ def test_a_raising_function_returns_a_failure_envelope_with_its_traceback():
     assert envelope["message"] == "boom"
     assert "ValueError: boom" in str(envelope["traceback"])
     assert "explode" in str(envelope["traceback"]), "the frame that raised is named"
-    assert "ValueError: boom" in str(envelope["traceback"])
-    assert "explode" in str(envelope["traceback"]), "the frame that raised is named"
 
 
 def test_a_raising_functions_traceback_is_not_also_returned_as_output():
