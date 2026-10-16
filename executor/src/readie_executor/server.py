@@ -184,11 +184,14 @@ class ExecutorServer:
 
         ensure_dns()
         output: list[str] = []
+        # The real stderr (the sandbox log), held before redirect_stderr below
+        # swaps sys.stderr for the tee. The traceback print needs it (#57).
+        log = sys.stderr
 
         try:
             with (
                 contextlib.redirect_stdout(_OutputTee(sys.stdout, output)),
-                contextlib.redirect_stderr(_OutputTee(sys.stderr, output)),
+                contextlib.redirect_stderr(_OutputTee(log, output)),
             ):
                 try:
                     value = call.invoke()
@@ -197,7 +200,10 @@ class ExecutorServer:
                     # raising either is still a failed call, not a reason to take the
                     # executor down and strand a container the worker means to reuse.
                     text = traceback.format_exc()
-                    print(text, file=sys.stderr, flush=True)
+                    # To the sandbox log only, not through the tee: the traceback
+                    # already reaches the client in the envelope, and printing it
+                    # into the tee as well made the client show it three times (#57).
+                    print(text, file=log, flush=True)
                     return protocol.failure_envelope(exc, text), output
         except Exception as exc:  # noqa: BLE001 - preserve an executor failure as a response
             return protocol.failure_envelope(exc, traceback.format_exc()), output
