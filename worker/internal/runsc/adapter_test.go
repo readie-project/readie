@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -1066,4 +1067,43 @@ func mustEventJSON(t *testing.T, cpuTotal, memUsage, memLimit uint64, cpus, pids
 	})
 	require.NoError(t, err)
 	return raw
+}
+
+// Pinned: the PATH began with /bin, which on a Debian base is /usr/bin, so python3 was the OS's
+// Python 3.13, not the image's 3.12. The image's /usr/local/bin has to be searched first.
+func TestBuildSpec_PathSearchesTheImagesOwnBinDirectoryFirst(t *testing.T) {
+	f := newFixture(t)
+	built, err := BuildSpec(testCreateSpec(f))
+	require.NoError(t, err)
+
+	var path string
+	for _, entry := range built.Process.Env {
+		if rest, ok := strings.CutPrefix(entry, "PATH="); ok {
+			path = rest
+		}
+	}
+	require.NotEmpty(t, path)
+	dirs := strings.Split(path, ":")
+
+	assert.Equal(t, "/usr/local/bin", dirs[0])
+	for _, later := range []string{"/usr/bin", "/bin"} {
+		assert.Contains(t, dirs, later, "the OS directories are still searched")
+		assert.Greater(t, slices.Index(dirs, later), slices.Index(dirs, "/usr/local/bin"))
+	}
+}
+
+// The environment is not in the fingerprint, so this PATH change leaves every checkpoint valid.
+func TestFingerprint_IgnoresThePath(t *testing.T) {
+	f := newFixture(t)
+	built, err := BuildSpec(testCreateSpec(f))
+	require.NoError(t, err)
+	before := Fingerprint(built, "root:memory", "sandbox", false)
+
+	for i, entry := range built.Process.Env {
+		if strings.HasPrefix(entry, "PATH=") {
+			built.Process.Env[i] = "PATH=/bin:/usr/bin"
+		}
+	}
+
+	assert.Equal(t, before, Fingerprint(built, "root:memory", "sandbox", false))
 }
