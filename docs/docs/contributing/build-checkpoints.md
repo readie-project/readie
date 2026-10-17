@@ -107,6 +107,30 @@ The target builds `readie-worker-cpu:<timestamp>` and `readie-worker-cpu:latest`
 
 After a change to worker code only, run this step alone. It does not capture checkpoints again.
 
+## Use a minimal root filesystem
+
+By default the root filesystem is the base image plus the executor. A base image that carries no packages, such as `python:3.12-alpine`, can instead install only the distributions that the plan needs. This works with either planner.
+
+1. Write the list of distributions from the plan. The target runs on the host and needs `uv`:
+
+   ```bash
+   make rootfs-requirements PLAN_DIR=experiments/a/plan
+   ```
+
+2. Build the generation from that list and the minimal base:
+
+   ```bash
+   make generation \
+     ROOTFS_BASE_IMAGE=python:3.12-alpine \
+     ROOTFS_PYTHONPATH=/usr/local/lib/python3.12/site-packages \
+     ROOTFS_REQUIREMENTS=experiments/a/plan/rootfs-requirements.txt \
+     REUSE_PLAN_DIR=experiments/a/plan
+   ```
+
+The list holds distribution names without versions. The image build installs each one separately and keeps going when one fails. The failures are printed in the build log and written to `/etc/readie-rootfs-skipped.txt` in the root filesystem. Set `ROOTFS_REQUIREMENTS_STRICT=true` to fail the build instead. The catalogue lists only the distributions that installed.
+
+Packages must be installed by the image build, not by the capture step. The worker image copies the root filesystem from the image build, so a package installed later, inside the capture container, would not ship with the checkpoints. `REUSE_PLAN_DIR` makes the capture step use the plan from the first command instead of planning again. Without it, the capture step plans inside the container, so pass the same planner settings to both commands.
+
 ## Output locations
 
 | Output | Location |

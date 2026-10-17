@@ -163,6 +163,67 @@ def test_the_plan_can_be_kept_out_of_the_output_directory(
     assert not (workspace / "checkpoints.json").exists()
 
 
+def test_plan_lists_the_distributions_the_rootfs_must_install(
+    data_dir: Path, workspace: Path, tmp_path: Path
+):
+    # The list decides what a minimal rootfs contains, so it is written by `plan`
+    # (which runs before the image exists) beside the plan, for any planner.
+    plans = tmp_path / "plan"
+
+    code = run(
+        "--data-dir",
+        str(data_dir),
+        "--output-dir",
+        str(workspace),
+        "--plan-dir",
+        str(plans),
+        "plan",
+        "--no-spec",
+    )
+
+    assert code == 0
+    lines = (plans / "rootfs-requirements.txt").read_text().splitlines()
+    assert lines[0].startswith("#")
+    assert len(lines) > 1
+    assert not (workspace / "rootfs-requirements.txt").exists()
+
+
+def test_reuse_plan_keeps_the_existing_plan_and_does_not_plan_again(
+    data_dir: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    # The capture container reuses the plan the host already made, so the rootfs
+    # (built from that plan's distributions) and the captured checkpoints agree.
+    common = ("--data-dir", str(data_dir), "--output-dir", str(workspace))
+    assert run(*common, "plan", "--no-spec", "--max-checkpoints", "2") == 0
+    before = {
+        name: (workspace / name).read_bytes()
+        for name in ("checkpoints.json", "rootfs-requirements.txt")
+    }
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        msg = "the planner ran"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr("readie_pipeline.cli.build_planner", refuse)
+    # Different settings: the file is the plan, so none of them may matter.
+    code = run(*common, "plan", "--no-spec", "--reuse-plan", "--max-checkpoints", "1")
+
+    assert code == 0
+    assert "reusing the" in capsys.readouterr().out
+    for name, content in before.items():
+        assert (workspace / name).read_bytes() == content
+
+
+def test_reuse_plan_without_a_plan_explains_itself(data_dir: Path, workspace: Path, capsys):
+    code = run(
+        "--data-dir", str(data_dir), "--output-dir", str(workspace),
+        "plan", "--no-spec", "--reuse-plan",
+    )  # fmt: skip
+
+    assert code == 1
+    assert "to reuse" in capsys.readouterr().err
+
+
 def test_a_traceback_is_never_printed_for_an_expected_failure(tmp_path: Path, capsys):
     # Every expected failure already explains itself; a traceback would bury the
     # explanation in argparse frames.

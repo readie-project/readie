@@ -25,7 +25,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `corpus` | Collects workloads for one flavor from Kaggle, Hugging Face and a hosted language model. Each item records its code, domain, source and the resources it uses, and every resource is checked against the service that owns it. | Model endpoint, Kaggle and Hugging Face credentials | `data/datasets/<flavor>.json` |
 | `analyze` | Imports every package in the base image in a separate process and measures it. | The corpus, the packages installed in the image | `data/metadata/<flavor>.json` |
-| `plan` | Chooses what each checkpoint pre-imports and writes the sandbox specification. | Corpus and metadata | `checkpoints.json` (the plan), a spec fingerprint |
+| `plan` | Chooses what each checkpoint pre-imports and writes the sandbox specification. | Corpus and metadata | `checkpoints.json` (the plan), a spec fingerprint, `rootfs-requirements.txt` (the distributions the plan needs) |
 | `build` | Captures one checkpoint per planned set, times a restore of each, writes the outputs. | The plan | Checkpoints, manifest, catalogue |
 | `capture` | Runs `plan` and then `build` in one process. | Same | Same |
 

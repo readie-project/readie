@@ -81,6 +81,34 @@ WORKDIR /
 RUN --mount=from=executor-wheel,source=/dist,target=/dist \
     uv pip install --system --no-cache-dir --no-deps /dist/*.whl
 
+# The distributions the checkpoints' packages need, on top of the base image.
+# `readie-pipeline plan` writes the list (see planning/requirements.py), so a base
+# that carries no packages of its own (alpine, python-slim) ends up with exactly
+# what the plan imports. The default file is empty, which installs nothing and
+# leaves a full base image such as Kaggle's as it is.
+#
+# Each line is installed on its own, against the executor's locked versions as
+# constraints, so the executor keeps the dependencies it was built with and one
+# distribution that will not install (no wheel for this libc or architecture,
+# or a conflict) is reported instead of failing the rest. Whatever fails is
+# listed in /etc/readie-rootfs-skipped.txt; `capture` inventories the rootfs
+# afterwards, so the catalogue lists only what really installed. Set
+# ROOTFS_REQUIREMENTS_STRICT=true to fail the build instead.
+ARG ROOTFS_REQUIREMENTS=pipeline/rootfs-requirements.txt
+ARG ROOTFS_REQUIREMENTS_STRICT=false
+COPY ${ROOTFS_REQUIREMENTS} /tmp/build/rootfs-requirements.txt
+RUN set -eu; \
+    : > /etc/readie-rootfs-skipped.txt; \
+    while IFS= read -r dist || [ -n "$dist" ]; do \
+        case "$dist" in ''|'#'*) continue ;; esac; \
+        uv pip install --system --no-cache-dir -c /tmp/build/requirements.txt "$dist" \
+            || echo "$dist" >> /etc/readie-rootfs-skipped.txt; \
+    done < /tmp/build/rootfs-requirements.txt; \
+    if [ -s /etc/readie-rootfs-skipped.txt ]; then \
+        echo "==> not installed into the rootfs:"; cat /etc/readie-rootfs-skipped.txt; \
+        [ "${ROOTFS_REQUIREMENTS_STRICT}" != "true" ] || exit 1; \
+    fi
+
 # Clean up temporary build files. /bin/uv is kept: the worker runs it, through
 # `runsc exec`, to install a call's requested packages before the function runs.
 RUN rm -rf /tmp/build
@@ -233,8 +261,10 @@ ENV READIE_DATA_DIR="/app/data"
 # /var/lib/readie beside the manifest.
 ENV READIE_PLAN_DIR="/app/plan"
 
-# Must correspond to the rootfs stage above.
-ENV ROOTFS_PYTHONPATH="/usr/local/lib/python3.12/dist-packages"
+# Must correspond to the rootfs stage above: Kaggle's Python keeps packages in
+# dist-packages, the python:3.12 images (slim, alpine) in site-packages.
+ARG ROOTFS_PYTHONPATH=/usr/local/lib/python3.12/dist-packages
+ENV ROOTFS_PYTHONPATH=${ROOTFS_PYTHONPATH}
 
 # Runtime modes. These are part of what a checkpoint is sensitive to, so they
 # must match the worker's configuration.
