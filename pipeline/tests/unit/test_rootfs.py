@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from readie_pipeline.capture.rootfs import discover_rootfs_inventory
+from readie_pipeline.capture.rootfs import discover_rootfs_inventory, record_skipped
 from readie_pipeline.metadata import inventory as inventory_module
 from readie_pipeline.metadata.inventory import Inventory
 
@@ -33,6 +33,41 @@ class _Interpreter:
 
 def _inventory_json() -> str:
     return Inventory(provided={"numpy": ["numpy"]}, distributions=frozenset({"numpy"})).to_json()
+
+
+def _rootfs_with_skipped(tmp_path: Path, text: str | None) -> Path:
+    rootfs = tmp_path / "rootfs"
+    (rootfs / "etc").mkdir(parents=True)
+    if text is not None:
+        (rootfs / "etc" / "readie-rootfs-skipped.txt").write_text(text)
+    return rootfs
+
+
+def test_the_skipped_distributions_are_copied_beside_the_plan(tmp_path: Path):
+    rootfs = _rootfs_with_skipped(tmp_path, "scikit-learn\ntorch\n")
+    destination = tmp_path / "plan" / "rootfs-skipped.txt"
+
+    skipped = record_skipped(rootfs, destination)
+
+    assert skipped == ("scikit-learn", "torch")
+    lines = destination.read_text().splitlines()
+    assert lines[0].startswith("#")
+    assert lines[-2:] == ["scikit-learn", "torch"]
+
+
+def test_nothing_skipped_leaves_a_file_with_only_its_header(tmp_path: Path):
+    # An empty file is how a person tells "everything installed" from "no record".
+    destination = tmp_path / "rootfs-skipped.txt"
+
+    assert record_skipped(_rootfs_with_skipped(tmp_path, ""), destination) == ()
+    assert all(line.startswith("#") for line in destination.read_text().splitlines())
+
+
+def test_a_rootfs_with_no_record_writes_nothing(tmp_path: Path):
+    destination = tmp_path / "rootfs-skipped.txt"
+
+    assert record_skipped(_rootfs_with_skipped(tmp_path, None), destination) is None
+    assert not destination.exists()
 
 
 def test_the_rootfs_python_runs_the_inventory_module_with_the_sandboxs_pythonpath():

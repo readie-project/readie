@@ -75,7 +75,7 @@ The usual causes are:
 
 - **The name or version does not exist.** Read the `uv` output for the package that it could not find.
 - **The package cannot be fetched.** The output shows a failure to reach the package index. Retry, and if the failure persists, try a different version.
-- **The requested version is ignored.** A package that the image already carries is never installed again, so a different pinned version has no effect. The call output names each ignored entry.
+- **The requested version is ignored.** A package that the image already carries is never installed again, so a different pinned version has no effect. The call output names each ignored entry and, when it is known, the version that the image has.
 
 Entries that are not valid requirement strings are rejected on the local machine, before the call, with `InvalidPackageError`. Packages are installed on every call and nothing is cached, so a large install slows every call. Prefer libraries that are already in the sandbox. See [Packages and resources](/docs/getting-started/packages-and-resources).
 

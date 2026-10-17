@@ -79,7 +79,7 @@ def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
     # Only a package has a distribution; the rest default to blank.
     assert doc["items"]["model:gpt2"]["distribution"] == ""
     # The rootfs inventory rides along for the router's package filtering.
-    assert doc["distributions"] == ["numpy", "pandas"]
+    assert doc["distributions"] == {"numpy": "", "pandas": ""}
 
     ckpt = doc["checkpoints"][0]
     assert ckpt["id"] == "checkpoint_1"
@@ -251,7 +251,35 @@ def test_a_package_is_matched_the_way_analyze_resolves_its_distribution() -> Non
 
     assert sorted(doc["items"]) == ["PIL", "yaml"]
     assert doc["items"]["PIL"]["distribution"] == "pillow", "the metadata's own, unchanged"
-    assert doc["distributions"] == ["pillow", "pyyaml"]
+    assert doc["distributions"] == {"pillow": "", "pyyaml": ""}
+
+
+def test_each_distribution_maps_to_the_version_the_rootfs_has() -> None:
+    inventory = Inventory(
+        provided={"yaml": ["PyYAML"]},
+        distributions=frozenset({"pyyaml", "pillow"}),
+        versions={"pyyaml": "6.0.3", "pillow": "11.3.0"},
+    )
+
+    doc = build_catalogue(
+        flavor="cpu", alpha=0.005, metadata=Metadata({}), entries=[], inventory=inventory
+    )
+
+    # The rootfs's own versions, not the metadata's: what the image really has.
+    assert doc["distributions"] == {"pillow": "11.3.0", "pyyaml": "6.0.3"}
+    assert "distribution_versions" not in doc, "one key: the names are the map's keys"
+
+
+def test_a_distribution_without_a_version_is_still_listed_so_the_router_filters_it() -> None:
+    inventory = Inventory(
+        provided={}, distributions=frozenset({"numpy", "wheel"}), versions={"numpy": "2.0.2"}
+    )
+
+    doc = build_catalogue(
+        flavor="cpu", alpha=0.005, metadata=Metadata({}), entries=[], inventory=inventory
+    )
+
+    assert doc["distributions"] == {"numpy": "2.0.2", "wheel": ""}
 
 
 def test_a_rootfs_that_could_not_be_listed_leaves_the_catalogue_unfiltered() -> None:
@@ -261,4 +289,4 @@ def test_a_rootfs_that_could_not_be_listed_leaves_the_catalogue_unfiltered() -> 
     doc = build_catalogue(flavor="cpu", alpha=0.005, metadata=metadata, entries=[], inventory=None)
 
     assert sorted(doc["items"]) == ["ghost"]
-    assert doc["distributions"] == []
+    assert doc["distributions"] == {}

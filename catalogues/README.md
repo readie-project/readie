@@ -47,9 +47,11 @@ checkpoint with exactly that id. No id is special, `checkpoint_0` included. An i
 that is not listed is rejected with `INVALID_ARGUMENT`.
 
 The router also uses the catalogue to trim a call's `packages`. It removes every
-entry whose distribution is in the top-level `distributions` list, whatever version
-the entry asks for, because the worker's root filesystem already carries it. An
-entry with extras is kept, and with no catalogue nothing is removed.
+entry whose distribution is a key of the top-level `distributions` object, whatever
+version the entry asks for, because the worker's root filesystem already carries it.
+The note it sends the client and its own log name the version the image has, which is
+the key's value, when there is one. An entry with extras is kept, and with no
+catalogue nothing is removed.
 
 The required items are the packages the function imports plus everything they
 depend on (their dependency closure). Each shared dependency is counted once.
@@ -67,7 +69,7 @@ The current format is `version: 2`. The pipeline writes it in
 | ----- | ---- | ------- |
 | `version` | integer | Format version. The router skips a file with any other value. |
 | `flavor` | string | `cpu` or `gpu`. The router routes a call to the catalogue of the flavor it needs. |
-| `distributions` | array | Every distribution installed in the flavor's root filesystem, as a sorted list of canonical names. The pipeline lists it by running `metadata/inventory.py` (the module `analyze` also resolves distributions with) with the root filesystem's own `python`. If that listing fails, the field is an empty list and the router filters nothing. |
+| `distributions` | object | Every distribution installed in the flavor's root filesystem, as canonical name to installed version, sorted by name. The version is the one in the root filesystem as built, and `""` when it has none for that distribution. The pipeline lists it by running `metadata/inventory.py` (the module `analyze` also resolves distributions with) with the root filesystem's own `python`. If that listing fails, the field is an empty object and the router filters nothing. A catalogue written before versions were recorded has an array of names here, which the router does not read, so it filters nothing until the catalogue is regenerated. |
 | `alpha` | number | Seconds of import time one MB of checkpoint size is worth. Measured by the pipeline after capture. The router applies this value, so the router has no `alpha` setting of its own. A missing value falls back to a built-in default. |
 | `items` | object | Every measured item, keyed by name. |
 | `checkpoints` | array | The checkpoints of this generation. |
@@ -106,7 +108,7 @@ A trimmed example (the values are illustrative):
   "version": 2,
   "flavor": "cpu",
   "alpha": 0.0065,
-  "distributions": ["numpy"],
+  "distributions": { "numpy": "2.0.2" },
   "items": {
     "numpy": { "distribution": "numpy", "load_time": 0.2, "size_mb": 6.5, "resource_type": "package" }
   },

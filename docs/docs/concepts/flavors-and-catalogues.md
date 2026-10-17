@@ -50,7 +50,7 @@ The file is large. The committed CPU catalogue is about 400 MB and describes nea
 | `version` | Format version. The router accepts only `2`. |
 | `flavor` | `cpu` or `gpu`. |
 | `alpha` | The weight, in seconds per MB, used to price checkpoint size. See [Cost model](/docs/concepts/cost-model). |
-| `distributions` | Every Python distribution that the root filesystem of the flavor contains, as a list of canonical names. The router uses it to skip packages that a call asks to install but the image already has. |
+| `distributions` | Every Python distribution that the root filesystem of the flavor contains, as canonical name to installed version. The router uses the names to skip packages that a call asks to install but the image already has, and names the version when it does. A version is empty when the root filesystem has none for that distribution. |
 | `items` | Every measured item, keyed by name. |
 | `checkpoints` | The checkpoints of this generation. |
 
@@ -78,7 +78,7 @@ The following trimmed sketch uses illustrative values:
   "version": 2,
   "flavor": "cpu",
   "alpha": 0.0065,
-  "distributions": ["numpy"],
+  "distributions": { "numpy": "2.0.2" },
   "items": {
     "numpy": {
       "distribution": "numpy",

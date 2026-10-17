@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from readie_pipeline.cli import main
+from readie_pipeline.metadata.models import Metadata, PackageFacts
 from tests.helpers import item, write_data_dir
 
 
@@ -73,8 +74,12 @@ def test_plan_is_reproducible(data_dir: Path, workspace: Path):
     assert (workspace / "checkpoints.json").read_text() == first
 
 
-def test_the_fixed_planner_is_selectable(data_dir: Path, workspace: Path):
-    run(
+def test_the_fixed_planner_is_selectable_and_plans_nothing_by_default(
+    data_dir: Path, workspace: Path
+):
+    # The command line cannot name sets, so a fixed run from here has none: an empty plan,
+    # no distributions to install, and `build` then captures no checkpoint.
+    code = run(
         "--data-dir",
         str(data_dir),
         "--output-dir",
@@ -84,9 +89,11 @@ def test_the_fixed_planner_is_selectable(data_dir: Path, workspace: Path):
         "--planner",
         "fixed",
     )
-    plan = json.loads((workspace / "checkpoints.json").read_text())
 
-    assert plan[0]["imports"] == ["pandas", "numpy"]
+    assert code == 0
+    assert json.loads((workspace / "checkpoints.json").read_text()) == []
+    requirements = (workspace / "rootfs-requirements.txt").read_text().splitlines()
+    assert all(line.startswith("#") for line in requirements)
 
 
 def test_an_unknown_planner_is_reported_not_raised(data_dir: Path, workspace: Path, capsys):
@@ -212,6 +219,63 @@ def test_reuse_plan_keeps_the_existing_plan_and_does_not_plan_again(
     assert "reusing the" in capsys.readouterr().out
     for name, content in before.items():
         assert (workspace / name).read_bytes() == content
+
+
+def test_plan_records_what_the_image_build_could_not_install(
+    data_dir: Path, workspace: Path, tmp_path: Path, capsys
+):
+    # In the capture container the rootfs is there and the plan directory is the host's,
+    # so the person running the build can read the list without a `docker run`.
+    bundle = tmp_path / "bundle"
+    (bundle / "rootfs" / "etc").mkdir(parents=True)
+    (bundle / "rootfs" / "etc" / "readie-rootfs-skipped.txt").write_text("scikit-learn\n")
+    plans = tmp_path / "plan"
+
+    code = run(
+        "--data-dir", str(data_dir), "--output-dir", str(workspace), "--plan-dir", str(plans),
+        "--bundle-dir", str(bundle), "plan", "--no-spec",
+    )  # fmt: skip
+
+    assert code == 0
+    assert (plans / "rootfs-skipped.txt").read_text().splitlines()[-1] == "scikit-learn"
+    assert "scikit-learn" in capsys.readouterr().out
+
+
+def test_analyze_records_the_image_it_ran_in_and_the_versions_it_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    # `make analyze` passes the base image name in, because an image does not record its
+    # own FROM, and the versions come from the environment that measured.
+    image = "gcr.io/kaggle-images/python@sha256:" + "ab" * 32
+    monkeypatch.setenv("READIE_BASE_IMAGE", image)
+    monkeypatch.setattr("readie_pipeline.cli.installed_packages", lambda: ["pandas"])
+    monkeypatch.setattr(
+        "readie_pipeline.cli.analyze",
+        lambda *_a, **_k: Metadata(
+            {"pandas": PackageFacts(base_import="pandas", distribution="pandas")},
+            distributions={"pandas": "2.3.3"},
+        ),
+    )
+
+    code = run("--data-dir", str(tmp_path), "analyze")
+
+    assert code == 0
+    written = json.loads((tmp_path / "metadata" / "cpu.json").read_text())
+    assert written["base_image"] == image
+    assert written["distributions"] == {"pandas": "2.3.3"}
+    assert image in capsys.readouterr().out
+
+
+def test_analyze_without_a_named_image_writes_an_empty_base_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("READIE_BASE_IMAGE", raising=False)
+    monkeypatch.setattr("readie_pipeline.cli.installed_packages", lambda: [])
+    monkeypatch.setattr("readie_pipeline.cli.analyze", lambda *_a, **_k: Metadata({}))
+
+    assert run("--data-dir", str(tmp_path), "analyze") == 0
+
+    assert json.loads((tmp_path / "metadata" / "cpu.json").read_text())["base_image"] == ""
 
 
 def test_reuse_plan_without_a_plan_explains_itself(data_dir: Path, workspace: Path, capsys):

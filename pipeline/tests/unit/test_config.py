@@ -45,6 +45,18 @@ def test_a_plan_dir_moves_the_plan_off_the_output_directory():
     assert s.checkpoints_dir == Path("/app/executor/checkpoints"), "outputs do not move"
 
 
+def test_the_base_image_comes_from_the_environment_and_defaults_to_unknown():
+    assert Settings.from_env({}).base_image == ""
+    assert Settings.from_env({"READIE_BASE_IMAGE": "python@sha256:abc"}).base_image == (
+        "python@sha256:abc"
+    )
+
+
+def test_the_skipped_list_sits_beside_the_plan():
+    assert settings().skipped_path == Path("/app/executor/rootfs-skipped.txt")
+    assert settings(plan_dir=Path("/app/plan")).skipped_path == Path("/app/plan/rootfs-skipped.txt")
+
+
 def test_the_rootfs_requirements_sit_beside_the_plan():
     # Like the plan, they are an input to the image build, not something the
     # worker ships beside its manifest.

@@ -29,6 +29,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 from readie_router.scheduling.packages import without_installed
@@ -54,9 +55,10 @@ class Catalogue:
     load_times: Mapping[str, float] = field(default_factory=dict)
     dependencies: Mapping[str, frozenset[str]] = field(default_factory=dict)
     checkpoints: tuple[_Checkpoint, ...] = ()
-    #: Canonical names of the distributions this flavor's base image already
-    #: carries. A request's ``packages`` are filtered by it.
-    distributions: frozenset[str] = frozenset()
+    #: The distributions this flavor's base image already carries: canonical name ->
+    #: installed version, ``""`` when the image has it but no version is recorded. A
+    #: request's ``packages`` are filtered by the names.
+    distributions: Mapping[str, str] = field(default_factory=dict)
 
     def has_checkpoint(self, checkpoint_id: str) -> bool:
         """Whether this catalogue lists ``checkpoint_id``. No id is special."""
@@ -65,6 +67,13 @@ class Catalogue:
     def filter_packages(self, specs: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Split ``specs`` into ``(still to install, ignored because the image has them)``."""
         return without_installed(specs, self.distributions)
+
+    def installed_version(self, spec: str) -> str:
+        """The version of the distribution ``spec`` names that the image has, or ``""``.
+
+        ``""`` when the catalogue recorded no versions, or none for this one.
+        """
+        return self.distributions.get(canonicalize_name(Requirement(spec).name), "")
 
     def closure(self, required: Iterable[str]) -> frozenset[str]:
         """``required``, plus everything its items transitively depend on.
@@ -123,10 +132,12 @@ class Catalogue:
         }
 
         raw_distributions = document.get("distributions")
-        distributions = frozenset(
-            canonicalize_name(str(name))
-            for name in (raw_distributions if isinstance(raw_distributions, list) else ())
-        )
+        distributions: dict[str, str] = {
+            canonicalize_name(str(name)): str(version or "")
+            for name, version in (
+                raw_distributions.items() if isinstance(raw_distributions, Mapping) else ()
+            )
+        }
 
         raw_checkpoints = document.get("checkpoints")
         entries = raw_checkpoints if isinstance(raw_checkpoints, list) else []

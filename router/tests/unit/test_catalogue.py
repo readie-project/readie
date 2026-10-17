@@ -134,12 +134,37 @@ def test_a_catalogue_knows_which_checkpoints_it_lists_and_no_id_is_special() -> 
 
 
 def test_packages_the_base_image_carries_are_filtered_by_canonical_name() -> None:
-    catalogue = Catalogue.from_document(_document(distributions=["Scikit_Learn", "numpy"]))
+    catalogue = Catalogue.from_document(
+        _document(distributions={"Scikit_Learn": "1.6.1", "numpy": "2.0.2"})
+    )
 
     kept, ignored = catalogue.filter_packages(["scikit-learn>=1.6", "numpy", "flask"])
 
     assert kept == ("flask",)
     assert ignored == ("scikit-learn>=1.6", "numpy")
+
+
+def test_the_catalogue_knows_the_version_of_each_distribution_the_image_has() -> None:
+    catalogue = Catalogue.from_document(
+        _document(distributions={"numpy": "2.0.2", "Scikit_Learn": "1.6.1", "scipy": ""})
+    )
+
+    # Looked up by canonical name, whatever the spec's spelling, specifier or extras.
+    assert catalogue.installed_version("numpy==2.0") == "2.0.2"
+    assert catalogue.installed_version("Scikit_Learn>=1.6") == "1.6.1"
+    assert catalogue.installed_version("flask") == "", "the image does not have it"
+    # Present without a version: still filtered out, but there is nothing to report.
+    assert catalogue.filter_packages(["scipy"]) == ((), ("scipy",))
+    assert catalogue.installed_version("scipy") == ""
+
+
+def test_a_catalogue_with_an_array_of_names_filters_nothing_until_it_is_regenerated() -> None:
+    # What a pipeline from before versions were recorded wrote. The format version is
+    # unchanged, so this is read as no distributions rather than as names.
+    catalogue = Catalogue.from_document(_document(distributions=["numpy"]))
+
+    assert catalogue.filter_packages(["numpy"]) == (("numpy",), ())
+    assert dict(catalogue.distributions) == {}
 
 
 def test_a_catalogue_without_distributions_filters_nothing() -> None:

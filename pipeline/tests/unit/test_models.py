@@ -333,6 +333,61 @@ def test_metadata_round_trips_and_sorts_for_a_clean_diff(tmp_path: Path):
     assert Metadata.load(path).import_time("abc") == 0.2
 
 
+def test_the_version_of_each_distribution_round_trips_and_is_looked_up_by_canonical_name(
+    tmp_path: Path,
+):
+    metadata = Metadata(
+        {"sklearn": PackageFacts(base_import="sklearn", distribution="scikit-learn")},
+        distributions={"scikit-learn": "1.6.1", "numpy": "2.0.2"},
+    )
+    path = tmp_path / "metadata.json"
+    path.write_text(json.dumps(metadata.to_json()))
+
+    loaded = Metadata.load(path)
+
+    assert loaded.distributions == {"numpy": "2.0.2", "scikit-learn": "1.6.1"}
+    assert loaded.version_of("Scikit_Learn") == "1.6.1"
+    assert loaded.version_of("flask") == ""
+    # One entry per distribution, written sorted so a re-run diffs cleanly.
+    assert list(json.loads(path.read_text())["distributions"]) == ["numpy", "scikit-learn"]
+
+
+def test_the_base_image_round_trips_and_the_top_level_keys_are_sorted(tmp_path: Path):
+    image = "gcr.io/kaggle-images/python@sha256:" + "ab" * 32
+    metadata = Metadata(
+        {"abc": PackageFacts(base_import="abc")},
+        distributions={"numpy": "2.0.2"},
+        base_image=image,
+    )
+    path = tmp_path / "metadata.json"
+    path.write_text(json.dumps(metadata.to_json()))
+
+    assert Metadata.load(path).base_image == image
+    assert list(json.loads(path.read_text())) == [
+        "base_image",
+        "distributions",
+        "packages",
+        "resolved",
+    ]
+
+
+def test_metadata_without_a_base_image_writes_it_empty():
+    assert Metadata({"abc": PackageFacts(base_import="abc")}).to_json()["base_image"] == ""
+
+
+def test_metadata_without_versions_writes_an_empty_distributions_object():
+    document = Metadata({"abc": PackageFacts(base_import="abc")}).to_json()
+
+    assert document["distributions"] == {}
+
+
+def test_metadata_written_before_versions_were_recorded_still_loads(tmp_path: Path):
+    path = tmp_path / "metadata.json"
+    path.write_text(json.dumps({"packages": {"abc": {"base_import": "abc"}}, "resolved": {}}))
+
+    assert Metadata.load(path).distributions == {}
+
+
 def test_metadata_still_loads_the_old_flat_format_predating_resolved(tmp_path: Path):
     # Before `resolved` existed, the whole file was just {name: facts} with no
     # wrapper -- a metadata.json written by an older run, or hand-written in a

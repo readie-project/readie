@@ -76,6 +76,12 @@ class Settings:
     #: belong to; also gates the GPU sandbox env at capture.
     flavor: str = "cpu"
 
+    base_image: str = ""
+    """The base image the analysis runs in, recorded in the metadata it writes.
+
+    Empty when unknown.
+    """
+
     planner: str = "greedy"
     max_checkpoints: int = 8
     checkpoint_size_budget_mb: float = 2048.0
@@ -123,6 +129,11 @@ class Settings:
     def plan_path(self) -> Path:
         """The checkpoint plan, written by `plan` and read by `build`."""
         return (self.plan_dir or self.output_dir) / "checkpoints.json"
+
+    @property
+    def skipped_path(self) -> Path:
+        """The distributions that did not install into the rootfs, copied here by `plan`."""
+        return (self.plan_dir or self.output_dir) / "rootfs-skipped.txt"
 
     @property
     def requirements_path(self) -> Path:
@@ -236,6 +247,7 @@ class Settings:
             "runsc_binary": source.get("RUNSC_BINARY") or "runsc",
             "checkpoint_timeout": _float(source, "READIE_CHECKPOINT_TIMEOUT", 300.0),
             "flavor": source.get("FLAVOR") or source.get("READIE_FLAVOR") or "cpu",
+            "base_image": source.get("READIE_BASE_IMAGE") or "",
             "planner": source.get("READIE_PLANNER") or "greedy",
             "max_checkpoints": _int(source, "READIE_MAX_CHECKPOINTS", 8),
             "checkpoint_size_budget_mb": _float(source, "READIE_SIZE_BUDGET_MB", 2048.0),

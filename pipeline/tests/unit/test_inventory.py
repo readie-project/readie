@@ -15,8 +15,9 @@ from readie_pipeline.metadata.inventory import Inventory, distribution_for
 
 
 class _Dist:
-    def __init__(self, name: str | None) -> None:
+    def __init__(self, name: str | None, version: str = "1.0") -> None:
         self.metadata = {"Name": name}
+        self.version = version
 
 
 def test_the_module_imports_only_the_standard_library():
@@ -46,19 +47,41 @@ def test_the_distribution_is_the_first_provider_of_the_top_level_name():
 def test_the_inventory_lists_the_provided_names_and_canonical_distributions(monkeypatch):
     monkeypatch.setattr(inventory, "packages_distributions", lambda: {"sklearn": ["scikit_learn"]})
     monkeypatch.setattr(
-        inventory, "distributions", lambda: [_Dist("Scikit_Learn"), _Dist("PyYAML"), _Dist(None)]
+        inventory,
+        "distributions",
+        lambda: [_Dist("Scikit_Learn", "1.6.1"), _Dist("PyYAML", "6.0.3"), _Dist(None)],
     )
 
     found = inventory.discover_inventory()
 
     assert found.provided == {"sklearn": ["scikit_learn"]}
     assert found.distributions == {"scikit-learn", "pyyaml"}
+    assert found.versions == {"scikit-learn": "1.6.1", "pyyaml": "6.0.3"}
+
+
+def test_a_distribution_installed_twice_reports_the_version_an_import_finds(monkeypatch):
+    # sys.path order: the first directory's copy is the one that is imported.
+    monkeypatch.setattr(
+        inventory, "distributions", lambda: [_Dist("numpy", "2.0.2"), _Dist("NumPy", "1.26.4")]
+    )
+
+    assert inventory.installed_versions() == {"numpy": "2.0.2"}
 
 
 def test_the_inventory_round_trips_through_json():
-    original = Inventory(provided={"yaml": ["PyYAML"]}, distributions=frozenset({"pyyaml"}))
+    original = Inventory(
+        provided={"yaml": ["PyYAML"]},
+        distributions=frozenset({"pyyaml"}),
+        versions={"pyyaml": "6.0.3"},
+    )
 
     assert Inventory.from_json(original.to_json()) == original
+
+
+def test_an_inventory_written_before_versions_were_recorded_still_loads():
+    old = json.dumps({"provided": {"yaml": ["PyYAML"]}, "distributions": ["pyyaml"]})
+
+    assert Inventory.from_json(old).versions == {}
 
 
 @pytest.mark.parametrize("text", ["{}", '{"provided": 3, "distributions": []}', "[1]"])

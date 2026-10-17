@@ -25,7 +25,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `corpus` | Collects workloads for one flavor from Kaggle, Hugging Face and a hosted language model. Each item records its code, domain, source and the resources it uses, and every resource is checked against the service that owns it. | Model endpoint, Kaggle and Hugging Face credentials | `data/datasets/<flavor>.json` |
 | `analyze` | Imports every package in the base image in a separate process and measures it. | The corpus, the packages installed in the image | `data/metadata/<flavor>.json` |
-| `plan` | Chooses what each checkpoint pre-imports and writes the sandbox specification. | Corpus and metadata | `checkpoints.json` (the plan), a spec fingerprint, `rootfs-requirements.txt` (the distributions the plan needs) |
+| `plan` | Chooses what each checkpoint pre-imports and writes the sandbox specification. | Corpus and metadata | `checkpoints.json` (the plan), a spec fingerprint, `rootfs-requirements.txt` (the distributions the plan needs), `rootfs-skipped.txt` (the distributions the image build could not install, when a root filesystem is present) |
 | `build` | Captures one checkpoint per planned set, times a restore of each, writes the outputs. | The plan | Checkpoints, manifest, catalogue |
 | `capture` | Runs `plan` and then `build` in one process. | Same | Same |
 
@@ -52,7 +52,7 @@ The default `greedy` planner works on the corpus as follows. Every distinct set 
 
 Here `alpha` is seconds per MB, the price of a large checkpoint. In each round, the planner adds the candidate that lowers the total cost over all requests the most. It stops when no candidate improves the cost, when the size budget is used up, or when the maximum count is reached. Ties break on package name, so the same inputs always produce the same plan. The planner ignores packages in the Python standard library and packages used by fewer than 0.2% of requests.
 
-The `build` stage always adds an empty checkpoint, `checkpoint_0`, in front of the plan, so that a cold start is an option with a measured cost. The planner can also be switched to a `fixed` planner, which returns a configured package set (by default `pandas` and `numpy`).
+The `build` stage adds an empty checkpoint, `checkpoint_0`, in front of the plan, so that a cold start is an option with a measured cost. It does so for every planner except `fixed`. The `fixed` planner returns the package sets it was constructed with, and none by default.
 
 ### Worked example
 
@@ -115,7 +115,7 @@ checkpoints/
 
 - **`manifest.json`** records the gVisor version, a fingerprint of the sandbox spec, the executor command, the executor protocol version, the Python path, and the overlay and network modes. The worker refuses checkpoints whose protocol version it does not implement.
 - **`meta.json`** repeats the version and fingerprint for one checkpoint and lists its imports.
-- **`catalogue.json`** is for the router. It lists every measured package with its memory size, import time, and dependencies, plus the contents and size of each checkpoint. It also stores the measured `alpha`, and the `distributions` that the root filesystem contains. The pipeline lists them by running the shared inventory module with the Python of the root filesystem itself, and writes into the catalogue only the measured packages that the root filesystem has a distribution for, resolved the way `analyze` resolves it, so the metadata can come from a different image than the one the sandbox runs. If the listing fails, the pipeline prints a warning and writes the catalogue without filtering.
+- **`catalogue.json`** is for the router. It lists every measured package with its memory size, import time, and dependencies, plus the contents and size of each checkpoint. It also stores the measured `alpha`, and the `distributions` that the root filesystem contains, each with its installed version. The pipeline lists them by running the shared inventory module with the Python of the root filesystem itself, and writes into the catalogue only the measured packages that the root filesystem has a distribution for, resolved the way `analyze` resolves it, so the metadata can come from a different image than the one the sandbox runs. If the listing fails, the pipeline prints a warning and writes the catalogue without filtering.
 
 The worker checks the fingerprint and the gVisor version at startup. If either differs from its own, the worker drops all checkpoints and serves cold starts only. This is the default, and `CHECKPOINT_STRICT_COMPAT` turns the check into a warning. For this reason, `make generation` builds the filesystem and the gVisor binary into one image and captures the checkpoints from that same filesystem. The check does not compare the contents of the filesystem.
 

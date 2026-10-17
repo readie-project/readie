@@ -24,7 +24,7 @@ Each entry is a standard pip requirement: a bare name, a pinned version, a range
 
 ### Package installation
 
-- Readie leaves out every package that the sandbox image already contains, whatever version the entry asks for. A pin such as `numpy==2.0` is ignored when the image has a different version of `numpy`, and the call output contains a line such as `ignored numpy==2.0: already provided by the base image`. An entry with extras, such as `requests[socks]`, is kept, so that the extra dependencies are installed.
+- Readie leaves out every package that the sandbox image already contains, whatever version the entry asks for. A pin such as `numpy==2.0` is ignored when the image has a different version of `numpy`, and the call output contains a line such as `ignored numpy==2.0: already provided by the base image (version 2.0.2)`. The version is left out when it is not known. An entry with extras, such as `requests[socks]`, is kept, so that the extra dependencies are installed.
 - Before the function runs, Readie installs the remaining entries inside the sandbox with `uv pip install`.
 - The install runs on every call. Each call gets a fresh sandbox, so nothing is cached between calls, and large or slow packages add to the latency of every call.
 - Unpinned names install the newest version available at that moment. Pin versions (`numpy==1.26.0`) for repeatable results.
