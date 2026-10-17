@@ -74,8 +74,12 @@ def test_plan_is_reproducible(data_dir: Path, workspace: Path):
     assert (workspace / "checkpoints.json").read_text() == first
 
 
-def test_the_fixed_planner_is_selectable(data_dir: Path, workspace: Path):
-    run(
+def test_the_fixed_planner_is_selectable_and_plans_nothing_by_default(
+    data_dir: Path, workspace: Path
+):
+    # The command line cannot name sets, so a fixed run from here has none: an empty plan,
+    # no distributions to install, and `build` then captures no checkpoint.
+    code = run(
         "--data-dir",
         str(data_dir),
         "--output-dir",
@@ -85,9 +89,11 @@ def test_the_fixed_planner_is_selectable(data_dir: Path, workspace: Path):
         "--planner",
         "fixed",
     )
-    plan = json.loads((workspace / "checkpoints.json").read_text())
 
-    assert plan[0]["imports"] == ["pandas", "numpy"]
+    assert code == 0
+    assert json.loads((workspace / "checkpoints.json").read_text()) == []
+    requirements = (workspace / "rootfs-requirements.txt").read_text().splitlines()
+    assert all(line.startswith("#") for line in requirements)
 
 
 def test_an_unknown_planner_is_reported_not_raised(data_dir: Path, workspace: Path, capsys):
@@ -260,7 +266,7 @@ def test_analyze_records_the_image_it_ran_in_and_the_versions_it_found(
     assert image in capsys.readouterr().out
 
 
-def test_analyze_without_a_named_image_writes_no_base_image(
+def test_analyze_without_a_named_image_writes_an_empty_base_image(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv("READIE_BASE_IMAGE", raising=False)
@@ -269,7 +275,7 @@ def test_analyze_without_a_named_image_writes_no_base_image(
 
     assert run("--data-dir", str(tmp_path), "analyze") == 0
 
-    assert "base_image" not in json.loads((tmp_path / "metadata" / "cpu.json").read_text())
+    assert json.loads((tmp_path / "metadata" / "cpu.json").read_text())["base_image"] == ""
 
 
 def test_reuse_plan_without_a_plan_explains_itself(data_dir: Path, workspace: Path, capsys):

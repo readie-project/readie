@@ -52,7 +52,7 @@ The default `greedy` planner works on the corpus as follows. Every distinct set 
 
 Here `alpha` is seconds per MB, the price of a large checkpoint. In each round, the planner adds the candidate that lowers the total cost over all requests the most. It stops when no candidate improves the cost, when the size budget is used up, or when the maximum count is reached. Ties break on package name, so the same inputs always produce the same plan. The planner ignores packages in the Python standard library and packages used by fewer than 0.2% of requests.
 
-The `build` stage always adds an empty checkpoint, `checkpoint_0`, in front of the plan, so that a cold start is an option with a measured cost. The planner can also be switched to a `fixed` planner, which returns a configured package set (by default `pandas` and `numpy`).
+The `build` stage adds an empty checkpoint, `checkpoint_0`, in front of the plan, so that a cold start is an option with a measured cost. It does so for every planner except `fixed`. The `fixed` planner returns the package sets it was constructed with, and none by default.
 
 ### Worked example
 

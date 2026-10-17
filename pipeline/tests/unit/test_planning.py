@@ -48,16 +48,37 @@ def test_an_empty_corpus_plans_nothing_rather_than_crashing(planner):
     assert all(isinstance(p, CheckpointPlan) for p in plans)
 
 
-def test_the_fixed_planner_reproduces_the_previous_behaviour():
+def test_the_fixed_planner_plans_nothing_unless_it_is_given_sets():
+    # Deliberate: it used to default to pandas and numpy, which put a checkpoint nobody
+    # asked for into every fixed run. A run that wants one names it.
     plans = FixedPlanner().plan(Corpus.of([req("pandas")]), Metadata({}), Budget())
-    assert [p.imports for p in plans] == [("pandas", "numpy")]
+
+    assert plans == []
+
+
+def test_the_fixed_planner_returns_the_sets_it_was_given():
+    planner = FixedPlanner([("pandas", "numpy"), ("torch",)])
+
+    plans = planner.plan(Corpus.of([req("pandas")]), Metadata({}), Budget())
+
+    assert [p.imports for p in plans] == [("pandas", "numpy"), ("torch",)]
+
+
+def test_the_fixed_planner_keeps_only_as_many_sets_as_the_budget_allows():
+    planner = FixedPlanner([("pandas",), ("numpy",), ("torch",)])
+
+    plans = planner.plan(Corpus.of([req("pandas")]), Metadata({}), Budget(max_checkpoints=2))
+
+    assert [p.imports for p in plans] == [("pandas",), ("numpy",)]
 
 
 def test_the_fixed_planner_still_scores_against_the_corpus():
     # A fixed plan and a computed one must be comparable on the same numbers,
     # which is the only way to tell whether the computed one is better.
     corpus = Corpus.of([req("pandas"), req("numpy"), req("torch")])
-    plans = FixedPlanner().plan(corpus, facts(pandas=(40, 0.3), numpy=(20, 0.1)), Budget())
+    plans = FixedPlanner([("pandas", "numpy")]).plan(
+        corpus, facts(pandas=(40, 0.3), numpy=(20, 0.1)), Budget()
+    )
 
     assert plans[0].requests_served == 2
     assert plans[0].seconds_saved == pytest.approx(0.4)
@@ -349,7 +370,8 @@ def real_inputs() -> tuple[Corpus, Metadata]:
 
 
 def test_it_beats_the_fixed_plan_on_the_real_corpus():
-    # The bar the greedy planner has to clear: the hardcoded pandas+numpy set.
+    # The bar the greedy planner has to clear: one broad pandas+numpy checkpoint, the set
+    # the fixed planner used to default to and is now given explicitly.
     # Checkpoints are no longer merged, so a fair comparison needs enough
     # slots for greedy's several small, targeted checkpoints to add up against
     # fixed's one broad one.
@@ -357,7 +379,7 @@ def test_it_beats_the_fixed_plan_on_the_real_corpus():
     budget = Budget(max_checkpoints=8, size_mb=400)
 
     greedy = GreedyPlanner(alpha=0.005).plan(corpus, metadata, budget)
-    fixed = FixedPlanner().plan(corpus, metadata, budget)[0]
+    fixed = FixedPlanner([("pandas", "numpy")]).plan(corpus, metadata, budget)[0]
 
     assert sum(p.requests_served for p in greedy) > fixed.requests_served
     assert sum(p.seconds_saved for p in greedy) > fixed.seconds_saved

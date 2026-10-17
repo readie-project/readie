@@ -77,7 +77,10 @@ class Settings:
     flavor: str = "cpu"
 
     base_image: str = ""
-    """The base image the analysis runs in, recorded in the metadata it writes. Empty when unknown."""
+    """The base image the analysis runs in, recorded in the metadata it writes.
+
+    Empty when unknown.
+    """
 
     planner: str = "greedy"
     max_checkpoints: int = 8
@@ -351,17 +354,13 @@ class CorpusSettings:
             api_key=source["AZURE_API_KEY"].strip(),
             model=source["AZURE_MODEL_NAME"].strip(),
             total=_int(source, "READIE_CORPUS_TOTAL", 2000),
-            source_weights=(source.get(
-                "READIE_CORPUS_SOURCE_WEIGHTS") or "").strip(),
+            source_weights=(source.get("READIE_CORPUS_SOURCE_WEIGHTS") or "").strip(),
             batch_size=_int(source, "READIE_CORPUS_BATCH", 10),
             seed=_int(source, "READIE_CORPUS_SEED", 0) if seed else None,
-            kaggle_token=(source.get("KAGGLE_API_TOKEN")
-                          or "").strip() or None,
+            kaggle_token=(source.get("KAGGLE_API_TOKEN") or "").strip() or None,
             hf_token=(source.get("HF_TOKEN") or "").strip() or None,
-            rewrite=(source.get("READIE_CORPUS_REWRITE")
-                     or "1").strip().lower()
+            rewrite=(source.get("READIE_CORPUS_REWRITE") or "1").strip().lower()
             not in {"0", "false", "no", "off"},
-            rewrite_max_chars=_int(
-                source, "READIE_CORPUS_REWRITE_MAX_CHARS", 60_000),
+            rewrite_max_chars=_int(source, "READIE_CORPUS_REWRITE_MAX_CHARS", 60_000),
             rewrite_workers=_int(source, "READIE_CORPUS_REWRITE_WORKERS", 6),
         )

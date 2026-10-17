@@ -1,9 +1,8 @@
 """A planner that returns whatever it was given.
 
-This is what the pipeline did before there was a planner: one checkpoint holding
-pandas and numpy, regardless of the corpus. Kept because a fixed plan is the
-right thing for a reproducibility run or a test that needs a known answer, and
-because it makes the ``CheckpointPlanner`` seam concrete with something trivial.
+It is given nothing by default, so a fixed run plans no checkpoints. Kept because a
+fixed plan is the right thing for a reproducibility run or a test that needs a known
+answer, and because it makes the ``CheckpointPlanner`` seam concrete with something trivial.
 """
 
 from __future__ import annotations
@@ -18,8 +17,8 @@ from readie_pipeline.planning.ports import Budget, CheckpointPlan
 class FixedPlanner:
     """Returns a plan supplied at construction."""
 
-    #: What the previous implementation hardcoded.
-    DEFAULT: tuple[tuple[str, ...], ...] = (("pandas", "numpy"),)
+    # List of request tuples e.g. (("pandas", "numpy"), ...)
+    DEFAULT: tuple[tuple[str, ...], ...] = ()
 
     def __init__(self, sets: Sequence[Sequence[str]] | None = None) -> None:
         self._sets = tuple(tuple(s) for s in (sets if sets is not None else self.DEFAULT))

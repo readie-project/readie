@@ -352,7 +352,7 @@ def test_the_version_of_each_distribution_round_trips_and_is_looked_up_by_canoni
     assert list(json.loads(path.read_text())["distributions"]) == ["numpy", "scikit-learn"]
 
 
-def test_the_base_image_round_trips_and_is_written_last(tmp_path: Path):
+def test_the_base_image_round_trips_and_the_top_level_keys_are_sorted(tmp_path: Path):
     image = "gcr.io/kaggle-images/python@sha256:" + "ab" * 32
     metadata = Metadata(
         {"abc": PackageFacts(base_import="abc")},
@@ -363,25 +363,22 @@ def test_the_base_image_round_trips_and_is_written_last(tmp_path: Path):
     path.write_text(json.dumps(metadata.to_json()))
 
     assert Metadata.load(path).base_image == image
-    # After everything else, so adding it to a file only appends.
     assert list(json.loads(path.read_text())) == [
+        "base_image",
+        "distributions",
         "packages",
         "resolved",
-        "distributions",
-        "base_image",
     ]
 
 
-def test_metadata_without_a_base_image_is_written_exactly_as_before():
-    assert "base_image" not in Metadata({"abc": PackageFacts(base_import="abc")}).to_json()
+def test_metadata_without_a_base_image_writes_it_empty():
+    assert Metadata({"abc": PackageFacts(base_import="abc")}).to_json()["base_image"] == ""
 
 
-def test_metadata_without_versions_is_written_exactly_as_before(tmp_path: Path):
-    # The key is only added when there are versions, so a file measured without
-    # them does not change shape.
+def test_metadata_without_versions_writes_an_empty_distributions_object():
     document = Metadata({"abc": PackageFacts(base_import="abc")}).to_json()
 
-    assert "distributions" not in document
+    assert document["distributions"] == {}
 
 
 def test_metadata_written_before_versions_were_recorded_still_loads(tmp_path: Path):

@@ -211,7 +211,8 @@ valid without the key, and `plan` then writes bare names instead of pins.
 The top-level `base_image` string names the image the file was measured in. An image
 does not record its own `FROM`, so `make analyze` passes it in as `READIE_BASE_IMAGE`
 (the Makefile's `ROOTFS_BASE_IMAGE`, a digest unless overridden) and `analyze` writes
-it.
+it, or an empty string when the image was not named. The writer always emits both
+`base_image` and `distributions`, with the top-level keys sorted.
 
 ### capture
 
@@ -257,9 +258,9 @@ packages. See [`planning/`](src/readie_pipeline/planning/) for the algorithm.
 
 `READIE_PLANNER` selects the planner. The default, `greedy`, performs greedy
 facility selection: it repeatedly adds the package set with the highest marginal
-value, so the first N selections are already the best N. The `fixed` planner returns a
-supplied list of sets, `pandas` and `numpy` by default, and is meant for
-reproducibility runs and tests.
+value, so the first N selections are already the best N. The `fixed` planner returns
+the list of sets it was constructed with, none by default, so a fixed run plans no
+checkpoints and `build` captures none; it is meant for reproducibility runs and tests.
 
 Two bounds apply to the greedy planner:
 
