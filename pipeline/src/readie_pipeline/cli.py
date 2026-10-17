@@ -77,17 +77,13 @@ def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
 
     if args.dry_run:
         env = os.environ
-        weights = parse_weights(
-            (env.get("READIE_CORPUS_SOURCE_WEIGHTS") or "").strip())
+        weights = parse_weights((env.get("READIE_CORPUS_SOURCE_WEIGHTS") or "").strip())
         if only_sources:
-            weights = {s: (w if s in only_sources else 0.0)
-                       for s, w in weights.items()}
+            weights = {s: (w if s in only_sources else 0.0) for s, w in weights.items()}
         total = args.total or int(env.get("READIE_CORPUS_TOTAL") or 2000)
-        seed = int(env["READIE_CORPUS_SEED"]) if env.get(
-            "READIE_CORPUS_SEED") else None
+        seed = int(env["READIE_CORPUS_SEED"]) if env.get("READIE_CORPUS_SEED") else None
         plan = schedule(total, weights, only_domains or DOMAINS, seed)
-        print(
-            f"[*] {settings.flavor} corpus, adding {total} items -> {corpus_path}")
+        print(f"[*] {settings.flavor} corpus, adding {total} items -> {corpus_path}")
         for source in Source:
             share = sum(n for (_, src), n in plan.items() if src is source)
             print(f"    {source.value}: {share}")
@@ -105,8 +101,7 @@ def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
         from readie_pipeline.corpus.live import build_verifier  # noqa: PLC0415 - optional extra
 
         verifier = build_verifier(
-            corpus_settings, settings.corpus_cache_path, _installed_packages(
-                settings)
+            corpus_settings, settings.corpus_cache_path, _installed_packages(settings)
         )
         revalidate(corpus_path, verifier)
         return 0
@@ -136,8 +131,7 @@ def _report_generation(corpus: Corpus, report: Report, corpus_path: Path) -> Non
         print(f"    {name}: {count}")
     usage = corpus.package_usage()
     if usage:
-        top = ", ".join(f"{name} {count}" for name,
-                        count in list(usage.items())[:10])
+        top = ", ".join(f"{name} {count}" for name, count in list(usage.items())[:10])
         single = sum(1 for count in usage.values() if count == 1)
         print(f"    most used packages (items): {top}")
         print(f"    packages used by a single item: {single} of {len(usage)}")
@@ -148,8 +142,7 @@ def _report_generation(corpus: Corpus, report: Report, corpus_path: Path) -> Non
     for reason, count in sorted(report.rejected.items()):
         print(f"    rejected ({reason}): {count}")
     if report.cleaned or report.rewrites:
-        print(
-            f"    cleaned: {report.cleaned} items had notebook syntax or paths fixed")
+        print(f"    cleaned: {report.cleaned} items had notebook syntax or paths fixed")
     for outcome, count in sorted(report.rewrites.items()):
         print(f"    stand-in rewrite ({outcome}): {count}")
 
@@ -172,8 +165,7 @@ def _clean(settings: Settings, args: argparse.Namespace, corpus_path: Path) -> i
         if corpus_settings.rewrite:
             standins = build_standins(corpus_settings)
             verifier = build_verifier(
-                corpus_settings, settings.corpus_cache_path, _installed_packages(
-                    settings)
+                corpus_settings, settings.corpus_cache_path, _installed_packages(settings)
             )
 
     def verify(new: tuple[str, ...]) -> list[str] | str:
@@ -200,10 +192,8 @@ def _clean(settings: Settings, args: argparse.Namespace, corpus_path: Path) -> i
         print(f"      {fix}: {count}")
     for outcome, count in sorted(report.rewrites.items()):
         print(f"    stand-in rewrite ({outcome}): {count}")
-    print(
-        f"    still reading a file that does not exist: {report.still_missing} items")
-    print(
-        f"    still with a cell that does not parse: {report.unparsable} items")
+    print(f"    still reading a file that does not exist: {report.still_missing} items")
+    print(f"    still with a cell that does not parse: {report.unparsable} items")
     return 0
 
 
@@ -241,8 +231,7 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     exclude = list(args.exclude or ())
     if exclude:
         print(f"[*] excluding: {', '.join(exclude)}")
-    print(
-        f"[*] analysing {len(packages)} candidate imports in this environment")
+    print(f"[*] analysing {len(packages)} candidate imports in this environment")
 
     def progress(name: str, facts: object) -> None:
         # An error is worth seeing on every run, verbose or not, because the
@@ -262,12 +251,10 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     metadata = analyze(packages, exclude=exclude, on_progress=progress)
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.metadata_path.write_text(
-        json.dumps(metadata.to_json(), indent=2) + "\n")
+    settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
 
     usable = sum(1 for f in metadata.packages.values() if f.usable)
-    print(
-        f"[*] {usable}/{len(metadata)} packages measured -> {settings.metadata_path}")
+    print(f"[*] {usable}/{len(metadata)} packages measured -> {settings.metadata_path}")
     return 0
 
 
@@ -276,8 +263,7 @@ def _plan(settings: Settings) -> list[CheckpointPlan]:
     corpus = Corpus.load(settings.corpus_path)
     metadata = Metadata.load(settings.metadata_path)
 
-    print(
-        f"[*] planning over {len(corpus)} requests and {len(metadata)} packages")
+    print(f"[*] planning over {len(corpus)} requests and {len(metadata)} packages")
     for domain, count in list(corpus.domain_counts().items())[:5]:
         print(f"    {domain}: {count}")
 
@@ -361,11 +347,9 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         else:
             item.unlink()
 
-    plans = [
-        CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())
-    ]
+    plans = [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
     if settings.planner != "fixed":
-        plans = [CheckpointPlan()] + plans
+        plans = [CheckpointPlan(), *plans]
 
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
@@ -378,19 +362,16 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     restore_times: list[float] = []
     for index, plan in enumerate(plans):
         checkpoint_id = f"checkpoint_{index}"
-        print(
-            f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
+        print(f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
 
         def write_spec(mode: ExecutorMode, checkpoint_dir: Path, preimport: str) -> None:
             # The fingerprint is discarded here on purpose: only process.env
             # differs between the checkpoints of one generation, and
             # runsc.Fingerprint excludes env, so it is the value already
             # recorded by `plan`.
-            build_config(settings, checkpoint_dir,
-                         mode=mode, preimport=preimport)
+            build_config(settings, checkpoint_dir, mode=mode, preimport=preimport)
 
-        destination = capture(settings, checkpoint_id,
-                              plan, write_spec=write_spec)
+        destination = capture(settings, checkpoint_id, plan, write_spec=write_spec)
         CheckpointMeta(
             checkpoint_id=checkpoint_id,
             runsc_version=version,
@@ -403,8 +384,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         entries.append((checkpoint_id, plan))
         print(f"    captured at {destination}")
 
-        restore_time = measure_time(
-            settings, checkpoint_id, write_spec=write_spec)
+        restore_time = measure_time(settings, checkpoint_id, write_spec=write_spec)
         print(f"    restored in {restore_time}s")
         sizes_mb.append(plan.size_mb)
         restore_times.append(restore_time)
@@ -440,7 +420,8 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     try:
         if len(plans) > 0:
             computed_alpha = round(
-                float(np.polyfit(sizes_mb, restore_times, 1)[0]), ALPHA_PRECISION)
+                float(np.polyfit(sizes_mb, restore_times, 1)[0]), ALPHA_PRECISION
+            )
     except np.linalg.LinAlgError as exc:
         msg = f"cannot compute alpha from {len(sizes_mb)} checkpoints: {exc}"
         print(f"[!] {msg}; using configured alpha {computed_alpha}")
@@ -453,8 +434,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     # checkpoint's contents and precomputed size term. The metadata may have been
     # measured in a different image than the rootfs the sandbox runs, so the
     # catalogue only ports what that rootfs provides (same discovery as `analyze`).
-    inventory = discover_rootfs_inventory(
-        settings.rootfs_path, settings.rootfs_pythonpath)
+    inventory = discover_rootfs_inventory(settings.rootfs_path, settings.rootfs_pythonpath)
     write_catalogue(
         settings.catalogue_path,
         build_catalogue(
@@ -489,10 +469,8 @@ def cmd_capture(settings: Settings, args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 def add_planner_flags(parser: argparse.ArgumentParser) -> None:
     """Attach the planner's knobs, shared by `plan` and `capture`."""
-    parser.add_argument("--planner", choices=("greedy",
-                        "fixed"), help="selection strategy")
-    parser.add_argument("--max-checkpoints", type=int,
-                        help="how many checkpoints to plan")
+    parser.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
+    parser.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
     parser.add_argument(
         "--reuse-plan",
         action="store_true",
@@ -509,10 +487,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="readie-pipeline",
         description="Analyse the request corpus and capture gVisor checkpoints.",
     )
-    parser.add_argument("--data-dir", type=Path,
-                        help="corpus and metadata location")
-    parser.add_argument("--output-dir", type=Path,
-                        help="where build outputs are written")
+    parser.add_argument("--data-dir", type=Path, help="corpus and metadata location")
+    parser.add_argument("--output-dir", type=Path, help="where build outputs are written")
     parser.add_argument("--bundle-dir", type=Path, help="the OCI bundle")
     parser.add_argument(
         "--plan-dir", type=Path, help="where the plan goes, if not with the outputs"
@@ -524,16 +500,14 @@ def build_parser() -> argparse.ArgumentParser:
         "corpus",
         help="build the corpus for FLAVOR from Kaggle, Hugging Face and the hosted model",
     )
-    corpus.add_argument("--total", type=int,
-                        help="new items to append to the corpus")
+    corpus.add_argument("--total", type=int, help="new items to append to the corpus")
     corpus.add_argument(
         "--source",
         action="append",
         choices=[s.value for s in Source],
         help="restrict to a source; repeatable",
     )
-    corpus.add_argument("--domain", action="append",
-                        help="restrict to a domain; repeatable")
+    corpus.add_argument("--domain", action="append", help="restrict to a domain; repeatable")
     corpus.add_argument(
         "--dry-run", action="store_true", help="print the planned mix and fetch nothing"
     )
@@ -572,8 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     corpus.set_defaults(handler=cmd_corpus)
 
-    analyze_cmd = sub.add_parser(
-        "analyze", help="measure package sizes and import times")
+    analyze_cmd = sub.add_parser("analyze", help="measure package sizes and import times")
     analyze_cmd.add_argument(
         "-v", "--verbose", action="store_true", help="also report each successful measurement"
     )
@@ -584,8 +557,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze_cmd.set_defaults(handler=cmd_analyze)
 
-    plan = sub.add_parser(
-        "plan", help="choose checkpoint contents and write the spec")
+    plan = sub.add_parser("plan", help="choose checkpoint contents and write the spec")
     add_planner_flags(plan)
     plan.add_argument(
         "--no-spec",
@@ -594,12 +566,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan.set_defaults(handler=cmd_plan)
 
-    build = sub.add_parser(
-        "build", help="capture a checkpoint for each planned set")
+    build = sub.add_parser("build", help="capture a checkpoint for each planned set")
     build.set_defaults(handler=cmd_build)
 
-    capture_cmd = sub.add_parser(
-        "capture", help="plan and then capture, in one process")
+    capture_cmd = sub.add_parser("capture", help="plan and then capture, in one process")
     add_planner_flags(capture_cmd)
     # no_spec is not offered: a capture needs the spec `plan` writes, and the
     # flag exists only so planning can run where the ocispec binary does not.
