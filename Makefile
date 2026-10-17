@@ -186,20 +186,21 @@ clean-protos: ## Remove generated Python stubs
 # that looks like a successful build.
 #
 # To redeploy a worker code change, run `worker-image` alone: the base already has
-# the rootfs and the checkpoints, so it is a Go build and nothing else.
+# the rootfs, so it is a Go build and nothing else.
 # ---------------------------------------------------------------------------
-# Three ordered steps rather than prerequisites. The base bakes what capture
-# wrote, so the order is load-bearing and `make -j` is free to reorder
-# prerequisites. worker-image deliberately does not depend on capture: that is
-# what keeps the redeploy loop from re-capturing.
-generation: ## Capture checkpoints, bake them into the base, build a worker
+# Three ordered steps rather than prerequisites, so `make -j` cannot reorder them.
+# The checkpoints are not baked into any image: capture writes them to
+# $(ARTIFACTS_DIR) and docker-compose.yml mounts them into the worker. worker-image
+# deliberately does not depend on capture: that is what keeps the redeploy loop from
+# re-capturing.
+generation: ## Capture checkpoints and build the worker base and image
 	@$(MAKE) --no-print-directory capture
 	@$(MAKE) --no-print-directory worker-base
 	@$(MAKE) --no-print-directory worker-image
 	@echo
 	@echo "  image:  $(WORKER_IMAGE):$(TAG)"
 	@echo "  also:   $(WORKER_IMAGE):latest"
-	@echo "  run it: docker compose up -d"
+	@echo "  run it: docker compose up -d   (mounts $(ARTIFACTS_DIR)/checkpoints and manifest.json)"
 
 pipeline-image: ## Build the offline pipeline image
 	@echo "==> [1/3] pipeline image ($(FLAVOR))"
@@ -282,19 +283,18 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 		$(PIPELINE_IMAGE) capture $(if $(REUSE_PLAN_DIR),--reuse-plan)
 	@test -f $(ARTIFACTS_DIR)/manifest.json \
 		|| { echo "capture produced no manifest; refusing to build a checkpointless image" >&2; exit 1; }
+	@mkdir -p $(ARTIFACTS_DIR)/checkpoints
 	@mkdir -p $(CATALOGUE_DIR)
 	@test -f $(ARTIFACTS_DIR)/catalogue.json && cp $(ARTIFACTS_DIR)/catalogue.json $(CATALOGUE_DIR)/$(FLAVOR).json || true
 	@echo "==> captured: $$(ls $(ARTIFACTS_DIR)/checkpoints | tr '\n' ' ')"
 	@echo "==> catalogue: $(CATALOGUE_DIR)/$(FLAVOR).json (mount this on the router)"
 
-# Says what it baked, because building this from an empty $(ARTIFACTS_DIR) yields
-# a base that works and serves nothing but cold starts - which otherwise looks
-# exactly like a normal build.
-worker-base: ## Build the base a worker runs on: runsc, rootfs, checkpoints
-	@echo "==> [3/3] worker base image ($(FLAVOR)): runsc, rootfs, and $$(ls $(ARTIFACTS_DIR)/checkpoints 2>/dev/null | wc -l | tr -d ' ') checkpoint(s)"
+# The checkpoints are not in this image: they are mounted at run time from
+# $(ARTIFACTS_DIR), so it does not depend on `capture` and can be built first.
+worker-base: ## Build the base a worker runs on: runsc and the rootfs
+	@echo "==> [3/3] worker base image ($(FLAVOR)): runsc and rootfs"
 	docker build --target worker-base -t $(WORKER_BASE) \
 		$(ROOTFS_BUILD_ARGS) \
-		--build-arg ARTIFACTS_DIR=$(ARTIFACTS_DIR) \
 		-f $(PIPELINE_DOCKERFILE) .
 
 # worker/Dockerfile is `FROM $(WORKER_BASE)`, so the base has to exist as an image

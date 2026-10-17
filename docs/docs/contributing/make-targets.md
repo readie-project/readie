@@ -95,9 +95,9 @@ These targets build the images that hold checkpoints and require Docker. Targets
 | `analyzer-image` | amd64 only | Build the analyzer image (the pipeline on the base image itself). |
 | `analyze` | amd64 only | Measure every package the flavor's base image installs. Writes `pipeline/data/metadata/<flavor>.json`. Runs with no network. |
 | `capture` | yes | Plan and capture checkpoints into `pipeline/out/<flavor>`. Runs a privileged container. Fails if no manifest is produced, then copies the catalogue to `catalogues/<flavor>.json`. |
-| `worker-base` | needs captured checkpoints | Build the base image the worker runs on: gVisor, the root filesystem and the checkpoints. Prints how many checkpoints it baked. |
+| `worker-base` | no | Build the base image the worker runs on: gVisor and the root filesystem. It does not contain the checkpoints and does not need a capture first. |
 | `worker-image` | no | Build the worker image on top of the base. This is a Go build and takes seconds. Builds the base first if it is missing. |
-| `generation` | yes | Run `capture`, `worker-base` and `worker-image` in order. |
+| `generation` | yes | Run `capture`, `worker-base` and `worker-image` in order. `docker compose` then mounts `pipeline/out/<flavor>/checkpoints` and `manifest.json` into the worker. |
 | `clean-artifacts` | no | Delete captured checkpoints and the manifest for the flavor. |
 
 To redeploy a worker code change without capturing again, run `make worker-image` alone, then recreate the container.

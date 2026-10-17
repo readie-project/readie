@@ -1,10 +1,13 @@
 // Package artifact models the immutable bundle the offline checkpoint pipeline
 // produces and the worker consumes.
 //
-// There is exactly one root filesystem and one set of checkpoints, and they are
-// baked into the worker image together. That is the whole reason this package is
-// as small as it is: a checkpoint can only be restored into the filesystem it
-// was captured from, and when the two ship in one image they cannot disagree.
+// There is exactly one root filesystem and one set of checkpoints. The rootfs is
+// baked into the worker image; manifest.json and checkpoints/ are mounted into the
+// same root at run time. That is the whole reason this package is as small as it
+// is: a checkpoint can only be restored into the filesystem it was captured from,
+// and `make generation` builds the image and captures the checkpoints from the same
+// rootfs, so a deployment that mounts the checkpoints of the generation that built
+// its image cannot disagree.
 //
 // Layout on disk:
 //
@@ -19,8 +22,8 @@
 // The pairing used to be enforced by a rootfs_id recorded in every generation
 // and every checkpoint. It was never actually compared - only logged - and with
 // one rootfs per image there is nothing to compare it against, so it is gone.
-// The guarantee moved from a check at load time to being true by construction,
-// because the image build is the only way to produce a pair.
+// The guarantee moved from a check at load time to being true by construction of
+// `make generation`, which is the only way to produce a pair.
 //
 // Checkpoint IDs are therefore globally unique within a worker. The previous
 // layout nested them under generations/<id>/ and needed a "<generation>/

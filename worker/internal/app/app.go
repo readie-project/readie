@@ -133,10 +133,11 @@ func networkCapacity(maxExecutors int32) int {
 	return capacity
 }
 
-// loadArtifacts reads the rootfs and checkpoints baked into this image.
+// loadArtifacts reads the rootfs baked into this image and the manifest and
+// checkpoints mounted beside it.
 //
 // The root is a compiled-in constant rather than configuration: there is one
-// place a worker image puts its artifacts, and making it settable invited a
+// place a worker puts its artifacts, and making it settable invited a
 // deployment where the mount and the expectation disagreed. Load still takes it
 // as a parameter, so tests build fixtures in temporary directories.
 func loadArtifacts(_ config.Config, log *slog.Logger) (container.Artifacts, error) {

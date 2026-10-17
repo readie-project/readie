@@ -36,7 +36,7 @@ checkpoints/
   ...
 ```
 
-The generation is baked into the worker's container image, next to the root filesystem from which the checkpoints were captured. A checkpoint works only with that exact filesystem, so shipping the two together keeps them in step.
+The worker's container image holds the root filesystem from which the checkpoints were captured. The manifest and the checkpoints are mounted into the worker from the directory that `make generation` wrote. A checkpoint works only with that exact filesystem, so use the image and the checkpoints that one `make generation` produced.
 
 `manifest.json` describes the whole generation:
 

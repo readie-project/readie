@@ -122,7 +122,7 @@ Each sandbox is also limited to half a CPU (quota 50000 per period 100000) and 1
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `CHECKPOINT_STRICT_COMPAT` | `true` | If the baked checkpoints do not match this worker, `true` drops them (cold starts only, logged as an error). `false` keeps them and logs a warning, so restores that fail fall back to cold starts. |
+| `CHECKPOINT_STRICT_COMPAT` | `true` | If the mounted checkpoints do not match this worker, `true` drops them (cold starts only, logged as an error). `false` keeps them and logs a warning, so restores that fail fall back to cold starts. |
 | `CHECKPOINT_TIMEOUT` | `5m` | Longest a checkpoint operation may take. |
 
 ### Timeouts

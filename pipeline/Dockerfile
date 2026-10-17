@@ -285,20 +285,23 @@ ENTRYPOINT ["readie-pipeline"]
 CMD ["capture"]
 
 # ---------------------------------------------------------------------------
-# The worker's base layer: everything a checkpoint's validity is bound to - the
-# pinned runsc, the root filesystem, and the checkpoints captured against it.
+# The worker's base layer: the pinned runsc and the root filesystem the
+# checkpoints were captured against. The checkpoints themselves are not in this
+# image: `make capture` writes them (and manifest.json) to pipeline/out/<flavor>,
+# and docker-compose.yml mounts them into the worker at /var/lib/readie. They stay
+# paired with this image because `make generation` builds both from the same
+# `rootfs` stage.
 #
-# This is the whole of what the pipeline produces. worker/Dockerfile builds
-# `FROM` this image and adds only what is independent of it: the Go server and
-# grpcurl. That split is why a worker code change rebuilds in seconds without
-# touching 26 GB, and why the rootfs layer is *inherited* rather than copied - a
-# layer inherited from a base image has the same digest by definition, whereas
-# `COPY --from=` emits a fresh one every build (two otherwise-identical builds
-# were observed differing in the 25.9 GB rootfs layer's digest).
+# worker/Dockerfile builds `FROM` this image and adds only what is independent of
+# it: the Go server and grpcurl. That split is why a worker code change rebuilds in
+# seconds without touching 26 GB, and why the rootfs layer is *inherited* rather
+# than copied - a layer inherited from a base image has the same digest by
+# definition, whereas `COPY --from=` emits a fresh one every build (two
+# otherwise-identical builds were observed differing in the 25.9 GB rootfs layer's
+# digest).
 #
-# Re-capturing rebuilds this image, but not that layer: the rootfs stage is
-# unchanged, so its COPY is a cache hit and the new base differs from the old
-# one only in the checkpoints on top.
+# Re-capturing does not rebuild this image at all. It does not depend on the
+# capture, so it can be built before, after or without one.
 #
 #   make worker-base
 # ---------------------------------------------------------------------------
@@ -309,12 +312,5 @@ FROM host-base AS worker-base
 # runtime's state directory, which the worker owns exclusively.
 RUN mkdir -p /shared /run/readie-runsc /var/log/runsc
 
-# manifest.json and checkpoints/, produced by `readie-pipeline capture`. The
-# Makefile always overrides this per FLAVOR (pipeline/out/<flavor>); the
-# default here only matters for a `docker build` run outside the Makefile.
-#
-# Empty by default - pipeline/out/cpu/ holds only a .gitkeep - so this still
-# yields a working base: rootfs, no checkpoints, every start cold. `make
-# generation` captures first, then builds this.
-ARG ARTIFACTS_DIR=pipeline/out/cpu
-COPY ${ARTIFACTS_DIR}/ /var/lib/readie/
+# manifest.json and checkpoints/ arrive at /var/lib/readie as bind mounts, not
+# layers. Without them the worker still starts and serves cold starts only.

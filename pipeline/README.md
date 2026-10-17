@@ -334,7 +334,7 @@ See the caution under [build](#build).
 | ------------- | --------------------------------------------------------------------- |
 | `analyzer`    | `readie-pipeline` on top of the base image itself, nothing else       |
 | `pipeline`    | this tool: runsc, the planner, the rootfs as an OCI bundle, `ocispec` |
-| `worker-base` | what a worker runs on: runsc, the rootfs, the captured checkpoints    |
+| `worker-base` | what a worker runs on: runsc and the rootfs (checkpoints are mounted)  |
 
 A gVisor checkpoint restores only into the filesystem it was captured from,
 through the runsc release that captured it. Both therefore live in this
@@ -342,8 +342,9 @@ Dockerfile, and the gVisor release is pinned once for capture and restore. The
 worker's own image is `worker/Dockerfile`, which is `FROM readie-worker-base`
 and adds only the Go server.
 
-From the repository root, one command captures checkpoints, bakes them into the
-base, and builds a worker on it:
+From the repository root, one command captures checkpoints, builds the base with
+the rootfs, and builds a worker on it. The checkpoints stay in `pipeline/out/<flavor>`
+and `docker-compose.yml` mounts them into the worker:
 
 ```sh
 make generation                     # tags readie-worker:<timestamp> and :latest
@@ -454,9 +455,8 @@ The shared `alpha` constant must match between `READIE_ALPHA` here and `ALPHA` i
 the router. See [Cost model](https://readie.org/docs/concepts/cost-model).
 
 Neither the manifest nor the checkpoint metadata carries a `rootfs_id`. A
-generation has one rootfs, baked in beside its checkpoints, so there is nothing
-to identify and the pairing is correct by construction. Identity is the base
-image tag. The manifest has no id of its own, because a second name for the same
+generation has one rootfs, built by the same `make generation` that captures its
+checkpoints, so there is nothing to identify. Identity is the base image tag. The manifest has no id of its own, because a second name for the same
 build could disagree with the first.
 
 ## Configuration

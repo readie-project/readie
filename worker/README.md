@@ -41,7 +41,7 @@ internal/
   execution/           orchestration of one request; depends on no transport types
   container/           container lifecycle: acquire, release, reclaim orphans
   executor/            the unix-socket protocol shared with ../executor/
-  artifact/            the baked-in rootfs, manifest and checkpoints
+  artifact/            the rootfs, manifest and checkpoints under /var/lib/readie
   sandbox/             the runtime seam - stdlib only, no runtime knowledge
   runsc/               the only package that knows gVisor exists
   registry/            reporting worker and executor state to the router
@@ -69,8 +69,9 @@ lifetimes. `container.Manager` has no knowledge of the runtime's name.
 
 ## Artifacts
 
-The root filesystem and the checkpoints are baked into the base image that the
-worker image is built on, at a compiled-in path. Nothing is mounted:
+The root filesystem is baked into the base image that the worker image is built
+on. The manifest and the checkpoints are bind-mounted beside it. The root is a
+compiled-in path:
 
 ```text
 /var/lib/readie/
@@ -81,9 +82,17 @@ worker image is built on, at a compiled-in path. Nothing is mounted:
 ```
 
 A gVisor checkpoint restores only into the filesystem it was captured from, so
-the rootfs and the checkpoints must be paired correctly. The layout guarantees
-the pairing: there is one rootfs, and the base image build is the only way to
-put a rootfs and checkpoints together.
+the rootfs and the checkpoints must be paired correctly. There is one rootfs, and
+`make generation` builds the base image and captures the checkpoints from the same
+one, so mounting the checkpoints of the generation that built the image keeps them
+paired. The startup check below compares the runsc version and the sandbox spec,
+not the contents of the rootfs.
+
+`docker-compose.yml` mounts `pipeline/out/<flavor>/checkpoints` and
+`manifest.json`, with `create_host_path: false`, so a missing generation fails
+`docker compose up`. A worker started without them still runs and cold-starts every
+request. The worker reads the tree once at startup, so restart it after a new
+generation.
 
 Because there is one rootfs, checkpoint IDs are globally unique, so a bare ID
 such as `checkpoint_1` is unambiguous. For background on checkpoints, see
@@ -95,23 +104,26 @@ The [`Dockerfile`](Dockerfile) in this directory builds only the server.
 Everything that a checkpoint's validity is bound to comes from
 `readie-worker-base-<flavor>`, which the offline pipeline builds
 ([`../pipeline/Dockerfile`](../pipeline/Dockerfile)). That includes the pinned
-runsc, the rootfs, and the checkpoints themselves.
+runsc and the rootfs. The checkpoints are not in either image.
 
 ```text
 readie-worker-base-<flavor>   pipeline/Dockerfile --target worker-base
   /usr/local/bin/runsc            pinned GVISOR_RELEASE, same as capture
   /var/lib/readie/rootfs
-  /var/lib/readie/manifest.json
-  /var/lib/readie/checkpoints/
 
 readie-worker-<flavor>        worker/Dockerfile, context ./worker
   FROM readie-worker-base-<flavor>
   /app/go-server
   /usr/local/bin/grpcurl          the compose healthcheck
+
+mounted by docker-compose.yml     pipeline/out/<flavor>
+  /var/lib/readie/manifest.json
+  /var/lib/readie/checkpoints/
 ```
 
-The split follows what changes when. A new capture rebuilds the base. A code
-change rebuilds only the worker image, and that build touches nothing large.
+The split follows what changes when. A new capture changes only the mounted
+directory. A code change rebuilds only the worker image, and that build touches
+nothing large.
 
 ### Redeploying a worker change
 
@@ -120,13 +132,13 @@ make worker-image        # a Go build and two small layers
 docker compose up -d     # recreates the worker on the new readie-worker-<flavor>:latest
 ```
 
-No re-capture is needed. The base already holds the rootfs and the checkpoints,
-and the worker image inherits those layers rather than copying them, so the
+No re-capture is needed. The base already holds the rootfs, the checkpoints are
+mounted, and the worker image inherits the base's layers rather than copying them, so the
 build does not touch the approximately 26 GB rootfs. Two conditions apply:
 
 - `readie-worker-base-<flavor>:latest` must be present (`make -C .. worker-base`)
   or pullable.
-- The worker comes up with whatever checkpoints that base was built with.
+- The worker comes up with whatever checkpoints are mounted at `/var/lib/readie/checkpoints`.
 
 If compose does not notice the new image, add `--force-recreate`.
 
@@ -512,7 +524,7 @@ unrestricted egress.
 
 ## Checkpoint compatibility
 
-A baked checkpoint restores only into the exact sandbox it was captured under.
+A checkpoint restores only into the exact sandbox it was captured under.
 At startup, once the runtime and container manager are built, the worker
 computes its own spec fingerprint and reads its live `runsc --version`. The
 fingerprint comes from `container.CanonicalSpec` and `runsc.Fingerprint`, the

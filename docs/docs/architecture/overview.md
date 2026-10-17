@@ -31,7 +31,7 @@ The pipeline (`pipeline/`) analyzes a large collection of example Python code. I
 
 The pipeline produces two artifacts:
 
-- The checkpoints, which are baked into the worker's container image together with the root filesystem they were captured from.
+- The checkpoints, which are mounted into the worker. The worker's container image holds the root filesystem they were captured from.
 - The catalogue, which is mounted into the router.
 
 One set is built for each [flavor](/docs/concepts/flavors-and-catalogues) (`cpu` or `gpu`). Capturing requires an amd64 host running gVisor. See [Building checkpoints](/docs/architecture/building-checkpoints).
