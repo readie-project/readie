@@ -72,7 +72,7 @@ A hardware kind, `cpu` or `gpu`, that a worker and its checkpoints are built for
 
 ### generation
 
-A complete set of artifacts for one flavor: the captured checkpoints, the manifest, and the catalogue. The command `make generation` builds one and bakes it into a worker image. See [Build checkpoints](/docs/contributing/build-checkpoints).
+A complete set of artifacts for one flavor: the captured checkpoints, the manifest, and the catalogue. The command `make generation` captures one and builds the worker image that matches it. See [Build checkpoints](/docs/contributing/build-checkpoints).
 
 ### gRPC
 

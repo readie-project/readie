@@ -176,10 +176,12 @@ The following items are listed so that nobody "fixes" one by accident.
   Rebuilding a worker must not mean rebuilding tens of gigabytes. For this reason
   the rootfs lives in `readie-worker-base`, and `worker/Dockerfile` inherits that
   image by tag and does not copy a rootfs in.
-- Artifacts are baked in and not mounted. New checkpoints mean a new base image
-  (`make generation`) and a new container. This gives one deployable with nothing
-  to mis-mount, at the cost of an image of tens of GB. Redeploying worker code is
-  cheap by contrast: `make worker-image`.
+- The rootfs is baked into the base image, and the manifest and checkpoints are
+  mounted into the worker (`pipeline/out/<flavor>` by default). New checkpoints
+  mean `make generation` and a restart of the worker, not a new image. Keep the
+  image and the checkpoints from the same generation: the worker's startup check
+  does not compare rootfs contents. Redeploying worker code is cheap:
+  `make worker-image`.
 - `cloudpickle.loads` on router-supplied bytes in the client is an inherent
   remote-code-execution surface. It is confined behind a `ResultCodec` protocol
   and documented in [SECURITY.md](SECURITY.md).

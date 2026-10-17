@@ -313,7 +313,7 @@ catalogue.
 | `$EXECUTOR_DIR/checkpoints/<id>/` | one checkpoint image plus its `meta.json`   |
 | `$EXECUTOR_DIR/manifest.json`     | what those checkpoints can be restored into |
 | `$EXECUTOR_DIR/catalogue.json`    | the catalogue for the router                |
-| `$READIE_PLAN_DIR`                | the plan and the spec fingerprint           |
+| `$READIE_PLAN_DIR`                | the plan, the spec fingerprint and `rootfs-requirements.txt` |
 | `data/`                           | the corpus, its lookup cache, and package metadata (stored in Git LFS) |
 
 `$EXECUTOR_DIR` here is a host directory. It is distinct from the sandbox's own
@@ -334,7 +334,7 @@ See the caution under [build](#build).
 | ------------- | --------------------------------------------------------------------- |
 | `analyzer`    | `readie-pipeline` on top of the base image itself, nothing else       |
 | `pipeline`    | this tool: runsc, the planner, the rootfs as an OCI bundle, `ocispec` |
-| `worker-base` | what a worker runs on: runsc, the rootfs, the captured checkpoints    |
+| `worker-base` | what a worker runs on: runsc and the rootfs (checkpoints are mounted)  |
 
 A gVisor checkpoint restores only into the filesystem it was captured from,
 through the runsc release that captured it. Both therefore live in this
@@ -342,8 +342,9 @@ Dockerfile, and the gVisor release is pinned once for capture and restore. The
 worker's own image is `worker/Dockerfile`, which is `FROM readie-worker-base`
 and adds only the Go server.
 
-From the repository root, one command captures checkpoints, bakes them into the
-base, and builds a worker on it:
+From the repository root, one command captures checkpoints, builds the base with
+the rootfs, and builds a worker on it. The checkpoints stay in `pipeline/out/<flavor>`
+and `docker-compose.yml` mounts them into the worker:
 
 ```sh
 make generation                     # tags readie-worker:<timestamp> and :latest
@@ -360,6 +361,54 @@ The generation consists of three steps that can also run separately:
 `make worker-image` alone redeploys a worker code change, because the base
 already holds the checkpoints. `make clean-artifacts` discards what was
 captured.
+
+### A minimal rootfs
+
+By default the rootfs is `ROOTFS_BASE_IMAGE` plus the executor, which suits a
+full base such as Kaggle's. A base that carries no packages (`python:3.12-alpine`,
+`python:3.12-slim`) can instead receive exactly the distributions the plan needs.
+`plan` writes them to `rootfs-requirements.txt` beside the plan, one distribution
+name per line, for either planner. The list holds each plan import, everything
+that import loads, and the distribution each of those modules belongs to
+(`planning/requirements.py`). It holds names only: the metadata records no
+versions.
+
+The list has to exist before the image does, because it decides what the rootfs
+contains, so it comes from a host-side `plan --no-spec` run:
+
+```sh
+make rootfs-requirements PLAN_DIR=experiments/a/plan
+make generation \
+  ROOTFS_BASE_IMAGE=python:3.12-alpine \
+  ROOTFS_PYTHONPATH=/usr/local/lib/python3.12/site-packages \
+  ROOTFS_REQUIREMENTS=experiments/a/plan/rootfs-requirements.txt \
+  REUSE_PLAN_DIR=experiments/a/plan
+```
+
+`REUSE_PLAN_DIR` mounts that plan directory at `/app/plan` in the capture container
+and runs `capture --reuse-plan`, so the container does not plan a second time. With
+`--reuse-plan`, `plan` reads the existing `checkpoints.json` instead of running the
+planner. It consults neither the corpus nor the planner settings, writes neither the
+plan nor `rootfs-requirements.txt` again, and still writes the sandbox spec and its
+fingerprint (as root, into the mounted directory). It fails with a message when the
+file is missing. Without `REUSE_PLAN_DIR`, `capture` plans inside the container, which
+gives the same plan only if the planner settings match those of the host run.
+
+The Dockerfile's `rootfs` stage installs the file with `uv`, one distribution at
+a time, against the executor's locked versions as constraints. A distribution
+that fails to install is listed in `/etc/readie-rootfs-skipped.txt` inside the
+rootfs and printed in the build log; the build continues unless
+`ROOTFS_REQUIREMENTS_STRICT=true`. Because `capture` inventories the finished
+rootfs, the catalogue lists only what installed. A call that needs a skipped
+distribution is installed at request time by the worker, which fails when the
+sandbox has no network.
+
+Packages are installed in the `rootfs` stage, not during `build`, because the
+worker image copies that stage's filesystem. Anything installed later, inside the
+capture container, would not ship, and the checkpoints would belong to a
+filesystem the worker does not have. The metadata was measured in
+`ROOTFS_BASE_IMAGE`; run `analyze` against the minimal image if the timings need to
+match it.
 
 To iterate on planning alone, without gVisor, network, or a container:
 
@@ -406,9 +455,8 @@ The shared `alpha` constant must match between `READIE_ALPHA` here and `ALPHA` i
 the router. See [Cost model](https://readie.org/docs/concepts/cost-model).
 
 Neither the manifest nor the checkpoint metadata carries a `rootfs_id`. A
-generation has one rootfs, baked in beside its checkpoints, so there is nothing
-to identify and the pairing is correct by construction. Identity is the base
-image tag. The manifest has no id of its own, because a second name for the same
+generation has one rootfs, built by the same `make generation` that captures its
+checkpoints, so there is nothing to identify. Identity is the base image tag. The manifest has no id of its own, because a second name for the same
 build could disagree with the first.
 
 ## Configuration
@@ -417,7 +465,7 @@ build could disagree with the first.
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `BASE_DIR`, `EXECUTOR_DIR`                               | the bundle and the output directory                                                 |
 | `READIE_PLAN_DIR`                                        | where the plan goes, if not with the outputs                                        |
-| `ROOTFS_PYTHONPATH`                                      | must correspond to the rootfs stage                                                 |
+| `ROOTFS_PYTHONPATH`                                      | must correspond to the rootfs stage; the Dockerfile build argument of the same name sets it |
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's                                                             |
 | `READIE_PLANNER`                                         | `greedy` or `fixed`                                                                 |
 | `READIE_MAX_CHECKPOINTS`, `READIE_SIZE_BUDGET_MB`        | planner bounds; the size budget is a total across all checkpoints                   |

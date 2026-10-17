@@ -122,7 +122,7 @@ Each sandbox is also limited to half a CPU (quota 50000 per period 100000) and 1
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `CHECKPOINT_STRICT_COMPAT` | `true` | If the baked checkpoints do not match this worker, `true` drops them (cold starts only, logged as an error). `false` keeps them and logs a warning, so restores that fail fall back to cold starts. |
+| `CHECKPOINT_STRICT_COMPAT` | `true` | If the mounted checkpoints do not match this worker, `true` drops them (cold starts only, logged as an error). `false` keeps them and logs a warning, so restores that fail fall back to cold starts. |
 | `CHECKPOINT_TIMEOUT` | `5m` | Longest a checkpoint operation may take. |
 
 ### Timeouts
@@ -172,10 +172,10 @@ The pipeline builds checkpoints offline. Settings come from environment variable
 | `READIE_ALPHA` | built-in default | Size-versus-time weight in seconds per MB, rounded to 6 decimals. Must be positive. See [cost model](/docs/concepts/cost-model). |
 | `READIE_CHECKPOINT_TIMEOUT` | `300.0` | Seconds a sandbox may take to checkpoint. |
 | `READIE_DATA_DIR` | the pipeline's `data/` folder | Corpus and package metadata. |
-| `READIE_PLAN_DIR` | empty (use the output folder) | Where the plan and spec fingerprint go. |
+| `READIE_PLAN_DIR` | empty (use the output folder) | Where the plan, spec fingerprint and `rootfs-requirements.txt` go. |
 | `BASE_DIR` | `/app/executorfs` | The sandbox bundle (config plus root filesystem). |
 | `EXECUTOR_DIR` | `/app/executor` | Host-side output folder for checkpoints and the manifest. |
-| `ROOTFS_PYTHONPATH` | `/usr/local/lib/python3.12/dist-packages` | Python path inside the root filesystem. |
+| `ROOTFS_PYTHONPATH` | `/usr/local/lib/python3.12/dist-packages` | Python path inside the root filesystem. Set it with the build argument of the same name when the base image keeps packages in `site-packages`. |
 | `SANDBOX_NETWORK` | `sandbox` | Must match the worker. |
 | `SANDBOX_HOST_UDS` | `create` | Must match the worker. |
 | `SANDBOX_OVERLAY` | `root:memory` | Must match the worker. Same restrictions as above. |

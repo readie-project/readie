@@ -45,6 +45,15 @@ def test_a_plan_dir_moves_the_plan_off_the_output_directory():
     assert s.checkpoints_dir == Path("/app/executor/checkpoints"), "outputs do not move"
 
 
+def test_the_rootfs_requirements_sit_beside_the_plan():
+    # Like the plan, they are an input to the image build, not something the
+    # worker ships beside its manifest.
+    assert settings().requirements_path == Path("/app/executor/rootfs-requirements.txt")
+    assert settings(plan_dir=Path("/app/plan")).requirements_path == Path(
+        "/app/plan/rootfs-requirements.txt"
+    )
+
+
 def test_the_socket_dir_is_a_host_path_distinct_from_the_sandbox_one():
     # Conflating the two once sent the pre-imported executor source to the wrong
     # place, so every checkpoint captured a bare executor.

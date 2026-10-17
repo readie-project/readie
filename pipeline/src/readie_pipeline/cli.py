@@ -38,6 +38,7 @@ from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
 from readie_pipeline.metadata.models import Metadata, MetadataError
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
+from readie_pipeline.planning.requirements import distributions_for, write_requirements
 
 
 def build_planner(name: str, alpha: float) -> CheckpointPlanner:
@@ -257,8 +258,8 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_plan(settings: Settings, args: argparse.Namespace) -> int:
-    """Choose checkpoint contents and write the sandbox spec."""
+def _plan(settings: Settings) -> list[CheckpointPlan]:
+    """Run the planner, then write the plan and the distributions it needs."""
     corpus = Corpus.load(settings.corpus_path)
     metadata = Metadata.load(settings.metadata_path)
 
@@ -287,6 +288,39 @@ def cmd_plan(settings: Settings, args: argparse.Namespace) -> int:
     write_plan(settings.plan_path, [p.to_json() for p in plans])
     print(f"[*] plan written to {settings.plan_path}")
 
+    # What a rootfs built from a minimal base has to install for these imports to
+    # work. Written for any planner, since it only reads the plan.
+    distributions = distributions_for(plans, metadata)
+    write_requirements(settings.requirements_path, distributions)
+    print(
+        f"[*] {len(distributions)} distributions for the rootfs written to "
+        f"{settings.requirements_path}"
+    )
+    return list(plans)
+
+
+def _reuse_plan(settings: Settings) -> list[CheckpointPlan]:
+    """Read the plan an earlier `plan` run wrote, instead of planning again.
+
+    The planner, the corpus and the planner settings are not consulted: the file is
+    the plan. Nothing is written back, so the file (and the rootfs-requirements.txt
+    that was derived from it) stays exactly as the earlier run left it.
+    """
+    if not settings.plan_path.is_file():
+        msg = f"no plan at {settings.plan_path} to reuse; run `readie-pipeline plan` first"
+        raise ConfigError(msg)
+    plans = [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
+    print(f"[*] reusing the {len(plans)} checkpoints planned in {settings.plan_path}")
+    return plans
+
+
+def cmd_plan(settings: Settings, args: argparse.Namespace) -> int:
+    """Choose checkpoint contents and write the sandbox spec."""
+    if getattr(args, "reuse_plan", False):
+        _reuse_plan(settings)
+    else:
+        _plan(settings)
+
     if not args.no_spec:
         # Needs the ocispec binary and the rootfs, so --no-spec is what lets the
         # planning stage run anywhere -- including in a unit test.
@@ -313,9 +347,10 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
         else:
             item.unlink()
 
-    plans = [CheckpointPlan()] + [
-        CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())
-    ]
+    plans = [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
+    if settings.planner != "fixed":
+        plans = [CheckpointPlan(), *plans]
+
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
     metadata = Metadata.load(settings.metadata_path)
@@ -381,7 +416,15 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     # cost itself, discarded here since it never affects which checkpoint
     # the router or planner ends up choosing (the same constant added to
     # every candidate never changes an argmin).
-    computed_alpha = round(float(np.polyfit(sizes_mb, restore_times, 1)[0]), ALPHA_PRECISION)
+    computed_alpha = settings.alpha
+    try:
+        if len(plans) > 0:
+            computed_alpha = round(
+                float(np.polyfit(sizes_mb, restore_times, 1)[0]), ALPHA_PRECISION
+            )
+    except np.linalg.LinAlgError as exc:
+        msg = f"cannot compute alpha from {len(sizes_mb)} checkpoints: {exc}"
+        print(f"[!] {msg}; using configured alpha {computed_alpha}")
     drift = computed_alpha - settings.alpha
     print(
         f"\n[*] planned alpha value: {settings.alpha}, "
@@ -428,6 +471,11 @@ def add_planner_flags(parser: argparse.ArgumentParser) -> None:
     """Attach the planner's knobs, shared by `plan` and `capture`."""
     parser.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
     parser.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
+    parser.add_argument(
+        "--reuse-plan",
+        action="store_true",
+        help="skip planning and use the checkpoints.json an earlier `plan` run wrote",
+    )
     parser.add_argument(
         "--size-budget-mb", type=float, help="total size budget across all checkpoints, in MB"
     )

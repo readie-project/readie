@@ -129,7 +129,7 @@ to what was kept.
 ## Keeping a catalogue in step with the workers
 
 A catalogue describes one generation of checkpoints, so it must match the
-checkpoints baked into the worker image.
+checkpoints mounted into the worker.
 
 - Run `make generation FLAVOR=<flavor>` to build the checkpoints, the worker image
   and the catalogue together. `make capture` copies the new catalogue here.

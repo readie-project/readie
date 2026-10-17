@@ -125,6 +125,11 @@ class Settings:
         return (self.plan_dir or self.output_dir) / "checkpoints.json"
 
     @property
+    def requirements_path(self) -> Path:
+        """The distributions the plan needs installed in the rootfs, written by `plan`."""
+        return (self.plan_dir or self.output_dir) / "rootfs-requirements.txt"
+
+    @property
     def fingerprint_path(self) -> Path:
         """The spec fingerprint, so `build` need not regenerate the spec."""
         return (self.plan_dir or self.output_dir) / "spec-fingerprint.txt"

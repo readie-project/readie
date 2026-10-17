@@ -29,11 +29,12 @@ Only NGINX is reachable from outside Compose. Clients connect to NGINX, NGINX fo
 
 - Docker with the Compose plugin.
 - An amd64 Linux host that can run privileged containers. The worker runs with `privileged: true` and relaxed AppArmor and seccomp profiles, because gVisor needs both.
-- The worker base image, `readie-worker-base-cpu:latest`. The image holds the gVisor binary, the root filesystem, and the checkpoints. The worker image is built `FROM` it, and unlike the router image it cannot be built from a bare checkout.
+- The worker base image, `readie-worker-base-cpu:latest`. The image holds the gVisor binary and the root filesystem. The worker image is built `FROM` it, and unlike the router image it cannot be built from a bare checkout.
+- A generation in `pipeline/out/cpu`. The compose file mounts its `checkpoints/` directory and `manifest.json` into the worker, and `docker compose up` stops with "bind source path does not exist" when they are missing.
 
 To build the base image, run `make worker-base`. Alternatively, run `make generation`, which captures checkpoints, builds the base image, and builds the worker image. See [Build checkpoints](/docs/contributing/build-checkpoints).
 
-Without captured checkpoints, the worker starts but every request is a cold start. See [cold starts and restore](/docs/concepts/cold-starts-and-restore).
+A generation that captured no checkpoints starts a worker whose every request is a cold start. See [cold starts and restore](/docs/concepts/cold-starts-and-restore).
 
 ## Compose variables
 

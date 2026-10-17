@@ -30,6 +30,8 @@ ANALYZE_EXCLUDE ?= google
 ARTIFACTS_DIR   := pipeline/out/$(FLAVOR)
 # Bind mount for the ARTIFACTS_DIR on the executor
 EXECUTOR_DIR    := /app/executor
+# Where the pipeline image reads and writes the plan (its READIE_PLAN_DIR).
+PLAN_MOUNT      := /app/plan
 # The per-flavor catalogues the router mounts (as <flavor>.json).
 CATALOGUE_DIR   := catalogues
 # The pipeline's Dockerfile defines the rootfs, the capture tool and the base a
@@ -59,6 +61,29 @@ endif
 # Overridable so an experiment can be tagged something meaningful.
 TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
 
+# Distributions installed into the rootfs on top of ROOTFS_BASE_IMAGE: a file with
+# one name per line, relative to the repo root (the Docker build context). The
+# default installs nothing, which suits a full base such as Kaggle's. For a minimal
+# base (python:3.12-alpine) run `make rootfs-requirements` first and pass its output.
+ROOTFS_REQUIREMENTS        ?= pipeline/rootfs-requirements.txt
+# true fails the image build when a listed distribution cannot be installed.
+ROOTFS_REQUIREMENTS_STRICT ?= false
+# Where the rootfs's Python keeps packages: Kaggle uses dist-packages, the
+# python:3.12 images (slim, alpine) use site-packages.
+ROOTFS_PYTHONPATH          ?= /usr/local/lib/python3.12/dist-packages
+# Where `rootfs-requirements` writes the plan and the list, relative to the repo root.
+PLAN_DIR                   ?= pipeline/plan/$(FLAVOR)
+# A plan directory from an earlier `make rootfs-requirements` (relative to the repo root).
+# When set, `capture` mounts it and reuses that plan instead of planning a second time, so the
+# checkpoints are the ones the rootfs was built for. Empty plans again inside the container.
+REUSE_PLAN_DIR             ?=
+UV                         ?= uv
+ROOTFS_BUILD_ARGS := \
+	--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
+	--build-arg ROOTFS_REQUIREMENTS=$(ROOTFS_REQUIREMENTS) \
+	--build-arg ROOTFS_REQUIREMENTS_STRICT=$(ROOTFS_REQUIREMENTS_STRICT) \
+	--build-arg ROOTFS_PYTHONPATH=$(ROOTFS_PYTHONPATH)
+
 # Planner knobs
 # greedy (weighted set cover, the default) | fixed (a configured package set)
 READIE_PLANNER := greedy
@@ -72,7 +97,7 @@ READIE_SIZE_BUDGET_MB := 2048.0
 READIE_ALPHA := 0.006
 
 .PHONY: all install protos protos-python protos-go protos-lint protos-fmt protos-breaking clean-protos \
-        worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
+        rootfs-requirements worker-base pipeline-image analyzer-image analyze capture worker-image generation clean-artifacts \
         router-% pkg-% executor-% pipeline-% playground-% worker-% lint type test help \
 		run-prod run-local shutdown \
         docs-install docs-tools docs-protos docs-build docs-start docs-serve
@@ -161,26 +186,43 @@ clean-protos: ## Remove generated Python stubs
 # that looks like a successful build.
 #
 # To redeploy a worker code change, run `worker-image` alone: the base already has
-# the rootfs and the checkpoints, so it is a Go build and nothing else.
+# the rootfs, so it is a Go build and nothing else.
 # ---------------------------------------------------------------------------
-# Three ordered steps rather than prerequisites. The base bakes what capture
-# wrote, so the order is load-bearing and `make -j` is free to reorder
-# prerequisites. worker-image deliberately does not depend on capture: that is
-# what keeps the redeploy loop from re-capturing.
-generation: ## Capture checkpoints, bake them into the base, build a worker
+# Three ordered steps rather than prerequisites, so `make -j` cannot reorder them.
+# The checkpoints are not baked into any image: capture writes them to
+# $(ARTIFACTS_DIR) and docker-compose.yml mounts them into the worker. worker-image
+# deliberately does not depend on capture: that is what keeps the redeploy loop from
+# re-capturing.
+generation: ## Capture checkpoints and build the worker base and image
 	@$(MAKE) --no-print-directory capture
 	@$(MAKE) --no-print-directory worker-base
 	@$(MAKE) --no-print-directory worker-image
 	@echo
 	@echo "  image:  $(WORKER_IMAGE):$(TAG)"
 	@echo "  also:   $(WORKER_IMAGE):latest"
-	@echo "  run it: docker compose up -d"
+	@echo "  run it: docker compose up -d   (mounts $(ARTIFACTS_DIR)/checkpoints and manifest.json)"
 
 pipeline-image: ## Build the offline pipeline image
 	@echo "==> [1/3] pipeline image ($(FLAVOR))"
 	docker build --target pipeline -t $(PIPELINE_IMAGE) \
-		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
+		$(ROOTFS_BUILD_ARGS) \
 		-f $(PIPELINE_DOCKERFILE) .
+
+# Plans the checkpoints and writes the distributions they need to
+# $(PLAN_DIR)/rootfs-requirements.txt, for either planner. It runs on the host (the
+# planning stage needs no gVisor), before any image exists, because the list decides
+# what the rootfs contains. Then build with
+#   make generation ROOTFS_REQUIREMENTS=$(PLAN_DIR)/rootfs-requirements.txt
+# `capture` plans again inside the pipeline image; the same settings give the same plan.
+rootfs-requirements: ## Plan and list the distributions the rootfs must install
+	@mkdir -p $(PLAN_DIR)
+	cd pipeline && FLAVOR=$(FLAVOR) \
+		READIE_PLANNER=$(READIE_PLANNER) \
+		READIE_MAX_CHECKPOINTS=$(READIE_MAX_CHECKPOINTS) \
+		READIE_SIZE_BUDGET_MB=$(READIE_SIZE_BUDGET_MB) \
+		READIE_ALPHA=$(READIE_ALPHA) \
+		$(UV) run readie-pipeline --plan-dir "$(abspath $(PLAN_DIR))" plan --no-spec
+	@echo "==> $(PLAN_DIR)/rootfs-requirements.txt"
 
 # Built `FROM` the base image directly (see pipeline/Dockerfile's `analyzer`
 # target), not from `pipeline-image` - running natively there is what avoids
@@ -223,6 +265,8 @@ analyze: analyzer-image ## Measure every package the $(FLAVOR) base image instal
 capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 	@echo "==> [2/3] capturing $(FLAVOR) checkpoints (privileged; needs amd64 gVisor)"
 	@mkdir -p $(ARTIFACTS_DIR)
+	$(if $(REUSE_PLAN_DIR),@test -f $(REUSE_PLAN_DIR)/checkpoints.json \
+		|| { echo "no plan in $(REUSE_PLAN_DIR); run 'make rootfs-requirements PLAN_DIR=$(REUSE_PLAN_DIR)' first" >&2; exit 1; })
 	docker run --rm -it \
 		--privileged \
 		$(CAPTURE_GPU_FLAGS) \
@@ -235,22 +279,22 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 		-e READIE_ALPHA=$(READIE_ALPHA) \
 		-e EXECUTOR_DIR=$(EXECUTOR_DIR) \
 		-v "$(CURDIR)/$(ARTIFACTS_DIR):$(EXECUTOR_DIR)" \
-		$(PIPELINE_IMAGE) capture
+		$(if $(REUSE_PLAN_DIR),-e READIE_PLAN_DIR=$(PLAN_MOUNT) -v "$(CURDIR)/$(REUSE_PLAN_DIR):$(PLAN_MOUNT)") \
+		$(PIPELINE_IMAGE) capture $(if $(REUSE_PLAN_DIR),--reuse-plan)
 	@test -f $(ARTIFACTS_DIR)/manifest.json \
 		|| { echo "capture produced no manifest; refusing to build a checkpointless image" >&2; exit 1; }
+	@mkdir -p $(ARTIFACTS_DIR)/checkpoints
 	@mkdir -p $(CATALOGUE_DIR)
 	@test -f $(ARTIFACTS_DIR)/catalogue.json && cp $(ARTIFACTS_DIR)/catalogue.json $(CATALOGUE_DIR)/$(FLAVOR).json || true
 	@echo "==> captured: $$(ls $(ARTIFACTS_DIR)/checkpoints | tr '\n' ' ')"
 	@echo "==> catalogue: $(CATALOGUE_DIR)/$(FLAVOR).json (mount this on the router)"
 
-# Says what it baked, because building this from an empty $(ARTIFACTS_DIR) yields
-# a base that works and serves nothing but cold starts - which otherwise looks
-# exactly like a normal build.
-worker-base: ## Build the base a worker runs on: runsc, rootfs, checkpoints
-	@echo "==> [3/3] worker base image ($(FLAVOR)): runsc, rootfs, and $$(ls $(ARTIFACTS_DIR)/checkpoints 2>/dev/null | wc -l | tr -d ' ') checkpoint(s)"
+# The checkpoints are not in this image: they are mounted at run time from
+# $(ARTIFACTS_DIR), so it does not depend on `capture` and can be built first.
+worker-base: ## Build the base a worker runs on: runsc and the rootfs
+	@echo "==> [3/3] worker base image ($(FLAVOR)): runsc and rootfs"
 	docker build --target worker-base -t $(WORKER_BASE) \
-		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
-		--build-arg ARTIFACTS_DIR=$(ARTIFACTS_DIR) \
+		$(ROOTFS_BUILD_ARGS) \
 		-f $(PIPELINE_DOCKERFILE) .
 
 # worker/Dockerfile is `FROM $(WORKER_BASE)`, so the base has to exist as an image

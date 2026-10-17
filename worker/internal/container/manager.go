@@ -356,9 +356,9 @@ func (m *Manager) Acquire(ctx context.Context, req AcquireRequest) (Handle, erro
 //
 // The generation is resolved first, because it decides which root filesystem
 // the sandbox runs against. A checkpoint can only be restored into the
-// filesystem it was captured from - which is guaranteed here by construction,
-// because the rootfs and the checkpoints are baked into the worker image
-// together and there is only ever one of the former.
+// filesystem it was captured from - which holds by construction of `make
+// generation`, which builds the worker image and captures the checkpoints from
+// the same rootfs, and there is only ever one of the former.
 func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error) {
 	name := m.names.NewName()
 	log := m.log.With(logging.KeyContainerID, name, logging.KeyRequestID, req.Ref.RequestID)

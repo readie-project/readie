@@ -81,6 +81,34 @@ WORKDIR /
 RUN --mount=from=executor-wheel,source=/dist,target=/dist \
     uv pip install --system --no-cache-dir --no-deps /dist/*.whl
 
+# The distributions the checkpoints' packages need, on top of the base image.
+# `readie-pipeline plan` writes the list (see planning/requirements.py), so a base
+# that carries no packages of its own (alpine, python-slim) ends up with exactly
+# what the plan imports. The default file is empty, which installs nothing and
+# leaves a full base image such as Kaggle's as it is.
+#
+# Each line is installed on its own, against the executor's locked versions as
+# constraints, so the executor keeps the dependencies it was built with and one
+# distribution that will not install (no wheel for this libc or architecture,
+# or a conflict) is reported instead of failing the rest. Whatever fails is
+# listed in /etc/readie-rootfs-skipped.txt; `capture` inventories the rootfs
+# afterwards, so the catalogue lists only what really installed. Set
+# ROOTFS_REQUIREMENTS_STRICT=true to fail the build instead.
+ARG ROOTFS_REQUIREMENTS=pipeline/rootfs-requirements.txt
+ARG ROOTFS_REQUIREMENTS_STRICT=false
+COPY ${ROOTFS_REQUIREMENTS} /tmp/build/rootfs-requirements.txt
+RUN set -eu; \
+    : > /etc/readie-rootfs-skipped.txt; \
+    while IFS= read -r dist || [ -n "$dist" ]; do \
+        case "$dist" in ''|'#'*) continue ;; esac; \
+        uv pip install --system --no-cache-dir -c /tmp/build/requirements.txt "$dist" \
+            || echo "$dist" >> /etc/readie-rootfs-skipped.txt; \
+    done < /tmp/build/rootfs-requirements.txt; \
+    if [ -s /etc/readie-rootfs-skipped.txt ]; then \
+        echo "==> not installed into the rootfs:"; cat /etc/readie-rootfs-skipped.txt; \
+        [ "${ROOTFS_REQUIREMENTS_STRICT}" != "true" ] || exit 1; \
+    fi
+
 # Clean up temporary build files. /bin/uv is kept: the worker runs it, through
 # `runsc exec`, to install a call's requested packages before the function runs.
 RUN rm -rf /tmp/build
@@ -233,8 +261,10 @@ ENV READIE_DATA_DIR="/app/data"
 # /var/lib/readie beside the manifest.
 ENV READIE_PLAN_DIR="/app/plan"
 
-# Must correspond to the rootfs stage above.
-ENV ROOTFS_PYTHONPATH="/usr/local/lib/python3.12/dist-packages"
+# Must correspond to the rootfs stage above: Kaggle's Python keeps packages in
+# dist-packages, the python:3.12 images (slim, alpine) in site-packages.
+ARG ROOTFS_PYTHONPATH=/usr/local/lib/python3.12/dist-packages
+ENV ROOTFS_PYTHONPATH=${ROOTFS_PYTHONPATH}
 
 # Runtime modes. These are part of what a checkpoint is sensitive to, so they
 # must match the worker's configuration.
@@ -255,20 +285,23 @@ ENTRYPOINT ["readie-pipeline"]
 CMD ["capture"]
 
 # ---------------------------------------------------------------------------
-# The worker's base layer: everything a checkpoint's validity is bound to - the
-# pinned runsc, the root filesystem, and the checkpoints captured against it.
+# The worker's base layer: the pinned runsc and the root filesystem the
+# checkpoints were captured against. The checkpoints themselves are not in this
+# image: `make capture` writes them (and manifest.json) to pipeline/out/<flavor>,
+# and docker-compose.yml mounts them into the worker at /var/lib/readie. They stay
+# paired with this image because `make generation` builds both from the same
+# `rootfs` stage.
 #
-# This is the whole of what the pipeline produces. worker/Dockerfile builds
-# `FROM` this image and adds only what is independent of it: the Go server and
-# grpcurl. That split is why a worker code change rebuilds in seconds without
-# touching 26 GB, and why the rootfs layer is *inherited* rather than copied - a
-# layer inherited from a base image has the same digest by definition, whereas
-# `COPY --from=` emits a fresh one every build (two otherwise-identical builds
-# were observed differing in the 25.9 GB rootfs layer's digest).
+# worker/Dockerfile builds `FROM` this image and adds only what is independent of
+# it: the Go server and grpcurl. That split is why a worker code change rebuilds in
+# seconds without touching 26 GB, and why the rootfs layer is *inherited* rather
+# than copied - a layer inherited from a base image has the same digest by
+# definition, whereas `COPY --from=` emits a fresh one every build (two
+# otherwise-identical builds were observed differing in the 25.9 GB rootfs layer's
+# digest).
 #
-# Re-capturing rebuilds this image, but not that layer: the rootfs stage is
-# unchanged, so its COPY is a cache hit and the new base differs from the old
-# one only in the checkpoints on top.
+# Re-capturing does not rebuild this image at all. It does not depend on the
+# capture, so it can be built before, after or without one.
 #
 #   make worker-base
 # ---------------------------------------------------------------------------
@@ -279,12 +312,5 @@ FROM host-base AS worker-base
 # runtime's state directory, which the worker owns exclusively.
 RUN mkdir -p /shared /run/readie-runsc /var/log/runsc
 
-# manifest.json and checkpoints/, produced by `readie-pipeline capture`. The
-# Makefile always overrides this per FLAVOR (pipeline/out/<flavor>); the
-# default here only matters for a `docker build` run outside the Makefile.
-#
-# Empty by default - pipeline/out/cpu/ holds only a .gitkeep - so this still
-# yields a working base: rootfs, no checkpoints, every start cold. `make
-# generation` captures first, then builds this.
-ARG ARTIFACTS_DIR=pipeline/out/cpu
-COPY ${ARTIFACTS_DIR}/ /var/lib/readie/
+# manifest.json and checkpoints/ arrive at /var/lib/readie as bind mounts, not
+# layers. Without them the worker still starts and serves cold starts only.

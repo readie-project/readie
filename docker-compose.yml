@@ -45,9 +45,10 @@ services:
         stop_grace_period: 30s
     worker:
         build:
-            # Just ./worker: runsc, the rootfs and the checkpoints all arrive
-            # through readie-worker-base, so this build needs nothing outside the
-            # worker's own source and takes seconds.
+            # Just ./worker: runsc and the rootfs arrive through
+            # readie-worker-base, so this build needs nothing outside the
+            # worker's own source and takes seconds. The checkpoints are mounted
+            # below, not built in.
             context: ./worker
             # `FROM readie-worker-base-cpu:latest`, which the offline pipeline
             # builds. It must be present locally (`make worker-base FLAVOR=cpu`)
@@ -102,14 +103,27 @@ services:
         init: true
         volumes:
             # Per-sandbox directories and OCI bundles - writable runtime
-            # scratch, and the only volume this worker needs. The rootfs and
-            # checkpoints are baked into the image, so there is no artifact
-            # mount to get wrong.
-            #
-            # Sandboxes are this worker's own child processes, so unlike the
-            # previous Docker-based design nothing outside the container
+            # scratch. Sandboxes are this worker's own child processes, so unlike
+            # the previous Docker-based design nothing outside the container
             # resolves these paths and a plain named volume is enough.
             - worker-shared:/shared
+            # The checkpoints `make generation FLAVOR=cpu` captured. The rootfs
+            # they restore into is in the image, built by the same generation;
+            # the worker loads these once at startup, so restart it after a new
+            # generation. create_host_path is off so that a missing generation
+            # fails `up` instead of Docker creating an empty directory (no
+            # checkpoints) or, for the manifest, a directory the worker cannot
+            # read as a file.
+            - type: bind
+              source: ./pipeline/out/cpu/checkpoints
+              target: /var/lib/readie/checkpoints
+              bind:
+                  create_host_path: false
+            - type: bind
+              source: ./pipeline/out/cpu/manifest.json
+              target: /var/lib/readie/manifest.json
+              bind:
+                  create_host_path: false
         # On shutdown the worker deregisters, drains in-flight executions and
         # reclaims its sandboxes. A short grace period would SIGKILL it partway
         # through and strand them.
@@ -166,6 +180,17 @@ services:
         gpus: all
         volumes:
             - worker-gpu-shared:/shared
+            # The gpu generation's checkpoints; see the cpu worker above.
+            - type: bind
+              source: ./pipeline/out/gpu/checkpoints
+              target: /var/lib/readie/checkpoints
+              bind:
+                  create_host_path: false
+            - type: bind
+              source: ./pipeline/out/gpu/manifest.json
+              target: /var/lib/readie/manifest.json
+              bind:
+                  create_host_path: false
         stop_grace_period: 30s
         healthcheck:
             test:

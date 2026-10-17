@@ -37,7 +37,7 @@ make generation FLAVOR=cpu
 `FLAVOR` defaults to `cpu`. The target runs three steps in order and prints the final image tag:
 
 1. `capture` builds the pipeline image, runs the planner, and captures checkpoints.
-2. `worker-base` bakes runsc, the filesystem, and the checkpoints into one image.
+2. `worker-base` builds one image with runsc and the filesystem. The checkpoints are not in it.
 3. `worker-image` adds the Go worker on top.
 
 The target then prints a reminder to run `docker compose up -d`. Each step is also available as a separate target, as described in the following sections.
@@ -68,7 +68,7 @@ Run `make capture` to plan and capture the checkpoints:
 make capture FLAVOR=cpu
 ```
 
-The target builds the pipeline image and runs it as a privileged container. Inside the container, the pipeline plans which packages go into each checkpoint, captures each checkpoint, times a restore of each, and writes the outputs. The target stops with an error if no `manifest.json` appears, which prevents a checkpoint-less image from being baked unintentionally.
+The target builds the pipeline image and runs it as a privileged container. Inside the container, the pipeline plans which packages go into each checkpoint, captures each checkpoint, times a restore of each, and writes the outputs. The target stops with an error if no `manifest.json` appears, which prevents deploying a generation with no checkpoints unintentionally.
 
 The planner settings can be overridden on the command line. The following values are the Makefile values, which differ from the pipeline's own defaults:
 
@@ -87,13 +87,13 @@ make capture READIE_MAX_CHECKPOINTS=10 READIE_ALPHA=<seconds-per-mb>
 
 ## Step 3: Build the worker base image
 
-Run `make worker-base` to bake the filesystem and checkpoints into the base image:
+Run `make worker-base` to build the base image with gVisor and the filesystem. The image does not contain the checkpoints, so this step does not depend on the capture:
 
 ```bash
 make worker-base FLAVOR=cpu
 ```
 
-The target builds `readie-worker-base-cpu:latest` and prints how many checkpoints it baked. The step is slow because of the large filesystem layer. A base image built from an empty output directory works but serves only cold starts, and the printed count is the only indication, so check it.
+The target builds `readie-worker-base-cpu:latest`. The step is slow because of the large filesystem layer. The compose file mounts `pipeline/out/<flavor>/checkpoints` and `manifest.json` into the worker, so run `docker compose up -d` again after a new capture. The worker reads them once at startup.
 
 ## Step 4: Build the worker image
 
@@ -106,6 +106,30 @@ make worker-image FLAVOR=cpu
 The target builds `readie-worker-cpu:<timestamp>` and `readie-worker-cpu:latest` from `worker/`. The step takes seconds because it adds only the Go server. If the base image is missing, the target builds it first. To name the tag, set `TAG=<tag-name>`.
 
 After a change to worker code only, run this step alone. It does not capture checkpoints again.
+
+## Use a minimal root filesystem
+
+By default the root filesystem is the base image plus the executor. A base image that carries no packages, such as `python:3.12-alpine`, can instead install only the distributions that the plan needs. This works with either planner.
+
+1. Write the list of distributions from the plan. The target runs on the host and needs `uv`:
+
+   ```bash
+   make rootfs-requirements PLAN_DIR=experiments/a/plan
+   ```
+
+2. Build the generation from that list and the minimal base:
+
+   ```bash
+   make generation \
+     ROOTFS_BASE_IMAGE=python:3.12-alpine \
+     ROOTFS_PYTHONPATH=/usr/local/lib/python3.12/site-packages \
+     ROOTFS_REQUIREMENTS=experiments/a/plan/rootfs-requirements.txt \
+     REUSE_PLAN_DIR=experiments/a/plan
+   ```
+
+The list holds distribution names without versions. The image build installs each one separately and keeps going when one fails. The failures are printed in the build log and written to `/etc/readie-rootfs-skipped.txt` in the root filesystem. Set `ROOTFS_REQUIREMENTS_STRICT=true` to fail the build instead. The catalogue lists only the distributions that installed.
+
+Packages must be installed by the image build, not by the capture step. The worker image copies the root filesystem from the image build, so a package installed later, inside the capture container, would not ship with the checkpoints. `REUSE_PLAN_DIR` makes the capture step use the plan from the first command instead of planning again. Without it, the capture step plans inside the container, so pass the same planner settings to both commands.
 
 ## Output locations
 
@@ -120,7 +144,7 @@ The router reads the catalogue to choose a checkpoint for each request. The comp
 
 ## Verify
 
-After `make worker-base`, confirm that the printed checkpoint count is greater than zero. After starting the stack, confirm that the worker log reports the checkpoints:
+After `make capture`, confirm that the target printed the captured checkpoint names. After starting the stack, confirm that the worker log reports the checkpoints:
 
 ```bash
 docker compose logs worker
@@ -130,7 +154,7 @@ The log contains an `artifacts loaded` line that shows the number of checkpoints
 
 ## Worker behavior with missing artifacts
 
-The worker looks for all artifacts under `/var/lib/readie` inside its image. The worker handles missing pieces as follows:
+The worker looks for all artifacts under `/var/lib/readie`: the root filesystem comes from its image, and the manifest and checkpoints are mounted. The compose mounts do not create a missing host path, so `docker compose up` fails when there is no generation. The worker handles missing pieces as follows:
 
 - No root filesystem: the worker starts and registers with the router with an error status, so the router places no work on it. Every request fails and names the missing artifact.
 - Root filesystem but no manifest or checkpoints: the worker serves only cold starts.

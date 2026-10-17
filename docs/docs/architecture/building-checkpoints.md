@@ -25,7 +25,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `corpus` | Collects workloads for one flavor from Kaggle, Hugging Face and a hosted language model. Each item records its code, domain, source and the resources it uses, and every resource is checked against the service that owns it. | Model endpoint, Kaggle and Hugging Face credentials | `data/datasets/<flavor>.json` |
 | `analyze` | Imports every package in the base image in a separate process and measures it. | The corpus, the packages installed in the image | `data/metadata/<flavor>.json` |
-| `plan` | Chooses what each checkpoint pre-imports and writes the sandbox specification. | Corpus and metadata | `checkpoints.json` (the plan), a spec fingerprint |
+| `plan` | Chooses what each checkpoint pre-imports and writes the sandbox specification. | Corpus and metadata | `checkpoints.json` (the plan), a spec fingerprint, `rootfs-requirements.txt` (the distributions the plan needs) |
 | `build` | Captures one checkpoint per planned set, times a restore of each, writes the outputs. | The plan | Checkpoints, manifest, catalogue |
 | `capture` | Runs `plan` and then `build` in one process. | Same | Same |
 
@@ -117,7 +117,7 @@ checkpoints/
 - **`meta.json`** repeats the version and fingerprint for one checkpoint and lists its imports.
 - **`catalogue.json`** is for the router. It lists every measured package with its memory size, import time, and dependencies, plus the contents and size of each checkpoint. It also stores the measured `alpha`, and the `distributions` that the root filesystem contains. The pipeline lists them by running the shared inventory module with the Python of the root filesystem itself, and writes into the catalogue only the measured packages that the root filesystem has a distribution for, resolved the way `analyze` resolves it, so the metadata can come from a different image than the one the sandbox runs. If the listing fails, the pipeline prints a warning and writes the catalogue without filtering.
 
-The worker checks the fingerprint and the gVisor version at startup. If either differs from its own, the worker drops all checkpoints and serves cold starts only. This is the default, and `CHECKPOINT_STRICT_COMPAT` turns the check into a warning. For this reason, the checkpoints, the filesystem, and the gVisor binary are baked into one image.
+The worker checks the fingerprint and the gVisor version at startup. If either differs from its own, the worker drops all checkpoints and serves cold starts only. This is the default, and `CHECKPOINT_STRICT_COMPAT` turns the check into a warning. For this reason, `make generation` builds the filesystem and the gVisor binary into one image and captures the checkpoints from that same filesystem. The check does not compare the contents of the filesystem.
 
 ## What's next
 
