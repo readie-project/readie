@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +34,10 @@ func TestRun_InstallsThePackagesBeforeTheExecutorSeesTheRequest(t *testing.T) {
 	// The packages are positional parameters after the script, never part of
 	// its text, so no requirement string can be read as shell syntax.
 	assert.Equal(t, []string{"sh", "-c", execs[0].args[2], "sh", "flask", "numpy==2.0"}, execs[0].args)
+	// --system installs into the first python3 on PATH, which the sandbox's PATH makes the
+	// image's own Python; a wrong interpreter must fail the install, not be worked around.
 	assert.Contains(t, execs[0].args[2], `uv pip install --system --no-cache-dir -- "$@"`)
+	assert.NotContains(t, execs[0].args[2], "--python")
 	assert.Contains(t, execs[0].args[2], "python -m readie_executor.network",
 		"the DNS bootstrap must run first: this happens before the executor is reached")
 	assert.Equal(t, []string{"Installed 1 package\n"}, h.sink.LogLines(),
@@ -77,4 +81,66 @@ func TestRun_AnExecThatCannotRunIsAnInstallFailure(t *testing.T) {
 	_, err := h.runner.Run(context.Background(), withPackages("flask"), &chunkSource{}, h.sink)
 
 	require.ErrorIs(t, err, execution.ErrPackageInstall)
+}
+
+// Pinned: the install ran straight after Acquire, which returns before the sandbox exists, so an
+// exec in a fresh container found nothing to run in. The executor's socket accepting a connection
+// is the proof that the sandbox is up, so the install comes after the dial and still before any of
+// the request is sent.
+func TestRun_InstallsAfterTheExecutorSocketConnectsAndBeforeTheRequestIsSent(t *testing.T) {
+	var dialsAtExec int
+	var bodyAtExec []byte
+	h := newHarness(t, execution.RunnerConfig{}, func(h *harness) {
+		h.containers.onExec = func() {
+			dialsAtExec = h.dialer.Dials()
+			bodyAtExec = h.dialer.RequestBody()
+		}
+	})
+
+	_, err := h.runner.Run(context.Background(), withPackages("flask"), &chunkSource{chunks: [][]byte{[]byte("payload")}}, h.sink)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, dialsAtExec, "the executor was already dialled when the install ran")
+	assert.Empty(t, bodyAtExec, "none of the request had been sent yet")
+	assert.Equal(t, "first-payload", string(h.dialer.RequestBody()), "and it is sent once the install is done")
+	require.Len(t, h.containers.Execs(), 1)
+}
+
+func TestRun_NoInstallRunsWhenTheExecutorCannotBeDialled(t *testing.T) {
+	h := newHarness(t, execution.RunnerConfig{}, func(h *harness) {
+		h.dialer.dialErr = errors.New("socket never came up")
+	})
+
+	_, err := h.runner.Run(context.Background(), withPackages("flask"), &chunkSource{}, h.sink)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, execution.ErrPackageInstall)
+	assert.Empty(t, h.containers.Execs(), "there is no running sandbox to install in")
+}
+
+// The connection is open while the install runs, so a failed install has to hang up on the
+// executor, which then waits for the next call.
+func TestRun_AFailedInstallHangsUpOnTheExecutor(t *testing.T) {
+	h := newHarness(t, execution.RunnerConfig{}, func(h *harness) {
+		h.containers.execResult = sandbox.ExecResult{ExitCode: 1, Output: []byte("error\n")}
+	})
+
+	_, err := h.runner.Run(context.Background(), withPackages("no-such-package"), &chunkSource{}, h.sink)
+
+	require.ErrorIs(t, err, execution.ErrPackageInstall)
+	require.Eventually(t, func() bool { return h.dialer.HungUp() == 1 }, 2*time.Second, 5*time.Millisecond,
+		"the connection to the executor was closed without a request")
+}
+
+func TestRun_AnIdleConnectionWaitsOutALongInstall(t *testing.T) {
+	// The install can take minutes; the connection to the executor sits idle until it is done.
+	h := newHarness(t, execution.RunnerConfig{}, func(h *harness) {
+		h.containers.onExec = func() { time.Sleep(300 * time.Millisecond) }
+	})
+
+	_, err := h.runner.Run(context.Background(), withPackages("flask"), &chunkSource{chunks: [][]byte{[]byte("payload")}}, h.sink)
+
+	require.NoError(t, err)
+	assert.Equal(t, "first-payload", string(h.dialer.RequestBody()))
+	assert.Equal(t, 0, h.dialer.HungUp())
 }

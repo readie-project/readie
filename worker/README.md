@@ -169,11 +169,22 @@ stats sampler publish to a single channel, and only the goroutine that called
 and corrupt frames rather than failing cleanly, so this single-owner rule is
 required.
 
-When the request names `packages`, the runner installs them after the container
-is acquired and before it dials the executor. `execution/install.go` runs one
+When the request names `packages`, the runner installs them after it has dialled the
+executor and before it sends any of the request. Starting a sandbox is asynchronous, so
+an exec straight after the container is acquired ran against a sandbox the runtime did
+not know yet, and every install in a fresh container failed. A connection accepted on the
+executor's socket is the proof that the sandbox is running, so the dial comes first. The
+connection then waits, idle, for the install: the executor sets no timeout on it, and the
+session's deadlines apply to writes. A failed install hangs up on the executor, which
+stays available for the next call. `execution/install.go` runs one
 `runsc exec` in the sandbox (`sandbox.Port.Exec`): the executor's own DNS bootstrap
 (`python -m readie_executor.network`), then
-`uv pip install --system --no-cache-dir -- <specs>`. The specs are positional
+`uv pip install --system --no-cache-dir -- <specs>`, which installs into the first `python3`
+on the sandbox's `PATH`. The `PATH` starts with `/usr/local/bin`, so that is the image's own
+Python, the one the executor runs; if it were another interpreter, the install fails rather
+than being redirected. The same `PATH` makes the image's Python win over the operating
+system's for every process in the sandbox; the environment is not part of
+the sandbox fingerprint, so this does not affect a checkpoint. The specs are positional
 parameters of a fixed `sh -c` script, so a requirement string is never parsed as
 shell, and the `--` stops `uv` from reading one as an option. The router has
 already validated the list and removed what the rootfs carries. The command's

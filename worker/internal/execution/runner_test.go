@@ -50,6 +50,9 @@ type fakeContainers struct {
 
 	execResult sandbox.ExecResult
 	execErr    error
+	// onExec runs when a command is executed, before it returns: it lets a test look at the
+	// rest of the system at that moment.
+	onExec func()
 }
 
 // execCall records a command run inside a container.
@@ -122,6 +125,9 @@ func (f *fakeContainers) Grow(_ context.Context, _ string, memBytes int64) error
 }
 
 func (f *fakeContainers) Exec(_ context.Context, id string, args []string) (sandbox.ExecResult, error) {
+	if f.onExec != nil {
+		f.onExec()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.execs = append(f.execs, execCall{id: id, args: args})
@@ -213,6 +219,22 @@ type pipeDialer struct {
 	stop        chan struct{}
 	mu          sync.Mutex
 	requestBody []byte
+	dials       int
+	hungUp      int
+}
+
+// Dials is how many connections the runner has opened.
+func (d *pipeDialer) Dials() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.dials
+}
+
+// HungUp is how many connections ended before the runner sent a complete request.
+func (d *pipeDialer) HungUp() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.hungUp
 }
 
 func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
@@ -220,6 +242,9 @@ func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
 		return nil, d.dialErr
 	}
 
+	d.mu.Lock()
+	d.dials++
+	d.mu.Unlock()
 	client, server := net.Pipe()
 	go d.serve(server)
 	return client, nil
@@ -256,6 +281,9 @@ func (d *pipeDialer) serve(conn executor.Conn) {
 
 	body, err := readFramedMessage(conn)
 	if err != nil {
+		d.mu.Lock()
+		d.hungUp++
+		d.mu.Unlock()
 		return
 	}
 

@@ -68,8 +68,8 @@ On the first answer, the router learns which container ran the call and records 
 1. Reads the first message and builds the request.
 2. Acquires a container. If the router named a container, the worker resumes it by re-applying its memory limit. Otherwise, the worker creates a new sandbox and starts it from the named checkpoint. If the checkpoint is empty, is missing, or fails to restore, the worker cold-starts the sandbox and records that no checkpoint was used. See [Container lifecycle](/docs/architecture/container-lifecycle).
 3. Reports the container as busy to the router.
-4. If the request names packages, runs `uv pip install` for them inside the sandbox, after it bootstraps DNS, and streams the installer output to the client as logs. A failed install ends the request with `FAILED_PRECONDITION` and leaves the container reusable.
-5. Connects to the unix socket of the executor. While the sandbox starts, the worker retries for up to 60 seconds (`DIAL_TOTAL_TIMEOUT`).
+4. Connects to the unix socket of the executor. While the sandbox starts, the worker retries for up to 60 seconds (`DIAL_TOTAL_TIMEOUT`). A connection that is accepted shows that the sandbox is running.
+5. If the request names packages, runs `uv pip install` for them inside the sandbox, into the Python that the executor runs, after it bootstraps DNS, and streams the installer output to the client as logs. This happens after the connection and before the worker sends any of the request, so the connection waits, idle, until the install ends. A failed install ends the request with `FAILED_PRECONDITION`, closes the connection, and leaves the container reusable.
 
 ## 6. Executor runs the function
 

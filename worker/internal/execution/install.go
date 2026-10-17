@@ -22,6 +22,11 @@ var ErrPackageInstall = errors.New("package install failed")
 // request, and nothing else populates /etc/resolv.conf in a gVisor sandbox.
 // It is the executor's own implementation (readie_executor.network), run as a
 // module so the logic lives in one place.
+//
+// uv installs into the first python3 on PATH (--system). The sandbox's PATH starts with
+// /usr/local/bin, so that is the image's own Python, the one the executor runs. If PATH ever
+// pointed at another interpreter, such as a Debian base's externally managed one, the install
+// fails instead of putting packages where the executor never imports from.
 const installScript = `python -m readie_executor.network && ` +
 	`exec uv pip install --system --no-cache-dir -- "$@"`
 
