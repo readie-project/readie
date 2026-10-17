@@ -529,7 +529,7 @@ def _catalogue(flavor: str) -> Catalogue:
         {
             "version": 2,
             "flavor": flavor,
-            "distributions": ["numpy"],
+            "distributions": {"numpy": "2.0.2"},
             "items": {
                 "pandas": {"size_mb": 30.0, "load_time": 0.25},
                 "numpy": {"size_mb": 20.0, "load_time": 0.15},
@@ -848,6 +848,8 @@ def test_packages_the_base_image_has_are_left_out_of_the_placement(
 
     assert placement.packages == ("flask",)
     assert placement.ignored_packages == ("numpy==2.0",)
+    # The note the client and the log get says which version the image has.
+    assert placement.ignored_versions == {"numpy==2.0": "2.0.2"}
 
 
 def test_every_package_is_kept_when_the_worker_flavor_has_no_catalogue(
@@ -863,6 +865,7 @@ def test_every_package_is_kept_when_the_worker_flavor_has_no_catalogue(
 
     assert placement.packages == ("numpy==2.0",)
     assert placement.ignored_packages == ()
+    assert placement.ignored_versions == {}
 
 
 def test_a_pin_that_differs_from_the_sessions_warm_checkpoint_conflicts(

@@ -36,7 +36,12 @@ from dataclasses import dataclass, field, replace
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
-from readie_pipeline.metadata.inventory import distribution_for, provided_distributions
+from readie_pipeline.metadata.inventory import (
+    canonical_name,
+    distribution_for,
+    installed_versions,
+    provided_distributions,
+)
 from readie_pipeline.metadata.models import Metadata, PackageFacts
 
 #: Imports the dependencies first, then times and memory-samples the target
@@ -645,4 +650,13 @@ def analyze(
             if callable(on_progress):
                 on_progress(raw, facts)
 
-    return Metadata(results, resolved=resolved_map)
+    # The version of every distribution the measured packages come from, as installed in
+    # the environment that just measured them: those are the versions the timings and
+    # sizes belong to, and what a rootfs built from this metadata pins.
+    installed = installed_versions()
+    versions = {
+        canonical_name(facts.distribution): installed[canonical_name(facts.distribution)]
+        for facts in results.values()
+        if facts.usable and canonical_name(facts.distribution) in installed
+    }
+    return Metadata(results, distributions=versions, resolved=resolved_map)

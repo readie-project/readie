@@ -96,9 +96,11 @@ depend on the worker's flavor, using that flavor's catalogue:
   (`FAILED_PRECONDITION`).
 - The packages. `scheduling/packages.py` validates and dedupes the request's
   `packages` (the same rules as the client's `normalize_packages`, shared through
-  `pkg/tests/data/package_specs.json`), and the catalogue's `distributions` list
-  removes every entry the rootfs already has, whatever version it asks for. The
-  proxy service streams a log line to the client for each entry it removed.
+  `pkg/tests/data/package_specs.json`), and the catalogue's `distributions` (name to
+  installed version) removes every entry the rootfs already has, whatever version it
+  asks for. The proxy service streams a log line to the client for each entry it
+  removed, and logs them itself, both naming the version the image has when the
+  catalogue records one.
 
 ### Provision and reconcile
 

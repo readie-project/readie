@@ -81,27 +81,59 @@ WORKDIR /
 RUN --mount=from=executor-wheel,source=/dist,target=/dist \
     uv pip install --system --no-cache-dir --no-deps /dist/*.whl
 
+# System libraries that installed wheels expect from the base image, as a comma
+# separated list of Debian or Ubuntu packages. A pip install can succeed and the
+# import still fail on a missing shared object, and that failure only appears when
+# a checkpoint is captured. A base that has no apt-get fails here, with a message,
+# when the list is not empty.
+ARG ROOTFS_APT_PACKAGES=
+RUN if [ -n "${ROOTFS_APT_PACKAGES}" ]; then \
+        command -v apt-get >/dev/null \
+            || { echo "ROOTFS_APT_PACKAGES needs a Debian or Ubuntu base image" >&2; exit 1; }; \
+        apt-get update \
+        && apt-get install -y --no-install-recommends $(echo "${ROOTFS_APT_PACKAGES}" | tr ',' ' ') \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # The distributions the checkpoints' packages need, on top of the base image.
 # `readie-pipeline plan` writes the list (see planning/requirements.py), so a base
 # that carries no packages of its own (alpine, python-slim) ends up with exactly
-# what the plan imports. The default file is empty, which installs nothing and
-# leaves a full base image such as Kaggle's as it is.
+# what the plan imports. Each line is `name==version`, the version the metadata
+# recorded from the Kaggle image, so the timings and sizes the plan was built from
+# describe what gets installed; a distribution with no recorded version is a bare
+# name. The default file is empty, which installs nothing and leaves a full base
+# image such as Kaggle's as it is.
 #
-# Each line is installed on its own, against the executor's locked versions as
-# constraints, so the executor keeps the dependencies it was built with and one
-# distribution that will not install (no wheel for this libc or architecture,
-# or a conflict) is reported instead of failing the rest. Whatever fails is
+# Each line is installed on its own, so one distribution that will not install (no
+# wheel for this libc or architecture, or a conflict) is reported instead of failing
+# the rest. Every install gets two sets of constraints: the executor's locked
+# versions, so the executor keeps the dependencies it was built with, and every
+# pin in the list, so a later line's dependencies cannot move an earlier pin.
+# Without the second, installing line by line let a later package pull a newer
+# numpy, numba or grpcio over the pinned one. Whatever fails is
 # listed in /etc/readie-rootfs-skipped.txt; `capture` inventories the rootfs
 # afterwards, so the catalogue lists only what really installed. Set
 # ROOTFS_REQUIREMENTS_STRICT=true to fail the build instead.
+# Extra package indexes, for pins that name a build the default index lacks.
+# Comma separated when there are several: a space would split the build argument in
+# the Makefile, so the commas become the spaces that uv's list takes. With any set,
+# uv looks at every index for the best match, so a package that exists on both is not
+# taken from an extra one by default; leave it empty for a base that needs none.
+ARG ROOTFS_EXTRA_INDEX_URL=
 ARG ROOTFS_REQUIREMENTS=pipeline/rootfs-requirements.txt
 ARG ROOTFS_REQUIREMENTS_STRICT=false
 COPY ${ROOTFS_REQUIREMENTS} /tmp/build/rootfs-requirements.txt
 RUN set -eu; \
     : > /etc/readie-rootfs-skipped.txt; \
+    grep -v '^#' /tmp/build/rootfs-requirements.txt | grep '==' > /tmp/build/rootfs-pins.txt || true; \
+    if [ -n "${ROOTFS_EXTRA_INDEX_URL}" ]; then \
+        export UV_EXTRA_INDEX_URL="$(echo "${ROOTFS_EXTRA_INDEX_URL}" | tr ',' ' ')" \
+               UV_INDEX_STRATEGY=unsafe-best-match; \
+    fi; \
     while IFS= read -r dist || [ -n "$dist" ]; do \
         case "$dist" in ''|'#'*) continue ;; esac; \
-        uv pip install --system --no-cache-dir -c /tmp/build/requirements.txt "$dist" \
+        uv pip install --system --no-cache-dir \
+            -c /tmp/build/requirements.txt -c /tmp/build/rootfs-pins.txt "$dist" \
             || echo "$dist" >> /etc/readie-rootfs-skipped.txt; \
     done < /tmp/build/rootfs-requirements.txt; \
     if [ -s /etc/readie-rootfs-skipped.txt ]; then \

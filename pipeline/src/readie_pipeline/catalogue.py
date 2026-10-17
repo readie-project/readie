@@ -36,9 +36,11 @@ Only what the rootfs actually carries is ported from the metadata. The metadata
 may have been measured in a different image than the one the sandbox runs, so
 ``build_catalogue`` takes an ``Inventory`` of the rootfs and drops every package
 it has no distribution for, along with references to it. The
-inventory is also written as the top-level ``distributions`` map
-(a sorted list of canonical names), which the router uses to leave out of a
-request's ``packages`` anything the base image already has. Each item records
+inventory is also written as the top-level ``distributions`` object: canonical
+name -> installed version, sorted by name. The router leaves out of a request's
+``packages`` anything whose name is a key, and reports the version when it does.
+The versions are those of the rootfs as it was built, not of the metadata, and an
+empty string means the rootfs has the distribution but no version for it. Each item records
 its own ``distribution`` (blank for datasets, models and tokenizers, which have
 none).
 """
@@ -180,10 +182,21 @@ def build_catalogue(
         "version": CATALOGUE_VERSION,
         "flavor": flavor,
         "alpha": alpha,
-        "distributions": sorted(inventory.distributions) if inventory else [],
+        "distributions": _distribution_versions(inventory),
         "items": items,
         "checkpoints": checkpoints,
     }
+
+
+def _distribution_versions(inventory: Inventory | None) -> dict[str, str]:
+    """Every distribution the rootfs has, mapped to its version (``""`` if unknown).
+
+    A name is always listed when the rootfs has it, even without a version, because
+    the router leaves a call's package out whenever the name is a key.
+    """
+    if inventory is None:
+        return {}
+    return {name: inventory.versions.get(name, "") for name in sorted(inventory.distributions)}
 
 
 def _bare(key: str) -> str:

@@ -200,6 +200,19 @@ result is written on the host to `data/metadata/<flavor>.json`.
 `plan` and `capture` read whatever `data/metadata/<flavor>.json` already
 contains. They do not regenerate it.
 
+Besides the per-package measurements and the `resolved` map, the file has a
+top-level `distributions` object: canonical distribution name to the version
+installed in the image that was measured (`"scikit-learn": "1.6.1"`). There is one
+entry per distribution, not per package, because many packages share one. `analyze`
+fills it from the environment it runs in. A distribution that was measured in an
+older image than the one the versions were read from has no entry. The file stays
+valid without the key, and `plan` then writes bare names instead of pins.
+
+The top-level `base_image` string names the image the file was measured in. An image
+does not record its own `FROM`, so `make analyze` passes it in as `READIE_BASE_IMAGE`
+(the Makefile's `ROOTFS_BASE_IMAGE`, a digest unless overridden) and `analyze` writes
+it.
+
 ### capture
 
 `capture` is the image's default command. It exists because `plan` and `build`
@@ -313,7 +326,7 @@ catalogue.
 | `$EXECUTOR_DIR/checkpoints/<id>/` | one checkpoint image plus its `meta.json`   |
 | `$EXECUTOR_DIR/manifest.json`     | what those checkpoints can be restored into |
 | `$EXECUTOR_DIR/catalogue.json`    | the catalogue for the router                |
-| `$READIE_PLAN_DIR`                | the plan, the spec fingerprint and `rootfs-requirements.txt` |
+| `$READIE_PLAN_DIR`                | the plan, the spec fingerprint, `rootfs-requirements.txt` and `rootfs-skipped.txt` |
 | `data/`                           | the corpus, its lookup cache, and package metadata (stored in Git LFS) |
 
 `$EXECUTOR_DIR` here is a host directory. It is distinct from the sandbox's own
@@ -367,11 +380,17 @@ captured.
 By default the rootfs is `ROOTFS_BASE_IMAGE` plus the executor, which suits a
 full base such as Kaggle's. A base that carries no packages (`python:3.12-alpine`,
 `python:3.12-slim`) can instead receive exactly the distributions the plan needs.
-`plan` writes them to `rootfs-requirements.txt` beside the plan, one distribution
-name per line, for either planner. The list holds each plan import, everything
+`plan` writes them to `rootfs-requirements.txt` beside the plan, one requirement
+per line, for either planner. The list holds each plan import, everything
 that import loads, and the distribution each of those modules belongs to
-(`planning/requirements.py`). It holds names only: the metadata records no
-versions.
+(`planning/requirements.py`). Each line pins the version the metadata recorded from
+the base image (`numpy==2.0.2`), so the rootfs gets the packages whose timings
+and sizes the plan was built from. A distribution with no recorded version is a bare name.
+
+Every install also gets the whole list as constraints, so a later line's
+dependencies cannot move an earlier pin: without that, installing line by line left
+eleven packages (`numpy`, `numba`, `grpcio` and others) at newer versions than
+pinned. A conflict between pins fails that install and is reported like any other.
 
 The list has to exist before the image does, because it decides what the rootfs
 contains, so it comes from a host-side `plan --no-spec` run:
@@ -398,7 +417,12 @@ The Dockerfile's `rootfs` stage installs the file with `uv`, one distribution at
 a time, against the executor's locked versions as constraints. A distribution
 that fails to install is listed in `/etc/readie-rootfs-skipped.txt` inside the
 rootfs and printed in the build log; the build continues unless
-`ROOTFS_REQUIREMENTS_STRICT=true`. Because `capture` inventories the finished
+`ROOTFS_REQUIREMENTS_STRICT=true`. When `capture` runs with `REUSE_PLAN_DIR`, `plan`
+also copies that list to `rootfs-skipped.txt` in the plan directory and prints a
+warning, so the host can read it without opening the image. A file holding only its
+header means everything installed; no file means the rootfs had no record, as with
+a host `plan --no-spec`. A plan that imports a skipped distribution fails at that
+checkpoint's capture, with `ModuleNotFoundError` from the preimport. Because `capture` inventories the finished
 rootfs, the catalogue lists only what installed. A call that needs a skipped
 distribution is installed at request time by the worker, which fails when the
 sandbox has no network.
@@ -434,7 +458,7 @@ checkpoint and shipping it.
 `catalogue.json` is what the router reads to select a checkpoint. It records
 the alpha measured during `build`, every measured item's cost, each
 checkpoint's contents and precomputed size term, and the `distributions` the
-rootfs provides. `make capture` copies it to
+rootfs provides, each with the version installed in the rootfs as built. `make capture` copies it to
 `catalogues/<flavor>.json`, which the router mounts as `CATALOGUE_DIR`.
 
 The metadata can be measured in a different image than the rootfs the sandbox
@@ -472,6 +496,7 @@ build could disagree with the first.
 | `READIE_ALPHA`                                           | size-versus-time weight used by the planner; `build` records the measured value     |
 | `FLAVOR`                                                 | `cpu` or `gpu`; the generation this run produces                                    |
 | `READIE_DATA_DIR`                                        | overrides the data location (corpus, cache and metadata)                            |
+| `READIE_BASE_IMAGE`                                      | `analyze` only; the image being measured, recorded as `base_image` in the metadata. `make analyze` sets it |
 | `RUNSC_BINARY`, `OCISPEC_BINARY`                         | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
 | `READIE_CHECKPOINT_TIMEOUT`                              | how long a sandbox may take to checkpoint before `build` gives up (default `300`)   |
 | `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME`    | `corpus` only; the model endpoint, key and model name                                                     |

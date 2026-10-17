@@ -23,12 +23,13 @@ import os
 import shutil
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 
 from readie_pipeline.capture.build import CaptureError, capture, measure_time
-from readie_pipeline.capture.rootfs import discover_rootfs_inventory
+from readie_pipeline.capture.rootfs import discover_rootfs_inventory, record_skipped
 from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, runsc_version
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
 from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
@@ -38,7 +39,11 @@ from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
 from readie_pipeline.metadata.models import Metadata, MetadataError
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
-from readie_pipeline.planning.requirements import distributions_for, write_requirements
+from readie_pipeline.planning.requirements import (
+    distributions_for,
+    requirement_lines,
+    write_requirements,
+)
 
 
 def build_planner(name: str, alpha: float) -> CheckpointPlanner:
@@ -65,8 +70,6 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
 # ---------------------------------------------------------------------------
 def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
     """Generate the corpus for this run's flavor, or re-verify an existing one."""
-    from dataclasses import replace  # noqa: PLC0415
-
     from readie_pipeline.corpus.domains import DOMAINS  # noqa: PLC0415
     from readie_pipeline.corpus.mix import parse_weights, schedule  # noqa: PLC0415
     from readie_pipeline.corpus.models import Source  # noqa: PLC0415
@@ -248,13 +251,17 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
                 f"{getattr(facts, 'import_time', 0.0):.3f} s"
             )
 
-    metadata = analyze(packages, exclude=exclude, on_progress=progress)
+    metadata = replace(
+        analyze(packages, exclude=exclude, on_progress=progress), base_image=settings.base_image
+    )
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
 
     usable = sum(1 for f in metadata.packages.values() if f.usable)
     print(f"[*] {usable}/{len(metadata)} packages measured -> {settings.metadata_path}")
+    print(f"[*] versions recorded for {len(metadata.distributions)} distributions")
+    print(f"[*] measured in {settings.base_image or 'an image that was not named'}")
     return 0
 
 
@@ -291,7 +298,7 @@ def _plan(settings: Settings) -> list[CheckpointPlan]:
     # What a rootfs built from a minimal base has to install for these imports to
     # work. Written for any planner, since it only reads the plan.
     distributions = distributions_for(plans, metadata)
-    write_requirements(settings.requirements_path, distributions)
+    write_requirements(settings.requirements_path, requirement_lines(distributions, metadata))
     print(
         f"[*] {len(distributions)} distributions for the rootfs written to "
         f"{settings.requirements_path}"
@@ -328,6 +335,15 @@ def cmd_plan(settings: Settings, args: argparse.Namespace) -> int:
         settings.fingerprint_path.parent.mkdir(parents=True, exist_ok=True)
         settings.fingerprint_path.write_text(fingerprint + "\n")
         print(f"[*] spec fingerprint {fingerprint}")
+
+    # Beside the plan, so the host can see which of the plan's distributions the image
+    # build could not install. Nothing happens where there is no rootfs (a host `plan`).
+    skipped = record_skipped(settings.rootfs_path, settings.skipped_path)
+    if skipped:
+        print(
+            f"[!] {len(skipped)} distributions did not install into the rootfs "
+            f"(listed in {settings.skipped_path}): {', '.join(skipped)}"
+        )
 
     return 0
 

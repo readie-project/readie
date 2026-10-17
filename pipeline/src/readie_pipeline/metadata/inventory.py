@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import distributions, packages_distributions
 
 
@@ -54,9 +54,20 @@ class Inventory:
     distributions: frozenset[str]
     """Canonical names of the installed distributions."""
 
+    versions: Mapping[str, str] = field(default_factory=dict)
+    """Canonical distribution name -> installed version, for every name in
+    ``distributions``. Empty when read from an inventory written before versions
+    were recorded."""
+
     def to_json(self) -> str:
         """Serialise for the capture stage, which reads it from a subprocess."""
-        return json.dumps({"provided": self.provided, "distributions": sorted(self.distributions)})
+        return json.dumps(
+            {
+                "provided": self.provided,
+                "distributions": sorted(self.distributions),
+                "versions": dict(sorted(self.versions.items())),
+            }
+        )
 
     @classmethod
     def from_json(cls, text: str) -> Inventory:
@@ -66,18 +77,35 @@ class Inventory:
             return cls(
                 provided={str(k): [str(d) for d in v] for k, v in raw["provided"].items()},
                 distributions=frozenset(str(d) for d in raw["distributions"]),
+                versions={str(k): str(v) for k, v in (raw.get("versions") or {}).items()},
             )
         except (KeyError, TypeError, AttributeError) as exc:
             msg = f"not an inventory: {exc}"
             raise ValueError(msg) from exc
 
 
+def installed_versions() -> dict[str, str]:
+    """Canonical distribution name -> version, for the current environment.
+
+    A name installed more than once (two directories on ``sys.path``) reports the
+    first, which is the one an import finds.
+    """
+    versions: dict[str, str] = {}
+    for dist in distributions():
+        name = dist.metadata["Name"]
+        if name:
+            versions.setdefault(canonical_name(name), dist.version)
+    return versions
+
+
 def discover_inventory() -> Inventory:
     """List what is installed in the current environment."""
-    names = frozenset(
-        canonical_name(dist.metadata["Name"]) for dist in distributions() if dist.metadata["Name"]
+    versions = installed_versions()
+    return Inventory(
+        provided=provided_distributions(),
+        distributions=frozenset(versions),
+        versions=versions,
     )
-    return Inventory(provided=provided_distributions(), distributions=names)
 
 
 if __name__ == "__main__":

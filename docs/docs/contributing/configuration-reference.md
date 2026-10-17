@@ -172,6 +172,7 @@ The pipeline builds checkpoints offline. Settings come from environment variable
 | `READIE_ALPHA` | built-in default | Size-versus-time weight in seconds per MB, rounded to 6 decimals. Must be positive. See [cost model](/docs/concepts/cost-model). |
 | `READIE_CHECKPOINT_TIMEOUT` | `300.0` | Seconds a sandbox may take to checkpoint. |
 | `READIE_DATA_DIR` | the pipeline's `data/` folder | Corpus and package metadata. |
+| `READIE_BASE_IMAGE` | empty | `analyze` only. The image being measured, written to the metadata as `base_image`. `make analyze` sets it from `ROOTFS_BASE_IMAGE`. |
 | `READIE_PLAN_DIR` | empty (use the output folder) | Where the plan, spec fingerprint and `rootfs-requirements.txt` go. |
 | `BASE_DIR` | `/app/executorfs` | The sandbox bundle (config plus root filesystem). |
 | `EXECUTOR_DIR` | `/app/executor` | Host-side output folder for checkpoints and the manifest. |

@@ -17,6 +17,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from readie_pipeline.metadata.inventory import canonical_name
+
 
 class MetadataError(Exception):
     """The metadata on disk is not what this code expects."""
@@ -130,6 +132,17 @@ class Metadata:
 
     packages: dict[str, PackageFacts] = field(default_factory=dict)
 
+    distributions: dict[str, str] = field(default_factory=dict)
+    """Canonical distribution name -> the version installed in the image the
+    metadata was measured in (``scikit-learn`` -> ``1.6.1``). One entry per
+    distribution, not per package: many packages share a distribution. Empty for
+    metadata measured before versions were recorded."""
+
+    base_image: str = ""
+    """The image the metadata was measured in, as a pullable reference (a digest,
+    when the build pins one). Empty for metadata written before this was recorded,
+    or measured where the image was not known."""
+
     resolved: dict[str, str] = field(default_factory=dict)
     """Raw corpus import string -> the resolved dotted name it actually names
     (e.g. ``sklearn.svm.LinearSVC`` -> ``sklearn.svm``), populated by
@@ -148,6 +161,10 @@ class Metadata:
     def get(self, name: str) -> PackageFacts | None:
         """Facts for a package, or None."""
         return self.packages.get(name)
+
+    def version_of(self, distribution: str) -> str:
+        """The version recorded for ``distribution``, or ``""`` when there is none."""
+        return self.distributions.get(canonical_name(distribution), "")
 
     def size_mb(self, name: str) -> float:
         """Disk cost, or zero when unknown.
@@ -254,8 +271,11 @@ class Metadata:
             # Predates the "resolved" map: a flat {name: facts} dict.
             packages_raw, resolved_raw = raw, {}
 
+        distributions_raw = (raw.get("distributions") or {}) if "packages" in raw else {}
         return cls(
             {name: PackageFacts.from_json(name, entry) for name, entry in packages_raw.items()},
+            distributions={str(k): str(v) for k, v in distributions_raw.items()},
+            base_image=str(raw.get("base_image") or "") if "packages" in raw else "",
             resolved={str(k): str(v) for k, v in resolved_raw.items()},
         )
 
@@ -271,6 +291,8 @@ class Metadata:
         would otherwise show up here as if it were a real package that failed.
         """
         return {
+            "base_image": self.base_image,
+            "distributions": dict(sorted(self.distributions.items())),
             "packages": {
                 name: facts.to_json()
                 for name, facts in sorted(self.packages.items())

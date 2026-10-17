@@ -26,7 +26,8 @@ def settings(settings: Settings, tmp_path: Path) -> Settings:
                 "version": CATALOGUE_VERSION,
                 "flavor": "cpu",
                 "alpha": 0.005,
-                "distributions": ["numpy"],
+                # scipy is in the image with no recorded version.
+                "distributions": {"numpy": "2.0.2", "scipy": ""},
                 "items": {},
                 "checkpoints": [{"id": "c-data", "items": [], "size_mb": 0.0}],
             }
@@ -60,10 +61,19 @@ async def test_a_package_the_image_has_is_dropped_and_the_client_is_told(
 
     assert list(harness.worker.calls[0].header.packages) == ["flask"]
     logs = [r.logs for r in responses if r.HasField("logs")]
-    assert "ignored numpy==2.0: already provided by the base image\n" in logs
+    assert "ignored numpy==2.0: already provided by the base image (version 2.0.2)\n" in logs
     # Pinned: the note once went out with success unset (False), and the client
     # treats any such message as a failed execution.
     assert all(r.success for r in responses)
+
+
+async def test_the_note_has_no_version_when_the_catalogue_recorded_none(harness: Harness) -> None:
+    await harness.register_worker()
+
+    responses = await execute(harness, header(packages=["scipy>=1.0"]), chunk(b"x"))
+
+    logs = [r.logs for r in responses if r.HasField("logs")]
+    assert "ignored scipy>=1.0: already provided by the base image\n" in logs
 
 
 async def test_the_router_logs_the_packages_it_did_not_install(harness: Harness) -> None:
@@ -75,6 +85,7 @@ async def test_the_router_logs_the_packages_it_did_not_install(harness: Harness)
     notes = [e for e in logs if e["event"].startswith("packages already in the base image")]
     assert len(notes) == 1
     assert notes[0]["ignored_packages"] == ["numpy==2.0"]
+    assert notes[0]["installed_versions"] == {"numpy==2.0": "2.0.2"}
     assert notes[0]["request_id"] == "req-1"
 
 

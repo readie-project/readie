@@ -121,6 +121,38 @@ def test_on_progress_fires_even_when_nothing_resolves(monkeypatch):
     assert seen == [("nonexistent", "could not be resolved to an importable module")]
 
 
+class _Installed:
+    def __init__(self, name: str, version: str) -> None:
+        self.metadata = {"Name": name}
+        self.version = version
+
+
+def test_the_version_of_each_measured_distribution_is_recorded(monkeypatch):
+    _fake_graph(monkeypatch, {"pandas": ("pandas", frozenset({"pandas"}))})
+    monkeypatch.setattr(inventory, "packages_distributions", lambda: {"pandas": ["pandas"]})
+    monkeypatch.setattr(
+        inventory,
+        "distributions",
+        lambda: [_Installed("pandas", "2.3.3"), _Installed("unrelated", "9.9")],
+    )
+    monkeypatch.setattr(
+        analyze, "_profile", lambda _warm, _target: {"time": 0.3, "memory_mb": 40.0}
+    )
+
+    metadata = analyze.analyze(["pandas"])
+
+    # Only what was measured, from the environment that measured it.
+    assert metadata.distributions == {"pandas": "2.3.3"}
+
+
+def test_a_candidate_that_never_resolves_has_no_version(monkeypatch):
+    _fake_graph(monkeypatch, {})
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "distributions", lambda: [_Installed("pandas", "2.3.3")])
+
+    assert analyze.analyze(["nonexistent"]).distributions == {}
+
+
 def test_a_resolved_candidate_is_recorded_in_the_resolved_map(monkeypatch):
     _fake_graph(monkeypatch, {"pandas": ("pandas", frozenset({"pandas"}))})
     monkeypatch.setattr(inventory, "packages_distributions", dict)

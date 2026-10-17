@@ -12,6 +12,7 @@ machine so it can be tested without an event loop.
 from __future__ import annotations
 
 import enum
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 # Status values, mirroring protos/registry.proto. Redeclared rather than
@@ -212,6 +213,9 @@ class Placement:
     packages: tuple[str, ...] = ()
     #: What was left out because the base image already has it.
     ignored_packages: tuple[str, ...] = ()
+    #: For each ignored spec whose version the catalogue knows, the version the base
+    #: image has installed. A spec without an entry has no recorded version.
+    ignored_versions: Mapping[str, str] = field(default_factory=dict)
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""

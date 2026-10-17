@@ -170,6 +170,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             log.info(
                 "packages already in the base image were not installed",
                 ignored_packages=list(placement.ignored_packages),
+                installed_versions=dict(placement.ignored_versions),
             )
 
         outcome = Outcome.FAILURE  # zero value: fail safe, as the worker does
@@ -213,13 +214,15 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
                 # success=True is load-bearing: the client treats any message
                 # with success=False as a failed execution, and the default for
                 # a bool is False, so leaving it unset made this note fail the call.
+                installed = placement.ignored_versions.get(spec)
+                suffix = f" (version {installed})" if installed else ""
                 await context.write(
                     proxy_pb2.ClientExecutionResponse(
                         request_id=placement.request_id,
                         session_id=placement.session_id,
                         success=True,
                         worker_id=placement.worker_id,
-                        logs=f"ignored {spec}: already provided by the base image\n",
+                        logs=f"ignored {spec}: already provided by the base image{suffix}\n",
                     )
                 )
             async with asyncio.TaskGroup() as tasks:

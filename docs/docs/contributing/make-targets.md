@@ -18,6 +18,8 @@ Run all commands from the repository root. Pass variables on the command line, f
 | `ROOTFS_REQUIREMENTS` | `pipeline/rootfs-requirements.txt` (empty) | File of distribution names, relative to the repository root, that the root filesystem installs on top of `ROOTFS_BASE_IMAGE`. `make rootfs-requirements` writes one from a plan. |
 | `ROOTFS_REQUIREMENTS_STRICT` | `false` | When `true`, the image build fails if a listed distribution does not install. Otherwise the failures are listed in `/etc/readie-rootfs-skipped.txt` in the root filesystem. |
 | `ROOTFS_PYTHONPATH` | `/usr/local/lib/python3.12/dist-packages` | Where the root filesystem's Python keeps packages. The `python:3.12` images use `/usr/local/lib/python3.12/site-packages`. |
+| `ROOTFS_APT_PACKAGES` | empty | Debian or Ubuntu packages, comma separated, that the root filesystem installs before the distributions. Use it for the system libraries that wheels load and the base image lacks. |
+| `ROOTFS_EXTRA_INDEX_URL` | empty | Extra package indexes for pins that the default one lacks, comma separated when there are several. With any set, the install looks at every index for the best match, so each listed index can supply any package name. Set it empty for a base whose pins are all on PyPI. |
 | `PLAN_DIR` | `pipeline/plan/<flavor>` | Where `make rootfs-requirements` writes the plan and the list. |
 | `REUSE_PLAN_DIR` | empty | A plan directory from an earlier `make rootfs-requirements`, relative to the repository root. When set, `make capture` mounts it into the container and reuses that plan instead of planning again. When empty, `capture` plans inside the container. |
 | `READIE_PLANNER` | `greedy` | Checkpoint planner: `greedy` or `fixed`. |
@@ -93,7 +95,7 @@ These targets build the images that hold checkpoints and require Docker. Targets
 | `rootfs-requirements` | no | Plan on the host with `plan --no-spec` and write the distributions the plan needs to `$(PLAN_DIR)/rootfs-requirements.txt`. Needs `uv`, and no Docker or gVisor. See [Build checkpoints](/docs/contributing/build-checkpoints#use-a-minimal-root-filesystem). |
 | `pipeline-image` | no | Build the offline pipeline image. |
 | `analyzer-image` | amd64 only | Build the analyzer image (the pipeline on the base image itself). |
-| `analyze` | amd64 only | Measure every package the flavor's base image installs. Writes `pipeline/data/metadata/<flavor>.json`. Runs with no network. |
+| `analyze` | amd64 only | Measure every package the flavor's base image installs. Writes `pipeline/data/metadata/<flavor>.json`, including the version of each distribution and the name of the base image. Runs with no network. |
 | `capture` | yes | Plan and capture checkpoints into `pipeline/out/<flavor>`. Runs a privileged container. Fails if no manifest is produced, then copies the catalogue to `catalogues/<flavor>.json`. |
 | `worker-base` | no | Build the base image the worker runs on: gVisor and the root filesystem. It does not contain the checkpoints and does not need a capture first. |
 | `worker-image` | no | Build the worker image on top of the base. This is a Go build and takes seconds. Builds the base first if it is missing. |

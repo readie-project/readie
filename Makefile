@@ -53,10 +53,14 @@ ifeq ($(FLAVOR),gpu)
 # Kaggle GPU v170, which uses Python 3.12.
 ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461
 CAPTURE_GPU_FLAGS := --gpus all
+ROOTFS_EXTRA_INDEX_URL     ?= 
 else
 # Kaggle v170, which uses Python 3.12, matching the client/executor:
 ROOTFS_BASE_IMAGE := gcr.io/kaggle-images/python@sha256:dafd4ce5668bbf1ad422e4c109e0f18c9623c3a7c7f48b0235f13142755c40b9
 CAPTURE_GPU_FLAGS :=
+# Extra package indexes for pins the default one lacks, comma separated when there are
+# several. Empty for a base whose pins are all on PyPI.
+ROOTFS_EXTRA_INDEX_URL     ?= https://download.pytorch.org/whl/cpu
 endif
 # Overridable so an experiment can be tagged something meaningful.
 TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
@@ -67,10 +71,13 @@ TAG             ?= $(shell date -u +%Y%m%d-%H%M%S)
 # base (python:3.12-alpine) run `make rootfs-requirements` first and pass its output.
 ROOTFS_REQUIREMENTS        ?= pipeline/rootfs-requirements.txt
 # true fails the image build when a listed distribution cannot be installed.
-ROOTFS_REQUIREMENTS_STRICT ?= false
+ROOTFS_REQUIREMENTS_STRICT ?= true
 # Where the rootfs's Python keeps packages: Kaggle uses dist-packages, the
 # python:3.12 images (slim, alpine) use site-packages.
 ROOTFS_PYTHONPATH          ?= /usr/local/lib/python3.12/dist-packages
+# Debian or Ubuntu packages, comma separated, installed into the rootfs before the
+# distributions. Empty for a full base such as Kaggle's.
+ROOTFS_APT_PACKAGES        ?=
 # Where `rootfs-requirements` writes the plan and the list, relative to the repo root.
 PLAN_DIR                   ?= pipeline/plan/$(FLAVOR)
 # A plan directory from an earlier `make rootfs-requirements` (relative to the repo root).
@@ -82,7 +89,9 @@ ROOTFS_BUILD_ARGS := \
 	--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
 	--build-arg ROOTFS_REQUIREMENTS=$(ROOTFS_REQUIREMENTS) \
 	--build-arg ROOTFS_REQUIREMENTS_STRICT=$(ROOTFS_REQUIREMENTS_STRICT) \
-	--build-arg ROOTFS_PYTHONPATH=$(ROOTFS_PYTHONPATH)
+	--build-arg ROOTFS_PYTHONPATH=$(ROOTFS_PYTHONPATH) \
+	--build-arg ROOTFS_APT_PACKAGES=$(ROOTFS_APT_PACKAGES) \
+	--build-arg ROOTFS_EXTRA_INDEX_URL=$(ROOTFS_EXTRA_INDEX_URL)
 
 # Planner knobs
 # greedy (weighted set cover, the default) | fixed (a configured package set)
@@ -253,6 +262,7 @@ analyze: analyzer-image ## Measure every package the $(FLAVOR) base image instal
 	docker run --rm \
 		--network none \
 		-e FLAVOR=$(FLAVOR) \
+		-e READIE_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
 		-e PYTHONUNBUFFERED=1 \
 		-v "$(CURDIR)/pipeline/data:/app/data" \
 		$(ANALYZER_IMAGE) analyze -v $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg))

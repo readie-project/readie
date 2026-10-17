@@ -65,3 +65,37 @@ def discover_rootfs_inventory(
 
     print(f"[*] the rootfs provides {len(inventory.distributions)} distributions")
     return inventory
+
+
+#: Where the Dockerfile's ``rootfs`` stage lists the distributions it could not install,
+#: relative to the rootfs.
+SKIPPED_FILE = Path("etc/readie-rootfs-skipped.txt")
+
+
+def record_skipped(rootfs: Path, destination: Path) -> tuple[str, ...] | None:
+    """Copy the list of distributions the image build skipped to ``destination``.
+
+    The image build installs the plan's distributions one at a time and carries on
+    when one fails, so the only record is a file inside the rootfs. This puts it
+    where the person running the build can read it, without a ``docker run``.
+
+    Returns the skipped names (empty when everything installed), or ``None`` when the
+    rootfs has no such file -- no rootfs here, or one built without the install
+    step -- in which case nothing is written, so a missing file means "unknown" and a
+    file with only its header means "nothing skipped".
+    """
+    source = rootfs / SKIPPED_FILE
+    if not source.is_file():
+        return None
+    skipped = tuple(
+        line.strip()
+        for line in source.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        "# Distributions that did not install into the rootfs; the image build log has the "
+        "reason.\n# Only the header means all of them installed.\n"
+    )
+    destination.write_text(header + "".join(f"{name}\n" for name in skipped))
+    return skipped

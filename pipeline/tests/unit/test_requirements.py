@@ -6,7 +6,11 @@ from pathlib import Path
 
 from readie_pipeline.metadata.models import Metadata, PackageFacts
 from readie_pipeline.planning.ports import CheckpointPlan
-from readie_pipeline.planning.requirements import distributions_for, write_requirements
+from readie_pipeline.planning.requirements import (
+    distributions_for,
+    requirement_lines,
+    write_requirements,
+)
 
 
 def facts(name: str, distribution: str = "", loaded: tuple[str, ...] = ()) -> PackageFacts:
@@ -74,11 +78,38 @@ def test_an_empty_plan_needs_nothing():
     assert distributions_for([], metadata(facts("numpy", "numpy"))) == ()
 
 
-def test_the_file_is_one_name_per_line_with_a_comment_header(tmp_path: Path):
+def test_the_file_is_one_requirement_per_line_with_a_comment_header(tmp_path: Path):
     path = tmp_path / "nested" / "rootfs-requirements.txt"
 
-    write_requirements(path, ["numpy", "pandas"])
+    write_requirements(path, ["numpy==2.0.2", "pandas"])
 
     lines = path.read_text().splitlines()
     assert lines[0].startswith("#")
-    assert lines[1:] == ["numpy", "pandas"]
+    assert [line for line in lines if not line.startswith("#")] == ["numpy==2.0.2", "pandas"]
+
+
+def test_each_distribution_is_pinned_to_the_version_the_metadata_recorded():
+    meta = Metadata(
+        {"sklearn": facts("sklearn", "scikit-learn")},
+        distributions={"scikit-learn": "1.6.1", "numpy": "2.0.2"},
+    )
+
+    # Looked up by canonical name, and the requirement keeps the name as recorded.
+    assert requirement_lines(["scikit-learn", "numpy"], meta) == (
+        "scikit-learn==1.6.1",
+        "numpy==2.0.2",
+    )
+
+
+def test_a_distribution_with_no_recorded_version_is_listed_by_name():
+    meta = Metadata({}, distributions={"numpy": "2.0.2"})
+
+    assert requirement_lines(["numpy", "wurlitzer"], meta) == ("numpy==2.0.2", "wurlitzer")
+
+
+def test_a_local_version_label_stays_in_the_pin():
+    # Pinned: dropping +cpu selected PyPI's CUDA build of torch, which needs an
+    # nvidia-nccl-cu12 that conflicts with the one pinned beside it.
+    meta = Metadata({}, distributions={"torch": "2.10.0+cpu"})
+
+    assert requirement_lines(["torch"], meta) == ("torch==2.10.0+cpu",)

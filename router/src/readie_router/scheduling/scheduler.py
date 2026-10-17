@@ -103,6 +103,11 @@ class Scheduler:
         packages, ignored = (
             catalogue.filter_packages(demand.packages) if catalogue else (demand.packages, ())
         )
+        ignored_versions = (
+            {spec: version for spec in ignored if (version := catalogue.installed_version(spec))}
+            if catalogue
+            else {}
+        )
 
         worker.inflight += 1
         # Only memory is reserved: it is the tight resource and the one the
@@ -124,6 +129,7 @@ class Scheduler:
             opened_at=now,
             packages=packages,
             ignored_packages=ignored,
+            ignored_versions=ignored_versions,
         )
         self._state.open_lease(placement)
 
