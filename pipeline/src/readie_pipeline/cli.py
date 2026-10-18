@@ -106,19 +106,21 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     print(f"[*] analysing {len(packages)} candidate imports in this environment")
 
     def progress(name: str, facts: object) -> None:
-        # An error is worth seeing on every run, verbose or not, because the
-        # package it names is about to be dropped from the written metadata
-        # rather than recorded -- this is the only place that reason surfaces
-        # at all. A successful measurement is only noise unless asked for.
+        # Every resource needs an outcome in the generation log. Failed
+        # resources are dropped from the written metadata, while verbose mode
+        # adds the measurements for successful resources.
         error = getattr(facts, "error", "")
         if error:
-            print(f"    {name}: {error}", file=sys.stderr)
-        elif args.verbose:
-            print(
-                f"    {name}: {getattr(facts, 'disk_size_mb', 0.0):.1f} MB disk, "
-                f"{getattr(facts, 'memory_size_mb', 0.0):.1f} MB resident, "
-                f"{getattr(facts, 'import_time', 0.0):.3f} s"
-            )
+            print(f"    resource {name}: failed ({error})", file=sys.stderr)
+        else:
+            message = f"    resource {name}: measured successfully"
+            if args.verbose:
+                message += (
+                    f" ({getattr(facts, 'disk_size_mb', 0.0):.1f} MB disk, "
+                    f"{getattr(facts, 'memory_size_mb', 0.0):.1f} MB resident, "
+                    f"{getattr(facts, 'import_time', 0.0):.3f} s)"
+                )
+            print(message)
 
     if exclude:
         metadata = analyze(packages, exclude=exclude, on_progress=progress)

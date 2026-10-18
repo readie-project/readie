@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -223,7 +224,11 @@ def _failed_measurement(slug: str) -> DatasetMeasurement:
     )
 
 
-def _measure_dataset_once(
+def _log(slug: str, message: str) -> None:
+    print(f"    dataset {slug}: {message}", file=sys.stderr)
+
+
+def _measure_dataset_once(  # noqa: PLR0912 - each measurement decision is logged here
     slug: str,
     *,
     downloader: DatasetDownloader | None,
@@ -232,15 +237,26 @@ def _measure_dataset_once(
     """Measure one sequential pass over the downloaded dataset."""
     try:
         reference_kind = dataset_reference_kind(slug)
-        if reference_kind != DatasetReferenceKind.DATASET:
+        if reference_kind == DatasetReferenceKind.COMPETITION:
+            _log(slug, "skipped (competition URL)")
+            return _failed_measurement(slug)
+        if reference_kind == DatasetReferenceKind.INVALID:
+            _log(slug, "skipped (invalid dataset reference)")
             return _failed_measurement(slug)
 
         if downloader is None:
             downloader = _kagglehub()
 
-        downloaded = downloader.dataset_download(dataset_handle(slug))
+        handle = dataset_handle(slug)
+        try:
+            downloaded = downloader.dataset_download(handle)
+        except Exception as exc:  # noqa: BLE001 - external resource failures are expected
+            _log(slug, f"failed to download ({type(exc).__name__})")
+            return _failed_measurement(slug)
+
         root, paths = _files(downloaded)
         if not paths:
+            _log(slug, "failed (download contained no files)")
             return _failed_measurement(slug)
 
         values: dict[str, Any] = {}
@@ -257,7 +273,7 @@ def _measure_dataset_once(
                 continue
             loaded_values, errors = _load_values(
                 downloader,
-                dataset_handle(slug),
+                handle,
                 root,
                 path,
             )
@@ -283,8 +299,17 @@ def _measure_dataset_once(
             dependencies=frozenset(dependencies()),
             error="resource could not be loaded" if file_errors else "",
         )
+        if file_errors:
+            _log(
+                slug,
+                f"measured with {len(values)} loaded value(s); "
+                f"{len(file_errors)} file(s) could not be loaded",
+            )
+        else:
+            _log(slug, f"measured successfully ({len(values)} loaded value(s))")
         return DatasetMeasurement(facts=facts, values=values)
-    except Exception:  # noqa: BLE001 - external resource failures become one generic state
+    except Exception as exc:  # noqa: BLE001 - external resource failures become one generic state
+        _log(slug, f"failed during measurement ({type(exc).__name__})")
         return _failed_measurement(slug)
 
 

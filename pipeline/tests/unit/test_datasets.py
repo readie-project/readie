@@ -189,18 +189,28 @@ def test_one_file_stat_failure_does_not_discard_other_files(
     assert measurement.facts.error == "resource could not be loaded"
 
 
-def test_measure_dataset_reports_generic_download_failure() -> None:
-    measurement = measure_dataset("owner/data", downloader=FailingDownloader())
-
-    assert measurement.facts.error == "resource could not be loaded"
-    assert not measurement.facts.usable
-
-
-def test_invalid_reference_is_generic_and_does_not_download() -> None:
+def test_competition_reference_is_skipped_and_logged(capsys: pytest.CaptureFixture[str]) -> None:
     measurement = measure_dataset("https://www.kaggle.com/c/competition/data")
 
     assert measurement.facts.error == "resource could not be loaded"
     assert not measurement.facts.usable
+    assert "skipped (competition URL)" in capsys.readouterr().err
+
+
+def test_invalid_reference_is_skipped_and_logged(capsys: pytest.CaptureFixture[str]) -> None:
+    measurement = measure_dataset("https://www.kaggle.com/datasets/name-only")
+
+    assert measurement.facts.error == "resource could not be loaded"
+    assert not measurement.facts.usable
+    assert "skipped (invalid dataset reference)" in capsys.readouterr().err
+
+
+def test_download_failure_is_logged(capsys: pytest.CaptureFixture[str]) -> None:
+    measurement = measure_dataset("owner/data", downloader=FailingDownloader())
+
+    assert measurement.facts.error == "resource could not be loaded"
+    assert not measurement.facts.usable
+    assert "failed to download (RuntimeError)" in capsys.readouterr().err
 
 
 def test_measure_datasets_deduplicates_and_reports_progress(tmp_path: Path) -> None:
