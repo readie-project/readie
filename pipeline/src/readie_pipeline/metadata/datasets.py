@@ -80,7 +80,7 @@ def dataset_reference_kind(value: str) -> DatasetReferenceKind:
     path = parsed.path.strip("/") if parsed.scheme and parsed.netloc else value.strip("/")
     parts = [part for part in path.split("/") if part]
 
-    if parts and parts[0] == "c":
+    if parts and parts[0] in {"c", "competitions"}:
         return DatasetReferenceKind.COMPETITION
     if parsed.scheme and parsed.netloc and parts and parts[0] == "datasets":
         return (

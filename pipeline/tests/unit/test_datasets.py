@@ -91,6 +91,10 @@ def test_dataset_reference_kind_distinguishes_supported_and_unsupported_entries(
         == DatasetReferenceKind.COMPETITION
     )
     assert (
+        dataset_reference_kind("https://www.kaggle.com/competitions/titanic/data")
+        == DatasetReferenceKind.COMPETITION
+    )
+    assert (
         dataset_reference_kind("https://www.kaggle.com/datasets/name-only")
         == DatasetReferenceKind.INVALID
     )
