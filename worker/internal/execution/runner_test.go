@@ -715,6 +715,10 @@ func TestRun_ReportsCPUUtilizationRatherThanMemory(t *testing.T) {
 			CPUTotal: 1_400_000_000, PreCPUTotal: 1_000_000_000,
 			Elapsed: time.Second, OnlineCPUs: 4,
 		}}
+		// The sampler is a side channel and is cancelled the moment the response ends, so a
+		// reply that comes back at once can end the run before it has sampled anything. Holding
+		// the reply back gives it time to report, however few CPUs the test has.
+		h.dialer.replyDelay = 250 * time.Millisecond
 	})
 
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
