@@ -118,6 +118,20 @@ def test_a_raising_function_returns_a_failure_envelope_with_its_traceback():
     assert "explode" in str(envelope["traceback"]), "the frame that raised is named"
 
 
+def test_a_raising_functions_traceback_is_not_also_returned_as_output():
+    # Pins #57: the traceback travels in the envelope. The executor also printed
+    # it into the captured output, so the client showed it three times.
+    def explode() -> None:
+        print("before the failure")
+        raise ValueError("boom")
+
+    envelope = exchange(call(explode))
+
+    assert envelope["ok"] is False
+    assert envelope["output"] == ["before the failure", "\n"]
+    assert "ValueError: boom" in str(envelope["traceback"])
+
+
 def test_a_function_raising_systemexit_does_not_take_the_executor_down():
     # A called function raising SystemExit is still a failed call, not a reason
     # to strand a container the worker means to reuse.
