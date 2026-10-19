@@ -72,6 +72,11 @@ the host kernel. The worker adds the following controls:
   from a sandbox's egress. The network access exists to reach PyPI, and it is not
   a path back to the router (unauthenticated by default, see below) or to sibling
   containers.
+- Package requirements are validated by the router, not trusted from the client.
+  The router parses every `packages` entry as a PEP 508 requirement and rejects
+  anything else, which includes anything that could be read as a `uv` option
+  (such as `--index-url=...`). The worker then passes the entries to `uv` as
+  positional arguments after `--`, never through shell text.
 - A read-only shared rootfs with a per-sandbox copy-on-write overlay, so that one
   execution cannot alter what the next one starts from. The worker rejects an
   `all:` overlay, because it would hide the executor's socket, and any `:self`
@@ -132,6 +137,16 @@ visitor-derived input, so it is contained:
   `SANDBOX_NETWORK=none` on its workers where possible.
 - Readie has no quotas, so nginx (`limit_req`, body size) and the service (rate limit,
   size, output and concurrency caps) add their own.
+- `POST /eval/run` runs code with options a visitor must not control (memory,
+  timeout, packages, sessions, a pinned checkpoint, large bodies), and passes every
+  `@remote` argument through without capping it. It has no token and is always served,
+  so the only thing keeping it from the public is nginx: both configs answer 404 for
+  `/playground/eval/`, which makes the route reachable only from the container network
+  that runs the service. Keep that rule in place, and never publish the playground's own
+  port or route another proxy to it without the same block. Anyone who can reach the
+  route can run arbitrary Python on the workers with any memory and time limits they
+  ask for, bounded only by the router and the workers, and the route has no rate limit
+  or concurrency cap of its own.
 
 ## Non-vulnerabilities
 
@@ -145,8 +160,10 @@ visitor-derived input, so it is contained:
 
 ## Secrets
 
-`pipeline` reads `AZURE_API_KEY` and `AZURE_ENDPOINT` for corpus generation. It
-reads them from the environment or from a `.env` file, both of which are
-git-ignored, and never writes them to the corpus, the manifests, or a log line.
+`pipeline` reads `AZURE_API_KEY`, `AZURE_ENDPOINT`, `KAGGLE_API_TOKEN` and
+`HF_TOKEN` for corpus generation. It reads them from the environment or from a
+`.env` file, both of which are git-ignored, and never writes them to the corpus,
+the manifests, or a log line. Corpus generation downloads code from Kaggle and
+the Hugging Face Hub and parses it, but never executes it.
 Corpus generation is an offline authoring step and is not part of the serving
 path.

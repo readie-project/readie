@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/clock"
-	"github.com/illinoisdata/readie/worker/internal/config"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/network"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/clock"
+	"github.com/readie-project/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/network"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // Sentinel errors returned by a Manager.
@@ -356,9 +356,9 @@ func (m *Manager) Acquire(ctx context.Context, req AcquireRequest) (Handle, erro
 //
 // The generation is resolved first, because it decides which root filesystem
 // the sandbox runs against. A checkpoint can only be restored into the
-// filesystem it was captured from - which is guaranteed here by construction,
-// because the rootfs and the checkpoints are baked into the worker image
-// together and there is only ever one of the former.
+// filesystem it was captured from - which holds by construction of `make
+// generation`, which builds the worker image and captures the checkpoints from
+// the same rootfs, and there is only ever one of the former.
 func (m *Manager) create(ctx context.Context, req AcquireRequest) (Handle, error) {
 	name := m.names.NewName()
 	log := m.log.With(logging.KeyContainerID, name, logging.KeyRequestID, req.Ref.RequestID)
@@ -618,6 +618,15 @@ func (m *Manager) Inspect(ctx context.Context, id, checkpointID string) (Handle,
 		CheckpointID: checkpointID,
 		Alloc:        Allocation{Budgets: []Budget{{Kind: KindMemory, Alloc: info.MemoryBytes}}},
 	}, nil
+}
+
+// Exec runs a command inside a live container and waits for it to exit.
+func (m *Manager) Exec(ctx context.Context, id string, args []string) (sandbox.ExecResult, error) {
+	result, err := m.runtime.Exec(ctx, id, sandbox.ExecSpec{Args: args})
+	if err != nil {
+		return sandbox.ExecResult{}, fmt.Errorf("exec in container %s: %w", id, err)
+	}
+	return result, nil
 }
 
 // Grow raises a live container's memory limit to memBytes.

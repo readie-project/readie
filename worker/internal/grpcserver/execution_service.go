@@ -7,9 +7,9 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/logging"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // Runner executes a request. *execution.Runner satisfies it.

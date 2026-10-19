@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
-const repoUrl = 'https://github.com/illinoisdata/readie';
+const repoUrl = 'https://github.com/readie-project/readie';
 
 const config: Config = {
   title: 'Readie',
@@ -26,7 +26,7 @@ const config: Config = {
   baseUrl: '/',
   trailingSlash: false,
 
-  organizationName: 'illinoisdata',
+  organizationName: 'readie-project',
   projectName: 'readie',
 
   // The playground service the playground on the landing page posts to. Empty disables the Run button.

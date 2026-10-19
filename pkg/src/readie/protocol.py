@@ -37,14 +37,23 @@ class CallRef:
 def to_config(
     imports: tuple[str, ...],
     budgets: tuple[Budget, ...],
+    *,
     gpu: bool = False,
     disable_optimized_execution: bool = False,
+    packages: tuple[str, ...] = (),
+    checkpoint_id: str = "",
 ) -> proxy_pb2.ExecutionConfig:
-    """Build the per-call config message: import hints, budgets and the GPU flag."""
+    """Build the per-call config message.
+
+    Import hints, budgets, the GPU flag, the packages to install and, when the
+    caller pinned one, the checkpoint to restore.
+    """
     return proxy_pb2.ExecutionConfig(
         imports=list(imports),
         gpu=gpu,
         disable_optimized_execution=disable_optimized_execution,
+        packages=list(packages),
+        checkpoint_id=checkpoint_id,
         budgets=[
             resources_pb2.ResourceBudget(
                 # Our IntEnum and the proto enum agree by value (a guard test
@@ -81,6 +90,8 @@ class RequestEncoder:
         *,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        packages: tuple[str, ...] = (),
+        checkpoint_id: str = "",
     ) -> Iterator[proxy_pb2.ClientExecutionRequest]:
         """Yield the header followed by the payload in chunks.
 
@@ -91,7 +102,14 @@ class RequestEncoder:
         yield proxy_pb2.ClientExecutionRequest(
             request_id=ref.request_id,
             session_id=ref.session_id,
-            config=to_config(imports, budgets, gpu, disable_optimized_execution),
+            config=to_config(
+                imports,
+                budgets,
+                gpu=gpu,
+                disable_optimized_execution=disable_optimized_execution,
+                packages=packages,
+                checkpoint_id=checkpoint_id,
+            ),
         )
 
         buffer = io.BytesIO(payload)

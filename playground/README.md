@@ -41,6 +41,75 @@ Lanes are `optimized` and `cold`. Each lane ends with one `done` event. Errors
 before streaming return 413 (too large), 422 (empty), 429 (rate limited) or 503
 (busy).
 
+### Evaluation route
+
+`POST /eval/run` runs one piece of code once and returns its timing as JSON. The route
+has no token and is always served, so nothing in the service keeps a visitor out of it. Both nginx configs answer
+404 for `/playground/eval/` (a rule that sits before `/playground/` and must stay), so
+the route is reachable only on the playground's own container network, at the
+service's address on port 8080 (for example `http://<container address>:8080/eval/run`
+from the host). It is meant for a harness run by the operator. Because it is not
+behind nginx, nginx's request limits do not apply to it: a large request, a long run
+and many requests at once are all accepted, and the route has no rate limit or
+concurrency cap of its own.
+
+The route makes no decisions. Apart from `code`, every
+field is an argument of `@remote`, spelled as `@remote` spells it, and goes to
+`readie.remote` untouched. A field left out keeps `remote`'s own default (the
+playground adds no memory, deadline or session of its own).
+
+```json
+{
+  "code": "import pandas as pd\nx = 41\nprint(x + 1)",
+  "timeout": 300, "session": null,
+  "memory": "8Gi", "max_memory": "8Gi",
+  "gpu": false, "gpu_memory": null, "max_gpu_memory": null,
+  "packages": [], "disable_optimized_execution": false, "checkpoint_id": null
+}
+```
+
+Only `code` is required. Unknown fields are refused with a 422, so a removed one
+(`timeout_s`, `total_timeout_s`) is not ignored without a word. The arguments of
+`@remote` are validated by `remote` itself, called once up front, so a bad size, a
+bad requirement or `checkpoint_id` together with `disable_optimized_execution=true`
+returns a 422 before anything runs. The route keeps one limit of its own, on the size
+of `code` (`PLAYGROUND_EVAL_MAX_CODE_BYTES`), and no cap on any `@remote` value.
+The set of fields follows `@remote`: when an argument is added or changed there,
+`EvalRequest` changes with it (see `AGENTS.md`), and a test pins that they match.
+
+- **One run per request.** Comparing an optimized start with a cold start is the
+  caller's job: send the item twice, once with `disable_optimized_execution` false
+  and once true.
+- **Sessions.** `session` is passed as given, except that an empty string means no
+  session (it would otherwise become a made-up id and leave a warm container behind).
+  With none, every request is an independent
+  call. Requests that name the same session share a container and an interpreter: names
+  defined by one request are visible to the next. The route never invents a session id.
+- **The code runs with module semantics** (`exec` in a namespace that lasts for the
+  session, `__name__ == "__main__"`), so `from x import *`, classes and `global`
+  behave as in a script. The function the client pickles repeats the code's import
+  statements, so it records the same imports as a function you wrote and the router can
+  pick a checkpoint. `MPLBACKEND=Agg` is set so plots need no display.
+- **Code that is not valid Python** is reported as a `SyntaxError` without a call.
+
+```json
+{
+  "session_id": "5f0c...",
+  "ok": true,
+  "duration_s": 1.93,
+  "error": "",
+  "error_type": "",
+  "output": "42\n",
+  "truncated": false
+}
+```
+
+`duration_s` is measured exactly as for `/run`: a monotonic clock around the whole
+backend call (building the function, connecting, the call). `error_type` is
+`RemoteExecutionError` for code that raised, `RemoteTimeoutError` when the deadline
+passed, `SyntaxError`, another Readie error name, or `InternalError`.
+Errors before the run return 413 (too large) or 422 (invalid).
+
 ## Resource limits
 
 Each lane builds the script into a function decorated with `@remote`, the way a user
@@ -48,9 +117,9 @@ would write one, and calls it through `readie.Client`. The module is a real file
 the client reads the script's imports and the router can choose a checkpoint for the
 optimized lane. The cold lane sets `disable_optimized_execution=True`.
 
-Every run asks for 4 GiB of initial and maximum memory (`config.MEMORY`) and
+Every `/run` asks for 1 GiB of initial and maximum memory (`config.MEMORY`) and
 never uses a session, so each lane is a fresh sandbox that is destroyed after the call.
-A request therefore uses two 4 GiB sandboxes. Size `WORKER_MAX_EXECUTORS` on the
+A request therefore uses two 1 GiB sandboxes. Size `WORKER_MAX_EXECUTORS` on the
 Readie workers to match.
 
 ## Configuration
@@ -69,6 +138,7 @@ Readie workers to match.
 | `PLAYGROUND_TRUST_PROXY` | off | Use the first `X-Forwarded-For` address as the client (on behind nginx) |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
+| `PLAYGROUND_EVAL_MAX_CODE_BYTES` | `8388608` | Largest `code` of one evaluation request |
 
 Point the service at a dedicated Readie server with `SANDBOX_NETWORK=none` on its workers
 rather than the one real users share, by setting `PLAYGROUND_ROUTER_URI`.
@@ -92,7 +162,7 @@ workers need enough memory for two 1 GiB sandboxes per request, for example
 
 - The host is a Linux amd64 machine with Docker and the gVisor `runsc` binary registered as a
   Docker runtime named `runsc` in `/etc/docker/daemon.json`.
-- The Readie server the playground calls needs memory for two 4 GiB sandboxes per request
+- The Readie server the playground calls needs memory for two 1 GiB sandboxes per request
   (`READIE_WORKER_MEM_TOTAL`, `READIE_WORKER_MAX_EXECUTORS`). A dedicated server is
   recommended, with a token that only the playground uses.
 - gVisor cannot use Docker's built-in DNS, so the service mounts `resolv.conf` from this

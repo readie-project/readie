@@ -3,11 +3,7 @@
 Mirrors ``pkg/src/readie/codec.py`` on the client side; the two must agree on the
 call shape or nothing runs. That shape is::
 
-    {"func": <callable>, "args": <tuple>, "kwargs": <dict>, "packages": [<str>, ...]}
-
-``packages`` is optional and defaults to empty: an older client that never
-sends it still decodes, since it names PyPI requirements to install with
-``uv`` before invoking ``func`` rather than anything the call itself needs.
+    {"func": <callable>, "args": <tuple>, "kwargs": <dict>}
 
 # Trust
 
@@ -39,7 +35,6 @@ class Call:
     func: Callable[..., Any]
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
-    packages: tuple[str, ...] = ()
 
     def invoke(self) -> Any:
         """Call the function. Any exception it raises propagates."""
@@ -80,12 +75,8 @@ def decode_call(raw: bytes) -> Call:
         raise DecodeError(msg)
 
     args, kwargs = tuple(payload["args"]), dict(payload["kwargs"])
-    packages = tuple(payload.get("packages", ()))
-    print(
-        f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}, packages={packages}",
-        flush=True,
-    )
-    return Call(func=func, args=args, kwargs=kwargs, packages=packages)
+    print(f"[executor] decoded call: func={func}, args={args}, kwargs={kwargs}", flush=True)
+    return Call(func=func, args=args, kwargs=kwargs)
 
 
 def encode_result(value: Any) -> bytes:

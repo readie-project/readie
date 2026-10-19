@@ -10,7 +10,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // ociVersion is the runtime-spec version written into every bundle.
@@ -26,9 +26,12 @@ const devShmSize = "1024m"
 
 // defaultPath is the sandbox's PATH.
 //
-// The rootfs binary directory is prepended, mirroring what the pipeline
-// does to make `python` resolvable.
-const defaultPath = "PATH=/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+// /usr/local/bin comes first so that the image's own Python wins over the operating system's.
+// It used to start with /bin, which on a Debian base is /usr/bin, so python3 was the OS's Python
+// (a different version, and one marked externally managed) and not the 3.12 the executor and the
+// checkpoints use. The environment is not part of the sandbox fingerprint, so changing this
+// does not invalidate a checkpoint.
+const defaultPath = "PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 // BuildSpec produces the OCI runtime spec for a sandbox.
 //

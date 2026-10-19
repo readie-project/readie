@@ -9,14 +9,14 @@ otherwise need one.
 
 from __future__ import annotations
 
-from readie_pipeline.metadata import analyze
+from readie_pipeline.metadata import analyze, inventory
 
 
 def test_installed_packages_is_every_top_level_name_this_environment_provides(monkeypatch):
     # Not the corpus's imports: a checkpoint restores into the base image, so
     # that -- whatever is actually importable here -- is the universe to measure.
     monkeypatch.setattr(
-        analyze,
+        inventory,
         "packages_distributions",
         lambda: {"pandas": ["pandas"], "sklearn": ["scikit-learn"]},
     )
@@ -25,13 +25,13 @@ def test_installed_packages_is_every_top_level_name_this_environment_provides(mo
 
 def test_installed_packages_is_sorted_so_a_run_diffs_cleanly(monkeypatch):
     monkeypatch.setattr(
-        analyze, "packages_distributions", lambda: {"zlib": ["zlib"], "abc": ["abc"]}
+        inventory, "packages_distributions", lambda: {"zlib": ["zlib"], "abc": ["abc"]}
     )
     assert analyze.installed_packages() == ["abc", "zlib"]
 
 
 def test_installed_packages_is_empty_in_a_bare_environment(monkeypatch):
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     assert analyze.installed_packages() == []
 
 
@@ -42,7 +42,7 @@ def test_installed_packages_excludes_this_tool_itself(monkeypatch):
     # that base image -- confirmed against a real build, where it showed up
     # alongside pandas and torch as an "installed package."  It never is one.
     monkeypatch.setattr(
-        analyze,
+        inventory,
         "packages_distributions",
         lambda: {"pandas": ["pandas"], "readie_pipeline": ["readie-pipeline"]},
     )
@@ -56,7 +56,7 @@ def test_installed_packages_excludes_the_executor_harness(monkeypatch):
     # request's own code ever imports the harness running it, so it is never
     # actionable for the planner and would just be permanent, unused clutter.
     monkeypatch.setattr(
-        analyze,
+        inventory,
         "packages_distributions",
         lambda: {"pandas": ["pandas"], "readie_executor": ["readie-executor"]},
     )
@@ -101,7 +101,7 @@ def _fake_graph(monkeypatch, graph: dict[str, tuple[str | None, frozenset[str]]]
 
 def test_a_candidate_that_never_resolves_gets_an_error_entry_under_its_own_name(monkeypatch):
     _fake_graph(monkeypatch, {})
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
 
     metadata = analyze.analyze(["nonexistent"])
 
@@ -111,7 +111,7 @@ def test_a_candidate_that_never_resolves_gets_an_error_entry_under_its_own_name(
 
 def test_on_progress_fires_even_when_nothing_resolves(monkeypatch):
     _fake_graph(monkeypatch, {})
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     seen: list[tuple[str, str]] = []
 
     analyze.analyze(
@@ -121,9 +121,41 @@ def test_on_progress_fires_even_when_nothing_resolves(monkeypatch):
     assert seen == [("nonexistent", "could not be resolved to an importable module")]
 
 
+class _Installed:
+    def __init__(self, name: str, version: str) -> None:
+        self.metadata = {"Name": name}
+        self.version = version
+
+
+def test_the_version_of_each_measured_distribution_is_recorded(monkeypatch):
+    _fake_graph(monkeypatch, {"pandas": ("pandas", frozenset({"pandas"}))})
+    monkeypatch.setattr(inventory, "packages_distributions", lambda: {"pandas": ["pandas"]})
+    monkeypatch.setattr(
+        inventory,
+        "distributions",
+        lambda: [_Installed("pandas", "2.3.3"), _Installed("unrelated", "9.9")],
+    )
+    monkeypatch.setattr(
+        analyze, "_profile", lambda _warm, _target: {"time": 0.3, "memory_mb": 40.0}
+    )
+
+    metadata = analyze.analyze(["pandas"])
+
+    # Only what was measured, from the environment that measured it.
+    assert metadata.distributions == {"pandas": "2.3.3"}
+
+
+def test_a_candidate_that_never_resolves_has_no_version(monkeypatch):
+    _fake_graph(monkeypatch, {})
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "distributions", lambda: [_Installed("pandas", "2.3.3")])
+
+    assert analyze.analyze(["nonexistent"]).distributions == {}
+
+
 def test_a_resolved_candidate_is_recorded_in_the_resolved_map(monkeypatch):
     _fake_graph(monkeypatch, {"pandas": ("pandas", frozenset({"pandas"}))})
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(
         analyze, "_profile", lambda _warm, _target: {"time": 0.3, "memory_mb": 40.0}
     )
@@ -136,13 +168,13 @@ def test_a_resolved_candidate_is_recorded_in_the_resolved_map(monkeypatch):
 
 
 def test_a_deeper_candidate_resolves_to_its_shorter_prefix(monkeypatch):
-    # What corpus/tree_parser.py now hands this: the deepest candidate implied
+    # What corpus/extract.py now hands this: the deepest candidate implied
     # by `from sklearn.svm import LinearSVC`, which is not itself a module.
     _fake_graph(
         monkeypatch,
         {"sklearn.svm.LinearSVC": ("sklearn.svm", frozenset({"sklearn", "sklearn.svm"}))},
     )
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 5.0})
 
     metadata = analyze.analyze(["sklearn.svm.LinearSVC"])
@@ -163,7 +195,7 @@ def test_a_shared_dependency_is_only_ever_profiled_once(monkeypatch):
             "numpy": ("numpy", frozenset({"numpy"})),
         },
     )
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
 
     calls: list[tuple[tuple[str, ...], str]] = []
 
@@ -215,7 +247,7 @@ def test_an_internal_submodule_owned_by_an_ancestor_is_never_independently_measu
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["sklearn"])
@@ -255,7 +287,7 @@ def test_a_sibling_not_related_by_descent_still_gets_its_own_measurement(monkeyp
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["keras.applications.vgg16"])
@@ -293,7 +325,7 @@ def test_a_name_still_visiting_is_only_ever_discovered_once(monkeypatch):
             "sib2": ("sib2", frozenset({"sib2", "owner", "sib1"})),
         },
     )
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["owner"])
@@ -318,7 +350,7 @@ def test_a_failed_resolution_is_never_cached_and_is_retried_every_time(monkeypat
             "path2": ("path2", frozenset({"path2", "bad"})),
         },
     )
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     analyze.analyze(["root"])
@@ -342,7 +374,7 @@ def test_a_genuinely_deep_non_cyclic_chain_does_not_overflow_the_stack(monkeypat
     }
     graph[f"n{depth - 1}"] = (f"n{depth - 1}", frozenset({f"n{depth - 1}"}))
     _fake_graph(monkeypatch, graph)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["n0"])
@@ -366,7 +398,7 @@ def test_a_genuine_cycle_terminates_instead_of_recursing_forever(monkeypatch):
             "b": ("b", frozenset({"b", "a"})),
         },
     )
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["a"])
@@ -383,7 +415,7 @@ def test_a_profiling_failure_still_records_the_resolution(monkeypatch):
     # (with a nominal fallback cost) rather than dropping it as if it had
     # never been requested at all.
     _fake_graph(monkeypatch, {"torch": ("torch", frozenset({"torch"}))})
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(
         analyze, "_profile", lambda _warm, _target: {"error": "TimeoutExpired: ..."}
     )
@@ -397,7 +429,7 @@ def test_a_profiling_failure_still_records_the_resolution(monkeypatch):
 
 def test_disk_size_is_measured_from_the_resolved_names_own_distribution(monkeypatch):
     _fake_graph(monkeypatch, {"pandas": ("pandas", frozenset({"pandas"}))})
-    monkeypatch.setattr(analyze, "packages_distributions", lambda: {"pandas": ["pandas"]})
+    monkeypatch.setattr(inventory, "packages_distributions", lambda: {"pandas": ["pandas"]})
     monkeypatch.setattr(analyze, "_installed_size_mb", lambda _dist, _name: 12.5)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
@@ -426,7 +458,7 @@ def test_an_excluded_top_level_candidate_is_never_discovered(monkeypatch):
         return None, frozenset()
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
 
     metadata = analyze.analyze(["google.cloud.aiplatform"], exclude=["google"])
 
@@ -453,7 +485,7 @@ def test_an_excluded_name_discovered_via_someone_elses_closure_is_also_skipped(m
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["some-package"], exclude=["google"])
@@ -488,7 +520,7 @@ def test_a_descendant_discovered_out_of_order_is_never_independently_measured(mo
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["w", "x"])
@@ -513,7 +545,7 @@ def test_an_explicitly_requested_descendant_still_gets_its_own_measurement(monke
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["w", "x", "x.y._z"])
@@ -550,7 +582,7 @@ def test_a_meaningful_non_underscore_name_is_never_folded_just_for_sharing_a_top
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["w", "sklearn"])
@@ -583,7 +615,7 @@ def test_a_private_name_rooted_in_the_standard_library_is_still_folded(monkeypat
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["w"])
@@ -613,7 +645,7 @@ def test_a_private_intermediate_segment_folds_its_own_non_underscore_leaf_too(
         return graph.get(candidate, (None, frozenset()))
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", lambda _warm, _target: {"time": 0.1, "memory_mb": 1.0})
 
     metadata = analyze.analyze(["w", "scipy"])
@@ -649,7 +681,7 @@ def test_a_private_name_shared_by_two_unrelated_referrers_is_still_folded(monkey
         return {"time": 0.1, "memory_mb": 1.0}
 
     monkeypatch.setattr(analyze, "_discover", fake_discover)
-    monkeypatch.setattr(analyze, "packages_distributions", dict)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
     monkeypatch.setattr(analyze, "_profile", fake_profile)
 
     metadata = analyze.analyze(["w1", "w2"])

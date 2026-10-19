@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/logging"
 )
 
 const (

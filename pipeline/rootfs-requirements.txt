@@ -1,0 +1,3 @@
+# Distributions installed into the rootfs, one per line. Empty by default: a full
+# base image such as Kaggle's already has its packages. `readie-pipeline plan`
+# writes the list for a plan; pass it with ROOTFS_REQUIREMENTS (see the Makefile).

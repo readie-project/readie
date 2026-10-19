@@ -12,8 +12,8 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/logging"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // ServerOptions configures the gRPC server.

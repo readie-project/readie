@@ -153,12 +153,12 @@ The following choices can look like gaps. Each is deliberate and in force. The s
 - Decision: The root filesystem is the full base image, whatever the planner picks. The filesystem lives in the worker base image, and the worker image inherits it.
 - Consequences: Rebuilding a worker does not mean rebuilding tens of gigabytes.
 
-### Checkpoints are baked in, not mounted
+### Checkpoints are mounted, not baked in
 
-- Status: Accepted
-- Context: A checkpoint restores only into the exact filesystem and gVisor release that it was captured with.
-- Decision: Checkpoints are part of the base image. New checkpoints require a new base image (`make generation`).
-- Consequences: A single image guarantees the pairing of checkpoint, filesystem, and gVisor release, and there is one artifact to deploy and nothing to mount incorrectly. The image is very large. Redeploying only worker code is fast (`make worker-image`). For sizes, see [Building checkpoints](/docs/contributing/build-checkpoints).
+- Status: Accepted. This replaces an earlier decision to bake the checkpoints into the base image.
+- Context: A checkpoint restores only into the exact filesystem and gVisor release that it was captured with. The checkpoints are by far the part that changes most often and, for many checkpoints, the largest.
+- Decision: The base image holds gVisor and the root filesystem. The manifest and the checkpoints are mounted into the worker at `/var/lib/readie`, from `pipeline/out/<flavor>` by default. `make generation` still builds the image and captures the checkpoints from the same root filesystem.
+- Consequences: Changing checkpoints no longer rebuilds or ships an image, and the checkpoints can come from any directory, including one backed by another store. The pairing of checkpoint, filesystem, and gVisor release now rests on deploying the checkpoints that the same `make generation` produced. The worker's startup check covers the gVisor version and the sandbox spec, but not the contents of the root filesystem. The worker reads the checkpoints once at startup, so a new generation needs a restart. A missing mount fails `docker compose up`, because the mounts do not create their host path.
 
 ### The client unpickles router-supplied bytes
 

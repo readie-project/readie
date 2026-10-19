@@ -23,8 +23,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/illinoisdata/readie/worker/internal/runsc"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/runsc"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // params is the input document, mirroring sandbox.CreateSpec in a form that is

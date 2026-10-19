@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/runsc"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/runsc"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // This is the test the whole helper exists for. The offline pipeline captures
@@ -25,7 +25,7 @@ func TestFingerprint_MatchesWhatTheWorkerWouldBuild(t *testing.T) {
 	const (
 		rootfs     = "/opt/executor-rootfs"
 		entrypoint = "/app/executor/app.py"
-		pythonPath = "/lib/python3.12/dist-packages"
+		pythonPath = "/usr/local/lib/python3.12/dist-packages"
 		socketDir  = "/shared/exec_container-abc"
 		overlay    = "root:memory"
 		network    = "none"
@@ -97,7 +97,7 @@ func TestRun_WritesAConfigTheRuntimeWouldAccept(t *testing.T) {
 		"bundle_dir":  dir,
 		"rootfs_path": "/opt/executor-rootfs",
 		"args":        []string{"python", "-u", "/app/executor/app.py"},
-		"env":         []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/lib/python3.12/dist-packages"},
+		"env":         []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/usr/local/lib/python3.12/dist-packages"},
 		"cwd":         "/",
 		"mounts": []map[string]any{{
 			"source": "/shared/x", "destination": "/tmp",

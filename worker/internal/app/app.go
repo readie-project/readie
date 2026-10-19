@@ -21,19 +21,19 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/clock"
-	"github.com/illinoisdata/readie/worker/internal/config"
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/grpcserver"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/network"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/runsc"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/clock"
+	"github.com/readie-project/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/grpcserver"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/network"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/runsc"
+	"github.com/readie-project/readie/worker/internal/sandbox"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // Deps are the process boundaries, injected so they can be replaced in tests.
@@ -133,10 +133,11 @@ func networkCapacity(maxExecutors int32) int {
 	return capacity
 }
 
-// loadArtifacts reads the rootfs and checkpoints baked into this image.
+// loadArtifacts reads the rootfs baked into this image and the manifest and
+// checkpoints mounted beside it.
 //
 // The root is a compiled-in constant rather than configuration: there is one
-// place a worker image puts its artifacts, and making it settable invited a
+// place a worker puts its artifacts, and making it settable invited a
 // deployment where the mount and the expectation disagreed. Load still takes it
 // as a parameter, so tests build fixtures in temporary directories.
 func loadArtifacts(_ config.Config, log *slog.Logger) (container.Artifacts, error) {

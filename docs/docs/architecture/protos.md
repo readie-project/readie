@@ -6,7 +6,7 @@ description: The gRPC services and messages that connect the client, router, and
 
 
 :::note[Generated page]
-This page is generated from the comments in [`protos/`](https://github.com/illinoisdata/readie/tree/main/protos). To change it, edit the `.proto` files and run `make docs-protos`.
+This page is generated from the comments in [`protos/`](https://github.com/readie-project/readie/tree/main/protos). To change it, edit the `.proto` files and run `make docs-protos`.
 :::
 
 The protos declare no `package`, so service names are bare on the wire, for example `/ProxyService/RequestExecution`. Changes are additive only: new fields use new numbers, and numbers are never reused or renumbered. See [Changing protos](/docs/contributing/changing-protos).
@@ -35,6 +35,7 @@ Message used for code execution requests to workers
 | `payload` | `bytes` |  |
 | `resources` | `repeated string` | Import and artefact hints from the client's static analysis, forwarded by the router so a worker can pick a checkpoint that already has them. |
 | `budgets` | `repeated ResourceBudget` | The resource budgets (memory, GPU memory, ...) the router placed this request on. The worker sets each at container create and auto-expands up to the budget's max where the runtime can enforce it. |
+| `packages` | `repeated string` | PyPI requirement strings the worker installs in the sandbox before the payload reaches the executor. The router has already deduped them and removed what the base image carries. |
 
 ### Message `WorkerExecutionResponse`
 
@@ -97,6 +98,8 @@ Per-call configuration the client sends as the first message of a stream.
 | `budgets` | `repeated ResourceBudget` | Resource budgets the user set on the decorator (memory, GPU memory, ...). A budget with alloc == 0 asks the router to apply its default for that kind. |
 | `gpu` | `bool` | Whether the function needs a GPU. The router also treats any GPU-memory budget as a GPU request, so this covers a GPU function that names no size. |
 | `disable_optimized_execution` | `bool` | When true, the router skips checkpoint restore for this call and always cold-starts. Session affinity (warm-container reuse) still applies; the router rejects this only when the session's warm container was itself restored from a checkpoint. |
+| `packages` | `repeated string` | PyPI requirement strings (PEP 508) the function needs installed. The router validates and dedupes them, drops any distribution the flavor's base image already carries, and the worker installs the rest before the call runs. |
+| `checkpoint_id` | `string` | When set, the router uses exactly this checkpoint instead of selecting one, and rejects the request if the flavor's catalogue has no such checkpoint. The worker still falls back to a cold start if the restore itself fails. Mutually exclusive with disable_optimized_execution. |
 
 ## `registry.proto`
 

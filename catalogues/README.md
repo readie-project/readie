@@ -24,7 +24,9 @@ the provided Compose setup, `./catalogues` is mounted at
 
 - A catalogue is keyed by the `flavor` field inside the file, not by the file name.
 - A file that is unreadable, is not a JSON object, or has an unsupported `version`
-  is skipped with a warning. The router still starts.
+  is skipped with a warning. The router still starts. The current version is 2, so a
+  catalogue written before the `distributions` field existed is skipped until it is
+  regenerated.
 - With no catalogue for a flavor, or no directory at all, every call is a cold
   start. The functions still run, only without a restore.
 
@@ -39,6 +41,18 @@ and compares it with a cold start, which has no size term and pays every load
 time. It picks the cheapest. A checkpoint is chosen only when it saves more import
 time than its size costs. A tie goes to the later checkpoint in the file.
 
+A call can also pin a checkpoint with `checkpoint_id`. The router then skips the
+scoring and accepts the id only if the catalogue of the chosen worker lists a
+checkpoint with exactly that id. No id is special, `checkpoint_0` included. An id
+that is not listed is rejected with `INVALID_ARGUMENT`.
+
+The router also uses the catalogue to trim a call's `packages`. It removes every
+entry whose distribution is a key of the top-level `distributions` object, whatever
+version the entry asks for, because the worker's root filesystem already carries it.
+The note it sends the client and its own log name the version the image has, which is
+the key's value, when there is one. An entry with extras is kept, and with no
+catalogue nothing is removed.
+
 The required items are the packages the function imports plus everything they
 depend on (their dependency closure). Each shared dependency is counted once.
 Items the catalogue has not measured add the same amount to every option, so they
@@ -46,7 +60,7 @@ cannot change the result.
 
 ## File format
 
-The current format is `version: 1`. The pipeline writes it in
+The current format is `version: 2`. The pipeline writes it in
 `pipeline/src/readie_pipeline/catalogue.py`, and the router reads it in
 `router/src/readie_router/scheduling/catalogue.py`. Change both together and bump
 `version`.
@@ -55,6 +69,7 @@ The current format is `version: 1`. The pipeline writes it in
 | ----- | ---- | ------- |
 | `version` | integer | Format version. The router skips a file with any other value. |
 | `flavor` | string | `cpu` or `gpu`. The router routes a call to the catalogue of the flavor it needs. |
+| `distributions` | object | Every distribution installed in the flavor's root filesystem, as canonical name to installed version, sorted by name. The version is the one in the root filesystem as built, and `""` when it has none for that distribution. The pipeline lists it by running `metadata/inventory.py` (the module `analyze` also resolves distributions with) with the root filesystem's own `python`. If that listing fails, the field is an empty object and the router filters nothing. A catalogue written before versions were recorded has an array of names here, which the router does not read, so it filters nothing until the catalogue is regenerated. |
 | `alpha` | number | Seconds of import time one MB of checkpoint size is worth. Measured by the pipeline after capture. The router applies this value, so the router has no `alpha` setting of its own. A missing value falls back to a built-in default. |
 | `items` | object | Every measured item, keyed by name. |
 | `checkpoints` | array | The checkpoints of this generation. |
@@ -65,13 +80,13 @@ Each entry of `items` has these fields:
 | ----- | ------- |
 | `load_time` | Seconds to import the item when its dependencies are already resident. |
 | `size_mb` | Memory the item occupies, in MB. Memory is what a restore copies back, not disk size. |
-| `resource_type` | `package`, `kaggle_dataset`, `hf_dataset`, `hf_model` or `hf_tokenizer`. |
+| `resource_type` | `package`, `dataset`, `model` or `tokenizer`. |
 | `dependencies` | Item keys the item depends on (packages only). The list is already transitive. |
+| `distribution` | The PyPI distribution that provides the item, as the metadata recorded it (the first provider of the top-level name). Empty for `dataset`, `model` and `tokenizer` items. |
 
-Packages are keyed by their dotted import name with a `package:` prefix
-(`package:numpy`, `package:sklearn.svm`). Datasets, models and tokenizers carry
-a source-qualified prefix (`kaggle_dataset:owner/name`, `hf_model:gpt2`). The
-names match how the client lists a function's requirements.
+Packages are keyed by their dotted import name (`numpy`, `sklearn.svm`). Datasets,
+models and tokenizers carry a kind prefix (`model:gpt2`). The names match how the
+client lists a function's requirements.
 
 Each entry of `checkpoints` has these fields:
 
@@ -90,11 +105,12 @@ A trimmed example (the values are illustrative):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "flavor": "cpu",
   "alpha": 0.0065,
+  "distributions": { "numpy": "2.0.2" },
   "items": {
-    "numpy": { "load_time": 0.2, "size_mb": 6.5, "resource_type": "package" }
+    "numpy": { "distribution": "numpy", "load_time": 0.2, "size_mb": 6.5, "resource_type": "package" }
   },
   "checkpoints": [
     { "id": "checkpoint_0", "items": [], "canonical": [], "size_mb": 0 },
@@ -103,10 +119,19 @@ A trimmed example (the values are illustrative):
 }
 ```
 
+The pipeline carries over only the measured resources that the root filesystem
+provides. A package is kept when the rootfs has a distribution for it, resolved
+exactly as `analyze` resolves the metadata's own (the first provider of the
+top-level import name, `distribution_for` in `metadata/inventory.py`), so the
+metadata may come from a different image than the one the sandbox runs. The two
+sides use one function, so a change to that rule applies to both. Checkpoints are still planned from all the metadata, and the
+checkpoint `items` and `canonical` lists and each item's `dependencies` are pruned
+to what was kept.
+
 ## Keeping a catalogue in step with the workers
 
 A catalogue describes one generation of checkpoints, so it must match the
-checkpoints baked into the worker image.
+checkpoints mounted into the worker.
 
 - Run `make generation FLAVOR=<flavor>` to build the checkpoints, the worker image
   and the catalogue together. `make capture` copies the new catalogue here.

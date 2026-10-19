@@ -41,7 +41,7 @@ internal/
   execution/           orchestration of one request; depends on no transport types
   container/           container lifecycle: acquire, release, reclaim orphans
   executor/            the unix-socket protocol shared with ../executor/
-  artifact/            the baked-in rootfs, manifest and checkpoints
+  artifact/            the rootfs, manifest and checkpoints under /var/lib/readie
   sandbox/             the runtime seam - stdlib only, no runtime knowledge
   runsc/               the only package that knows gVisor exists
   registry/            reporting worker and executor state to the router
@@ -69,8 +69,9 @@ lifetimes. `container.Manager` has no knowledge of the runtime's name.
 
 ## Artifacts
 
-The root filesystem and the checkpoints are baked into the base image that the
-worker image is built on, at a compiled-in path. Nothing is mounted:
+The root filesystem is baked into the base image that the worker image is built
+on. The manifest and the checkpoints are bind-mounted beside it. The root is a
+compiled-in path:
 
 ```text
 /var/lib/readie/
@@ -81,9 +82,17 @@ worker image is built on, at a compiled-in path. Nothing is mounted:
 ```
 
 A gVisor checkpoint restores only into the filesystem it was captured from, so
-the rootfs and the checkpoints must be paired correctly. The layout guarantees
-the pairing: there is one rootfs, and the base image build is the only way to
-put a rootfs and checkpoints together.
+the rootfs and the checkpoints must be paired correctly. There is one rootfs, and
+`make generation` builds the base image and captures the checkpoints from the same
+one, so mounting the checkpoints of the generation that built the image keeps them
+paired. The startup check below compares the runsc version and the sandbox spec,
+not the contents of the rootfs.
+
+`docker-compose.yml` mounts `pipeline/out/<flavor>/checkpoints` and
+`manifest.json`, with `create_host_path: false`, so a missing generation fails
+`docker compose up`. A worker started without them still runs and cold-starts every
+request. The worker reads the tree once at startup, so restart it after a new
+generation.
 
 Because there is one rootfs, checkpoint IDs are globally unique, so a bare ID
 such as `checkpoint_1` is unambiguous. For background on checkpoints, see
@@ -95,23 +104,26 @@ The [`Dockerfile`](Dockerfile) in this directory builds only the server.
 Everything that a checkpoint's validity is bound to comes from
 `readie-worker-base-<flavor>`, which the offline pipeline builds
 ([`../pipeline/Dockerfile`](../pipeline/Dockerfile)). That includes the pinned
-runsc, the rootfs, and the checkpoints themselves.
+runsc and the rootfs. The checkpoints are not in either image.
 
 ```text
 readie-worker-base-<flavor>   pipeline/Dockerfile --target worker-base
   /usr/local/bin/runsc            pinned GVISOR_RELEASE, same as capture
   /var/lib/readie/rootfs
-  /var/lib/readie/manifest.json
-  /var/lib/readie/checkpoints/
 
 readie-worker-<flavor>        worker/Dockerfile, context ./worker
   FROM readie-worker-base-<flavor>
   /app/go-server
   /usr/local/bin/grpcurl          the compose healthcheck
+
+mounted by docker-compose.yml     pipeline/out/<flavor>
+  /var/lib/readie/manifest.json
+  /var/lib/readie/checkpoints/
 ```
 
-The split follows what changes when. A new capture rebuilds the base. A code
-change rebuilds only the worker image, and that build touches nothing large.
+The split follows what changes when. A new capture changes only the mounted
+directory. A code change rebuilds only the worker image, and that build touches
+nothing large.
 
 ### Redeploying a worker change
 
@@ -120,13 +132,13 @@ make worker-image        # a Go build and two small layers
 docker compose up -d     # recreates the worker on the new readie-worker-<flavor>:latest
 ```
 
-No re-capture is needed. The base already holds the rootfs and the checkpoints,
-and the worker image inherits those layers rather than copying them, so the
+No re-capture is needed. The base already holds the rootfs, the checkpoints are
+mounted, and the worker image inherits the base's layers rather than copying them, so the
 build does not touch the approximately 26 GB rootfs. Two conditions apply:
 
 - `readie-worker-base-<flavor>:latest` must be present (`make -C .. worker-base`)
   or pullable.
-- The worker comes up with whatever checkpoints that base was built with.
+- The worker comes up with whatever checkpoints are mounted at `/var/lib/readie/checkpoints`.
 
 If compose does not notice the new image, add `--force-recreate`.
 
@@ -156,6 +168,32 @@ stats sampler publish to a single channel, and only the goroutine that called
 `Run` drains it into the `Sink`. gRPC streams are not safe for concurrent sends
 and corrupt frames rather than failing cleanly, so this single-owner rule is
 required.
+
+When the request names `packages`, the runner installs them after it has dialled the
+executor and before it sends any of the request. Starting a sandbox is asynchronous, so
+an exec straight after the container is acquired ran against a sandbox the runtime did
+not know yet, and every install in a fresh container failed. A connection accepted on the
+executor's socket is the proof that the sandbox is running, so the dial comes first. The
+connection then waits, idle, for the install: the executor sets no timeout on it, and the
+session's deadlines apply to writes. A failed install hangs up on the executor, which
+stays available for the next call. `execution/install.go` runs one
+`runsc exec` in the sandbox (`sandbox.Port.Exec`): the executor's own DNS bootstrap
+(`python -m readie_executor.network`), then
+`uv pip install --system --no-cache-dir -- <specs>`, which installs into the first `python3`
+on the sandbox's `PATH`. The `PATH` starts with `/usr/local/bin`, so that is the image's own
+Python, the one the executor runs; if it were another interpreter, the install fails rather
+than being redirected. The same `PATH` makes the image's Python win over the operating
+system's for every process in the sandbox; the environment is not part of
+the sandbox fingerprint, so this does not affect a checkpoint. The specs are positional
+parameters of a fixed `sh -c` script, so a requirement string is never parsed as
+shell, and the `--` stops `uv` from reading one as an option. The router has
+already validated the list and removed what the rootfs carries. The command's
+output goes to the client as logs, and a non-zero exit fails the request with
+`FAILED_PRECONDITION`. The container is released as a success, so a typo in a
+requirement does not destroy a session's warm container. The adapter passes the
+bundle's `process.env` to `runsc exec` as `--env` flags, so the command sees the
+same `PATH` and `PYTHONPATH` as the executor. Nothing records what an earlier
+request installed, so a reused container installs again.
 
 The worker does not currently run a log tailer. The code never emits log
 events, and `STREAM_LOGS` is read but has no effect. The function's captured
@@ -497,7 +535,7 @@ unrestricted egress.
 
 ## Checkpoint compatibility
 
-A baked checkpoint restores only into the exact sandbox it was captured under.
+A checkpoint restores only into the exact sandbox it was captured under.
 At startup, once the runtime and container manager are built, the worker
 computes its own spec fingerprint and reads its live `runsc --version`. The
 fingerprint comes from `container.CanonicalSpec` and `runsc.Fingerprint`, the

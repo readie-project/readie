@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 const testID = "exec_container-abc"
@@ -59,7 +60,7 @@ func testCreateSpec(f *fixture) sandbox.CreateSpec {
 		BundleDir:  filepath.Join(f.bundles, testID),
 		RootfsPath: "/opt/executor-rootfs",
 		Args:       []string{"python", "-u", "/app/executor/app.py"},
-		Env:        []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/lib/python3.12/dist-packages"},
+		Env:        []string{"EXECUTOR_DIR=/tmp", "PYTHONPATH=/usr/local/lib/python3.12/dist-packages"},
 		Cwd:        "/",
 		Mounts: []sandbox.Mount{
 			{Source: "/shared/" + testID, Destination: "/tmp", Type: "bind", Options: []string{"rbind", "rw"}},
@@ -117,7 +118,7 @@ func TestColdStart_BuildsTheExactArgv(t *testing.T) {
 	assert.Equal(t, [][]string{
 		{
 			"--root=" + f.root, "--network=none", "--host-uds=create", "--overlay2=root:memory",
-			"run", "--bundle=" + bundle, "--pid-file=" + filepath.Join(bundle, pidFileName), testID,
+			"run", "--detach", "--bundle=" + bundle, "--pid-file=" + filepath.Join(bundle, pidFileName), testID,
 		},
 	}, f.runner.argv())
 }
@@ -210,7 +211,7 @@ func TestCreate_WritesTheExecutorContract(t *testing.T) {
 	assert.False(t, spec.Process.Terminal,
 		"a pty would need --console-socket and would break log capture")
 	assert.Contains(t, spec.Process.Env, "EXECUTOR_DIR=/tmp")
-	assert.Contains(t, spec.Process.Env, "PYTHONPATH=/lib/python3.12/dist-packages")
+	assert.Contains(t, spec.Process.Env, "PYTHONPATH=/usr/local/lib/python3.12/dist-packages")
 	assert.Equal(t, "/opt/executor-rootfs", spec.Root.Path)
 
 	// The socket bind must be last, after the standard mount set.
@@ -666,6 +667,84 @@ func TestUpdate_ReportsAnAbsentBundleAsNotFound(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// exec
+// ---------------------------------------------------------------------------
+
+// The environment comes from the bundle's spec, passed as --env=KEY=VALUE
+// before the container id: runsc stops parsing flags at the first non-flag
+// argument, and a command run without PATH and PYTHONPATH finds neither uv nor
+// the executor's modules.
+func TestExec_RunsTheCommandWithTheBundlesEnvironment(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.adapter.Create(context.Background(), testCreateSpec(f))
+	require.NoError(t, err)
+	f.runner.reset()
+	f.runner.stdout["exec"] = []byte("Installed 1 package\n")
+
+	res, err := f.adapter.Exec(context.Background(), testID,
+		sandbox.ExecSpec{Args: []string{"uv", "pip", "install", "--", "flask"}})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "Installed 1 package\n", string(res.Output))
+
+	argv := f.runner.argv()
+	require.Len(t, argv, 1)
+	spec := f.readBundleSpec(t, testID)
+	want := append([]string(nil), f.adapter.global...)
+	want = append(want, "exec")
+	for _, env := range spec.Process.Env {
+		want = append(want, "--env="+env)
+	}
+	want = append(want, testID, "uv", "pip", "install", "--", "flask")
+	assert.Equal(t, want, argv[0])
+	assert.Contains(t, argv[0], "--env=PYTHONPATH=/usr/local/lib/python3.12/dist-packages")
+}
+
+// runsc exits with the command's own status, so a command that ran and failed
+// is a result the caller can show, not an error.
+func TestExec_ACommandThatFailsIsAResultNotAnError(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.adapter.Create(context.Background(), testCreateSpec(f))
+	require.NoError(t, err)
+	f.runner.fail["exec"] = commandErr("exec", "no matching distribution", 2)
+
+	res, err := f.adapter.Exec(context.Background(), testID,
+		sandbox.ExecSpec{Args: []string{"uv", "pip", "install", "nope"}})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, res.ExitCode)
+}
+
+func TestExec_ABinaryThatCannotBeLaunchedIsAnError(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.adapter.Create(context.Background(), testCreateSpec(f))
+	require.NoError(t, err)
+	f.runner.fail["exec"] = commandErr("exec", "", -1)
+
+	_, err = f.adapter.Exec(context.Background(), testID, sandbox.ExecSpec{Args: []string{"uv"}})
+
+	require.Error(t, err)
+}
+
+func TestExec_ReportsAnAbsentBundleAsNotFound(t *testing.T) {
+	f := newFixture(t)
+
+	_, err := f.adapter.Exec(context.Background(), "never-created", sandbox.ExecSpec{Args: []string{"uv"}})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sandbox.ErrNotFound)
+}
+
+func TestExec_RejectsAnEmptyCommand(t *testing.T) {
+	f := newFixture(t)
+
+	_, err := f.adapter.Exec(context.Background(), testID, sandbox.ExecSpec{})
+
+	assert.ErrorIs(t, err, sandbox.ErrInvalidSpec)
+}
+
+// ---------------------------------------------------------------------------
 // listing and cleanup
 // ---------------------------------------------------------------------------
 
@@ -988,4 +1067,43 @@ func mustEventJSON(t *testing.T, cpuTotal, memUsage, memLimit uint64, cpus, pids
 	})
 	require.NoError(t, err)
 	return raw
+}
+
+// Pinned: the PATH began with /bin, which on a Debian base is /usr/bin, so python3 was the OS's
+// Python 3.13, not the image's 3.12. The image's /usr/local/bin has to be searched first.
+func TestBuildSpec_PathSearchesTheImagesOwnBinDirectoryFirst(t *testing.T) {
+	f := newFixture(t)
+	built, err := BuildSpec(testCreateSpec(f))
+	require.NoError(t, err)
+
+	var path string
+	for _, entry := range built.Process.Env {
+		if rest, ok := strings.CutPrefix(entry, "PATH="); ok {
+			path = rest
+		}
+	}
+	require.NotEmpty(t, path)
+	dirs := strings.Split(path, ":")
+
+	assert.Equal(t, "/usr/local/bin", dirs[0])
+	for _, later := range []string{"/usr/bin", "/bin"} {
+		assert.Contains(t, dirs, later, "the OS directories are still searched")
+		assert.Greater(t, slices.Index(dirs, later), slices.Index(dirs, "/usr/local/bin"))
+	}
+}
+
+// The environment is not in the fingerprint, so this PATH change leaves every checkpoint valid.
+func TestFingerprint_IgnoresThePath(t *testing.T) {
+	f := newFixture(t)
+	built, err := BuildSpec(testCreateSpec(f))
+	require.NoError(t, err)
+	before := Fingerprint(built, "root:memory", "sandbox", false)
+
+	for i, entry := range built.Process.Env {
+		if strings.HasPrefix(entry, "PATH=") {
+			built.Process.Env[i] = "PATH=/bin:/usr/bin"
+		}
+	}
+
+	assert.Equal(t, before, Fingerprint(built, "root:memory", "sandbox", false))
 }

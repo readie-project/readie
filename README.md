@@ -66,7 +66,7 @@ details, see [Request lifecycle](https://readie.org/docs/architecture/request-li
 | [`worker/`](worker/)     | Go          | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
 | [`executor/`](executor/) | Python 3.12 | Runs _inside_ every sandbox; unpickles and calls the function             |
 | [`pkg/`](pkg/)           | Python 3.12 | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
-| [`pipeline/`](pipeline/) | Python 3.13 | Offline: corpus, package analysis, checkpoint planning and capture        |
+| [`pipeline/`](pipeline/) | Python 3.13 | Offline: corpus, package analysis, checkpoint planning, capture           |
 
 [`protos/`](protos/) is the single source of truth for every wire contract.
 [`pipeline/Dockerfile`](pipeline/Dockerfile) is the single source of truth for
@@ -110,8 +110,9 @@ way to put a rootfs and checkpoints together.
 ## Building checkpoints
 
 Checkpoint capture is an offline step, separate from serving. One command
-captures checkpoints, bakes them into the base image beside the root filesystem,
-and builds a worker on top:
+captures checkpoints into `pipeline/out/<flavor>`, builds the base image with the
+root filesystem, and builds a worker on top. Compose mounts the checkpoints into
+the worker:
 
 ```sh
 make generation                     # tags readie-worker:<timestamp> and :latest
@@ -289,7 +290,7 @@ Each of the following is a known gap and not an oversight.
   access and, for GPU models, a GPU host. These items are carried through the
   corpus schema and the plan, but only packages are pre-imported. Loading a model
   into the captured process changes what a checkpoint costs to store.
-- Coarse checkpoint and worker compatibility checking. A baked checkpoint
+- Coarse checkpoint and worker compatibility checking. A checkpoint
   restores only into the exact sandbox it was captured under. At startup, the
   worker computes its own `spec_fingerprint` (from `container.CanonicalSpec`
   through `runsc.Fingerprint`), reads its live `runsc --version`, and compares
@@ -302,11 +303,12 @@ Each of the following is a known gap and not an oversight.
   starts only, and logs the reasons. A tolerant worker only logs a warning. The
   check is all-or-nothing per worker and not per checkpoint, and it cannot detect
   a rootfs whose contents drifted without a change to the spec.
-- Swapping checkpoints without a new image. Artifacts are baked in and read once
-  at startup, so new checkpoints require a new base image and a new container.
-  This trade-off is deliberate (one deployable, nothing mounted), but it means a
-  base of about 40 GB per capture, and rolling it out drains warm containers.
-  Changing worker code is cheap, and changing checkpoints is not.
+- Swapping checkpoints without a restart. The manifest and checkpoints are mounted
+  into the worker and read once at startup, so a new generation needs a worker
+  restart, which drains warm containers. It no longer needs a new image. The
+  startup check does not detect a root filesystem that differs from the one the
+  checkpoints were captured from, so deploy the image and checkpoints of one
+  `make generation` together.
 - Persistence. Router state is in memory. A router restart loses sessions, the
   workers reclaim their containers through their own TTLs, and workers
   re-register on their next status report.

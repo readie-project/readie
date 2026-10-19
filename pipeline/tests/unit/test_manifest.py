@@ -14,7 +14,7 @@ def manifest(**overrides: Any) -> Manifest:
     base: dict[str, Any] = {
         "runsc_version": "runsc version release-20260721.0",
         "spec_fingerprint": "sha256:spec",
-        "python_path": "/lib/python3.12/dist-packages",
+        "python_path": "/usr/local/lib/python3.12/dist-packages",
         "overlay": "root:memory",
         "network": "none",
     }

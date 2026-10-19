@@ -81,7 +81,7 @@ The repository has a `CODEOWNERS` file, so GitHub requests review from the owner
 
 ## Report a bug
 
-Open a [GitHub issue](https://github.com/illinoisdata/readie/issues/new/choose) and select **Bug report**. The template asks for the following:
+Open a [GitHub issue](https://github.com/readie-project/readie/issues/new/choose) and select **Bug report**. The template asks for the following:
 
 - **Component:** router, worker, executor, pkg (client SDK), pipeline, or infrastructure.
 - **What happened:** the exact error and the log lines around it. The router and worker write JSON logs with `request_id` and `container_id`, which allow one request to be followed across components.

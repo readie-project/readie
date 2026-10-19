@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/illinoisdata/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/execution"
 )
 
 // Sink records everything an execution produces.

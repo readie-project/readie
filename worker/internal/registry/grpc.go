@@ -9,8 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/logging"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // GRPCReporter posts state to the router's RegistryService.

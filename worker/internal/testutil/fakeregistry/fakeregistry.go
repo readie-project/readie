@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/registry"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // Call is one recorded report.

@@ -71,7 +71,7 @@ COPY --from=grpcurl /usr/local/bin/grpcurl /usr/local/bin/grpcurl
 
 # "cpu" or "gpu"; the Makefile passes it to match the base image's generation.
 # A gpu worker advertises the flavor and turns on nvproxy (SANDBOX_GPU defaults
-# from it). It must match the checkpoints baked into BASE_IMAGE.
+# from it). It must match the checkpoints mounted into the worker.
 ARG WORKER_FLAVOR=cpu
 
 ENV SERVICE_NAME=worker

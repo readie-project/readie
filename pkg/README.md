@@ -76,8 +76,8 @@ automatic and needs no configuration.
 ## Packages
 
 Declare the PyPI requirements that a function needs beyond what the checkpoint's
-root filesystem already contains. The executor installs them with `uv` before
-every call:
+root filesystem already contains. Readie installs them with `uv` in the sandbox
+before every call:
 
 ```python
 @remote(packages=["numpy==1.26.0", "requests"])
@@ -89,9 +89,30 @@ Each entry is a requirement string, either a bare name or a full spec such as
 distribution name when the function is decorated, so `"Requests"` and
 `"requests"` collapse to one entry.
 
-Installation is unconditional. It runs on every call, even when the package
-appears to be present, because each call restores a fresh, isolated container
-and there is nothing to verify the claim against.
+The router validates the list again and leaves out every distribution that the
+base image already carries, whatever version the entry asks for. A pin such as
+`numpy==2.0` is ignored when the image has another version of `numpy`, and the
+call output says so (`ignored numpy==2.0: already provided by the base image`). An entry
+with extras, such as `requests[socks]`, is kept so that the extras' dependencies
+are installed. The remaining entries are installed on every call, because each
+call restores a fresh, isolated container and nothing is cached. A failed install
+raises `InvalidRequestError`, and the installer output arrives as log lines first.
+
+## Choosing a checkpoint
+
+By default the router chooses the checkpoint to restore. To restore a specific
+one, pass its id:
+
+```python
+@remote(checkpoint_id="checkpoint_3")
+def f(x): ...
+```
+
+The router rejects the call with `InvalidRequestError` if its catalogue has no
+checkpoint with that id, and no id is assumed to be valid. The worker still starts
+cold if the restore itself fails. `checkpoint_id` cannot be combined with
+`disable_optimized_execution=True`, which raises `ConfigurationError` when the
+function is decorated.
 
 ## Client options
 

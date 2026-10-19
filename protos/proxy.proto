@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "resources.proto";
 
-option go_package = "github.com/illinoisdata/readie/worker/proto";
+option go_package = "github.com/readie-project/readie/worker/proto";
 
 // Per-call configuration the client sends as the first message of a stream.
 message ExecutionConfig {
@@ -24,6 +24,17 @@ message ExecutionConfig {
   // router rejects this only when the session's warm container was itself
   // restored from a checkpoint.
   bool disable_optimized_execution = 4;
+
+  // PyPI requirement strings (PEP 508) the function needs installed. The router
+  // validates and dedupes them, drops any distribution the flavor's base image
+  // already carries, and the worker installs the rest before the call runs.
+  repeated string packages = 5;
+
+  // When set, the router uses exactly this checkpoint instead of selecting one,
+  // and rejects the request if the flavor's catalogue has no such checkpoint.
+  // The worker still falls back to a cold start if the restore itself fails.
+  // Mutually exclusive with disable_optimized_execution.
+  string checkpoint_id = 6;
 }
 
 // Message used for code execution requests from clients

@@ -18,14 +18,14 @@ The pipeline requires Python 3.12 or later (`requires-python = ">=3.12"` in
 
 ```sh
 make install   # sync the virtualenv from the lockfile
-make test      # planner, models and parser tests; no runsc needed
+make test      # planner, corpus and model tests; no runsc needed
 make lint type # ruff + mypy --strict
 ```
 
 ## The stages
 
 ```sh
-readie-pipeline corpus    # generate request snippets with a hosted model
+readie-pipeline corpus    # build the workload corpus for FLAVOR (Kaggle, Hugging Face, hosted model)
 readie-pipeline analyze   # measure every package installed here, and their deps
 readie-pipeline plan      # choose checkpoint contents, write the OCI spec
 readie-pipeline build     # capture one gVisor checkpoint per planned set
@@ -34,6 +34,155 @@ readie-pipeline capture   # plan and then build, in one process
 
 Each stage runs on its own. `plan` needs only the committed data (no runsc, no
 network, no container), so it is the stage to iterate on.
+
+### corpus
+
+`corpus` builds `data/datasets/<flavor>.json`, the set of workloads the planner
+reasons over. It generates one flavor per run, taken from `FLAVOR`, and a `cpu`
+corpus and a `gpu` corpus never share a file.
+
+Each item has four fields, plus a provenance link:
+
+| Field       | Contents                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| `code`      | A list of strings. One string is a single execution. Several strings are the cells of a notebook, the steps of a debugging session, or another multi-step session. |
+| `domain`    | One of the domains in `corpus/domains.py`.                                                 |
+| `source`    | `kaggle`, `kaggle_notebook`, `huggingface`, `huggingface_notebook`, `agent_short`, `agent_notebook` or `agent_fix`. |
+| `resources` | Strings of the form `<kind>:<value>`. Kinds are `package`, `hf_dataset`, `hf_model`, `hf_tokenizer`, `kaggle_dataset` and `kaggle_model`. |
+| `ref`       | The URL fetched code came from; `null` for generated code.                                 |
+
+The first four sources fetch real code through the Kaggle and Hugging Face
+APIs. The three `agent_*` sources are written by the hosted model, with a prompt
+that depends on the flavor: a `cpu` run asks for work that needs no GPU, and a
+`gpu` run asks for CUDA workloads. Fetched code is classified by the same model,
+and only code that matches the run's flavor is kept.
+
+Every candidate passes four gates before it is stored. The flavor judgement is
+one model call per candidate, so the calls for a batch run together, and a candidate that an earlier gate would reject is never sent:
+
+1. It is not a duplicate. Duplicates are detected by `ref`, by the normalized
+   program (formatting and comments do not matter), and by token overlap.
+2. Every step parses as Python.
+3. It matches the run's flavor.
+4. Every resource exists. The `resources` list is derived from the code itself
+   (imports, `from_pretrained`, `load_dataset`, `kagglehub` downloads) plus the
+   datasets a Kaggle notebook declares. PyPI confirms packages, the Hugging Face
+   Hub confirms models, tokenizers and datasets, and Kaggle confirms Kaggle
+   datasets and models. A generated item that names a resource that does not
+   exist is rewritten once; fetched code is rejected. A lookup that fails for
+   another reason (network, rate limit) is never recorded as "does not exist".
+   Answers are cached in `data/cache/verified.json`, one file shared by every
+   flavor. The cache holds only what PyPI, the Hugging Face Hub and Kaggle said,
+   which does not depend on the flavor, so a `gpu` run reuses what a `cpu` run
+   already looked up. The base image's package list is flavor specific, so it
+   is applied after the cache and never stored in it. When PyPI does not
+   recognize a package, that list decides, since a package installed in the
+   image is real whatever its PyPI project is called.
+
+An item that passes the gates is then made runnable, so it can be executed in a
+sandbox that has no notebook and none of the files it expects. Nothing is
+dropped, and what cannot be fixed stays as it was.
+
+- **Mechanical fixes** (`corpus/runnable.py`). IPython syntax that does not parse
+  is turned into Python or a comment: `%matplotlib` and similar display magics
+  are commented out, `%time` keeps its statement, `%env`/`%cd` become `os` calls,
+  `!cmd` becomes `subprocess.run`, `%%bash` and `%%writefile` become code, and
+  `!pip install`/`%pip install` lines are commented out and never run. Every
+  change keeps the original text in a `# [readie] ...` comment. A cell is only
+  touched when it does not parse, and a change that would leave it unparsable is
+  discarded. Code that uses `/kaggle/` or `../input` paths gets a short prelude
+  (between `# [readie:prelude]` and `# [readie:end]`) that creates
+  `/kaggle/working` and `/kaggle/input` and works from the first.
+- **Stand-in data** (`corpus/standins.py`). Code that reads a file the item does
+  not create (for example `../input/titanic/train.csv`) fails at the first read.
+  The model is shown the notebook and rewrites only the cells that read missing
+  files, so each file is created first, at the same path, with generated data of
+  the same columns, types and rough size (`numpy.random.default_rng(0)`). Nothing
+  else in the cell changes. A rewrite is kept only if a static check
+  (`corpus/dependencies.py`) finds nothing still reading a missing file, every cell
+  parses, and any new import exists. Otherwise the original stays. The code from
+  before the rewrite is kept in the item's optional `original` field. Items with
+  more than `READIE_CORPUS_REWRITE_MAX_CHARS` of code are not rewritten.
+- **Resources are not removed.** A rewritten item still lists its
+  `kaggle_dataset:` entries, since they say what the workload is about; only
+  imports the rewrite adds are unioned in.
+
+The stand-in data is random, so a rewritten item's results mean nothing, but the
+amount of work and the memory it uses stay in the right range. Model downloads
+(`from_pretrained`), web requests, environment variables and logins are not
+rewritten. The scan only sees literal file names, so a path built from variables
+is missed.
+
+Each request to a source also picks a popularity tier (`corpus/popularity.py`),
+weighted toward mainstream code. Kaggle requests read the top result pages
+ranked by votes for the mainstream tier and deeper pages ranked by recency for
+the niche tier. Hugging Face requests rank by downloads near the top of the
+listing, or start much further down. The tier only chooses where a search is
+entered. A search is then walked: Kaggle pages already read are not read again
+(Kaggle ends every search after a fixed number of result pages), a Hugging
+Face search is listed once and read on from where earlier requests stopped, and a
+request moves to the next page or another phrase, sort or kind when what it found
+was already seen. A source therefore reports a shortfall only once its searches
+are used up, not after a few unlucky pages. Agent prompts ask for introductory,
+everyday or specialised code. The tier keeps the corpus from being either a few
+famous tutorials or a collection of curiosities. After a run, the summary lists
+the most used packages and how many packages only a single item uses, so the
+shape of the distribution is visible.
+
+The search phrases are not fixed. `corpus/domains.py` holds a starting set per
+domain, and when a (domain, source) pair stops finding unseen code the source
+asks the model for new phrases. The model sees the phrases already tried and the
+titles of what was found, and it is told what each site actually matches: Kaggle
+matches notebook titles and tags, while the Hugging Face Hub matches repository
+names only, so the Hub phrases are short tokens such as library and model names.
+Kaggle needs every word of a phrase to match, so the model is asked for single
+words and two-word phrases, and longer ones are dropped. A pair keeps widening
+for as long as the new phrases find code, and stops after several widenings in a
+row that find none. The phrases it learns are
+saved in `data/cache/keywords.json` per platform, flavor and domain, and a later
+run starts from them. A phrase that finds nothing costs one search and no
+failure.
+
+Kaggle search needs every word to match, so a flavor hint appended to a phrase
+narrows it sharply. The hint is used for a minority of searches, and a hinted
+search that returns nothing is repeated without it.
+
+Kaggle also rate limits, and one budget covers its searches, downloads and
+existence checks. A pacer (`corpus/sources/pacing.py`) spaces the calls, doubles
+the spacing each time Kaggle answers 429 and eases it back while calls succeed.
+A refused call waits and retries with growing delays, for minutes if needed, and
+reports any long wait in the progress output, so a throttled
+run says so. A call that is still refused after the last attempt is a failed
+fetch and counts as one, never as an empty kernel.
+
+Every run appends: the corpus is never overwritten or trimmed, and `--total`
+(`READIE_CORPUS_TOTAL`) is how many new items the run adds. They are shared out
+over the sources by weight and over the domains, on top of what each pair holds.
+The mix is a target number of items per source and domain. Sources are weighted,
+real code above generated code by default, and domains are spread evenly. The
+schedule is repeatable for a given `READIE_CORPUS_SEED`. The corpus is saved
+after every domain and source pair, and at least once a minute while a large
+pair is still running, with a progress line (`N of M so far`) as items arrive, so
+a long pair shows progress and keeps its items when a run is stopped. Running
+the command again adds another `--total` items to what the stopped run saved.
+A source that cannot supply its share (for example few notebooks in a domain)
+leaves a shortfall that the run reports. Nothing backfills it with generated
+code.
+
+```sh
+readie-pipeline corpus --clean                            # make an existing corpus runnable, in place
+readie-pipeline corpus --clean --no-rewrite               # mechanical fixes only, no model calls
+readie-pipeline corpus --output data/evals/cpu.json ...  # generate into another file (an eval set)
+readie-pipeline corpus --output ... --exclude data/datasets/cpu.json  # and repeat nothing from that corpus
+make pipeline-corpus FLAVOR=gpu ARGS="--dry-run"          # print the planned mix
+make pipeline-corpus FLAVOR=gpu ARGS="--total 500"        # append 500 new items
+readie-pipeline corpus --source kaggle --domain "Computer Vision"
+readie-pipeline corpus --revalidate                       # re-check every resource
+```
+
+The stage needs the `corpus` extra (`uv sync --extra corpus`) and credentials,
+which are listed in [Configuration](#configuration). It is an authoring step, so
+the pipeline image does not include it. `plan` and `analyze` read the result.
 
 ### analyze
 
@@ -51,17 +200,19 @@ result is written on the host to `data/metadata/<flavor>.json`.
 `plan` and `capture` read whatever `data/metadata/<flavor>.json` already
 contains. They do not regenerate it.
 
-Dataset references in the corpus are measured during `analyze`. The pipeline
-uses KaggleHub to download and enumerate every file, then loads files
-sequentially: CSV and JSON files become pandas DataFrames, and all other files
-are retained as raw bytes. This keeps the file inventory complete without
-requiring a parser for every format. A file failure does not discard other
-files, and the persisted metadata contains only the generic resource facts.
-Datasets are not chosen for checkpoint plans until dataset capture and restore
-support is implemented. Package and dataset facts are stored together under
-the metadata `resources` key. Resource keys include their source, such as
-`package:pandas`, `kaggle_dataset:owner/name`, `hf_model:gpt2`, and
-`hf_tokenizer:gpt2`.
+Besides the per-package measurements and the `resolved` map, the file has a
+top-level `distributions` object: canonical distribution name to the version
+installed in the image that was measured (`"scikit-learn": "1.6.1"`). There is one
+entry per distribution, not per package, because many packages share one. `analyze`
+fills it from the environment it runs in. A distribution that was measured in an
+older image than the one the versions were read from has no entry. The file stays
+valid without the key, and `plan` then writes bare names instead of pins.
+
+The top-level `base_image` string names the image the file was measured in. An image
+does not record its own `FROM`, so `make analyze` passes it in as `READIE_BASE_IMAGE`
+(the Makefile's `ROOTFS_BASE_IMAGE`, a digest unless overridden) and `analyze` writes
+it, or an empty string when the image was not named. The writer always emits both
+`base_image` and `distributions`, with the top-level keys sorted.
 
 ### capture
 
@@ -107,9 +258,9 @@ packages. See [`planning/`](src/readie_pipeline/planning/) for the algorithm.
 
 `READIE_PLANNER` selects the planner. The default, `greedy`, performs greedy
 facility selection: it repeatedly adds the package set with the highest marginal
-value, so the first N selections are already the best N. The `fixed` planner returns a
-supplied list of sets, `pandas` and `numpy` by default, and is meant for
-reproducibility runs and tests.
+value, so the first N selections are already the best N. The `fixed` planner returns
+the list of sets it was constructed with, none by default, so a fixed run plans no
+checkpoints and `build` captures none; it is meant for reproducibility runs and tests.
 
 Two bounds apply to the greedy planner:
 
@@ -176,8 +327,8 @@ catalogue.
 | `$EXECUTOR_DIR/checkpoints/<id>/` | one checkpoint image plus its `meta.json`   |
 | `$EXECUTOR_DIR/manifest.json`     | what those checkpoints can be restored into |
 | `$EXECUTOR_DIR/catalogue.json`    | the catalogue for the router                |
-| `$READIE_PLAN_DIR`                | the plan and the spec fingerprint           |
-| `data/`                           | the committed corpus and package metadata   |
+| `$READIE_PLAN_DIR`                | the plan, the spec fingerprint, `rootfs-requirements.txt` and `rootfs-skipped.txt` |
+| `data/`                           | the corpus, its lookup cache, and package metadata (stored in Git LFS) |
 
 `$EXECUTOR_DIR` here is a host directory. It is distinct from the sandbox's own
 `EXECUTOR_DIR`, which is `/tmp`, where the executor binds its socket.
@@ -197,7 +348,7 @@ See the caution under [build](#build).
 | ------------- | --------------------------------------------------------------------- |
 | `analyzer`    | `readie-pipeline` on top of the base image itself, nothing else       |
 | `pipeline`    | this tool: runsc, the planner, the rootfs as an OCI bundle, `ocispec` |
-| `worker-base` | what a worker runs on: runsc, the rootfs, the captured checkpoints    |
+| `worker-base` | what a worker runs on: runsc and the rootfs (checkpoints are mounted)  |
 
 A gVisor checkpoint restores only into the filesystem it was captured from,
 through the runsc release that captured it. Both therefore live in this
@@ -205,8 +356,9 @@ Dockerfile, and the gVisor release is pinned once for capture and restore. The
 worker's own image is `worker/Dockerfile`, which is `FROM readie-worker-base`
 and adds only the Go server.
 
-From the repository root, one command captures checkpoints, bakes them into the
-base, and builds a worker on it:
+From the repository root, one command captures checkpoints, builds the base with
+the rootfs, and builds a worker on it. The checkpoints stay in `pipeline/out/<flavor>`
+and `docker-compose.yml` mounts them into the worker:
 
 ```sh
 make generation                     # tags readie-worker:<timestamp> and :latest
@@ -223,6 +375,65 @@ The generation consists of three steps that can also run separately:
 `make worker-image` alone redeploys a worker code change, because the base
 already holds the checkpoints. `make clean-artifacts` discards what was
 captured.
+
+### A minimal rootfs
+
+By default the rootfs is `ROOTFS_BASE_IMAGE` plus the executor, which suits a
+full base such as Kaggle's. A base that carries no packages (`python:3.12-alpine`,
+`python:3.12-slim`) can instead receive exactly the distributions the plan needs.
+`plan` writes them to `rootfs-requirements.txt` beside the plan, one requirement
+per line, for either planner. The list holds each plan import, everything
+that import loads, and the distribution each of those modules belongs to
+(`planning/requirements.py`). Each line pins the version the metadata recorded from
+the base image (`numpy==2.0.2`), so the rootfs gets the packages whose timings
+and sizes the plan was built from. A distribution with no recorded version is a bare name.
+
+Every install also gets the whole list as constraints, so a later line's
+dependencies cannot move an earlier pin: without that, installing line by line left
+eleven packages (`numpy`, `numba`, `grpcio` and others) at newer versions than
+pinned. A conflict between pins fails that install and is reported like any other.
+
+The list has to exist before the image does, because it decides what the rootfs
+contains, so it comes from a host-side `plan --no-spec` run:
+
+```sh
+make rootfs-requirements PLAN_DIR=experiments/a/plan
+make generation \
+  ROOTFS_BASE_IMAGE=python:3.12-alpine \
+  ROOTFS_PYTHONPATH=/usr/local/lib/python3.12/site-packages \
+  ROOTFS_REQUIREMENTS=experiments/a/plan/rootfs-requirements.txt \
+  REUSE_PLAN_DIR=experiments/a/plan
+```
+
+`REUSE_PLAN_DIR` mounts that plan directory at `/app/plan` in the capture container
+and runs `capture --reuse-plan`, so the container does not plan a second time. With
+`--reuse-plan`, `plan` reads the existing `checkpoints.json` instead of running the
+planner. It consults neither the corpus nor the planner settings, writes neither the
+plan nor `rootfs-requirements.txt` again, and still writes the sandbox spec and its
+fingerprint (as root, into the mounted directory). It fails with a message when the
+file is missing. Without `REUSE_PLAN_DIR`, `capture` plans inside the container, which
+gives the same plan only if the planner settings match those of the host run.
+
+The Dockerfile's `rootfs` stage installs the file with `uv`, one distribution at
+a time, against the executor's locked versions as constraints. A distribution
+that fails to install is listed in `/etc/readie-rootfs-skipped.txt` inside the
+rootfs and printed in the build log; the build continues unless
+`ROOTFS_REQUIREMENTS_STRICT=true`. When `capture` runs with `REUSE_PLAN_DIR`, `plan`
+also copies that list to `rootfs-skipped.txt` in the plan directory and prints a
+warning, so the host can read it without opening the image. A file holding only its
+header means everything installed; no file means the rootfs had no record, as with
+a host `plan --no-spec`. A plan that imports a skipped distribution fails at that
+checkpoint's capture, with `ModuleNotFoundError` from the preimport. Because `capture` inventories the finished
+rootfs, the catalogue lists only what installed. A call that needs a skipped
+distribution is installed at request time by the worker, which fails when the
+sandbox has no network.
+
+Packages are installed in the `rootfs` stage, not during `build`, because the
+worker image copies that stage's filesystem. Anything installed later, inside the
+capture container, would not ship, and the checkpoints would belong to a
+filesystem the worker does not have. The metadata was measured in
+`ROOTFS_BASE_IMAGE`; run `analyze` against the minimal image if the timings need to
+match it.
 
 To iterate on planning alone, without gVisor, network, or a container:
 
@@ -246,17 +457,31 @@ The `manifest.json` and `checkpoints/` layout is the shape that
 checkpoint and shipping it.
 
 `catalogue.json` is what the router reads to select a checkpoint. It records
-the alpha measured during `build`, every measured item's cost, and each
-checkpoint's contents and precomputed size term. `make capture` copies it to
-`catalogues/<flavor>.json`, which the router mounts as `CATALOGUE_DIR`. The
-shared `alpha` constant must match between `READIE_ALPHA` here and `ALPHA` in
-the router. See [Cost
-model](https://readie.org/docs/concepts/cost-model).
+the alpha measured during `build`, every measured item's cost, each
+checkpoint's contents and precomputed size term, and the `distributions` the
+rootfs provides, each with the version installed in the rootfs as built. `make capture` copies it to
+`catalogues/<flavor>.json`, which the router mounts as `CATALOGUE_DIR`.
+
+The metadata can be measured in a different image than the rootfs the sandbox
+runs (`analyze` runs in `ROOTFS_BASE_IMAGE`, the rootfs adds the executor's
+dependencies), so `build` filters at the end. It runs
+`metadata/inventory.py` with the rootfs's own `python`, in a `chroot` with the
+sandbox's `PYTHONPATH` (the source goes in on stdin, so nothing is copied into
+the rootfs), which lists the installed distributions the way the interpreter
+really sees them. `analyze` resolves each package's distribution with the same
+module, so a change to that rule applies to both. The catalogue then carries over
+only the measured packages that the rootfs has a distribution for. If the rootfs
+cannot be listed, `build` prints a `[!]` line and writes the catalogue without
+filtering. Planning and capture are unchanged and still use all of the metadata.
+The catalogue format is documented in
+[`catalogues/README.md`](../catalogues/README.md).
+
+The shared `alpha` constant must match between `READIE_ALPHA` here and `ALPHA` in
+the router. See [Cost model](https://readie.org/docs/concepts/cost-model).
 
 Neither the manifest nor the checkpoint metadata carries a `rootfs_id`. A
-generation has one rootfs, baked in beside its checkpoints, so there is nothing
-to identify and the pairing is correct by construction. Identity is the base
-image tag. The manifest has no id of its own, because a second name for the same
+generation has one rootfs, built by the same `make generation` that captures its
+checkpoints, so there is nothing to identify. Identity is the base image tag. The manifest has no id of its own, because a second name for the same
 build could disagree with the first.
 
 ## Configuration
@@ -265,17 +490,26 @@ build could disagree with the first.
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `BASE_DIR`, `EXECUTOR_DIR`                               | the bundle and the output directory                                                 |
 | `READIE_PLAN_DIR`                                        | where the plan goes, if not with the outputs                                        |
-| `ROOTFS_PYTHONPATH`                                      | must correspond to the rootfs stage                                                 |
+| `ROOTFS_PYTHONPATH`                                      | must correspond to the rootfs stage; the Dockerfile build argument of the same name sets it |
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's                                                             |
 | `READIE_PLANNER`                                         | `greedy` or `fixed`                                                                 |
 | `READIE_MAX_CHECKPOINTS`, `READIE_SIZE_BUDGET_MB`        | planner bounds; the size budget is a total across all checkpoints                   |
 | `READIE_ALPHA`                                           | size-versus-time weight used by the planner; `build` records the measured value     |
 | `FLAVOR`                                                 | `cpu` or `gpu`; the generation this run produces                                    |
-| `READIE_DATA_DIR`                                        | overrides the committed corpus location                                             |
+| `READIE_DATA_DIR`                                        | overrides the data location (corpus, cache and metadata)                            |
+| `READIE_BASE_IMAGE`                                      | `analyze` only; the image being measured, recorded as `base_image` in the metadata. `make analyze` sets it |
 | `RUNSC_BINARY`, `OCISPEC_BINARY`                         | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
 | `READIE_CHECKPOINT_TIMEOUT`                              | how long a sandbox may take to checkpoint before `build` gives up (default `300`)   |
-| `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME`    | `corpus` only                                                                       |
-| `AZURE_API_VERSION`                                      | `corpus` only; default `2025-03-01-preview`                                         |
+| `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME`    | `corpus` only; the model endpoint, key and model name                                                     |
+| `KAGGLE_API_TOKEN`                                       | `corpus` only; Kaggle access token. Required when a Kaggle source has weight        |
+| `HF_TOKEN`                                               | `corpus` only; Hugging Face token. Required when a Hugging Face source has weight   |
+| `READIE_CORPUS_TOTAL`                                    | `corpus` only; new items one run appends (default `2000`)                                 |
+| `READIE_CORPUS_SOURCE_WEIGHTS`                           | `corpus` only; `source=weight` pairs over the defaults, for example `kaggle=3,agent_fix=0` |
+| `READIE_CORPUS_BATCH`                                    | `corpus` only; candidates requested per call (default `10`)                          |
+| `READIE_CORPUS_SEED`                                     | `corpus` only; makes the schedule repeatable                                        |
+| `READIE_CORPUS_REWRITE`                                  | `corpus` only; `0` turns off the stand-in data rewrite (default on)                 |
+| `READIE_CORPUS_REWRITE_MAX_CHARS`                        | `corpus` only; items with more code than this are not rewritten (default `60000`)   |
+| `READIE_CORPUS_REWRITE_WORKERS`                          | `corpus` only; rewrite model calls at the same time (default `6`)                   |
 
 ## Known gaps
 

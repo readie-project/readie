@@ -71,4 +71,4 @@ formatters:
     settings:
         goimports:
             local-prefixes:
-                - github.com/illinoisdata/readie/worker
+                - github.com/readie-project/readie/worker

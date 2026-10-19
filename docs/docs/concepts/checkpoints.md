@@ -36,7 +36,7 @@ checkpoints/
   ...
 ```
 
-The generation is baked into the worker's container image, next to the root filesystem from which the checkpoints were captured. A checkpoint works only with that exact filesystem, so shipping the two together keeps them in step.
+The worker's container image holds the root filesystem from which the checkpoints were captured. The manifest and the checkpoints are mounted into the worker from the directory that `make generation` wrote. A checkpoint works only with that exact filesystem, so use the image and the checkpoints that one `make generation` produced.
 
 `manifest.json` describes the whole generation:
 
@@ -72,6 +72,8 @@ The router makes the selection. It does not look inside checkpoints. It reads a 
 5. The worker restores that checkpoint. If the checkpoint is missing or the restore fails, the worker logs a warning and starts cold. The response reports which checkpoint was used.
 
 If a call belongs to a [session](/docs/concepts/sessions) that already has a warm container, no checkpoint is selected and the call returns to that container.
+
+A function can name the checkpoint to restore with `@remote(checkpoint_id="...")`. The router then skips the scoring and uses that checkpoint, after it checks that the catalogue of the chosen worker lists it. An id that the catalogue does not list is rejected with `InvalidRequestError`, and no id is assumed to be valid. The worker still starts cold if the restore itself fails, as in step 5. A pinned id cannot be combined with `disable_optimized_execution=True`. A session whose warm container was restored from a different checkpoint rejects the pin with a precondition error.
 
 A function can opt out with `@remote(disable_optimized_execution=True)`. The router then skips checkpoints and cold-starts. If the container of the session was already restored from a checkpoint, the router rejects the request with a precondition error instead of ignoring the flag.
 

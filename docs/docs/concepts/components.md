@@ -15,7 +15,7 @@ flowchart LR
     router -->|"ExecutionService"| worker["worker"]
     worker -->|"RegistryService"| router
     worker -->|"unix socket"| executor["executor in sandbox"]
-    pipeline["pipeline (offline)"] -.->|"checkpoints baked into image"| worker
+    pipeline["pipeline (offline)"] -.->|"checkpoints mounted"| worker
     pipeline -.->|"catalogue file"| router
 ```
 
@@ -56,7 +56,7 @@ The executor unpickles the call, installs any requested packages, runs the funct
 
 The pipeline lives in `pipeline/` and runs on Python 3.13. It runs offline, before anything is deployed. It studies a corpus of example code, measures the import time and memory use of each package, plans which packages go into which checkpoint, and captures the checkpoints in sandboxes.
 
-The pipeline writes two outputs: the checkpoints, which are baked into the worker image, and the catalogue file that the router reads. Capture requires an amd64 gVisor host. See [Building checkpoints](/docs/architecture/building-checkpoints).
+The pipeline writes two outputs: the checkpoints, which are mounted into the worker, and the catalogue file that the router reads. Capture requires an amd64 gVisor host. See [Building checkpoints](/docs/architecture/building-checkpoints).
 
 ## Communication paths
 

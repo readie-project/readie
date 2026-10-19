@@ -15,9 +15,9 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/illinoisdata/readie/worker/internal/app"
-	"github.com/illinoisdata/readie/worker/internal/config"
-	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/app"
+	"github.com/readie-project/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/logging"
 )
 
 func main() {

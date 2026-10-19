@@ -10,10 +10,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/registry"
 )
 
 // RunnerConfig tunes execution behaviour.
@@ -291,6 +291,22 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 			log.Debug("closing executor session", logging.KeyError, err)
 		}
 	}()
+
+	// Packages go in after the executor's socket accepts a connection, which is the proof that the
+	// sandbox is running (starting one is asynchronous, so an exec straight after Acquire ran against
+	// a sandbox the runtime did not know yet), and before any of the request is sent, so the call
+	// finds them importable. The connection waits, idle, for the install: the executor sets no
+	// timeout on it and the session's deadlines apply to a write, not to the wait.
+	//
+	// A failed install leaves the container healthy, so it is released for reuse rather than
+	// destroyed: it would otherwise cost a session its warm state over a typo in a requirement. The
+	// deferred session Close above hangs up on the executor, which stays available for the next call.
+	if installErr := r.installPackages(execCtx, handle, req.Packages, sink); installErr != nil {
+		if errors.Is(installErr, ErrPackageInstall) {
+			outcome = container.OutcomeSuccess
+		}
+		return Result{}, installErr
+	}
 
 	events := make(chan event, r.cfg.EventBuffer)
 

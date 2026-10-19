@@ -12,10 +12,12 @@ import pytest
 
 from readie_router.clock import FakeClock
 from readie_router.errors import (
+    CheckpointConflictError,
     NoCapacityError,
     NoWorkersRegisteredError,
     OptimizedExecutionConflictError,
     SessionExpiredError,
+    UnknownCheckpointError,
 )
 from readie_router.scheduling.catalogue import Catalogue
 from readie_router.scheduling.models import (
@@ -525,8 +527,9 @@ def test_a_failure_does_not_clear_a_newer_sessions_affinity(
 def _catalogue(flavor: str) -> Catalogue:
     return Catalogue.from_document(
         {
-            "version": 1,
+            "version": 2,
             "flavor": flavor,
+            "distributions": {"numpy": "2.0.2"},
             "items": {
                 "pandas": {"size_mb": 30.0, "load_time": 0.25},
                 "numpy": {"size_mb": 20.0, "load_time": 0.15},
@@ -738,3 +741,152 @@ def test_a_gpu_request_is_rejected_by_a_device_full_gpu_worker(
                 request_id="req-1", session_id="sess-1", demand=_gpu_demand(gpu_bytes=8 << 30)
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# A client-pinned checkpoint, and packages the base image already has
+# ---------------------------------------------------------------------------
+def _pinned(checkpoint_id: str, **kwargs: Any) -> Demand:
+    return Demand(
+        budgets=(Budget(kind=RESOURCE_MEMORY, alloc=ALLOC),),
+        resources=("pandas",),
+        checkpoint_id=checkpoint_id,
+        **kwargs,
+    )
+
+
+def _scheduler(state: ClusterState, clock: FakeClock) -> Scheduler:
+    return Scheduler(
+        state=state,
+        selector=default_selector(),
+        clock=clock,
+        catalogues={"cpu": _catalogue("cpu")},
+    )
+
+
+def test_a_pinned_checkpoint_is_used_instead_of_the_selected_one(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    scheduler = Scheduler(
+        state=state,
+        selector=default_selector(),
+        clock=clock,
+        catalogues={"cpu": Catalogue.from_document(_two_checkpoints())},
+    )
+    register(state, "w1")
+
+    # Asking for pandas would select c-data, but the client pinned the other.
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="", demand=_pinned("c-other"))
+    )
+
+    assert placement.checkpoint_id == "c-other"
+
+
+def _two_checkpoints() -> dict[str, Any]:
+    return {
+        "version": 2,
+        "flavor": "cpu",
+        "alpha": 0.002,
+        "items": {"pandas": {"size_mb": 30.0, "load_time": 0.25}},
+        "checkpoints": [
+            {"id": "c-data", "items": ["pandas"], "size_mb": 30.0},
+            {"id": "c-other", "items": [], "size_mb": 0.0},
+        ],
+    }
+
+
+def test_a_pinned_checkpoint_missing_from_the_catalogue_is_rejected_before_reserving(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    register(state, "w1")
+
+    with pytest.raises(UnknownCheckpointError):
+        _scheduler(state, clock).provision(
+            ProvisionRequest(request_id="req-1", session_id="", demand=_pinned("nope"))
+        )
+
+    worker = state.worker("w1")
+    assert worker is not None
+    assert worker.reserved_bytes == 0, "nothing is reserved for a rejected request"
+
+
+def test_checkpoint_zero_is_not_assumed_valid_when_the_catalogue_omits_it(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    register(state, "w1")
+
+    with pytest.raises(UnknownCheckpointError):
+        _scheduler(state, clock).provision(
+            ProvisionRequest(request_id="req-1", session_id="", demand=_pinned("checkpoint_0"))
+        )
+
+
+def test_a_pinned_checkpoint_with_no_catalogue_for_the_flavor_is_rejected(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    scheduler = Scheduler(state=state, selector=default_selector(), clock=clock)
+    register(state, "w1")
+
+    with pytest.raises(UnknownCheckpointError):
+        scheduler.provision(
+            ProvisionRequest(request_id="req-1", session_id="", demand=_pinned("c-data"))
+        )
+
+
+def test_packages_the_base_image_has_are_left_out_of_the_placement(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    register(state, "w1")
+    demand = Demand(
+        budgets=(Budget(kind=RESOURCE_MEMORY, alloc=ALLOC),), packages=("flask", "numpy==2.0")
+    )
+
+    placement = _scheduler(state, clock).provision(
+        ProvisionRequest(request_id="req-1", session_id="", demand=demand)
+    )
+
+    assert placement.packages == ("flask",)
+    assert placement.ignored_packages == ("numpy==2.0",)
+    # The note the client and the log get says which version the image has.
+    assert placement.ignored_versions == {"numpy==2.0": "2.0.2"}
+
+
+def test_every_package_is_kept_when_the_worker_flavor_has_no_catalogue(
+    state: ClusterState, clock: FakeClock
+) -> None:
+    scheduler = Scheduler(state=state, selector=default_selector(), clock=clock)
+    register(state, "w1")
+    demand = Demand(budgets=(Budget(kind=RESOURCE_MEMORY, alloc=ALLOC),), packages=("numpy==2.0",))
+
+    placement = scheduler.provision(
+        ProvisionRequest(request_id="req-1", session_id="", demand=demand)
+    )
+
+    assert placement.packages == ("numpy==2.0",)
+    assert placement.ignored_packages == ()
+    assert placement.ignored_versions == {}
+
+
+def test_a_pin_that_differs_from_the_sessions_warm_checkpoint_conflicts(
+    scheduler: Scheduler, state: ClusterState
+) -> None:
+    """Honouring the pin would mean discarding the session's warm container."""
+    register(state, "w1")
+    first = provision(scheduler, "req-1", "sess-1")
+    scheduler.bind("req-1", first.worker_id, "container-a", checkpoint_id="c-data")
+    state.apply_executor_status(
+        "w1", "container-a", session_id="sess-1", request_id="req-1", status=STATUS_READY, now=0.0
+    )
+    scheduler.release("req-1", Outcome.SUCCESS)
+
+    with pytest.raises(CheckpointConflictError):
+        scheduler.provision(
+            ProvisionRequest(request_id="req-2", session_id="sess-1", demand=_pinned("c-other"))
+        )
+
+    # The same pin as the warm container's own checkpoint is just a warm reuse.
+    again = scheduler.provision(
+        ProvisionRequest(request_id="req-3", session_id="sess-1", demand=_pinned("c-data"))
+    )
+    assert again.warm is True

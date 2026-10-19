@@ -7,8 +7,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/clock"
-	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/clock"
+	"github.com/readie-project/readie/worker/internal/logging"
 )
 
 // Dialer opens a connection to a container's executor.

@@ -20,7 +20,7 @@ Any object that `cloudpickle` cannot serialize. Typical cases are open files, so
 
 ### How do I use a package that is not in the sandbox?
 
-List the package in `@remote(packages=["numpy==1.26.0", "requests"])`. The executor installs the packages with `uv` before every call, and nothing is cached between calls, so each call pays the install time. Packages already in the sandbox image do not need to be listed. See [Packages and resources](/docs/getting-started/packages-and-resources).
+List the package in `@remote(packages=["numpy==1.26.0", "requests"])`. Readie installs the packages with `uv` before every call, and nothing is cached between calls, so each call pays the install time. Packages already in the sandbox image do not need to be listed. If an entry names a package that the image already has, Readie skips it and ignores the requested version. See [Packages and resources](/docs/getting-started/packages-and-resources).
 
 ### Does state persist between calls?
 
@@ -62,4 +62,4 @@ User code runs inside a [gVisor](/docs/concepts/glossary) sandbox with a shared 
 
 ### Where do I report a bug or ask a question?
 
-Open an issue on [GitHub](https://github.com/illinoisdata/readie/issues/new/choose) and use the bug report template. For anything exploitable, use the private route described in [Security](/docs/architecture/security).
+Open an issue on [GitHub](https://github.com/readie-project/readie/issues/new/choose) and use the bug report template. For anything exploitable, use the private route described in [Security](/docs/architecture/security).

@@ -1,0 +1,20 @@
+{
+  "comment": "Shared by pkg/tests/unit/test_packages.py and router/tests/unit/test_packages.py. The client and the router normalize the packages list independently, so both suites run these vectors to keep the two implementations identical.",
+  "valid": [
+    {"input": [], "expected": []},
+    {"input": ["numpy"], "expected": ["numpy"]},
+    {"input": ["numpy==1.26.0", "requests>=2.31"], "expected": ["numpy==1.26.0", "requests>=2.31"]},
+    {"input": ["Requests", "requests"], "expected": ["Requests"]},
+    {"input": ["scikit_learn", "scikit-learn"], "expected": ["scikit_learn"]},
+    {"input": ["numpy==1.0", "numpy==2.0"], "expected": ["numpy==1.0"]},
+    {"input": ["requests[security]>=2.31"], "expected": ["requests[security]>=2.31"]},
+    {"input": ["  numpy  ", "", "   "], "expected": ["numpy"]},
+    {"input": ["zlib-x", "numpy", "Pandas"], "expected": ["numpy", "Pandas", "zlib-x"]}
+  ],
+  "invalid": [
+    ["--index-url=https://example.invalid/simple"],
+    ["-r requirements.txt"],
+    ["not a requirement!"],
+    ["numpy", "==1.0"]
+  ]
+}

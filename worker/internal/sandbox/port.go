@@ -113,6 +113,21 @@ type UpdateSpec struct {
 	MemoryBytes int64
 }
 
+// ExecSpec describes a command to run inside a live sandbox.
+type ExecSpec struct {
+	// Args is the command and its arguments. Args[0] is resolved against the
+	// sandbox's own PATH, not the host's.
+	Args []string
+}
+
+// ExecResult is the outcome of a command run inside a sandbox.
+type ExecResult struct {
+	// ExitCode is the command's exit status.
+	ExitCode int
+	// Output is the command's stdout followed by its stderr.
+	Output []byte
+}
+
 // Info is the subset of sandbox state the worker uses.
 type Info struct {
 	ID          string
@@ -204,6 +219,17 @@ type Lifecycle interface {
 	Checkpoint(ctx context.Context, id string, spec CheckpointSpec) error
 }
 
+// Commander runs commands inside a live sandbox.
+type Commander interface {
+	// Exec runs spec in the sandbox with the environment its process was
+	// created with, and waits for it to exit.
+	//
+	// A command that ran and failed is not an error: it returns an ExecResult
+	// with a non-zero ExitCode, so the caller can show its output. An error
+	// means the command could not be run at all, or ctx ended first.
+	Exec(ctx context.Context, id string, spec ExecSpec) (ExecResult, error)
+}
+
 // Introspector observes sandboxes.
 type Introspector interface {
 	Inspect(ctx context.Context, id string) (Info, error)
@@ -219,6 +245,7 @@ type Introspector interface {
 // Port is the seam between the worker and any sandbox runtime.
 type Port interface {
 	Lifecycle
+	Commander
 	Introspector
 
 	// Probe verifies the runtime is usable.

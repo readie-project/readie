@@ -46,7 +46,7 @@ A call proceeds from left to right:
 4. The worker restores a [checkpoint](/docs/concepts/checkpoints) into a [sandbox](/docs/concepts/sandboxes), or reuses a warm sandbox.
 5. The worker sends the call to the executor over a unix socket. The executor runs the function and returns the result along the same path.
 
-Dotted lines show offline work. The pipeline builds checkpoints and writes a catalogue. The checkpoints are baked into the base image of the worker, and the catalogue is mounted on the router. For details, see the [architecture overview](/docs/architecture/overview) and the [request lifecycle](/docs/architecture/request-lifecycle).
+Dotted lines show offline work. The pipeline builds checkpoints and writes a catalogue. The checkpoints are mounted into the worker, which has the matching root filesystem in its base image, and the catalogue is mounted on the router. For details, see the [architecture overview](/docs/architecture/overview) and the [request lifecycle](/docs/architecture/request-lifecycle).
 
 ## Shared contracts
 

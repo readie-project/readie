@@ -1,4 +1,4 @@
-MODULE     := github.com/illinoisdata/readie/worker
+MODULE     := github.com/readie-project/readie/worker
 BINARY     := go-server
 PROTO_DIR  := ../protos
 PROTOS     := $(PROTO_DIR)/execution.proto $(PROTO_DIR)/registry.proto $(PROTO_DIR)/resources.proto

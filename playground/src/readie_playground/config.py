@@ -27,6 +27,7 @@ class PlaygroundSettings:
     trust_proxy: bool = False
     router_tls: bool = True
     workdir: str = "/tmp/playground"  # noqa: S108 - a tmpfs inside the container
+    eval_max_code_bytes: int = 8 * 1024 * 1024
 
     @classmethod
     def from_env(cls) -> PlaygroundSettings:
@@ -52,4 +53,5 @@ class PlaygroundSettings:
             trust_proxy=env("PLAYGROUND_TRUST_PROXY", "").lower() in {"1", "true", "yes"},
             router_tls=env("PLAYGROUND_ROUTER_TLS", "true").lower() in {"1", "true", "yes"},
             workdir=env("PLAYGROUND_WORKDIR", d.workdir),
+            eval_max_code_bytes=int(env("PLAYGROUND_EVAL_MAX_CODE_BYTES", d.eval_max_code_bytes)),
         )

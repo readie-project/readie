@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/illinoisdata/readie/worker/proto";
+option go_package = "github.com/readie-project/readie/worker/proto";
 
 enum Status {
   STATUS_UNKNOWN = 0;

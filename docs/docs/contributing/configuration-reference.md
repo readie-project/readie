@@ -122,7 +122,7 @@ Each sandbox is also limited to half a CPU (quota 50000 per period 100000) and 1
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `CHECKPOINT_STRICT_COMPAT` | `true` | If the baked checkpoints do not match this worker, `true` drops them (cold starts only, logged as an error). `false` keeps them and logs a warning, so restores that fail fall back to cold starts. |
+| `CHECKPOINT_STRICT_COMPAT` | `true` | If the mounted checkpoints do not match this worker, `true` drops them (cold starts only, logged as an error). `false` keeps them and logs a warning, so restores that fail fall back to cold starts. |
 | `CHECKPOINT_TIMEOUT` | `5m` | Longest a checkpoint operation may take. |
 
 ### Timeouts
@@ -172,24 +172,33 @@ The pipeline builds checkpoints offline. Settings come from environment variable
 | `READIE_ALPHA` | built-in default | Size-versus-time weight in seconds per MB, rounded to 6 decimals. Must be positive. See [cost model](/docs/concepts/cost-model). |
 | `READIE_CHECKPOINT_TIMEOUT` | `300.0` | Seconds a sandbox may take to checkpoint. |
 | `READIE_DATA_DIR` | the pipeline's `data/` folder | Corpus and package metadata. |
-| `READIE_PLAN_DIR` | empty (use the output folder) | Where the plan and spec fingerprint go. |
+| `READIE_BASE_IMAGE` | empty | `analyze` only. The image being measured, written to the metadata as `base_image`. `make analyze` sets it from `ROOTFS_BASE_IMAGE`. |
+| `READIE_PLAN_DIR` | empty (use the output folder) | Where the plan, spec fingerprint and `rootfs-requirements.txt` go. |
 | `BASE_DIR` | `/app/executorfs` | The sandbox bundle (config plus root filesystem). |
 | `EXECUTOR_DIR` | `/app/executor` | Host-side output folder for checkpoints and the manifest. |
-| `ROOTFS_PYTHONPATH` | `/lib/python3.12/dist-packages` | Python path inside the root filesystem. |
+| `ROOTFS_PYTHONPATH` | `/usr/local/lib/python3.12/dist-packages` | Python path inside the root filesystem. Set it with the build argument of the same name when the base image keeps packages in `site-packages`. |
 | `SANDBOX_NETWORK` | `sandbox` | Must match the worker. |
 | `SANDBOX_HOST_UDS` | `create` | Must match the worker. |
 | `SANDBOX_OVERLAY` | `root:memory` | Must match the worker. Same restrictions as above. |
 | `OCISPEC_BINARY` | `/usr/local/bin/ocispec` | Path to the spec generator. |
 | `RUNSC_BINARY` | `runsc` | gVisor binary used for capture. |
 
-Corpus generation also requires a hosted model. This authoring step is not needed to build checkpoints.
+Corpus generation requires a hosted model and, for real code, Kaggle and Hugging Face access. This authoring step is not needed to build checkpoints, and it builds the corpus for the flavor in `FLAVOR` only.
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AZURE_ENDPOINT` | required | Model endpoint. |
 | `AZURE_API_KEY` | required | API key. Keep it out of version control. |
 | `AZURE_MODEL_NAME` | required | Model or deployment name. |
-| `AZURE_API_VERSION` | `2025-03-01-preview` | API version. |
+| `KAGGLE_API_TOKEN` | required when a Kaggle source has weight | Kaggle access token. |
+| `HF_TOKEN` | required when a Hugging Face source has weight | Hugging Face access token. |
+| `READIE_CORPUS_TOTAL` | `2000` | New items one run appends to the corpus for the flavor. The corpus is only added to. |
+| `READIE_CORPUS_SOURCE_WEIGHTS` | empty | Comma-separated `source=weight` pairs that override the default mix. A weight of `0` disables a source. Sources are `kaggle`, `kaggle_notebook`, `huggingface`, `huggingface_notebook`, `agent_short`, `agent_notebook` and `agent_fix`. |
+| `READIE_CORPUS_BATCH` | `10` | Candidates requested from a source per call. |
+| `READIE_CORPUS_SEED` | unset | Integer that makes the schedule repeatable. |
+| `READIE_CORPUS_REWRITE` | `1` | Set to `0` to skip the model rewrite that replaces reads of missing files with generated stand-in data. Mechanical fixes of notebook syntax always apply. |
+| `READIE_CORPUS_REWRITE_MAX_CHARS` | `60000` | Items with more code than this are left as they are instead of being rewritten. |
+| `READIE_CORPUS_REWRITE_WORKERS` | `6` | Rewrite model calls that run at the same time. |
 
 ## Shared planner constant
 

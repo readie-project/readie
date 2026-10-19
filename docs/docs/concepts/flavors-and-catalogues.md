@@ -37,17 +37,20 @@ The pipeline writes the catalogue and the router reads it:
 - **Written by the pipeline.** At the end of a build, the pipeline writes `catalogue.json` next to the checkpoints, once per generation. `make capture` copies it to `catalogues/<flavor>.json` in the repository root.
 - **Read by the router.** At start-up, the router loads every `*.json` file in the directory named by `CATALOGUE_DIR`. The provided `docker-compose.yml` mounts `./catalogues` read-only at `/var/lib/readie/catalogues` and sets `CATALOGUE_DIR` to match. The router loads catalogues once, so a new file takes effect after a router restart.
 
-The router skips a file that cannot be read, or whose `version` is not `1`, and logs a warning. A bad catalogue never stops the router from starting, and the worst outcome is cold starts. The router files each catalogue under the `flavor` value written inside the JSON, not under the file name.
+The router skips a file that cannot be read, or whose `version` is not `2`, and logs a warning. A bad catalogue never stops the router from starting, and the worst outcome is cold starts. The router files each catalogue under the `flavor` value written inside the JSON, not under the file name.
+
+The pipeline measures packages in an image that can differ from the root filesystem that the sandboxes run. When it writes the catalogue, it lists what the root filesystem contains and carries over only the measured packages that the root filesystem has a distribution for. It resolves that distribution the same way the analysis stage does, and if it cannot list the root filesystem, it prints a warning and filters nothing. Datasets, models, and tokenizers have no distribution and are always carried over.
 
 ### Format
 
-The file is large. The committed CPU catalogue is about 400 MB and describes nearly 5,000 packages. It has five top-level keys:
+The file is large. The committed CPU catalogue is about 400 MB and describes nearly 5,000 packages. It has six top-level keys:
 
 | Key | Meaning |
 | --- | --- |
-| `version` | Format version. The router accepts only `1`. |
+| `version` | Format version. The router accepts only `2`. |
 | `flavor` | `cpu` or `gpu`. |
 | `alpha` | The weight, in seconds per MB, used to price checkpoint size. See [Cost model](/docs/concepts/cost-model). |
+| `distributions` | Every Python distribution that the root filesystem of the flavor contains, as canonical name to installed version. The router uses the names to skip packages that a call asks to install but the image already has, and names the version when it does. A version is empty when the root filesystem has none for that distribution. |
 | `items` | Every measured item, keyed by name. |
 | `checkpoints` | The checkpoints of this generation. |
 
@@ -57,6 +60,7 @@ Each entry in `items` has these fields:
 - `size_mb`: memory the item takes once loaded
 - `resource_type`: `package`, `kaggle_dataset`, `hf_dataset`, `hf_model`, or `hf_tokenizer`
 - `dependencies` (optional): the other items it pulls in
+- `distribution`: the PyPI distribution that provides the item, or an empty string for a dataset, model, or tokenizer
 
 Packages are keyed by dotted import name with a `package:` prefix, such as
 `package:numpy` or `package:numpy.linalg`. Datasets, models, and tokenizers
@@ -74,11 +78,17 @@ The following trimmed sketch uses illustrative values:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "flavor": "cpu",
   "alpha": 0.0065,
+  "distributions": { "numpy": "2.0.2" },
   "items": {
-    "numpy": { "load_time": 0.2, "size_mb": 6.5, "resource_type": "package" }
+    "numpy": {
+      "distribution": "numpy",
+      "load_time": 0.2,
+      "size_mb": 6.5,
+      "resource_type": "package"
+    }
   },
   "checkpoints": [
     { "id": "checkpoint_0", "items": [], "canonical": [], "size_mb": 0 },
@@ -95,6 +105,8 @@ The router selects a checkpoint in four steps:
 2. The router takes the module names that the client sent and adds everything they depend on.
 3. The router scores each checkpoint and keeps the cheapest. The cold start is the baseline. If no catalogue exists for the flavor of the worker, no checkpoint is selected.
 4. The router sends the checkpoint ID to the worker.
+
+A call can pin a checkpoint with `checkpoint_id`. The router then skips steps 2 and 3, and accepts the ID only if the catalogue of the chosen worker lists it.
 
 Calls in a [session](/docs/concepts/sessions) that already has a container skip the selection.
 

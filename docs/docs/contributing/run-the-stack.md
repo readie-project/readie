@@ -29,11 +29,12 @@ Only NGINX is reachable from outside Compose. Clients connect to NGINX, NGINX fo
 
 - Docker with the Compose plugin.
 - An amd64 Linux host that can run privileged containers. The worker runs with `privileged: true` and relaxed AppArmor and seccomp profiles, because gVisor needs both.
-- The worker base image, `readie-worker-base-cpu:latest`. The image holds the gVisor binary, the root filesystem, and the checkpoints. The worker image is built `FROM` it, and unlike the router image it cannot be built from a bare checkout.
+- The worker base image, `readie-worker-base-cpu:latest`. The image holds the gVisor binary and the root filesystem. The worker image is built `FROM` it, and unlike the router image it cannot be built from a bare checkout.
+- A generation in `pipeline/out/cpu`. The compose file mounts its `checkpoints/` directory and `manifest.json` into the worker, and `docker compose up` stops with "bind source path does not exist" when they are missing.
 
 To build the base image, run `make worker-base`. Alternatively, run `make generation`, which captures checkpoints, builds the base image, and builds the worker image. See [Build checkpoints](/docs/contributing/build-checkpoints).
 
-Without captured checkpoints, the worker starts but every request is a cold start. See [cold starts and restore](/docs/concepts/cold-starts-and-restore).
+A generation that captured no checkpoints starts a worker whose every request is a cold start. See [cold starts and restore](/docs/concepts/cold-starts-and-restore).
 
 ## Compose variables
 
@@ -44,6 +45,7 @@ Compose reads a `.env` file in the repository root. Copy `.env.example` to `.env
 | `READIE_IGNORE_CGROUPS` | `true` | Sets the worker's `SANDBOX_IGNORE_CGROUPS`. Required on Docker Desktop, where cgroup delegation blocks gVisor. Harmless on other platforms. |
 | `READIE_WORKER_MEM_TOTAL` | `4Gi` | Memory the worker offers to the router. |
 | `READIE_WORKER_MAX_EXECUTORS` | `8` | Maximum number of concurrent sandboxes. `0` means unlimited. |
+| `READIE_SANDBOX_IDLE_TTL` | `5m` | Sets the worker's `SANDBOX_IDLE_TTL`: how long a session's sandbox stays warm after its last call. The worker's own default is `5m`. |
 
 The GPU worker also reads `READIE_WORKER_GPU_TOTAL` (default `16Gi`). Its memory and sandbox defaults differ from the CPU worker (`8Gi` and `4`). The GPU worker needs the NVIDIA container toolkit and a GPU image built with `make generation FLAVOR=gpu`. Start it with `docker compose --profile gpu up`.
 

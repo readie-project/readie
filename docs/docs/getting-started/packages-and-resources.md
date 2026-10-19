@@ -24,14 +24,14 @@ Each entry is a standard pip requirement: a bare name, a pinned version, a range
 
 ### Package installation
 
-- Before the function runs, the executor inside the sandbox runs `uv pip install` with the list.
+- Readie leaves out every package that the sandbox image already contains, whatever version the entry asks for. A pin such as `numpy==2.0` is ignored when the image has a different version of `numpy`, and the call output contains a line such as `ignored numpy==2.0: already provided by the base image (version 2.0.2)`. The version is left out when it is not known. An entry with extras, such as `requests[socks]`, is kept, so that the extra dependencies are installed.
+- Before the function runs, Readie installs the remaining entries inside the sandbox with `uv pip install`.
 - The install runs on every call. Each call gets a fresh sandbox, so nothing is cached between calls, and large or slow packages add to the latency of every call.
 - Unpinned names install the newest version available at that moment. Pin versions (`numpy==1.26.0`) for repeatable results.
 - The sandbox needs network access to reach the package index.
-- If the install fails, the call fails with `RemoteExecutionError`. The installer output is in the error message and in `err.logs`.
-- Packages that are already in the checkpoint's environment are installed again, because Readie does not check for them.
+- If the install fails, the call raises `InvalidRequestError`. The installer output arrives as log lines, which are printed when `Settings.stream_logs` is on.
 
-At decoration time, the client validates and normalizes the list. Names are compared as PyPI compares them, so `Requests` and `requests`, or `scikit_learn` and `scikit-learn`, count as one entry, and the first spelling is kept. The list is sorted. A malformed entry raises `InvalidPackageError` at decoration time, before anything is sent.
+The client validates and normalizes the list at decoration time, and the router validates it again for every call. Names are compared as PyPI compares them, so `Requests` and `requests`, or `scikit_learn` and `scikit-learn`, count as one entry, and the first spelling is kept. The list is sorted. A malformed entry raises `InvalidPackageError` at decoration time, before anything is sent.
 
 ## Memory and GPU budgets
 

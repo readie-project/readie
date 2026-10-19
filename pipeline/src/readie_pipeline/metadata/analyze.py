@@ -8,7 +8,7 @@ dictionary lookup, not the real cost. Disk size and resident memory are not
 proportional to each other per package (a package can unpack to a small
 on-disk footprint but allocate a much larger one in memory, or the reverse),
 and it is memory, not disk, that gVisor actually has to copy back on restore --
-see ``ResourceFacts.memory_size_mb``.
+see ``PackageFacts.memory_size_mb``.
 
 What a package actually loads is discovered empirically, not declared: a raw
 dotted import string (e.g. ``sklearn.svm.LinearSVC``, which is not itself an
@@ -33,10 +33,16 @@ import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from importlib.metadata import PackageNotFoundError, distribution, packages_distributions
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
-from readie_pipeline.metadata.models import Metadata, ResourceFacts
+from readie_pipeline.metadata.inventory import (
+    canonical_name,
+    distribution_for,
+    installed_versions,
+    provided_distributions,
+)
+from readie_pipeline.metadata.models import Metadata, PackageFacts
 
 #: Imports the dependencies first, then times and memory-samples the target
 #: alone. Without the warm-up both measurements are dominated by whatever the
@@ -126,19 +132,7 @@ def installed_packages() -> list[str]:
     base image ships is still measured, so the planner can score it too.
     """
     excluded = _HARNESS_ONLY | {_SELF}
-    return sorted(name for name in packages_distributions() if name not in excluded)
-
-
-def _distribution_for(name: str, provided: Mapping[str, list[str]]) -> str:
-    """Best-effort PyPI distribution name for ``name``'s top-level segment.
-
-    Diagnostic only: ``loaded_modules``, ``memory_size_mb`` and ``import_time``
-    are all measured empirically and never depend on this being right, unlike
-    the previous ``Requires-Dist``-based walk, which needed a correct
-    distribution name to find a package's declared dependencies at all.
-    """
-    distributions = provided.get(name.split(".", 1)[0])
-    return distributions[0] if distributions else ""
+    return sorted(name for name in provided_distributions() if name not in excluded)
 
 
 def _installed_size_mb(dist_name: str, import_name: str) -> float:
@@ -362,7 +356,7 @@ def _start_frame(
     *,
     exclude: frozenset[str],
     discovered: dict[str, tuple[str | None, frozenset[str]]],
-    results: dict[str, ResourceFacts],
+    results: dict[str, PackageFacts],
     visiting: set[str],
 ) -> tuple[str | None, _Frame | None]:
     """Resolve ``candidate`` and either settle it immediately or open a frame.
@@ -388,13 +382,13 @@ def _start_frame(
     return resolved, _Frame(resolved=resolved, loaded=loaded, eligible=eligible)
 
 
-def _finalize(frame: _Frame, *, provided: Mapping[str, list[str]]) -> ResourceFacts:
+def _finalize(frame: _Frame, *, provided: Mapping[str, list[str]]) -> PackageFacts:
     """Profile a frame whose eligible names have all been walked already."""
-    dist = _distribution_for(frame.resolved, provided)
-    facts = ResourceFacts(
+    dist = distribution_for(frame.resolved, provided)
+    facts = PackageFacts(
         base_import=frame.resolved,
         distribution=dist,
-        dependencies=frozenset(f"package:{name}" for name in frame.loaded),
+        loaded_modules=frame.loaded,
         disk_size_mb=_installed_size_mb(dist, frame.resolved) if dist else 0.0,
     )
     measured = _profile(frame.warm, frame.resolved)
@@ -411,7 +405,7 @@ def _visit(
     candidate: str,
     *,
     provided: Mapping[str, list[str]],
-    results: dict[str, ResourceFacts],
+    results: dict[str, PackageFacts],
     visiting: set[str],
     exclude: frozenset[str],
     discovered: dict[str, tuple[str | None, frozenset[str]]],
@@ -538,7 +532,7 @@ def _visit(
             other_facts = results.get(other)
             if other_facts is not None:
                 frame.warm.append(other)
-                frame.covered |= {name.partition(":")[2] for name in other_facts.dependencies}
+                frame.covered |= other_facts.loaded_modules
             frame.pos += 1
             continue
 
@@ -558,7 +552,7 @@ def _visit(
         if other in results:
             other_facts = results[other]
             frame.warm.append(other)
-            frame.covered |= {name.partition(":")[2] for name in other_facts.dependencies}
+            frame.covered |= other_facts.loaded_modules
             frame.pos += 1
             continue
         if other not in all_requested and _is_owned_by_a_private_ancestor(other):
@@ -623,12 +617,12 @@ def analyze(
     and nothing to promote: profiling happens exactly once per resolved
     name, in the order raw names are walked.
     """
-    provided = packages_distributions()
+    provided = provided_distributions()
     excluded = frozenset(exclude)
     all_requested = frozenset(name for name in import_names if name)
     discovered: dict[str, tuple[str | None, frozenset[str]]] = {}
 
-    results: dict[str, ResourceFacts] = {}
+    results: dict[str, PackageFacts] = {}
     resolved_map: dict[str, str] = {}
     visiting: set[str] = set()
 
@@ -651,10 +645,18 @@ def analyze(
                 if _is_excluded(raw, excluded)
                 else "could not be resolved to an importable module"
             )
-            facts = ResourceFacts(base_import=raw, error=error)
+            facts = PackageFacts(base_import=raw, error=error)
             results[raw] = facts
             if callable(on_progress):
                 on_progress(raw, facts)
 
-    typed_results = {f"package:{name}": facts for name, facts in results.items()}
-    return Metadata(typed_results, resolved=resolved_map)
+    # The version of every distribution the measured packages come from, as installed in
+    # the environment that just measured them: those are the versions the timings and
+    # sizes belong to, and what a rootfs built from this metadata pins.
+    installed = installed_versions()
+    versions = {
+        canonical_name(facts.distribution): installed[canonical_name(facts.distribution)]
+        for facts in results.values()
+        if facts.usable and canonical_name(facts.distribution) in installed
+    }
+    return Metadata(results, distributions=versions, resolved=resolved_map)

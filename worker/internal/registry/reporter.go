@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 
-	pb "github.com/illinoisdata/readie/worker/proto"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // Sentinel errors returned by a Reporter.

@@ -15,15 +15,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/logging"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
-	"github.com/illinoisdata/readie/worker/internal/testutil"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakesink"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/testutil"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeregistry"
+	"github.com/readie-project/readie/worker/internal/testutil/fakesink"
 )
 
 // ---------------------------------------------------------------------------
@@ -36,6 +36,7 @@ type fakeContainers struct {
 	acquired []container.AcquireRequest
 	released []container.Outcome
 	grown    []int64
+	execs    []execCall
 
 	handle     container.Handle
 	acquireErr error
@@ -46,6 +47,18 @@ type fakeContainers struct {
 	logsHang     bool
 	statsFrames  []sandbox.Stats
 	releaseDelay time.Duration
+
+	execResult sandbox.ExecResult
+	execErr    error
+	// onExec runs when a command is executed, before it returns: it lets a test look at the
+	// rest of the system at that moment.
+	onExec func()
+}
+
+// execCall records a command run inside a container.
+type execCall struct {
+	id   string
+	args []string
 }
 
 func memAlloc(n int64) container.Allocation {
@@ -109,6 +122,22 @@ func (f *fakeContainers) Grow(_ context.Context, _ string, memBytes int64) error
 	defer f.mu.Unlock()
 	f.grown = append(f.grown, memBytes)
 	return nil
+}
+
+func (f *fakeContainers) Exec(_ context.Context, id string, args []string) (sandbox.ExecResult, error) {
+	if f.onExec != nil {
+		f.onExec()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.execs = append(f.execs, execCall{id: id, args: args})
+	return f.execResult, f.execErr
+}
+
+func (f *fakeContainers) Execs() []execCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]execCall(nil), f.execs...)
 }
 
 func (f *fakeContainers) Grown() []int64 {
@@ -190,6 +219,22 @@ type pipeDialer struct {
 	stop        chan struct{}
 	mu          sync.Mutex
 	requestBody []byte
+	dials       int
+	hungUp      int
+}
+
+// Dials is how many connections the runner has opened.
+func (d *pipeDialer) Dials() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.dials
+}
+
+// HungUp is how many connections ended before the runner sent a complete request.
+func (d *pipeDialer) HungUp() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.hungUp
 }
 
 func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
@@ -197,6 +242,9 @@ func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
 		return nil, d.dialErr
 	}
 
+	d.mu.Lock()
+	d.dials++
+	d.mu.Unlock()
 	client, server := net.Pipe()
 	go d.serve(server)
 	return client, nil
@@ -233,6 +281,9 @@ func (d *pipeDialer) serve(conn executor.Conn) {
 
 	body, err := readFramedMessage(conn)
 	if err != nil {
+		d.mu.Lock()
+		d.hungUp++
+		d.mu.Unlock()
 		return
 	}
 
@@ -664,6 +715,10 @@ func TestRun_ReportsCPUUtilizationRatherThanMemory(t *testing.T) {
 			CPUTotal: 1_400_000_000, PreCPUTotal: 1_000_000_000,
 			Elapsed: time.Second, OnlineCPUs: 4,
 		}}
+		// The sampler is a side channel and is cancelled the moment the response ends, so a
+		// reply that comes back at once can end the run before it has sampled anything. Holding
+		// the reply back gives it time to report, however few CPUs the test has.
+		h.dialer.replyDelay = 250 * time.Millisecond
 	})
 
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)

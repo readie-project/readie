@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // State is a fake sandbox's lifecycle position.
@@ -42,6 +42,12 @@ type CheckpointCall struct {
 	Spec sandbox.CheckpointSpec
 }
 
+// ExecCall records a command run inside a sandbox.
+type ExecCall struct {
+	ID   string
+	Spec sandbox.ExecSpec
+}
+
 // Sandbox is an in-memory sandbox.Port. It is safe for concurrent use.
 type Sandbox struct {
 	mu          sync.Mutex
@@ -49,6 +55,7 @@ type Sandbox struct {
 	order       []string
 	creates     []sandbox.CreateSpec
 	checkpoints []CheckpointCall
+	execs       []ExecCall
 	failures    map[string]error
 	closed      bool
 	// stopCalls counts Stop invocations per id, so a test can tell a
@@ -59,6 +66,9 @@ type Sandbox struct {
 	// FailRestore makes any Start carrying a checkpoint id fail, which
 	// exercises the manager's downgrade to a cold start.
 	FailRestore bool
+
+	// ExecResult is what every Exec returns, once ExecErr is nil.
+	ExecResult sandbox.ExecResult
 
 	// LogData is returned by Logs.
 	LogData []byte
@@ -105,7 +115,7 @@ func (d *Sandbox) StopCallCount(id string) int {
 
 // FailOn makes the named sandbox.Port method return err. Method names match
 // the interface: "Create", "Start", "Stop", "Remove", "Pause", "Unpause",
-// "Update", "Checkpoint", "Inspect", "List", "Logs", "Stats", "Probe".
+// "Update", "Exec", "Checkpoint", "Inspect", "List", "Logs", "Stats", "Probe".
 func (d *Sandbox) FailOn(method string, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -338,6 +348,30 @@ func (d *Sandbox) Update(_ context.Context, id string, spec sandbox.UpdateSpec) 
 	}
 	s.Memory = spec.MemoryBytes
 	return nil
+}
+
+// Exec records a command and returns ExecResult, without running anything.
+func (d *Sandbox) Exec(_ context.Context, id string, spec sandbox.ExecSpec) (sandbox.ExecResult, error) {
+	if err := d.fail("Exec"); err != nil {
+		return sandbox.ExecResult{}, err
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	s, ok := d.sandboxes[id]
+	if !ok || s.Removed {
+		return sandbox.ExecResult{}, sandbox.ErrNotFound
+	}
+	d.execs = append(d.execs, ExecCall{ID: id, Spec: spec})
+	return d.ExecResult, nil
+}
+
+// Execs returns every command run through Exec, in order.
+func (d *Sandbox) Execs() []ExecCall {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]ExecCall(nil), d.execs...)
 }
 
 // Checkpoint records a snapshot request and writes a placeholder image.

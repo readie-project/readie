@@ -59,8 +59,6 @@ except readie.RemoteExecutionError as err:
     print(err.remote_type, err.remote_message)
 ```
 
-A failed `packages=` install also raises this exception. Fix the function or the package list.
-
 `EmptyResultError` indicates that the executor in the sandbox ended without reporting anything, for example because the process was killed. A function that returns `None` does not cause this error. A retry might succeed. High memory use is a common cause, so consider raising `memory`.
 
 ### Calls that did not run
@@ -72,7 +70,7 @@ A failed `packages=` install also raises this exception. Fix the function or the
 | `RemoteTimeoutError` | The `timeout` elapsed. | Raise the timeout, or leave it unset. |
 | `ResourceExhaustedError` | The cluster is full, or too many calls are queued on one session. | Retry later, or spread work over sessions. |
 | `SessionExpiredError` | The sandbox of the session was removed. | Open a new session. |
-| `InvalidRequestError` | The request was rejected, including `disable_optimized_execution=True` on a session that already runs from a snapshot. | Fix the request. |
+| `InvalidRequestError` | The request was rejected, including `disable_optimized_execution=True` on a session that already runs from a snapshot, a `checkpoint_id` that no snapshot matches, and a failed `packages=` install. | Fix the request. |
 
 ### Code and setup errors
 

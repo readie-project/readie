@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/logging"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/logging"
 )
 
 // builder lays out an artifact tree the way the worker image bakes one.
@@ -39,7 +39,7 @@ func validManifest() artifact.Manifest {
 		SpecFingerprint:  "sha256:spec",
 		ExecutorArgv:     []string{"python", "-u", "-m", "readie_executor"},
 		ExecutorProtocol: executor.ProtocolVersion,
-		PythonPath:       "/lib/python3.12/dist-packages",
+		PythonPath:       "/usr/local/lib/python3.12/dist-packages",
 		Overlay:          "root:memory",
 		Network:          "none",
 		CreatedAt:        time.Now().UTC().Truncate(time.Second),

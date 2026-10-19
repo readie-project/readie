@@ -12,12 +12,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/container"
-	"github.com/illinoisdata/readie/worker/internal/execution"
-	"github.com/illinoisdata/readie/worker/internal/executor"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/sandbox"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/container"
+	"github.com/readie-project/readie/worker/internal/execution"
+	"github.com/readie-project/readie/worker/internal/executor"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/sandbox"
 )
 
 // ErrInvalidRequest indicates the caller sent something unusable.
@@ -69,6 +69,11 @@ func toStatus(err error) error {
 		// capacity problem that does not exist.
 		return status.Error(codes.FailedPrecondition,
 			"worker has no root filesystem; rebuild its image with `make generation`")
+
+	case errors.Is(err, execution.ErrPackageInstall):
+		// The installer's own output already reached the client as logs; the
+		// status only says that the request cannot run as asked.
+		return status.Error(codes.FailedPrecondition, "could not install the requested packages")
 
 	case errors.Is(err, container.ErrAcquireFailed):
 		return status.Error(codes.ResourceExhausted, "could not provision a container")

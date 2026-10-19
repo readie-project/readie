@@ -41,7 +41,7 @@ venv.bak/
 # What `make capture` writes: checkpoint images are gigabytes, and are an
 # artifact rather than a source. Per-flavor (pipeline/out/<flavor>/) so a cpu
 # and a gpu generation coexist. Each flavor directory is committed (see its
-# .gitkeep) because the worker-base image build COPYs it.
+# .gitkeep) so that the directory docker-compose.yml mounts into the worker exists.
 pipeline/out/*/*
 !pipeline/out/*/.gitkeep
 # Stray output from before ARTIFACTS_DIR moved under pipeline/out/<flavor>/.

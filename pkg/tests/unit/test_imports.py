@@ -38,7 +38,7 @@ def test_a_from_import_records_the_deepest_candidate() -> None:
     # can only be told apart by actually importing it, which this AST-only
     # pass cannot do. So it records the deepest candidate implied by the
     # syntax and leaves resolving it to whatever runs in the target
-    # environment. Must match `pipeline`'s `corpus/tree_parser.py` exactly --
+    # environment. Must match `pipeline`'s `corpus/extract.py` exactly --
     # see the module docstring's sync note.
     facts = analyse("from PIL import Image\nfrom sklearn.svm import LinearSVC\n")
     assert facts.imports == {"PIL.Image", "sklearn.svm.LinearSVC"}

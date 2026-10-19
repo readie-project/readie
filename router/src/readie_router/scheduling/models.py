@@ -12,6 +12,7 @@ machine so it can be tested without an event loop.
 from __future__ import annotations
 
 import enum
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 # Status values, mirroring protos/registry.proto. Redeclared rather than
@@ -70,6 +71,10 @@ class Demand:
     #: Session affinity still applies; the scheduler rejects this only when the
     #: session's warm container was itself restored from a checkpoint.
     disable_optimized_execution: bool = False
+    #: Requirement strings to install, already validated, deduped and sorted.
+    packages: tuple[str, ...] = ()
+    #: A checkpoint the client pinned, or "" to let the catalogue choose.
+    checkpoint_id: str = ""
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""
@@ -203,6 +208,14 @@ class Placement:
     resources: tuple[str, ...]
     warm: bool
     opened_at: float
+    #: What the worker still has to install: the request's packages minus
+    #: whatever the chosen worker's base image already carries.
+    packages: tuple[str, ...] = ()
+    #: What was left out because the base image already has it.
+    ignored_packages: tuple[str, ...] = ()
+    #: For each ignored spec whose version the catalogue knows, the version the base
+    #: image has installed. A spec without an entry has no recorded version.
+    ignored_versions: Mapping[str, str] = field(default_factory=dict)
 
     def alloc_of(self, kind: int) -> int:
         """Return the initial byte budget for ``kind``, or 0 if none is set."""

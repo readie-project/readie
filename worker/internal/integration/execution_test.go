@@ -15,12 +15,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/readie/worker/internal/artifact"
-	"github.com/illinoisdata/readie/worker/internal/config"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeexecutor"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakesandbox"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/artifact"
+	"github.com/readie-project/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeexecutor"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeregistry"
+	"github.com/readie-project/readie/worker/internal/testutil/fakesandbox"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 const cpuAlloc = int64(512 << 20)
@@ -156,7 +156,7 @@ func TestExecution_ContainerSpecMatchesTheExecutorContract(t *testing.T) {
 
 	assert.Equal(t, []string{"python", "-u", "-m", "readie_executor"}, spec.Args,
 		"the manifest records argv and the worker replays it verbatim")
-	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "EXECUTOR_MODE=sandbox", "PYTHONPATH=/lib/python3.12/dist-packages"}, spec.Env)
+	assert.Equal(t, []string{"EXECUTOR_DIR=/tmp", "EXECUTOR_MODE=sandbox", "PYTHONPATH=/usr/local/lib/python3.12/dist-packages"}, spec.Env)
 	assert.Equal(t, cpuAlloc, spec.MemoryBytes)
 	assert.Equal(t, int64(50000), spec.CPUQuota)
 	assert.Equal(t, int64(100), spec.PidsLimit)

@@ -13,12 +13,12 @@ import (
 	"google.golang.org/grpc/reflection/grpc_reflection_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/illinoisdata/readie/worker/internal/config"
-	"github.com/illinoisdata/readie/worker/internal/registry"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeexecutor"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakeregistry"
-	"github.com/illinoisdata/readie/worker/internal/testutil/fakesandbox"
-	pb "github.com/illinoisdata/readie/worker/proto"
+	"github.com/readie-project/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/registry"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeexecutor"
+	"github.com/readie-project/readie/worker/internal/testutil/fakeregistry"
+	"github.com/readie-project/readie/worker/internal/testutil/fakesandbox"
+	pb "github.com/readie-project/readie/worker/proto"
 )
 
 // docker-compose's healthcheck shells grpcurl against these two services, so

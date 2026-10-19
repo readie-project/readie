@@ -19,8 +19,11 @@ dependencies = [
 # building checkpoints, so it stays out of the default install and out of the
 # pipeline image.
 corpus = [
-    "openai>=1.50",
+    "anthropic>=0.40",
     "python-dotenv>=1.0",
+    "huggingface_hub>=0.30",
+    "kaggle>=1.8",
+    "httpx>=0.27",
 ]
 
 [project.scripts]
@@ -28,6 +31,7 @@ readie-pipeline = "readie_pipeline.cli:main"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.27",
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-cov>=6.0",
@@ -64,6 +68,9 @@ ignore = [
     "S101", "D100", "D101", "D102", "D103", "D104", "PLR2004",
     "ARG001", "ARG002", "PLC0415", "SLF001", "EM101", "TRY003", "TRY301", "S108",
     "S603",  # tests spawn python with a fixed argv on purpose
+    "S311",  # tests seed random generators for repeatability, not secrecy
+    "S106",  # tests pass placeholder tokens
+    "FBT",   # fakes mirror the signatures of the real clients they stand in for
 ]
 
 [tool.ruff.lint.flake8-tidy-imports]
@@ -79,7 +86,7 @@ warn_unreachable = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["openai.*", "dotenv.*"]
+module = ["anthropic.*", "dotenv.*", "kaggle.*", "huggingface_hub.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

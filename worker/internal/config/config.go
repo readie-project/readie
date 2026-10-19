@@ -48,12 +48,12 @@ const (
 	// its socket there, which is how the worker reaches it.
 	ExecutorMountPath = "/tmp"
 
-	// ArtifactRoot is where the worker image bakes its root filesystem and
-	// checkpoints. Compiled in rather than configurable: there is one place a
-	// worker image puts them, and a settable path invited a deployment where
-	// the mount and the expectation disagreed. The image build and this
-	// constant are the only two things that need to agree, and both live in
-	// this repository.
+	// ArtifactRoot is where the worker image bakes its root filesystem and where
+	// the manifest and checkpoints are mounted. Compiled in rather than
+	// configurable: there is one place a worker puts them, and a settable path
+	// invited a deployment where the mount and the expectation disagreed. The
+	// image build, the compose mounts and this constant are the things that need
+	// to agree, and all live in this repository.
 	ArtifactRoot = "/var/lib/readie"
 
 	// BundlesDirName is the sub-directory of WorkerDir holding OCI bundles.
@@ -87,8 +87,8 @@ type Config struct {
 	// Filesystem.
 	//
 	// WorkerDir is the host root for per-container directories and bundles. It
-	// is writable runtime scratch and stays a volume; the artifacts do not,
-	// they are baked into the image at ArtifactRoot.
+	// is writable runtime scratch and stays a volume. The rootfs is baked into the
+	// image at ArtifactRoot; the manifest and checkpoints are mounted there.
 	WorkerDir string
 
 	// Sandbox runtime.

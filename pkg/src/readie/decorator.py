@@ -9,6 +9,7 @@ from typing import Any, Generic, ParamSpec, TypeVar, overload
 
 from readie.budget import Budget, build_budgets
 from readie.client import Client, Session
+from readie.errors import ConfigurationError
 from readie.packages import normalize_packages
 
 P = ParamSpec("P")
@@ -29,6 +30,7 @@ class RemoteFunction(Generic[P, R]):
     __slots__ = (
         "__dict__",
         "_budgets",
+        "_checkpoint_id",
         "_client",
         "_disable_optimized_execution",
         "_func",
@@ -55,6 +57,7 @@ class RemoteFunction(Generic[P, R]):
         timeout: float | None = None,
         session: Session | None = None,
         disable_optimized_execution: bool = False,
+        checkpoint_id: str = "",
     ) -> None:
         self._func = func
         self._client = client
@@ -64,6 +67,7 @@ class RemoteFunction(Generic[P, R]):
         self._timeout = timeout
         self._session = session
         self._disable_optimized_execution = disable_optimized_execution
+        self._checkpoint_id = checkpoint_id
         # Carries __name__, __doc__, __module__ and __wrapped__ across, so the
         # decorated object still introspects and documents like the original --
         # and so inspect.getsource can unwrap to it for estimation.
@@ -87,6 +91,7 @@ class RemoteFunction(Generic[P, R]):
             gpu=self._gpu,
             packages=self._packages,
             disable_optimized_execution=self._disable_optimized_execution,
+            checkpoint_id=self._checkpoint_id,
         )
         end_time = time.perf_counter()
         print(f"Execution completed in {end_time - start_time}s")  # noqa: T201
@@ -105,6 +110,7 @@ class RemoteFunction(Generic[P, R]):
             gpu=self._gpu,
             packages=self._packages,
             disable_optimized_execution=self._disable_optimized_execution,
+            checkpoint_id=self._checkpoint_id,
         )
         end_time = time.perf_counter()
         print(f"Execution completed in {end_time - start_time}s")  # noqa: T201
@@ -136,6 +142,7 @@ class RemoteFunction(Generic[P, R]):
             timeout=timeout if timeout is not None else self._timeout,
             session=session if session is not None else self._session,
             disable_optimized_execution=self._disable_optimized_execution,
+            checkpoint_id=self._checkpoint_id,
         )
 
     def __get__(self, instance: object, owner: type | None = None) -> Any:
@@ -181,6 +188,7 @@ def remote(
     max_gpu_memory: str | int | None = ...,
     packages: Sequence[str] | None = ...,
     disable_optimized_execution: bool = ...,
+    checkpoint_id: str | None = ...,
 ) -> Callable[[Callable[P, R]], RemoteFunction[P, R]]: ...
 
 
@@ -198,6 +206,7 @@ def remote(
     max_gpu_memory: str | int | None = None,
     packages: Sequence[str] | None = None,
     disable_optimized_execution: bool = False,
+    checkpoint_id: str | None = None,
 ) -> RemoteFunction[P, R] | Callable[[Callable[P, R]], RemoteFunction[P, R]]:
     """Mark a function for remote execution.
 
@@ -215,15 +224,23 @@ def remote(
         @remote(disable_optimized_execution=True)
         def i(x): ...
 
+        @remote(checkpoint_id="checkpoint_3")
+        def j(x): ...
+
     ``gpu=True`` routes the call to a GPU worker (a ``gpu_memory`` budget implies
     it too). ``memory``/``gpu_memory`` set the container's initial budget and
     ``max_memory``/``max_gpu_memory`` the ceiling the worker may auto-expand to;
     each accepts a byte count or a size string (``"512Mi"``, ``"4Gi"``). An unset
     budget falls back to the cluster default. ``packages`` names PyPI
-    requirements (bare names or full specs like ``"numpy==1.26.0"``) that the
-    executor installs with ``uv`` before every call, unconditionally -- entries
-    are normalized and deduped by distribution name, but nothing is cached
-    between calls, so each one pays the install cost. ``disable_optimized_execution=True``
+    requirements (bare names or full specs like ``"numpy==1.26.0"``) to install
+    before the call runs. Entries are normalized and deduped by distribution
+    name, and the router leaves out any distribution the base image already
+    carries, whatever version is asked for, so a pin on such a package is
+    ignored (the call's log output says so). ``checkpoint_id`` restores that
+    exact checkpoint instead of letting the router choose one; the router
+    rejects the call with ``InvalidRequestError`` if its catalogue has no such
+    checkpoint, and the worker still cold-starts if the restore itself fails.
+    ``disable_optimized_execution=True``
     tells the router to skip checkpoint restore and always cold-start this
     function; a bound session's warm container is still reused as normal, but
     the router raises ``InvalidRequestError`` if that container was itself
@@ -239,6 +256,9 @@ def remote(
         max_gpu_memory=max_gpu_memory,
     )
     packages_tuple = normalize_packages(packages or ())
+    if checkpoint_id and disable_optimized_execution:
+        msg = "checkpoint_id and disable_optimized_execution contradict each other"
+        raise ConfigurationError(msg)
 
     def decorate(target: Callable[P, R]) -> RemoteFunction[P, R]:
         return RemoteFunction(
@@ -250,6 +270,7 @@ def remote(
             timeout=timeout,
             session=session,
             disable_optimized_execution=disable_optimized_execution,
+            checkpoint_id=checkpoint_id or "",
         )
 
     if func is not None:

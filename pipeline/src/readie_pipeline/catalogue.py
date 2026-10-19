@@ -14,7 +14,7 @@ startup. It is the whole input to request-time checkpoint selection:
   recursive expansion over it is still correct, just redundant now. ``size_mb``
   here is memory, not disk: what gVisor actually copies back on restore, and
   what the ``alpha * size`` term below is charging for -- see
-  ``ResourceFacts.memory_size_mb``.
+  ``PackageFacts.memory_size_mb``.
 * ``checkpoints`` - each checkpoint's item set and its raw total size (MB). Two
   item lists per checkpoint: ``items`` is the full dependency closure (what is
   actually resident, and what pricing needs), ``canonical`` is only what some
@@ -29,9 +29,20 @@ of required items not in it)``, applying the catalogue's ``alpha`` to the raw si
 Items are keyed the way the client names them in a request's required set:
 packages by their resolved dotted import name (not necessarily top-level --
 ``sklearn`` and ``sklearn.svm`` are independent items), and
-datasets/models/tokenizers prefixed with their source and kind
-(``hf_model:gpt2``), so the
+datasets/models/tokenizers prefixed with their kind (``model:gpt2``), so the
 router can match a request's needs directly.
+
+Only what the rootfs actually carries is ported from the metadata. The metadata
+may have been measured in a different image than the one the sandbox runs, so
+``build_catalogue`` takes an ``Inventory`` of the rootfs and drops every package
+it has no distribution for, along with references to it. The
+inventory is also written as the top-level ``distributions`` object: canonical
+name -> installed version, sorted by name. The router leaves out of a request's
+``packages`` anything whose name is a key, and reports the version when it does.
+The versions are those of the rootfs as it was built, not of the metadata, and an
+empty string means the rootfs has the distribution but no version for it. Each item records
+its own ``distribution`` (blank for datasets, models and tokenizers, which have
+none).
 """
 
 from __future__ import annotations
@@ -41,31 +52,34 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+from readie_pipeline.metadata.inventory import Inventory, distribution_for
 from readie_pipeline.metadata.models import Metadata, ResourceType
 from readie_pipeline.planning.ports import CheckpointPlan
 
 #: The on-disk format version, so a router can refuse a catalogue it cannot read.
-CATALOGUE_VERSION = 1
+CATALOGUE_VERSION = 2
 
 
 def item_key(name: str, resource_type: ResourceType | str) -> str:
     """Return an item's catalogue key.
 
-    Every resource is keyed with its type prefix (for example
-    ``package:pandas`` or ``hf_model:gpt2``).
+    Packages are keyed by their bare name; datasets, models and tokenizers are
+    prefixed with their kind (``model:gpt2``), matching how a request names them.
     """
     kind = str(resource_type)
-    if ":" in name:
+    if name.startswith(f"{kind}:"):
+        return name
+    if kind == ResourceType.PACKAGE:
         return name
     return f"{kind}:{name}"
 
 
 def _keyed_items(packages: Iterable[str], plan: CheckpointPlan) -> list[str]:
     """Keys a package set plus a plan's non-package resources for the catalogue."""
-    keys = [item_key(name, ResourceType.PACKAGE) for name in packages]
-    keys += [item_key(n, ResourceType.KAGGLE_DATASET) for n in plan.datasets]
-    keys += [item_key(n, ResourceType.HF_MODEL) for n in plan.models]
-    keys += [item_key(n, ResourceType.HF_TOKENIZER) for n in plan.tokenizers]
+    keys = list(packages)
+    keys += [item_key(n, ResourceType.DATASET) for n in plan.datasets]
+    keys += [item_key(n, ResourceType.MODEL) for n in plan.models]
+    keys += [item_key(n, ResourceType.TOKENIZER) for n in plan.tokenizers]
     return sorted(keys)
 
 
@@ -94,40 +108,74 @@ def _canonical_items(plan: CheckpointPlan) -> list[str]:
     return _keyed_items(plan.imports, plan)
 
 
+def _in_rootfs(name: str, resource_type: ResourceType, inventory: Inventory) -> bool:
+    """Whether the rootfs provides what a metadata entry describes.
+
+    A package is kept when the rootfs has a distribution for it, resolved the way
+    ``analyze`` resolves the metadata's own (``distribution_for``: the first
+    provider of the top-level import name), so changing that rule changes both
+    at once. Datasets, models and tokenizers have no distribution and are always
+    kept.
+    """
+    if resource_type != ResourceType.PACKAGE:
+        return True
+    return bool(distribution_for(name, inventory.provided))
+
+
 def build_catalogue(
     *,
     flavor: str,
     alpha: float,
     metadata: Metadata,
     entries: Sequence[tuple[str, CheckpointPlan]],
+    inventory: Inventory | None,
 ) -> dict[str, Any]:
     """Assemble the catalogue document.
 
     ``entries`` pairs each checkpoint id with the plan it was built from.
+    ``inventory`` is what the rootfs provides; anything the metadata measured
+    that it does not provide is left out. ``None`` means the rootfs could not be
+    listed, so nothing is left out and ``distributions`` is empty.
     """
+    # Only measured entries can be absent from the rootfs. A name the metadata
+    # never measured (a standard-library module in a dependency list, say) is
+    # not this function's to judge and passes through untouched.
+    dropped = (
+        set()
+        if inventory is None
+        else {
+            name
+            for name, facts in metadata.packages.items()
+            if not _in_rootfs(name, facts.resource_type, inventory)
+        }
+    )
+
     items: dict[str, dict[str, Any]] = {}
-    for name, facts in metadata.resources.items():
+    for name, facts in metadata.packages.items():
+        if name in dropped:
+            continue
+        bare_name = name.partition(":")[2] if ":" in name else name
         entry: dict[str, Any] = {
             "size_mb": round(facts.memory_size_mb, 4),
             "load_time": facts.import_time,
             "resource_type": str(facts.resource_type),
+            "distribution": facts.distribution,
         }
-        dependencies = metadata.direct_dependencies(name)
+        dependencies = sorted(metadata.direct_dependencies(bare_name) - dropped)
         if dependencies:
-            entry["dependencies"] = sorted(dependencies)
-        items[item_key(name, facts.resource_type)] = entry
+            entry["dependencies"] = dependencies
+        items[item_key(bare_name, facts.resource_type)] = entry
 
     checkpoints = []
     for checkpoint_id, plan in entries:
-        keys = _checkpoint_items(plan, metadata)
-        size_mb = sum(
-            metadata.resources[key].memory_size_mb for key in keys if key in metadata.resources
-        )
+        keys = [k for k in _checkpoint_items(plan, metadata) if k not in dropped]
+        canonical = [k for k in _canonical_items(plan) if k not in dropped]
+        size_mb = sum(metadata.memory_size_mb(_bare(key)) for key in keys)
         checkpoints.append(
             {
                 "id": checkpoint_id,
                 "items": keys,
-                "canonical": _canonical_items(plan),
+                "canonical": canonical,
                 # Raw total item size.
                 "size_mb": round(size_mb, 4),
             }
@@ -137,9 +185,27 @@ def build_catalogue(
         "version": CATALOGUE_VERSION,
         "flavor": flavor,
         "alpha": alpha,
+        "distributions": _distribution_versions(inventory),
         "items": items,
         "checkpoints": checkpoints,
     }
+
+
+def _distribution_versions(inventory: Inventory | None) -> dict[str, str]:
+    """Every distribution the rootfs has, mapped to its version (``""`` if unknown).
+
+    A name is always listed when the rootfs has it, even without a version, because
+    the router leaves a call's package out whenever the name is a key.
+    """
+    if inventory is None:
+        return {}
+    return {name: inventory.versions.get(name, "") for name in sorted(inventory.distributions)}
+
+
+def _bare(key: str) -> str:
+    """Strip a ``kind:`` prefix to recover the metadata lookup name."""
+    _, sep, rest = key.partition(":")
+    return rest if sep else key
 
 
 def write_catalogue(path: Path, document: dict[str, Any]) -> None:

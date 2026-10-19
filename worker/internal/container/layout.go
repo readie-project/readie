@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/illinoisdata/readie/worker/internal/config"
+	"github.com/readie-project/readie/worker/internal/config"
 )
 
 // Layout resolves the on-disk paths belonging to a container.

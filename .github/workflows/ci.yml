@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # pipeline/data/metadata/* is stored in Git LFS and the pipeline tests
+          # Everything under pipeline/data/ is stored in Git LFS and the pipeline tests
           # load it. Without this the checkout holds pointer files and they fail
           # with "not valid JSON". Other packages do not need the download.
           lfs: ${{ matrix.package == 'pipeline' }}
@@ -228,12 +228,17 @@ jobs:
       # gVisor is amd64-only and works by intercepting syscalls, so capturing a
       # checkpoint or executing a function needs a real amd64 host regardless of
       # disk. `make generation` is not run anywhere in CI.
-      - name: Confirm the compose file has no artifact mount
+      - name: Confirm the compose file mounts the checkpoints
         run: |
           docker compose config | python3 -c "
           import sys, yaml
           worker = yaml.safe_load(sys.stdin)['services']['worker']
-          targets = [v['target'] for v in worker.get('volumes', [])]
-          assert targets == ['/shared'], f'unexpected worker volumes: {targets}'
-          print('worker mounts only /shared; artifacts are baked in')
+          mounts = {v['target']: v for v in worker.get('volumes', [])}
+          expected = {'/shared', '/var/lib/readie/checkpoints', '/var/lib/readie/manifest.json'}
+          assert set(mounts) == expected, f'unexpected worker volumes: {sorted(mounts)}'
+          # A missing generation must fail 'up', not leave Docker to create the path.
+          # 'config' omits create_host_path when it is false and prints true otherwise.
+          for target in expected - {'/shared'}:
+              assert not mounts[target]['bind'].get('create_host_path'), target
+          print('worker mounts /shared and the checkpoints; the rootfs is in the image')
           "
