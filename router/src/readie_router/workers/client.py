@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
+from opentelemetry import propagate
 
 from readie_router.proto import execution_pb2_grpc
 from readie_router.workers.channels import WorkerChannelPool
@@ -24,7 +25,13 @@ class GrpcExecutionClient:
         get the cancellation semantics exactly right.
         """
         stub = execution_pb2_grpc.ExecutionServiceStub(self._pool.get(target))
-        stream: ExecutionStream = stub.RequestExecution(timeout=timeout)
+
+        carrier: dict[str, str] = {}
+        propagate.inject(carrier)
+
+        stream: ExecutionStream = stub.RequestExecution(
+            timeout=timeout, metadata=list(carrier.items())
+        )
         return stream
 
 

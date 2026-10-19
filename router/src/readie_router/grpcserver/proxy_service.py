@@ -20,11 +20,13 @@ from typing import cast
 
 import grpc
 import structlog
+from opentelemetry import propagate, trace
 
+from readie_router import instrument
 from readie_router.errors import InvalidRequestError, RouterError
 from readie_router.grpcserver.session_gate import SessionGate
 from readie_router.grpcserver.status import to_status
-from readie_router.logging import (
+from readie_router.instrument import (
     KEY_CHECKPOINT_ID,
     KEY_CONTAINER_ID,
     KEY_ERROR,
@@ -66,12 +68,13 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         execution_timeout: float,
         default_memory: int,
     ) -> None:
+        self._log = instrument.get_logger("grpcserver.proxy")
+        self._trace = trace.get_tracer("router.grpcserver.proxy")
         self._scheduler = scheduler
         self._executions = executions
         self._gate = gate
         self._execution_timeout = execution_timeout
         self._default_memory = default_memory
-        self._log = structlog.get_logger("grpcserver.proxy")
 
     async def RequestExecution(  # noqa: N802 - the generated interface names it
         self,
@@ -79,41 +82,69 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         context: grpc.aio.ServicerContext,
     ) -> None:
         """Run one execution on the client's behalf."""
-        try:
-            header = await self._read_header(request_iterator, context)
-        except InvalidRequestError as exc:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
-            return
+        parent_ctx = propagate.extract(dict(context.invocation_metadata() or {}))
 
-        log = self._log.bind(
-            **{KEY_REQUEST_ID: header.request_id, KEY_SESSION_ID: header.session_id}
-        )
+        with self._trace.start_as_current_span(
+            "ProxyService/RequestExecution",
+            context=parent_ctx,
+            kind=trace.SpanKind.SERVER,
+            record_exception=False,  # enabling this records `context.abort` exceptions
+        ) as span:
+            try:
+                header = await self._read_header(request_iterator, context)
+            except InvalidRequestError as exc:
+                instrument.trace_exc(exc, span, "Invalid Argument")
+                await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
 
-        try:
-            # An empty session_id means "not part of any session" - there is
-            # no affinity to read and no one else who could ever share this
-            # key, so gating it would only make every such call queue behind
-            # every other one on the same "" lock for nothing.
-            if header.session_id:
-                # Serialise per session before placing: the placement decision
-                # reads the session's affinity, and a concurrent request must
-                # not observe it mid-flight.
-                async with self._gate.hold(header.session_id):
-                    await self._run(header, request_iterator, context, log)
-            else:
-                await self._run(header, request_iterator, context, log)
-        except BaseExceptionGroup as group:
-            # The relay runs its two pumps under a TaskGroup, which reports any
-            # failure as a group. Without unwrapping, a perfectly classifiable
-            # worker error would reach the client as UNKNOWN.
-            failure = _representative(group)
-            code, message = to_status(failure)
-            log.warning("execution failed", **{KEY_ERROR: str(failure)}, code=code.name)
-            await context.abort(code, message)
-        except (RouterError, grpc.aio.AioRpcError) as exc:
-            code, message = to_status(exc)
-            log.warning("execution rejected", **{KEY_ERROR: str(exc)}, code=code.name)
-            await context.abort(code, message)
+            span.set_attributes(
+                {
+                    "request_id": header.request_id,
+                    "session_id": header.session_id,
+                    "config": {
+                        "imports": list(header.config.imports),
+                        "budgets": [
+                            {"kind": budget.kind, "alloc": budget.alloc, "max": budget.max}
+                            for budget in header.config.budgets
+                        ],
+                        "gpu": header.config.gpu,
+                        "disable_optimized_execution": header.config.disable_optimized_execution,
+                    },
+                }
+            )
+            with structlog.contextvars.bound_contextvars(
+                **{KEY_REQUEST_ID: header.request_id, KEY_SESSION_ID: header.session_id}
+            ):
+                try:
+                    # An empty session_id means "not part of any session" - there is
+                    # no affinity to read and no one else who could ever share this
+                    # key, so gating it would only make every such call queue behind
+                    # every other one on the same "" lock for nothing.
+                    if header.session_id:
+                        # Serialise per session before placing: the placement decision
+                        # reads the session's affinity, and a concurrent request must
+                        # not observe it mid-flight.
+                        async with self._gate.hold(header.session_id):
+                            await self._run(header, request_iterator, context)
+                    else:
+                        await self._run(header, request_iterator, context)
+                except BaseExceptionGroup as group:
+                    # The relay runs its two pumps under a TaskGroup, which reports any
+                    # failure as a group. Without unwrapping, a perfectly classifiable
+                    # worker error would reach the client as UNKNOWN.
+                    failure = _representative(group)
+                    code, message = to_status(failure)
+
+                    self._log.warning(
+                        "execution failed", **{KEY_ERROR: str(failure)}, code=code.name
+                    )
+                    instrument.trace_exc(failure, span, message)
+                    await context.abort(code, message)
+                except (RouterError, grpc.aio.AioRpcError) as exc:
+                    code, message = to_status(exc)
+
+                    self._log.warning("execution rejected", **{KEY_ERROR: str(exc)}, code=code.name)
+                    instrument.trace_exc(exc, span, message)
+                    await context.abort(code, message)
 
     async def _read_header(
         self,
@@ -145,7 +176,6 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         header: proxy_pb2.ClientExecutionRequest,
         request_iterator: AsyncIterator[proxy_pb2.ClientExecutionRequest],
         context: grpc.aio.ServicerContext,
-        log: structlog.stdlib.BoundLogger,
     ) -> None:
         """Place the request, then relay it."""
         placement = self._scheduler.provision(
@@ -155,36 +185,39 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
                 demand=self._to_demand(header.config),
             )
         )
-        log = log.bind(
-            **{
-                KEY_WORKER_ID: placement.worker_id,
-                KEY_CHECKPOINT_ID: placement.checkpoint_id,
-                KEY_CONTAINER_ID: placement.container_id,
-            },
-            warm=placement.warm,
-        )
-        log.info("execution placed")
 
-        outcome = Outcome.FAILURE  # zero value: fail safe, as the worker does
-        relay = _Relay()
-        try:
-            await self._relay(
-                placement,
-                request_iterator=request_iterator,
-                context=context,
-                relay=relay,
-                log=log,
-            )
-            outcome = Outcome.SUCCESS
-        finally:
-            # Synchronous, so it cannot deadlock or be skipped on teardown.
-            self._scheduler.release(placement.request_id, outcome)
-            log.info(
-                "execution finished",
-                outcome=outcome.name.lower(),
-                responses=relay.responses,
-                payload_bytes=relay.payload_bytes,
-            )
+        placement_attrs: dict[str, int | str] = {
+            KEY_WORKER_ID: placement.worker_id,
+            KEY_CHECKPOINT_ID: placement.checkpoint_id,
+            KEY_CONTAINER_ID: placement.container_id,
+            "warm": placement.warm,
+        }
+        span = trace.get_current_span()
+        span.add_event("execution placed", placement_attrs)
+        with structlog.contextvars.bound_contextvars(**placement_attrs):
+            self._log.info("execution placed")
+
+            outcome = Outcome.FAILURE  # zero value: fail safe, as the worker does
+            relay = _Relay()
+            try:
+                await self._relay(
+                    placement,
+                    request_iterator=request_iterator,
+                    context=context,
+                    relay=relay,
+                )
+                outcome = Outcome.SUCCESS
+            finally:
+                # Synchronous, so it cannot deadlock or be skipped on teardown.
+                self._scheduler.release(placement.request_id, outcome)
+
+                execution_attrs: dict[str, int | str] = {
+                    "outcome": outcome.name.lower(),
+                    "responses": relay.responses,
+                    "payload_bytes": relay.payload_bytes,
+                }
+                span.add_event("execution finished", execution_attrs)
+                self._log.info("execution finished", **execution_attrs)
 
     async def _relay(
         self,
@@ -193,7 +226,6 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         request_iterator: AsyncIterator[proxy_pb2.ClientExecutionRequest],
         context: grpc.aio.ServicerContext,
         relay: _Relay,
-        log: structlog.stdlib.BoundLogger,
     ) -> None:
         """Pump the client stream to the worker and the worker's back."""
         stream = self._executions.open(placement.worker_uri, timeout=self._execution_timeout)
@@ -201,7 +233,7 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
             async with asyncio.TaskGroup() as tasks:
                 tasks.create_task(self._pump_requests(placement, request_iterator, stream))
                 tasks.create_task(
-                    self._pump_responses(placement, stream, context=context, relay=relay, log=log)
+                    self._pump_responses(placement, stream, context=context, relay=relay)
                 )
         finally:
             # Cancel is synchronous. If the client vanished mid-stream the
@@ -241,7 +273,6 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         *,
         context: grpc.aio.ServicerContext,
         relay: _Relay,
-        log: structlog.stdlib.BoundLogger,
     ) -> None:
         """Forward the worker's output to the client."""
         async for response in stream:
@@ -256,7 +287,9 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
                     response.checkpoint_id,
                 )
                 if response.container_id and response.container_id != placement.container_id:
-                    log.debug("bound to container", **{KEY_CONTAINER_ID: response.container_id})
+                    self._log.debug(
+                        "bound to container", **{KEY_CONTAINER_ID: response.container_id}
+                    )
 
             relay.responses += 1
             kind = response.WhichOneof("data")

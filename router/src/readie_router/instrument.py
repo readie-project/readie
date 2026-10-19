@@ -9,9 +9,15 @@ key names the Go worker uses so the two services' logs join.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 import structlog
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from structlog.stdlib import BoundLogger
 
 # Attribute keys, shared with the Go worker's internal/logging package. Constants
 # rather than literals so the "request_id" / "requestId" / "request-id" drift
@@ -31,7 +37,20 @@ _LEVELS: dict[str, int] = {
 }
 
 
-def configure(
+def setup_tracer(endpoint: str) -> TracerProvider:
+    """Set up global tracer provider.
+
+    Returns the global `TracerProvider`, which should be explicitly shut down at
+    program exit so no traces are lost.
+    """
+    tracer = TracerProvider()
+    processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+    tracer.add_span_processor(processor)
+    trace.set_tracer_provider(tracer)
+    return tracer
+
+
+def configure_logging(
     *,
     level: str = "info",
     fmt: Literal["json", "console"] = "json",
@@ -67,20 +86,15 @@ def configure(
     logging.basicConfig(level=_LEVELS[level], format="%(message)s", force=True)
 
 
-def get_logger(name: str, **initial: Any) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str, **initial: Any) -> BoundLogger:
     """Return a logger bound to a component name and any initial context."""
-    logger: structlog.stdlib.BoundLogger = structlog.get_logger(name).bind(**initial)
+    logger: BoundLogger = structlog.get_logger(name).bind(**initial)
     return logger
 
 
-def discard_logger() -> structlog.stdlib.BoundLogger:
-    """Return a logger that writes nothing.
-
-    For tests that assert behaviour rather than output.
-    """
-    logger: structlog.stdlib.BoundLogger = structlog.wrap_logger(
-        None,
-        wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL + 1),
-        processors=[],
-    )
-    return logger
+def trace_exc(exc: BaseException, span: trace.Span | None, msg: str | None = None) -> None:
+    """Record an exception in the current span if it is active."""
+    span = span or trace.get_current_span()
+    if span.is_recording():
+        span.record_exception(exc)
+        span.set_status(trace.StatusCode.ERROR, description=f"{msg}: {exc}" if msg else str(exc))

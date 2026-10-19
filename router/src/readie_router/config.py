@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     # -- Observability ----------------------------------------------------
     log_level: Literal["debug", "info", "warning", "error"] = "info"
     log_format: Literal["json", "console"] = "json"
+    otel_agent_endpoint: str = "telemetry-agent:4317"
 
     @field_validator("log_level", "log_format", mode="before")
     @classmethod

@@ -14,10 +14,10 @@ handler blocks the loop and cannot ``await context.abort``.
 from __future__ import annotations
 
 import grpc
-import structlog
 
+from readie_router import instrument
 from readie_router.clock import Clock
-from readie_router.logging import KEY_CONTAINER_ID, KEY_WORKER_ID
+from readie_router.instrument import KEY_CONTAINER_ID, KEY_WORKER_ID
 from readie_router.proto import registry_pb2, registry_pb2_grpc
 from readie_router.scheduling.state import ClusterState
 
@@ -28,7 +28,7 @@ class RegistryService(registry_pb2_grpc.RegistryServiceServicer):
     def __init__(self, state: ClusterState, clock: Clock) -> None:
         self._state = state
         self._clock = clock
-        self._log = structlog.get_logger("grpcserver.registry")
+        self._log = instrument.get_logger("grpcserver.registry")
 
     async def PostWorkerStatus(  # noqa: N802 - the generated interface names it
         self,

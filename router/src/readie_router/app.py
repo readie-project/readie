@@ -22,7 +22,7 @@ from readie_router.grpcserver.proxy_service import ProxyService
 from readie_router.grpcserver.registry_service import RegistryService
 from readie_router.grpcserver.server import RouterServer
 from readie_router.grpcserver.session_gate import SessionGate
-from readie_router.logging import KEY_ERROR
+from readie_router.instrument import KEY_ERROR
 from readie_router.scheduling.catalogue import load_catalogues
 from readie_router.scheduling.policy import default_selector
 from readie_router.scheduling.reaper import Reaper, ReaperPolicy

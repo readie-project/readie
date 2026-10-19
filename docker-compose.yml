@@ -1,213 +1,231 @@
 name: readie
 
 services:
-    nginx:
-        image: nginx:alpine
-        container_name: nginx
-        depends_on:
-            router:
-                condition: service_healthy
-            playground:
-                condition: service_started
-        restart: unless-stopped
-    router:
-        build:
-            context: ./router
-            ulimits:
-                nofile:
-                    soft: 65536
-                    hard: 65536
-        container_name: router
-        environment:
-            # Where the per-flavor <flavor>.json catalogues are mounted (below).
-            # Without them the router cold-starts every request, as before.
-            CATALOGUE_DIR: /var/lib/readie/catalogues
-        volumes:
-            # The catalogues `make generation` writes into ./catalogues, read only.
-            # Must match CATALOGUE_DIR above and the generations the workers are running.
-            - ./catalogues:/var/lib/readie/catalogues:ro
-        healthcheck:
-            test:
-                [
-                    "CMD",
-                    "grpcurl",
-                    "-plaintext",
-                    "router:50051",
-                    "grpc.health.v1.Health/Check",
-                ]
-            interval: 10s
-            timeout: 5s
-            retries: 3
-            start_period: 5s
-        # The router drains in-flight executions on SIGTERM. Without a grace
-        # period longer than that drain, `docker compose down` SIGKILLs it
-        # partway through and every in-flight client sees a broken stream.
-        stop_grace_period: 30s
-    worker:
-        build:
-            # Just ./worker: runsc, the rootfs and the checkpoints all arrive
-            # through readie-worker-base, so this build needs nothing outside the
-            # worker's own source and takes seconds.
-            context: ./worker
-            # `FROM readie-worker-base-cpu:latest`, which the offline pipeline
-            # builds. It must be present locally (`make worker-base FLAVOR=cpu`)
-            # or pullable - unlike the router, this cannot be built from a bare
-            # checkout.
-            dockerfile: Dockerfile
-            args:
-                BASE_IMAGE: readie-worker-base-cpu:latest
-                WORKER_FLAVOR: cpu
-        # The tag `make generation FLAVOR=cpu` writes, so `docker compose up` runs
-        # the image built on the cpu base. The gpu worker below (profile: gpu)
-        # runs the independently-generated gpu image instead.
-        image: readie-worker-cpu:latest
-        # gVisor publishes amd64 and arm64 builds, but the executor rootfs is
-        # amd64-only, and gVisor works by intercepting syscalls - which is
-        # exactly what emulation sits in the middle of. This will not run on an
-        # Apple Silicon machine.
-        platform: linux/amd64
-        container_name: worker
-        environment:
-            # cgroup v2 delegation inside Docker Desktop refuses the subtree
-            # write runsc needs, so every sandbox create fails with "device or
-            # resource busy". Harmless on a host with proper delegation, and the
-            # offline pipeline already passes --ignore-cgroups for the same
-            # reason.
-            SANDBOX_IGNORE_CGROUPS: ${READIE_IGNORE_CGROUPS:-true}
-            # What this worker will hand out to executors. The router schedules
-            # on it, so over-reporting makes it overcommit and the failure that
-            # produces is an OOM-killed sandbox mid-execution. Configured rather
-            # than read from /proc/meminfo, which inside a container describes
-            # the host and not this cgroup.
-            WORKER_MEM_TOTAL: ${READIE_WORKER_MEM_TOTAL:-4Gi}
-            WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-8}
-        depends_on:
-            router:
-                condition: service_healthy
-        # gVisor creates user and mount namespaces and installs its own seccomp
-        # filters; Docker's default profiles block both.
-        privileged: true
-        security_opt:
-            - apparmor=unconfined
-            - seccomp=unconfined
-        # runsc daemonises a sandbox and a gofer per container, which reparent
-        # to PID 1 when the create command exits. Without an init the worker
-        # would be PID 1 and would never reap them, accumulating two zombies
-        # per execution.
-        init: true
-        volumes:
-            # Per-sandbox directories and OCI bundles - writable runtime
-            # scratch, and the only volume this worker needs. The rootfs and
-            # checkpoints are baked into the image, so there is no artifact
-            # mount to get wrong.
-            #
-            # Sandboxes are this worker's own child processes, so unlike the
-            # previous Docker-based design nothing outside the container
-            # resolves these paths and a plain named volume is enough.
-            - worker-shared:/shared
-        # On shutdown the worker deregisters, drains in-flight executions and
-        # reclaims its sandboxes. A short grace period would SIGKILL it partway
-        # through and strand them.
-        stop_grace_period: 30s
-        healthcheck:
-            test:
-                [
-                    "CMD",
-                    "grpcurl",
-                    "-plaintext",
-                    "worker:50052",
-                    "grpc.health.v1.Health/Check",
-                ]
-            interval: 10s
-            timeout: 5s
-            retries: 3
-            start_period: 5s
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    depends_on:
+      router:
+        condition: service_healthy
+      playground:
+        condition: service_started
+    restart: unless-stopped
+  router:
+    build:
+      context: ./router
+      ulimits:
+        nofile:
+          soft: 65536
+          hard: 65536
+    container_name: router
+    environment:
+      # Where the per-flavor <flavor>.json catalogues are mounted (below).
+      # Without them the router cold-starts every request, as before.
+      CATALOGUE_DIR: /var/lib/readie/catalogues
 
-    # A GPU worker, opt-in with `docker compose --profile gpu up`. It runs the
-    # independently-generated gpu image (Kaggle GPU rootfs + GPU checkpoints) and
-    # attaches the host's GPUs. Needs the NVIDIA container toolkit on the host.
-    worker-gpu:
-        profiles: ["gpu"]
-        build:
-            context: ./worker
-            dockerfile: Dockerfile
-            args:
-                BASE_IMAGE: readie-worker-base-gpu:latest
-                WORKER_FLAVOR: gpu
-        image: readie-worker-gpu:latest
-        platform: linux/amd64
-        container_name: worker-gpu
-        environment:
-            SERVICE_NAME: worker-gpu
-            SANDBOX_IGNORE_CGROUPS: ${READIE_IGNORE_CGROUPS:-true}
-            WORKER_MEM_TOTAL: ${READIE_WORKER_MEM_TOTAL:-8Gi}
-            WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-4}
-            # GPU device memory the router places GPU requests on.
-            WORKER_GPU_TOTAL: ${READIE_WORKER_GPU_TOTAL:-16Gi}
-        depends_on:
-            router:
-                condition: service_healthy
-        privileged: true
-        security_opt:
-            - apparmor=unconfined
-            - seccomp=unconfined
-        init: true
-        # Hand the container the host's NVIDIA GPUs.
-        gpus: all
-        volumes:
-            - worker-gpu-shared:/shared
-        stop_grace_period: 30s
-        healthcheck:
-            test:
-                [
-                    "CMD",
-                    "grpcurl",
-                    "-plaintext",
-                    "worker-gpu:50052",
-                    "grpc.health.v1.Health/Check",
-                ]
-            interval: 10s
-            timeout: 5s
-            retries: 3
-            start_period: 5s
+      OTEL_SERVICE_NAME: "router"
 
-    # The docs playground. It runs under gVisor, so the host must register the runsc runtime
-    # with Docker, with no capabilities and a read-only root filesystem. nginx forwards
-    # /playground/ to it. It calls the Readie server that the client uses by default, so it
-    # needs no address.
-    playground:
-        build:
-            context: .
-            dockerfile: playground/Dockerfile
-            # Same as the router: uv's bytecode compile needs more descriptors than some
-            # hosts give a build by default.
-            ulimits:
-                nofile:
-                    soft: 65536
-                    hard: 65536
-        image: readie-playground:latest
-        container_name: playground
-        runtime: runsc
-        read_only: true
-        tmpfs:
-            - /tmp:rw,noexec,nosuid,size=64m
-        cap_drop:
-            - ALL
-        security_opt:
-            - no-new-privileges:true
-        pids_limit: 256
-        mem_limit: 1g
-        volumes:
-            # gVisor cannot reach Docker's built-in DNS, so no name would resolve without this.
-            - ./playground/resolv.conf:/etc/resolv.conf:ro
-        environment:
-            # nginx puts the client address in X-Forwarded-For.
-            PLAYGROUND_TRUST_PROXY: "true"
-            # Origin(s) of the docs site that calls the playground, comma separated.
-            PLAYGROUND_ALLOWED_ORIGINS: ${PLAYGROUND_ALLOWED_ORIGINS:-https://readie.org}
-            # Use a token that only the playground has.
-            READIE_AUTH_TOKEN: ${PLAYGROUND_AUTH_TOKEN:-}
+      # TODO: prob want custom config so the client turning off instrumentation
+      # doesn't propogate throughout all services
+      # "parentbased_traceidratio" for specific sampling rate, "always_off" to turn off,
+      OTEL_TRACES_SAMPLER: "always_on"
+      OTEL_TRACES_SAMPLER_ARG: 1.0  # sampling rate when sampler is traceidratio
+    volumes:
+      # The catalogues `make generation` writes into ./catalogues, read only.
+      # Must match CATALOGUE_DIR above and the generations the workers are running.
+      - ./catalogues:/var/lib/readie/catalogues:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "grpcurl",
+          "-plaintext",
+          "router:50051",
+          "grpc.health.v1.Health/Check",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    # The router drains in-flight executions on SIGTERM. Without a grace
+    # period longer than that drain, `docker compose down` SIGKILLs it
+    # partway through and every in-flight client sees a broken stream.
+    stop_grace_period: 30s
+  worker:
+    build:
+      # Just ./worker: runsc, the rootfs and the checkpoints all arrive
+      # through readie-worker-base, so this build needs nothing outside the
+      # worker's own source and takes seconds.
+      context: ./worker
+      # `FROM readie-worker-base-cpu:latest`, which the offline pipeline
+      # builds. It must be present locally (`make worker-base FLAVOR=cpu`)
+      # or pullable - unlike the router, this cannot be built from a bare
+      # checkout.
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: readie-worker-base-cpu:latest
+        WORKER_FLAVOR: cpu
+    # The tag `make generation FLAVOR=cpu` writes, so `docker compose up` runs
+    # the image built on the cpu base. The gpu worker below (profile: gpu)
+    # runs the independently-generated gpu image instead.
+    image: readie-worker-cpu:latest
+    # gVisor publishes amd64 and arm64 builds, but the executor rootfs is
+    # amd64-only, and gVisor works by intercepting syscalls - which is
+    # exactly what emulation sits in the middle of. This will not run on an
+    # Apple Silicon machine.
+    platform: linux/amd64
+    container_name: worker
+    environment:
+      # cgroup v2 delegation inside Docker Desktop refuses the subtree
+      # write runsc needs, so every sandbox create fails with "device or
+      # resource busy". Harmless on a host with proper delegation, and the
+      # offline pipeline already passes --ignore-cgroups for the same
+      # reason.
+      SANDBOX_IGNORE_CGROUPS: ${READIE_IGNORE_CGROUPS:-true}
+      # What this worker will hand out to executors. The router schedules
+      # on it, so over-reporting makes it overcommit and the failure that
+      # produces is an OOM-killed sandbox mid-execution. Configured rather
+      # than read from /proc/meminfo, which inside a container describes
+      # the host and not this cgroup.
+      WORKER_MEM_TOTAL: ${READIE_WORKER_MEM_TOTAL:-4Gi}
+      WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-8}
+    depends_on:
+      router:
+        condition: service_healthy
+    # gVisor creates user and mount namespaces and installs its own seccomp
+    # filters; Docker's default profiles block both.
+    privileged: true
+    security_opt:
+      - apparmor=unconfined
+      - seccomp=unconfined
+    # runsc daemonises a sandbox and a gofer per container, which reparent
+    # to PID 1 when the create command exits. Without an init the worker
+    # would be PID 1 and would never reap them, accumulating two zombies
+    # per execution.
+    init: true
+    volumes:
+      # Per-sandbox directories and OCI bundles - writable runtime
+      # scratch, and the only volume this worker needs. The rootfs and
+      # checkpoints are baked into the image, so there is no artifact
+      # mount to get wrong.
+      #
+      # Sandboxes are this worker's own child processes, so unlike the
+      # previous Docker-based design nothing outside the container
+      # resolves these paths and a plain named volume is enough.
+      - worker-shared:/shared
+    # On shutdown the worker deregisters, drains in-flight executions and
+    # reclaims its sandboxes. A short grace period would SIGKILL it partway
+    # through and strand them.
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "grpcurl",
+          "-plaintext",
+          "worker:50052",
+          "grpc.health.v1.Health/Check",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # A GPU worker, opt-in with `docker compose --profile gpu up`. It runs the
+  # independently-generated gpu image (Kaggle GPU rootfs + GPU checkpoints) and
+  # attaches the host's GPUs. Needs the NVIDIA container toolkit on the host.
+  worker-gpu:
+    profiles: ["gpu"]
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: readie-worker-base-gpu:latest
+        WORKER_FLAVOR: gpu
+    image: readie-worker-gpu:latest
+    platform: linux/amd64
+    container_name: worker-gpu
+    environment:
+      SERVICE_NAME: worker-gpu
+      SANDBOX_IGNORE_CGROUPS: ${READIE_IGNORE_CGROUPS:-true}
+      WORKER_MEM_TOTAL: ${READIE_WORKER_MEM_TOTAL:-8Gi}
+      WORKER_MAX_EXECUTORS: ${READIE_WORKER_MAX_EXECUTORS:-4}
+      # GPU device memory the router places GPU requests on.
+      WORKER_GPU_TOTAL: ${READIE_WORKER_GPU_TOTAL:-16Gi}
+    depends_on:
+      router:
+        condition: service_healthy
+    privileged: true
+    security_opt:
+      - apparmor=unconfined
+      - seccomp=unconfined
+    init: true
+    # Hand the container the host's NVIDIA GPUs.
+    gpus: all
+    volumes:
+      - worker-gpu-shared:/shared
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "grpcurl",
+          "-plaintext",
+          "worker-gpu:50052",
+          "grpc.health.v1.Health/Check",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # The docs playground. It runs under gVisor, so the host must register the runsc runtime
+  # with Docker, with no capabilities and a read-only root filesystem. nginx forwards
+  # /playground/ to it. It calls the Readie server that the client uses by default, so it
+  # needs no address.
+  playground:
+    build:
+      context: .
+      dockerfile: playground/Dockerfile
+      # Same as the router: uv's bytecode compile needs more descriptors than some
+      # hosts give a build by default.
+      ulimits:
+        nofile:
+          soft: 65536
+          hard: 65536
+    image: readie-playground:latest
+    container_name: playground
+    runtime: runsc
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    volumes:
+      # gVisor cannot reach Docker's built-in DNS, so no name would resolve without this.
+      - ./playground/resolv.conf:/etc/resolv.conf:ro
+    environment:
+      # nginx puts the client address in X-Forwarded-For.
+      PLAYGROUND_TRUST_PROXY: "true"
+      # Origin(s) of the docs site that calls the playground, comma separated.
+      PLAYGROUND_ALLOWED_ORIGINS: ${PLAYGROUND_ALLOWED_ORIGINS:-https://readie.org}
+      # Use a token that only the playground has.
+      READIE_AUTH_TOKEN: ${PLAYGROUND_AUTH_TOKEN:-}
+
+  telemetry-agent:
+    image: otel/opentelemetry-collector-contrib
+    container_name: otel-agent
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
-    worker-shared:
-    worker-gpu-shared:
+  worker-shared:
+  worker-gpu-shared:
