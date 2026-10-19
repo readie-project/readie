@@ -258,9 +258,7 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     )
     if corpus is not None:
         dataset_slugs = {
-            dataset
-            for item in corpus
-            for dataset in item.of_kind(ResourceKind.KAGGLE_DATASET)
+            dataset for item in corpus for dataset in item.of_kind(ResourceKind.KAGGLE_DATASET)
         }
         if dataset_slugs:
             dataset_facts = measure_datasets(sorted(dataset_slugs), on_progress=progress)
