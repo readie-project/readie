@@ -97,9 +97,9 @@ ROOTFS_BUILD_ARGS := \
 # greedy (weighted set cover, the default) | fixed (a configured package set)
 READIE_PLANNER := greedy
 # Upper bound on how many checkpoints a plan may emit.
-READIE_MAX_CHECKPOINTS := 15
+READIE_MAX_CHECKPOINTS := 100
 # Total size budget, in MB.
-READIE_SIZE_BUDGET_MB := 2048.0
+READIE_SIZE_BUDGET_MB := 12288.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
 # more than alpha*size. Tuned over time; the pipeline measures the real value
 # after capture and writes it into the catalogue the router reads.
