@@ -6,6 +6,7 @@ import {usePrismTheme} from '@docusaurus/theme-common';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 
 import {examples} from '../../data/playgroundExamples';
+import useServiceStatus from '../../hooks/useServiceStatus';
 import styles from './styles.module.css';
 
 type LaneId = 'optimized' | 'cold';
@@ -182,6 +183,7 @@ function Editor({
   export default function Playground(): ReactNode {
     const {siteConfig} = useDocusaurusContext();
     const serviceUrl = String(siteConfig.customFields?.playgroundUrl ?? '');
+    const status = useServiceStatus();
     const [selected, setSelected] = useState(examples[0].id);
     const [code, setCode] = useState(examples[0].code);
     const [own, setOwn] = useState(OWN_CODE);
@@ -293,6 +295,47 @@ function Editor({
     const original = selected === 'own' ? OWN_CODE : (examples.find((x) => x.id === selected)?.code ?? '');
     const changed = code !== original;
     const reset = () => edit(original);
+
+    // Until the first health check answers, and while the service is down, the stage keeps its
+    // place and holds a notice instead of the examples, the editor and the results.
+    if (status === 'checking') {
+      return (
+        <div className={styles.stage}>
+          <div className={styles.down} role="status">
+            <span className={clsx(styles.badge, styles.badgeChecking)} aria-hidden="true">
+              <span className={styles.spinner} />
+            </span>
+            <p className={styles.downTitle}>All systems go?</p>
+            <p className={styles.downText}>Let's make sure our systems are up and running.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (status === 'down') {
+      return (
+        <div className={styles.stage}>
+          <div className={styles.down} role="status">
+            <span className={styles.badge} aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <path
+                  transform="translate(1.72 -1.12)"
+                  d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.6 17.2a1.8 1.8 0 0 0 2.6 2.6l5.7-5.7a4 4 0 0 0 5.2-5.4l-2.6 2.6-2.4-.6-.6-2.4z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <p className={styles.downTitle}>Readie is temporarily unavailable</p>
+            <p className={styles.downText}>
+              We are upgrading our platform to improve performance. Thanks for your patience!
+            </p>
+          </div>
+        </div>
+      );
+    }
 
     return (
     <div className={styles.stage}>

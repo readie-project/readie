@@ -2,6 +2,7 @@ import React, {type ReactNode} from 'react';
 import clsx from 'clsx';
 import {useThemeConfig} from '@docusaurus/theme-common';
 import FooterLinkItem from '@theme/Footer/LinkItem';
+import useServiceStatus, {type ServiceStatus} from '../../hooks/useServiceStatus';
 
 import styles from './styles.module.css';
 
@@ -17,8 +18,16 @@ function flatten(links: unknown[]): FooterItem[] {
   });
 }
 
+const statusLabel: Record<ServiceStatus, string> = {
+  checking: 'Checking system',
+  up: 'All systems operational',
+  down: 'System offline',
+  unknown: '',
+};
+
 function Footer(): ReactNode {
   const {footer} = useThemeConfig();
+  const status = useServiceStatus();
   if (!footer) {
     return null;
   }
@@ -34,7 +43,15 @@ function Footer(): ReactNode {
             ))}
           </nav>
         )}
-        {footer.copyright && <p className={styles.copyright}>{footer.copyright}</p>}
+        <div className={styles.end}>
+          {status !== 'unknown' && (
+            <span className={styles.status} role="status">
+              <span className={clsx(styles.dot, styles[status])} aria-hidden="true" />
+              {statusLabel[status]}
+            </span>
+          )}
+          {footer.copyright && <p className={styles.copyright}>{footer.copyright}</p>}
+        </div>
       </div>
     </footer>
   );

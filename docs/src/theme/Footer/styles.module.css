@@ -26,3 +26,32 @@
 .copyright {
   margin: 0;
 }
+
+.end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-left: auto;
+  gap: 0.25rem 1.5rem;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--ifm-color-emphasis-500);
+}
+
+.up {
+  background: var(--ifm-color-success);
+}
+
+.down {
+  background: var(--ifm-color-danger);
+}
