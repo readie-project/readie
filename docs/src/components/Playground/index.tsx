@@ -173,10 +173,10 @@ function Editor({
   /* -------------------------------------------------------------------- Page */
 
   const OWN_CODE = `# Write your own Python here.
-  # The standard library and the packages of the examples are available.
+# The standard library and the packages of the examples are available.
 
-  print("Hello from Readie")
-  `;
+print("Hello from Readie")
+`;
 
   // The playground: a row of examples and one card with the code and the two results. It is a
   // section of the landing page.
