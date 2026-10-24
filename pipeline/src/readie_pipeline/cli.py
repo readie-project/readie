@@ -365,7 +365,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
 
     plans = [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
     if settings.planner != "fixed":
-        plans = [CheckpointPlan(), *plans]
+        plans.append(CheckpointPlan())
 
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)

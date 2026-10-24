@@ -37,6 +37,32 @@ for match_id, start, end in matcher(doc):
 `,
   },
   {
+    id: 'correlation',
+    domain: 'Data Visualization',
+    title: 'Height and weight',
+    imports: 'seaborn, SciPy',
+    code: `import io
+
+import matplotlib
+import numpy as np
+import seaborn as sns
+from scipy import stats
+
+matplotlib.use("Agg")
+
+rng = np.random.default_rng(1)
+height = rng.normal(170, 8, 300)
+weight = 0.9 * height - 90 + rng.normal(0, 6, 300)
+
+r, _ = stats.pearsonr(height, weight)
+ax = sns.regplot(x=height, y=weight, scatter_kws={"s": 8})
+png = io.BytesIO()
+ax.figure.savefig(png, format="png")
+print(f"Correlation between height and weight: {r:.2f}")
+print(f"Chart: {len(png.getvalue()) / 1024:.0f} KB")
+`,
+  },
+  {
     id: 'scan',
     domain: 'Image Processing',
     title: 'Scan clean-up',
@@ -57,53 +83,6 @@ report = pd.DataFrame(
 )
 print(report.round(1).to_string())
 print("Size:", clean.size)
-`,
-  },
-  {
-    id: 'loans',
-    domain: 'Machine Learning',
-    title: 'Loan approvals',
-    imports: 'scikit-learn, pandas, numpy, matplotlib',
-    code: `import io
-
-import matplotlib
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
-
-matplotlib.use("Agg")  # draw without a screen
-
-# 300 past loans: the borrower's income (in hundred thousand dollars), debt as a share of
-# income, and whether the loan was repaid.
-rng = np.random.default_rng(11)
-income = rng.normal(0.6, 0.2, 300).clip(0.15, 1.5)
-debt = rng.normal(0.35, 0.12, 300).clip(0.05, 0.9)
-repaid = (income - 1.5 * debt + rng.normal(0, 0.15, 300)) > -0.1
-loans = pd.DataFrame({"income": income, "debt": debt, "repaid": repaid})
-
-# Train on the first 240 loans and test on the 60 the model has not seen.
-features, outcome = loans[["income", "debt"]], loans["repaid"]
-model = LogisticRegression().fit(features[:240], outcome[:240])
-print(f"Accuracy on 60 unseen loans: {model.score(features[240:], outcome[240:]):.0%}")
-
-# A new applicant: $45,000 of income, with debt at 50% of it.
-applicant = pd.DataFrame({"income": [0.45], "debt": [0.5]})
-print(f"Chance of repaying: {model.predict_proba(applicant)[0, 1]:.0%}")
-
-# Draw the loans and the line where the model switches from "repaid" to "not repaid".
-weight_income, weight_debt = model.coef_[0]
-line_x = np.array([0.15, 1.5])
-line_y = -(weight_income * line_x + model.intercept_[0]) / weight_debt
-fig, ax = plt.subplots(figsize=(5, 4))
-ax.scatter(features["income"], features["debt"], c=outcome, cmap="coolwarm", s=12)
-ax.plot(line_x, line_y, "k--")
-ax.set_ylim(0, 0.9)
-ax.set_xlabel("income")
-ax.set_ylabel("debt share")
-chart = io.BytesIO()
-fig.savefig(chart, format="png")
-print(f"Chart with the decision line: {len(chart.getvalue()) / 1024:.0f} KB")
 `,
   },
   {
@@ -159,30 +138,83 @@ print(customers.to_string(index=False))
 `,
   },
   {
-    id: 'features',
-    domain: 'Data Preprocessing',
-    title: 'Prepare data for a model',
+    id: 'tickets',
+    domain: 'Natural Language Processing',
+    title: 'Sort support tickets',
+    imports: 'scikit-learn',
+    code: `from sklearn import linear_model
+from sklearn.feature_extraction import text
+
+tickets = [
+    "refund my order", "I want my money back", "charged twice, please refund",
+    "app crashes on start", "error when I log in", "the screen freezes after the update",
+]
+topics = ["billing", "billing", "billing", "bug", "bug", "bug"]
+
+vectorizer = text.TfidfVectorizer()
+model = linear_model.LogisticRegression().fit(vectorizer.fit_transform(tickets), topics)
+
+for new in ["please refund the second charge", "login shows an error"]:
+    print(f"{new!r} -> {model.predict(vectorizer.transform([new]))[0]}")
+`,
+  },
+  {
+    id: 'fruit',
+    domain: 'Machine Learning',
+    title: 'Apples or oranges',
     imports: 'scikit-learn, pandas',
-    code: `import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+    code: `import numpy as np
+import pandas as pd
+from sklearn import naive_bayes, preprocessing
 
-houses = pd.DataFrame({
-    "area": [50, 80, 120, 65],
-    "rooms": [2, 3, 5, 3],
-    "city": ["Austin", "Boston", "Austin", "Denver"],
-})
+rng = np.random.default_rng(0)
+apples = pd.DataFrame({"weight": rng.normal(150, 12, 40), "width": rng.normal(7.5, 0.4, 40)})
+oranges = pd.DataFrame({"weight": rng.normal(200, 15, 40), "width": rng.normal(8.5, 0.4, 40)})
+fruit = pd.concat([apples, oranges], ignore_index=True)
+kind = ["apple"] * 40 + ["orange"] * 40
 
-# Put the numbers on one scale and turn the city into one column per value.
-prepare = ColumnTransformer([
-    ("numbers", StandardScaler(), ["area", "rooms"]),
-    ("city", OneHotEncoder(), ["city"]),
-])
-table = pd.DataFrame(
-    prepare.fit_transform(houses),
-    columns=["area", "rooms", "Austin", "Boston", "Denver"],
-)
-print(table.round(2).to_string(index=False))
+scaler = preprocessing.StandardScaler().fit(fruit)
+model = naive_bayes.GaussianNB().fit(scaler.transform(fruit), kind)
+
+new_fruit = pd.DataFrame({"weight": [160, 195], "width": [7.7, 8.6]})
+print(model.predict(scaler.transform(new_fruit)))
+`,
+  },
+  {
+    id: 'communities',
+    domain: 'Graph Processing',
+    title: 'Find communities',
+    imports: 'NetworkX',
+    code: `import networkx as nx
+from networkx.algorithms import community
+
+# A famous social network: 34 members of a karate club.
+graph = nx.karate_club_graph()
+groups = community.greedy_modularity_communities(graph)
+
+print(f"{graph.number_of_nodes()} people fall into {len(groups)} communities")
+print("Community sizes:", sorted(len(group) for group in groups))
+`,
+  },
+  {
+    id: 'blobs',
+    domain: 'Computer Vision',
+    title: 'Count bright regions',
+    imports: 'SciPy',
+    code: `import numpy as np
+from scipy import ndimage
+
+rng = np.random.default_rng(3)
+noise = rng.random((120, 120))
+
+# Blur the noise, then keep the bright regions and count them.
+smooth = ndimage.gaussian_filter(noise, sigma=5)
+bright = smooth > smooth.mean() + smooth.std()
+labels, count = ndimage.label(bright)
+sizes = ndimage.sum(bright, labels, range(1, count + 1))
+
+print(f"Bright regions: {count}")
+print(f"Largest region: {int(sizes.max())} pixels")
 `,
   },
 ];
