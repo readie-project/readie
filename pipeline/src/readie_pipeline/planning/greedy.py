@@ -154,7 +154,10 @@ class GreedyPlanner:
         for request in requests:
             imports = metadata.resolve_imports(request.imports)
             if imports not in cache:
-                cache[imports] = metadata.closure(imports)
+                cache[imports] = frozenset(
+                    name.partition(":")[2] if ":" in name else name
+                    for name in metadata.closure(imports)
+                )
         return cache
 
     def _eligible_packages(
@@ -206,7 +209,7 @@ class GreedyPlanner:
         sandbox is captured, and a package's disk and memory footprints are
         not proportional to each other -- see ``Metadata.memory_size_mb``.
         Disk size is still measured and recorded (see
-        ``PackageFacts.disk_size_mb``), just not what this planner optimizes.
+        ``ResourceFacts.disk_size_mb``), just not what this planner optimizes.
 
         No nominal floor here either, for the same reason as ``_import_time``:
         a name folded into an already-measured ancestor's closure (most of a
