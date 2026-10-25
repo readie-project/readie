@@ -249,6 +249,7 @@ def test_analyze_records_the_image_it_ran_in_and_the_versions_it_found(
     image = "gcr.io/kaggle-images/python@sha256:" + "ab" * 32
     monkeypatch.setenv("READIE_BASE_IMAGE", image)
     monkeypatch.setattr("readie_pipeline.cli.installed_packages", lambda: ["pandas"])
+    monkeypatch.setattr("readie_pipeline.cli.KernelCacheDropper.check", lambda _self: None)
     monkeypatch.setattr(
         "readie_pipeline.cli.analyze",
         lambda *_a, **_k: Metadata(
@@ -271,11 +272,54 @@ def test_analyze_without_a_named_image_writes_an_empty_base_image(
 ):
     monkeypatch.delenv("READIE_BASE_IMAGE", raising=False)
     monkeypatch.setattr("readie_pipeline.cli.installed_packages", lambda: [])
+    monkeypatch.setattr("readie_pipeline.cli.KernelCacheDropper.check", lambda _self: None)
     monkeypatch.setattr("readie_pipeline.cli.analyze", lambda *_a, **_k: Metadata({}))
 
     assert run("--data-dir", str(tmp_path), "analyze") == 0
 
     assert json.loads((tmp_path / "metadata" / "cpu.json").read_text())["base_image"] == ""
+
+
+def test_analyze_only_known_walks_the_names_of_the_finished_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    # The installed packages and the corpus are left alone, so a run can finish what an
+    # earlier file knows before it goes on to anything new.
+    monkeypatch.delenv("READIE_BASE_IMAGE", raising=False)
+    monkeypatch.setattr("readie_pipeline.cli.installed_versions", lambda: {"numpy": "2.0.2"})
+    monkeypatch.setattr("readie_pipeline.cli.KernelCacheDropper.check", lambda _self: None)
+    monkeypatch.setattr(
+        "readie_pipeline.cli.installed_packages",
+        lambda: pytest.fail("the installed packages were listed"),
+    )
+    (tmp_path / "metadata").mkdir()
+    (tmp_path / "metadata" / "cpu.json").write_text(
+        json.dumps(
+            Metadata(
+                {"numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"}))},
+                distributions={"numpy": "2.0.2"},
+            ).to_json()
+        )
+    )
+    walked: list[set[str]] = []
+
+    def fake_analyze(names, **_kwargs):
+        walked.append(set(names))
+        return Metadata({})
+
+    monkeypatch.setattr("readie_pipeline.cli.analyze", fake_analyze)
+
+    assert run("--data-dir", str(tmp_path), "analyze", "--only-known") == 0
+
+    assert walked == [{"numpy"}]
+    assert "walking only the 1 names" in capsys.readouterr().out
+
+
+def test_analyze_only_known_without_a_finished_file_explains_itself(tmp_path: Path, capsys):
+    code = run("--data-dir", str(tmp_path), "analyze", "--only-known")
+
+    assert code == 1
+    assert "--only-known needs the finished" in capsys.readouterr().err
 
 
 def test_reuse_plan_without_a_plan_explains_itself(data_dir: Path, workspace: Path, capsys):

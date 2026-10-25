@@ -90,6 +90,15 @@ class Settings:
     #: the same quantity the planner maximises the reduction of when it adds a package.
     alpha: float = 0.005
 
+    profile_samples: int = 3
+    """How many times ``analyze`` times each package. It empties the host's file cache before
+    each timing, which is how a worker meets a package it has not read recently, and keeps
+    the median."""
+
+    drop_caches_file: Path = Path("/proc/sys/vm/drop_caches")
+    """The file ``analyze`` writes to empty the cache. In a container it is a mount of the
+    host's file."""
+
     @property
     def rootfs_path(self) -> Path:
         """The root filesystem inside the bundle."""
@@ -204,6 +213,9 @@ class Settings:
         if self.alpha <= 0:
             msg = f"alpha must be positive, got {self.alpha}"
             raise ConfigError(msg)
+        if self.profile_samples < 1:
+            msg = f"profile_samples must be at least 1, got {self.profile_samples}"
+            raise ConfigError(msg)
         if self.flavor not in ("cpu", "gpu"):
             msg = f"flavor must be 'cpu' or 'gpu', got {self.flavor!r}"
             raise ConfigError(msg)
@@ -252,6 +264,8 @@ class Settings:
             "max_checkpoints": _int(source, "READIE_MAX_CHECKPOINTS", 8),
             "checkpoint_size_budget_mb": _float(source, "READIE_SIZE_BUDGET_MB", 2048.0),
             "alpha": _float(source, "READIE_ALPHA", 0.005, ALPHA_PRECISION),
+            "profile_samples": _int(source, "READIE_PROFILE_SAMPLES", 3),
+            "drop_caches_file": path_of("READIE_DROP_CACHES_FILE", "/proc/sys/vm/drop_caches"),
         }
         values.update({k: v for k, v in overrides.items() if v is not None})
         return cls(**values)  # type: ignore[arg-type]

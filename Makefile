@@ -25,6 +25,21 @@ FLAVOR          ?= cpu
 # Packages `analyze` should skip entirely, and everything under them. 
 # Space-separated; e.g. `make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"`.
 ANALYZE_EXCLUDE ?= google
+# Packages `analyze` should measure after all the others, and everything under them. The rest
+# are measured most-used first. Space-separated; e.g. `make analyze ANALYZE_DEFER="tensorflow keras"`.
+ANALYZE_DEFER   ?=
+# Set to 1 to make `analyze` walk only the names in the finished metadata file, and not the
+# installed packages or the corpus's imports. With an unfinished run it measures what that
+# file has and the run has not reached.
+ANALYZE_ONLY_KNOWN ?=
+# `analyze` times each import ANALYZE_SAMPLES times, emptying the host's file cache before
+# each one and keeping the median. That is how a worker meets a package it has not read
+# recently. It writes the host's /proc/sys/vm/drop_caches, which needs root and empties the
+# cache of the whole host, so run it on a machine where that is acceptable.
+ANALYZE_SAMPLES ?= 3
+# `analyze` saves as it goes and continues from an earlier run in the same image. Set to 1 to
+# ignore that and measure every package again, e.g. after changing ANALYZE_EXCLUDE.
+ANALYZE_FRESH   ?=
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
 ARTIFACTS_DIR   := pipeline/out/$(FLAVOR)
@@ -238,7 +253,10 @@ rootfs-requirements: ## Plan and list the distributions the rootfs must install
 # mixing two images' system libraries, which crashed even `import pandas`
 # when this instead ran inside `pipeline` via a PYTHONPATH into a copied
 # rootfs. Needs neither gVisor nor --privileged: it only imports packages and
-# times them in a subprocess. Same amd64-only constraint as `capture` though,
+# times them in a subprocess. It does need root on the host, because each timing
+# is preceded by emptying the host's file cache, and the host's drop_caches file
+# is mounted into the container for that (root in a container cannot write
+# /proc/sys by itself). Same amd64-only constraint as `capture` though,
 # since the base image itself publishes no other architecture.
 #
 # Mounts the whole data dir, not just metadata/, so the result lands on the
@@ -264,8 +282,11 @@ analyze: analyzer-image ## Measure every package the $(FLAVOR) base image instal
 		-e FLAVOR=$(FLAVOR) \
 		-e READIE_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
 		-e PYTHONUNBUFFERED=1 \
+		-e READIE_PROFILE_SAMPLES=$(ANALYZE_SAMPLES) \
+		-e READIE_DROP_CACHES_FILE=/host-drop-caches \
+		-v /proc/sys/vm/drop_caches:/host-drop-caches \
 		-v "$(CURDIR)/pipeline/data:/app/data" \
-		$(ANALYZER_IMAGE) analyze -v $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg))
+		$(ANALYZER_IMAGE) analyze -v $(if $(ANALYZE_FRESH),--fresh) $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg)) $(foreach pkg,$(ANALYZE_DEFER),--defer $(pkg)) $(if $(ANALYZE_ONLY_KNOWN),--only-known)
 	@echo "==> wrote pipeline/data/metadata/$(FLAVOR).json"
 
 # One run, not two: `capture` plans and captures in the same container because
