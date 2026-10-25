@@ -84,7 +84,10 @@ The set of fields follows `@remote`: when an argument is added or changed there,
   session (it would otherwise become a made-up id and leave a warm container behind).
   With none, every request is an independent
   call. Requests that name the same session share a container and an interpreter: names
-  defined by one request are visible to the next. The route never invents a session id.
+  defined by one request are visible to the next, for as long as the session's container
+  lives. A container that is destroyed (after a failure, or when its idle time runs out) takes
+  those names with it, and a request that names the session after that starts a new container
+  with an empty namespace. The route never invents a session id.
 - **The code runs with module semantics** (`exec` in a namespace that lasts for the
   session, `__name__ == "__main__"`), so `from x import *`, classes and `global`
   behave as in a script. The function the client pickles repeats the code's import

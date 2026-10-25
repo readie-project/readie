@@ -105,3 +105,34 @@ async def test_cancelling_the_run_cancels_the_call_in_flight() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert backend.cancelled == 1
+
+
+async def test_requests_in_one_session_share_a_namespace() -> None:
+    # Pinned: every request once got a fresh uuid key, so a name defined by step 1 was a
+    # NameError in step 2 even in the same session, against what the README promises.
+    backend = FakeBackend()
+    runner = make(backend)
+    await runner.run_eval("a = 1", EvalOptions(remote={"session": "mine"}))
+    await runner.run_eval("print(a)", EvalOptions(remote={"session": "mine"}))
+
+    assert [c.key for c in backend.evals] == ["mine", "mine"]
+
+
+async def test_different_sessions_do_not_share_a_namespace() -> None:
+    backend = FakeBackend()
+    runner = make(backend)
+    await runner.run_eval("a = 1", EvalOptions(remote={"session": "one"}))
+    await runner.run_eval("a = 1", EvalOptions(remote={"session": "two"}))
+
+    assert [c.key for c in backend.evals] == ["one", "two"]
+
+
+async def test_requests_with_no_session_are_independent() -> None:
+    backend = FakeBackend()
+    runner = make(backend)
+    await runner.run_eval("a = 1", EvalOptions())
+    await runner.run_eval("a = 1", EvalOptions(remote={"session": None}))
+
+    keys = [c.key for c in backend.evals]
+    assert len(set(keys)) == 2
+    assert all(key and key != "None" for key in keys)
