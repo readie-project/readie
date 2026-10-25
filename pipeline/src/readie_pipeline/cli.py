@@ -34,9 +34,10 @@ from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, 
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
 from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
 from readie_pipeline.corpus.generate import Report
-from readie_pipeline.corpus.models import Corpus, CorpusError, Source
+from readie_pipeline.corpus.models import Corpus, CorpusError, ResourceKind, Source
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
 from readie_pipeline.metadata.analyze import analyze, installed_packages
+from readie_pipeline.metadata.datasets import measure_datasets
 from readie_pipeline.metadata.models import Metadata, MetadataError
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
 from readie_pipeline.planning.requirements import (
@@ -226,6 +227,7 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     importable (see ``installed_packages``).
     """
     packages = set(installed_packages())
+    corpus: Corpus | None = None
     if settings.corpus_path.exists():
         corpus = Corpus.load(settings.corpus_path)
         for item in corpus:
@@ -254,6 +256,16 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     metadata = replace(
         analyze(packages, exclude=exclude, on_progress=progress), base_image=settings.base_image
     )
+    if corpus is not None:
+        dataset_slugs = {
+            dataset for item in corpus for dataset in item.of_kind(ResourceKind.KAGGLE_DATASET)
+        }
+        if dataset_slugs:
+            dataset_facts = measure_datasets(sorted(dataset_slugs), on_progress=progress)
+            metadata = replace(
+                metadata,
+                packages={**metadata.packages, **dataset_facts},
+            )
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")

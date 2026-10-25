@@ -67,17 +67,42 @@ def item_key(name: str, resource_type: ResourceType | str) -> str:
     prefixed with their kind (``model:gpt2``), matching how a request names them.
     """
     kind = str(resource_type)
+    if name.startswith(f"{kind}:"):
+        return name
     if kind == ResourceType.PACKAGE:
         return name
     return f"{kind}:{name}"
 
 
-def _keyed_items(packages: Iterable[str], plan: CheckpointPlan) -> list[str]:
+def _resource_item_key(
+    name: str,
+    resource_type: ResourceType,
+    metadata: Metadata,
+) -> str:
+    """Use a measured source-qualified type when one is available."""
+    if ":" in name:
+        return name
+    candidates = {
+        ResourceType.DATASET: (ResourceType.KAGGLE_DATASET, ResourceType.HF_DATASET),
+        ResourceType.MODEL: (ResourceType.HF_MODEL, ResourceType.MODEL),
+        ResourceType.TOKENIZER: (ResourceType.HF_TOKENIZER, ResourceType.TOKENIZER),
+    }.get(resource_type, (resource_type,))
+    for candidate in candidates:
+        if f"{candidate}:{name}" in metadata.packages:
+            return item_key(name, candidate)
+    return item_key(name, resource_type)
+
+
+def _keyed_items(
+    packages: Iterable[str],
+    plan: CheckpointPlan,
+    metadata: Metadata,
+) -> list[str]:
     """Keys a package set plus a plan's non-package resources for the catalogue."""
     keys = list(packages)
-    keys += [item_key(n, ResourceType.DATASET) for n in plan.datasets]
-    keys += [item_key(n, ResourceType.MODEL) for n in plan.models]
-    keys += [item_key(n, ResourceType.TOKENIZER) for n in plan.tokenizers]
+    keys += [_resource_item_key(n, ResourceType.DATASET, metadata) for n in plan.datasets]
+    keys += [_resource_item_key(n, ResourceType.MODEL, metadata) for n in plan.models]
+    keys += [_resource_item_key(n, ResourceType.TOKENIZER, metadata) for n in plan.tokenizers]
     return sorted(keys)
 
 
@@ -92,10 +117,10 @@ def _checkpoint_items(plan: CheckpointPlan, metadata: Metadata) -> list[str]:
     checkpoint, dependencies included, not just the trimmed executor-facing
     list (see ``_canonical_items`` for that one).
     """
-    return _keyed_items(metadata.closure(plan.imports), plan)
+    return _keyed_items(metadata.closure(plan.imports), plan, metadata)
 
 
-def _canonical_items(plan: CheckpointPlan) -> list[str]:
+def _canonical_items(plan: CheckpointPlan, metadata: Metadata) -> list[str]:
     """The packages some request actually asked for, keyed for the catalogue.
 
     Not expanded through dependencies -- this is the same list the executor
@@ -103,7 +128,7 @@ def _canonical_items(plan: CheckpointPlan) -> list[str]:
     (``_checkpoint_items``) for a reader that wants to know what was actually
     requested rather than what pricing needed.
     """
-    return _keyed_items(plan.imports, plan)
+    return _keyed_items(plan.imports, plan, metadata)
 
 
 def _in_rootfs(name: str, resource_type: ResourceType, inventory: Inventory) -> bool:
@@ -152,22 +177,23 @@ def build_catalogue(
     for name, facts in metadata.packages.items():
         if name in dropped:
             continue
+        bare_name = name.partition(":")[2] if ":" in name else name
         entry: dict[str, Any] = {
             "size_mb": round(facts.memory_size_mb, 4),
             "load_time": facts.import_time,
             "resource_type": str(facts.resource_type),
             "distribution": facts.distribution,
         }
-        dependencies = sorted(metadata.direct_dependencies(name) - dropped)
+        dependencies = sorted(metadata.direct_dependencies(bare_name) - dropped)
         if dependencies:
             entry["dependencies"] = dependencies
-        items[item_key(name, facts.resource_type)] = entry
+        items[item_key(bare_name, facts.resource_type)] = entry
 
     checkpoints = []
     for checkpoint_id, plan in entries:
         keys = [k for k in _checkpoint_items(plan, metadata) if k not in dropped]
-        canonical = [k for k in _canonical_items(plan) if k not in dropped]
-        size_mb = sum(metadata.memory_size_mb(_bare(key)) for key in keys)
+        canonical = [k for k in _canonical_items(plan, metadata) if k not in dropped]
+        size_mb = sum(_memory_size(key, metadata) for key in keys)
         checkpoints.append(
             {
                 "id": checkpoint_id,
@@ -203,6 +229,12 @@ def _bare(key: str) -> str:
     """Strip a ``kind:`` prefix to recover the metadata lookup name."""
     _, sep, rest = key.partition(":")
     return rest if sep else key
+
+
+def _memory_size(key: str, metadata: Metadata) -> float:
+    """Look up the measured size using either a typed or legacy metadata key."""
+    facts = metadata.packages.get(key) or metadata.packages.get(_bare(key))
+    return facts.memory_size_mb if facts is not None else 0.0
 
 
 def write_catalogue(path: Path, document: dict[str, Any]) -> None:

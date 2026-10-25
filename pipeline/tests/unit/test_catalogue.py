@@ -92,6 +92,37 @@ def test_catalogue_carries_item_costs_and_precomputed_checkpoint_size() -> None:
     assert ckpt["size_mb"] == pytest.approx(550.0)
 
 
+def test_catalogue_uses_source_qualified_checkpoint_keys() -> None:
+    metadata = Metadata(
+        {
+            "kaggle_dataset:owner/data": PackageFacts(
+                base_import="owner/data",
+                memory_size_mb=4.0,
+                resource_type=ResourceType.KAGGLE_DATASET,
+            ),
+            "hf_model:gpt2": PackageFacts(
+                base_import="gpt2",
+                memory_size_mb=8.0,
+                resource_type=ResourceType.HF_MODEL,
+            ),
+        }
+    )
+    plan = CheckpointPlan(datasets=("owner/data",), models=("gpt2",))
+
+    document = build_catalogue(
+        flavor="cpu",
+        alpha=0.005,
+        metadata=metadata,
+        entries=[("checkpoint", plan)],
+        inventory=None,
+    )
+
+    checkpoint = document["checkpoints"][0]
+    assert checkpoint["items"] == ["hf_model:gpt2", "kaggle_dataset:owner/data"]
+    assert checkpoint["canonical"] == ["hf_model:gpt2", "kaggle_dataset:owner/data"]
+    assert checkpoint["size_mb"] == pytest.approx(12.0)
+
+
 def test_catalogue_carries_a_packages_resolved_dependencies() -> None:
     metadata = Metadata(
         {

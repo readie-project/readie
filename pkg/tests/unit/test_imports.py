@@ -76,7 +76,7 @@ def test_models_ride_along_as_prefixed_imports() -> None:
     def loads_a_model():
         return AutoModel.from_pretrained("gpt2")
 
-    assert "model:gpt2" in extract_imports(loads_a_model)
+    assert "hf_model:gpt2" in extract_imports(loads_a_model)
 
 
 def test_a_module_imported_at_module_scope_is_resolved_via_global_lookup() -> None:

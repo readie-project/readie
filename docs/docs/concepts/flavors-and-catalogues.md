@@ -58,11 +58,14 @@ Each entry in `items` has these fields:
 
 - `load_time`: seconds to import the item, measured by the pipeline
 - `size_mb`: memory the item takes once loaded
-- `resource_type`: `package`, `dataset`, `model`, or `tokenizer`
+- `resource_type`: `package`, `kaggle_dataset`, `hf_dataset`, `hf_model`, or `hf_tokenizer`
 - `dependencies` (optional): the other items it pulls in
 - `distribution`: the PyPI distribution that provides the item, or an empty string for a dataset, model, or tokenizer
 
-Packages are keyed by dotted import name, such as `numpy` or `numpy.linalg`. Datasets, models, and tokenizers carry a prefix, such as `model:gpt2`.
+Packages are keyed by dotted import name with a `package:` prefix, such as
+`package:numpy` or `package:numpy.linalg`. Datasets, models, and tokenizers
+carry source-qualified prefixes, such as `kaggle_dataset:owner/name` or
+`hf_model:gpt2`.
 
 Each entry in `checkpoints` has these fields:
 

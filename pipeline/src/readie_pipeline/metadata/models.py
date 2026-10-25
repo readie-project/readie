@@ -31,6 +31,10 @@ class ResourceType(StrEnum):
     DATASET = "dataset"
     MODEL = "model"
     TOKENIZER = "tokenizer"
+    KAGGLE_DATASET = "kaggle_dataset"
+    HF_DATASET = "hf_dataset"
+    HF_MODEL = "hf_model"
+    HF_TOKENIZER = "hf_tokenizer"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +74,7 @@ class PackageFacts:
     checkpoint saves, and what the planner maximises."""
 
     resource_type: ResourceType = ResourceType.PACKAGE
+    dependencies: frozenset[str] = frozenset()
     error: str = ""
     """Why this package could not be analysed, if it could not."""
 
@@ -99,7 +104,8 @@ class PackageFacts:
             # Both spellings accepted: the committed data uses import_time and
             # the previous writer emitted load_time.
             import_time=float(raw.get("import_time") or raw.get("load_time") or 0.0),
-            resource_type=ResourceType(raw.get("resource_type") or ResourceType.PACKAGE),
+            resource_type=_resource_type(raw.get("resource_type")),
+            dependencies=frozenset(str(v) for v in (raw.get("dependencies") or ())),
             error=str(raw.get("error") or ""),
         )
 
@@ -123,7 +129,23 @@ class PackageFacts:
             "memory_size_mb": round(self.memory_size_mb, 4),
             "import_time": self.import_time,
             "resource_type": str(self.resource_type),
+            "dependencies": sorted(self.dependencies),
         }
+
+
+ResourceFacts = PackageFacts
+
+
+def _resource_type(value: object) -> ResourceType:
+    """Read current source-qualified and older generic resource names."""
+    if value in (None, ""):
+        return ResourceType.PACKAGE
+    legacy = {
+        "dataset": ResourceType.KAGGLE_DATASET,
+        "model": ResourceType.HF_MODEL,
+        "tokenizer": ResourceType.HF_TOKENIZER,
+    }
+    return legacy.get(str(value), ResourceType(str(value)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,6 +289,8 @@ class Metadata:
 
         if "packages" in raw:
             packages_raw, resolved_raw = raw["packages"], raw.get("resolved", {})
+        elif "resources" in raw:
+            packages_raw, resolved_raw = raw["resources"], raw.get("resolved", {})
         else:
             # Predates the "resolved" map: a flat {name: facts} dict.
             packages_raw, resolved_raw = raw, {}

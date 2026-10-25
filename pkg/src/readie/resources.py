@@ -45,7 +45,7 @@ def extract_imports(func: Callable[..., Any]) -> tuple[str, ...]:
     """Return the top-level modules ``func`` refers to, sorted and deduped.
 
     Models and tokenizers named in ``from_pretrained(...)`` calls ride along as
-    ``model:<name>`` entries -- they are artefacts a checkpoint might stage, and
+    ``hf_model:<name>`` entries -- they are artefacts a checkpoint might stage, and
     the wire carries imports as plain strings.
     """
     try:
@@ -72,7 +72,12 @@ def _analyse(func: Callable[..., Any]) -> tuple[str, ...]:
         # rejects. Import hints are advisory; a hint is not worth a crash.
         return ()
     modules = sorted(facts.imports | _external_modules(target))
-    artefacts = sorted(f"model:{name}" for name in facts.models | facts.tokenizers)
+    artefacts = sorted(
+        [
+            *(f"hf_model:{name}" for name in facts.models),
+            *(f"hf_tokenizer:{name}" for name in facts.tokenizers),
+        ]
+    )
     return tuple(modules + artefacts)
 
 
