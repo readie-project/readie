@@ -29,6 +29,7 @@ name as it walks.
 from __future__ import annotations
 
 import json
+import statistics
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
@@ -36,6 +37,7 @@ from dataclasses import dataclass, field, replace
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
+from readie_pipeline.metadata.cache import CacheDropper
 from readie_pipeline.metadata.inventory import (
     canonical_name,
     distribution_for,
@@ -43,6 +45,7 @@ from readie_pipeline.metadata.inventory import (
     provided_distributions,
 )
 from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata.progress import Journal
 
 #: Imports the dependencies first, then times and memory-samples the target
 #: alone. Without the warm-up both measurements are dominated by whatever the
@@ -100,6 +103,14 @@ except BaseException as exc:
 
 #: A package that hangs on import must not hang the analysis.
 _PROFILE_TIMEOUT = 120.0
+
+#: Passed to every subprocess that imports a candidate. Without it, the first import of a
+#: module that has no bytecode compiles it and writes a ``.pyc``, which changes what every
+#: later run sees: discovery would hand the timed run a compiled package. A worker's
+#: sandbox starts from the image's own bytecode and discards what it writes, so a module
+#: the image never imported is compiled again on every cold start. ``-B`` writes nothing,
+#: which keeps the bytecode as the image has it for every run, every sample and every item.
+_NO_BYTECODE = "-B"
 
 
 #: This tool's own top-level package name. Analysing a real base image runs
@@ -183,7 +194,7 @@ def _discover(candidate: str) -> tuple[str | None, frozenset[str]]:
     """
     try:
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [sys.executable, "-m", "readie_pipeline.metadata.resolve", candidate],
+            [sys.executable, _NO_BYTECODE, "-m", "readie_pipeline.metadata.resolve", candidate],
             capture_output=True,
             text=True,
             timeout=_PROFILE_TIMEOUT,
@@ -236,7 +247,7 @@ def _profile(warm: list[str], target: str) -> dict[str, object]:
     """
     try:
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [sys.executable, "-c", _PROFILER, json.dumps(warm), target],
+            [sys.executable, _NO_BYTECODE, "-c", _PROFILER, json.dumps(warm), target],
             capture_output=True,
             text=True,
             timeout=_PROFILE_TIMEOUT,
@@ -245,6 +256,49 @@ def _profile(warm: list[str], target: str) -> dict[str, object]:
         return dict(json.loads(completed.stdout.strip() or "{}"))
     except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
         return {"error": f"could not profile: {exc}"}
+
+
+@dataclass(frozen=True, slots=True)
+class ColdProfile:
+    """How each import is timed: with the file cache emptied first, keeping the median.
+
+    ``samples`` is how many times each package is timed. Every sample is preceded by its
+    own drop, so one sample cannot warm the next.
+    """
+
+    dropper: CacheDropper
+    samples: int = 3
+
+    def __post_init__(self) -> None:
+        """Refuse a count that would take no timing at all."""
+        if self.samples < 1:
+            msg = f"samples must be at least 1, got {self.samples}"
+            raise ValueError(msg)
+
+
+def _profile_cold(warm: list[str], target: str, cold: ColdProfile) -> dict[str, object]:
+    """``_profile``, repeated with the file cache emptied before each run.
+
+    Discovery has already imported ``target`` once in a separate process, so the files it
+    loads are in the host's file cache by now and a plain ``_profile`` would time a warm
+    import. Dropping the cache here, after discovery and right before the timed subprocess,
+    makes the target's own files cold. The dependencies in ``warm`` are imported untimed
+    inside the subprocess, so they are read from disk again but stay out of the number: the
+    time is still the target's own, with its dependencies already resident.
+
+    A failure in any sample is the result, as for ``_profile``. The time and the memory are
+    the medians over the samples.
+    """
+    times: list[float] = []
+    memory: list[float] = []
+    for _ in range(cold.samples):
+        cold.dropper.drop()
+        measured = _profile(warm, target)
+        if "error" in measured:
+            return measured
+        times.append(float(measured.get("time", 0.0)))  # type: ignore[arg-type]
+        memory.append(float(measured.get("memory_mb", 0.0)))  # type: ignore[arg-type]
+    return {"time": statistics.median(times), "memory_mb": statistics.median(memory)}
 
 
 def _is_owned_by_a_private_ancestor(candidate: str) -> bool:
@@ -382,8 +436,13 @@ def _start_frame(
     return resolved, _Frame(resolved=resolved, loaded=loaded, eligible=eligible)
 
 
-def _finalize(frame: _Frame, *, provided: Mapping[str, list[str]]) -> PackageFacts:
-    """Profile a frame whose eligible names have all been walked already."""
+def _finalize(
+    frame: _Frame, *, provided: Mapping[str, list[str]], cold: ColdProfile
+) -> PackageFacts:
+    """Profile a frame whose eligible names have all been walked already.
+
+    The import is timed after the file cache is emptied (see ``_profile_cold``).
+    """
     dist = distribution_for(frame.resolved, provided)
     facts = PackageFacts(
         base_import=frame.resolved,
@@ -391,7 +450,7 @@ def _finalize(frame: _Frame, *, provided: Mapping[str, list[str]]) -> PackageFac
         loaded_modules=frame.loaded,
         disk_size_mb=_installed_size_mb(dist, frame.resolved) if dist else 0.0,
     )
-    measured = _profile(frame.warm, frame.resolved)
+    measured = _profile_cold(frame.warm, frame.resolved, cold)
     if "error" in measured:
         return replace(facts, error=str(measured["error"]))
     return replace(
@@ -411,6 +470,7 @@ def _visit(
     discovered: dict[str, tuple[str | None, frozenset[str]]],
     all_requested: frozenset[str],
     on_progress: object,
+    cold: ColdProfile,
 ) -> str | None:
     """Resolve and measure ``candidate``, walking its closure with an explicit stack.
 
@@ -537,7 +597,7 @@ def _visit(
             continue
 
         if frame.pos >= len(frame.eligible):
-            facts = _finalize(frame, provided=provided)
+            facts = _finalize(frame, provided=provided, cold=cold)
             results[frame.resolved] = facts
             visiting.discard(frame.resolved)
             if callable(on_progress):
@@ -582,11 +642,54 @@ def _visit(
     return root_resolved
 
 
+def _seed(
+    known: Metadata,
+    *,
+    discovered: dict[str, tuple[str | None, frozenset[str]]],
+    results: dict[str, PackageFacts],
+    keep_timings: bool,
+) -> None:
+    """Start from what an earlier run found, so that it is not found again.
+
+    A package that resolved before resolves to itself and loads what it loaded, and a raw
+    name resolves to the package ``known.resolved`` maps it to. Only packages without an error
+    were written down, so a name that failed before is still tried again.
+    """
+    for name, facts in known.packages.items():
+        if facts.usable:
+            discovered[name] = (name, facts.loaded_modules)
+            if keep_timings:
+                results[name] = facts
+    for raw, resolved in known.resolved.items():
+        measured = known.packages.get(resolved)
+        if measured is not None and measured.usable:
+            discovered[raw] = (resolved, measured.loaded_modules)
+
+
+def _snapshot(results: Mapping[str, PackageFacts], resolved: dict[str, str]) -> Metadata:
+    """``results`` as metadata, with the version of each distribution that they come from.
+
+    These are the versions as installed in the environment that is measuring, which is what
+    the timings and sizes belong to, and what a rootfs built from this metadata pins.
+    """
+    installed = installed_versions()
+    versions = {
+        canonical_name(facts.distribution): installed[canonical_name(facts.distribution)]
+        for facts in results.values()
+        if facts.usable and canonical_name(facts.distribution) in installed
+    }
+    return Metadata(dict(results), distributions=versions, resolved=dict(resolved))
+
+
 def analyze(
     import_names: Iterable[str],
     *,
+    cold: ColdProfile,
     exclude: Iterable[str] = (),
     on_progress: object = None,
+    known: Metadata | None = None,
+    keep_timings: bool = False,
+    journal: Journal | None = None,
 ) -> Metadata:
     """Measure every named import, resolved, and its full empirical closure.
 
@@ -616,6 +719,20 @@ def analyze(
     ``_visit``'s own docstring). There is no separate discovery-only pass
     and nothing to promote: profiling happens exactly once per resolved
     name, in the order raw names are walked.
+
+    Each import is timed with the host's file cache emptied first (see ``ColdProfile``),
+    which is how a worker meets a package it has not read recently. Discovery has just read
+    the package, so without the drop the timing would be a warm one.
+
+    ``known`` is what an earlier run in this same environment measured (the caller checks
+    that, see ``progress.incompatibility``). Its discovery results are reused, so no
+    subprocess is spent finding again what a name resolves to or what it loads. With
+    ``keep_timings`` its timings are kept too and those packages are not measured again,
+    which is how an interrupted run continues. Without it they are all measured afresh.
+
+    ``journal`` is told about each package as soon as it has been measured, and about each
+    name as soon as it has resolved, so that a long run can save as it goes and continue after
+    a stop.
     """
     provided = provided_distributions()
     excluded = frozenset(exclude)
@@ -626,6 +743,15 @@ def analyze(
     resolved_map: dict[str, str] = {}
     visiting: set[str] = set()
 
+    if known is not None:
+        _seed(known, discovered=discovered, results=results, keep_timings=keep_timings)
+
+    def report(name: str, facts: PackageFacts) -> None:
+        if callable(on_progress):
+            on_progress(name, facts)
+        if journal is not None:
+            journal.package(name, facts)
+
     for raw in sorted(all_requested):
         resolved = _visit(
             raw,
@@ -635,10 +761,13 @@ def analyze(
             exclude=excluded,
             discovered=discovered,
             all_requested=all_requested,
-            on_progress=on_progress,
+            on_progress=report,
+            cold=cold,
         )
         if resolved is not None:
             resolved_map[raw] = resolved
+            if journal is not None:
+                journal.resolution(raw, resolved)
         elif raw not in results:
             error = (
                 "excluded from analysis"
@@ -647,16 +776,6 @@ def analyze(
             )
             facts = PackageFacts(base_import=raw, error=error)
             results[raw] = facts
-            if callable(on_progress):
-                on_progress(raw, facts)
+            report(raw, facts)
 
-    # The version of every distribution the measured packages come from, as installed in
-    # the environment that just measured them: those are the versions the timings and
-    # sizes belong to, and what a rootfs built from this metadata pins.
-    installed = installed_versions()
-    versions = {
-        canonical_name(facts.distribution): installed[canonical_name(facts.distribution)]
-        for facts in results.values()
-        if facts.usable and canonical_name(facts.distribution) in installed
-    }
-    return Metadata(results, distributions=versions, resolved=resolved_map)
+    return _snapshot(results, resolved_map)

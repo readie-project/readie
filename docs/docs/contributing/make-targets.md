@@ -15,6 +15,8 @@ Run all commands from the repository root. Pass variables on the command line, f
 | `FLAVOR` | `cpu` | Which generation to build: `cpu` or `gpu`. Every artifact path and image name includes the flavor, so the two flavors do not overwrite each other. See [flavors and catalogues](/docs/concepts/flavors-and-catalogues). |
 | `TAG` | UTC timestamp (`YYYYMMDD-HHMMSS`) | Tag added to the worker image, alongside `latest`. |
 | `ANALYZE_EXCLUDE` | `google` | Space-separated packages `make analyze` skips, with everything under them. |
+| `ANALYZE_SAMPLES` | `3` | Timings per package in `make analyze`, each after emptying the host's file cache. The median is kept. |
+| `ANALYZE_FRESH` | empty | Set to `1` to make `make analyze` ignore an unfinished run and the earlier metadata, and measure every package again. By default it continues an unfinished run in the same image. |
 | `ROOTFS_REQUIREMENTS` | `pipeline/rootfs-requirements.txt` (empty) | File of distribution names, relative to the repository root, that the root filesystem installs on top of `ROOTFS_BASE_IMAGE`. `make rootfs-requirements` writes one from a plan. |
 | `ROOTFS_REQUIREMENTS_STRICT` | `false` | When `true`, the image build fails if a listed distribution does not install. Otherwise the failures are listed in `/etc/readie-rootfs-skipped.txt` in the root filesystem. |
 | `ROOTFS_PYTHONPATH` | `/usr/local/lib/python3.12/dist-packages` | Where the root filesystem's Python keeps packages. The `python:3.12` images use `/usr/local/lib/python3.12/site-packages`. |
@@ -95,7 +97,7 @@ These targets build the images that hold checkpoints and require Docker. Targets
 | `rootfs-requirements` | no | Plan on the host with `plan --no-spec` and write the distributions the plan needs to `$(PLAN_DIR)/rootfs-requirements.txt`. Needs `uv`, and no Docker or gVisor. See [Build checkpoints](/docs/contributing/build-checkpoints#use-a-minimal-root-filesystem). |
 | `pipeline-image` | no | Build the offline pipeline image. |
 | `analyzer-image` | amd64 only | Build the analyzer image (the pipeline on the base image itself). |
-| `analyze` | amd64 only | Measure every package the flavor's base image installs. Writes `pipeline/data/metadata/<flavor>.json`, including the version of each distribution and the name of the base image. Runs with no network. |
+| `analyze` | amd64 only | Measure every package the flavor's base image installs. Writes `pipeline/data/metadata/<flavor>.json`, including the version of each distribution and the name of the base image. Runs with no network. Empties the host's file cache before every timing, which needs root and affects the whole host. Saves each package as it is measured and continues an unfinished run. |
 | `capture` | yes | Plan and capture checkpoints into `pipeline/out/<flavor>`. Runs a privileged container. Fails if no manifest is produced, then copies the catalogue to `catalogues/<flavor>.json`. |
 | `worker-base` | no | Build the base image the worker runs on: gVisor and the root filesystem. It does not contain the checkpoints and does not need a capture first. |
 | `worker-image` | no | Build the worker image on top of the base. This is a Go build and takes seconds. Builds the base first if it is missing. |

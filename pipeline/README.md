@@ -200,19 +200,74 @@ result is written on the host to `data/metadata/<flavor>.json`.
 `plan` and `capture` read whatever `data/metadata/<flavor>.json` already
 contains. They do not regenerate it.
 
-Besides the per-package measurements and the `resolved` map, the file has a
-top-level `distributions` object: canonical distribution name to the version
-installed in the image that was measured (`"scikit-learn": "1.6.1"`). There is one
-entry per distribution, not per package, because many packages share one. `analyze`
-fills it from the environment it runs in. A distribution that was measured in an
-older image than the one the versions were read from has no entry. The file stays
-valid without the key, and `plan` then writes bare names instead of pins.
+#### Cold timings
 
-The top-level `base_image` string names the image the file was measured in. An image
-does not record its own `FROM`, so `make analyze` passes it in as `READIE_BASE_IMAGE`
-(the Makefile's `ROOTFS_BASE_IMAGE`, a digest unless overridden) and `analyze` writes
-it, or an empty string when the image was not named. The writer always emits both
-`base_image` and `distributions`, with the top-level keys sorted.
+For each package, `analyze` first runs a discovery subprocess that imports it and
+records what it loads. It then runs a second subprocess that times the import. The
+discovery run has already read the package's files, so the host's file cache holds them
+and a timed import would be a warm one. A worker that starts a fresh sandbox may meet the
+same package with a cold cache, where the import takes longer, and by an amount that
+differs from package to package. The router prices a cold start from these timings, so
+warm numbers make a restore look less valuable than it is.
+
+For this reason, `analyze` empties the host's file cache after discovery and before each
+timed subprocess, and repeats this `READIE_PROFILE_SAMPLES` times for each package. It keeps
+the median time and the median memory. The dependencies are still imported without timing
+inside the subprocess, so the time stays the package's own, with its dependencies already
+resident.
+
+The cache is emptied by writing `3` to `/proc/sys/vm/drop_caches`, which empties the
+whole host's file cache. This needs root, and it slows every other process on the host
+until the cache fills again, so run `analyze` on a machine where that is acceptable.
+Before a run starts, `analyze` checks that it can write the file. It confirms each drop
+with a file of its own: it reads a 32 MiB file so that the file is in the cache, drops,
+and asks the kernel (`mincore`) how much of that file is still resident. It stops with an
+error when more than a tenth is, so a drop that did nothing cannot produce warm numbers
+silently. The size of the whole cache would not do for this, because running processes
+keep some of it resident whatever is dropped, and how much differs from host to host. For
+the same reason, files that another running process has mapped stay in memory, so run
+`analyze` on a host where nothing else uses the packages being timed.
+
+Root inside a container is not enough: Docker mounts `/proc/sys` read-only. `make analyze`
+therefore mounts the host's file at `/host-drop-caches` and sets `READIE_DROP_CACHES_FILE`
+to that path. When running the command in another way, do the same or run it on the host.
+
+Bytecode is the other state that a run could change. The first import of a module that has
+no `.pyc` compiles it and writes the file, so later runs would find a compiled package. A
+worker's sandbox starts from the image's own bytecode and discards what it writes, so a
+module that the image never imported is compiled again on every cold start. `analyze`
+therefore runs the discovery and the timed subprocesses with `python -B`, which writes no
+bytecode. Every run, sample and package then sees the bytecode as the image has it, which is
+what a fresh sandbox sees.
+
+A run takes much longer than one without the drops, because each timing reads the package
+from disk again.
+
+#### Saving progress and reusing earlier results
+
+`analyze` appends a line to `data/metadata/<flavor>.json.partial` as each package finishes,
+and syncs the file to disk before it measures the next one. A stop, whether a crash or an
+interrupt, loses at most the package that was being measured. Rewriting the metadata file,
+which is hundreds of megabytes, after every package would cost more than measuring it, so
+the side file is append-only. The final metadata file is written once, when the run is
+complete, and the side file is then deleted. Nothing that reads the metadata file can
+mistake an unfinished run for a finished one.
+
+When it starts, `analyze` looks at what an earlier run left:
+
+- An unfinished side file from a run with the same number of timings per package is
+  continued. Its packages are kept and not measured again.
+- A finished metadata file supplies only the discovery results, which module each name
+  resolves to and what that module loads. No discovery subprocess runs for those names. Their
+  timings are measured again, because that file may have been timed another way.
+- Either is ignored, with the reason printed, when it was measured in another image or when
+  any distribution has another version now. The side file records the versions of every
+  installed distribution when the run starts, for this check.
+- A package that failed is not saved, so it is tried again.
+
+`--fresh` (`make analyze ANALYZE_FRESH=1`) ignores both and measures everything again. Use
+it after changing `ANALYZE_EXCLUDE` or the corpus, because a continued run keeps everything
+in the side file.
 
 ### capture
 
@@ -500,6 +555,8 @@ build could disagree with the first.
 | `READIE_BASE_IMAGE`                                      | `analyze` only; the image being measured, recorded as `base_image` in the metadata. `make analyze` sets it |
 | `RUNSC_BINARY`, `OCISPEC_BINARY`                         | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
 | `READIE_CHECKPOINT_TIMEOUT`                              | how long a sandbox may take to checkpoint before `build` gives up (default `300`)   |
+| `READIE_PROFILE_SAMPLES`                                 | `analyze` only; timings per package, each after emptying the file cache, of which the median is kept (default `3`). See [Cold timings](#cold-timings) |
+| `READIE_DROP_CACHES_FILE`                                | `analyze` only; the file written to empty the cache (default `/proc/sys/vm/drop_caches`). `make analyze` sets it to a mount of the host's file |
 | `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME`    | `corpus` only; the model endpoint, key and model name                                                     |
 | `KAGGLE_API_TOKEN`                                       | `corpus` only; Kaggle access token. Required when a Kaggle source has weight        |
 | `HF_TOKEN`                                               | `corpus` only; Hugging Face token. Required when a Hugging Face source has weight   |

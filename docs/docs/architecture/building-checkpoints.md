@@ -35,7 +35,7 @@ The `corpus` stage is an authoring step that requires a model account and, for r
 
 For each package, in a fresh process, `analyze` records four values:
 
-- **Import time:** seconds to import the package when its dependencies are already loaded.
+- **Import time:** seconds to import the package when its dependencies are already loaded. `analyze` empties the host's file cache before each timing and keeps the median of several, because the discovery step has just read the package and a timing taken then would be warm. A worker that starts a fresh sandbox may find the package's files cold.
 - **Memory:** the extra anonymous (heap) memory that the package adds, read from `RssAnon` in `/proc/self/status`.
 - **Disk size:** recorded, but not used by the planner.
 - **Loaded modules:** every module that appears after the import, which gives the dependencies of the package.

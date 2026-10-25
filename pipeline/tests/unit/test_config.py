@@ -94,7 +94,12 @@ def test_a_self_overlay_is_refused():
 
 @pytest.mark.parametrize(
     "override",
-    [{"max_checkpoints": 0}, {"checkpoint_size_budget_mb": 0}, {"checkpoint_timeout": 0}],
+    [
+        {"max_checkpoints": 0},
+        {"checkpoint_size_budget_mb": 0},
+        {"checkpoint_timeout": 0},
+        {"profile_samples": 0},
+    ],
 )
 def test_nonsensical_bounds_are_refused(override):
     with pytest.raises(ConfigError):
@@ -213,3 +218,20 @@ def test_a_non_positive_rewrite_setting_is_rejected():
     base = {"AZURE_ENDPOINT": "https://x", "AZURE_API_KEY": "k", "AZURE_MODEL_NAME": "m"}
     with pytest.raises(ConfigError, match="REWRITE"):
         CorpusSettings.from_env({**base, "READIE_CORPUS_REWRITE_WORKERS": "0"})
+
+
+def test_the_timing_defaults_are_three_samples_and_the_kernel_drop_file():
+    s = Settings.from_env({}, bundle_dir=Path("/b"), output_dir=Path("/o"), data_dir=Path("/d"))
+    assert s.profile_samples == 3
+    assert s.drop_caches_file == Path("/proc/sys/vm/drop_caches")
+
+
+def test_the_timing_settings_are_read_from_the_environment():
+    s = Settings.from_env(
+        {"READIE_PROFILE_SAMPLES": "5", "READIE_DROP_CACHES_FILE": "/host-drop-caches"},
+        bundle_dir=Path("/b"),
+        output_dir=Path("/o"),
+        data_dir=Path("/d"),
+    )
+    assert s.profile_samples == 5
+    assert s.drop_caches_file == Path("/host-drop-caches")
