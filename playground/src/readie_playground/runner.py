@@ -247,12 +247,13 @@ class Runner:
             sent += len(text)
             chunks.append(text)
 
+        # The namespace key: requests that name the same session run in one namespace, so the names
+        # one defines are visible to the next. A request with no session is independent.
+        key = session if session else uuid.uuid4().hex
         start = self._clock()
         ok, error, error_type = True, "", ""
         try:
-            await self._backend.execute_eval(
-                code, key=uuid.uuid4().hex, options=options, on_log=on_log
-            )
+            await self._backend.execute_eval(code, key=key, options=options, on_log=on_log)
         except asyncio.CancelledError:
             raise
         except RemoteExecutionError as exc:
