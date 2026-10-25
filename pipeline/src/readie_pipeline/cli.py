@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import sys
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -267,6 +268,33 @@ def _prior_run(settings: Settings) -> tuple[Metadata | None, bool]:
     return None, False
 
 
+def _finished_discovery(settings: Settings) -> Metadata | None:
+    """The finished metadata file, for the discovery results of a run that continues a side file.
+
+    A side file holds only the packages that were measured, so it knows nothing about a name
+    that has not been measured yet. The finished file from the same environment does, and no
+    timing of it is used. ``None`` when there is no such file or it is unusable here.
+    """
+    if not settings.metadata_path.exists():
+        return None
+    try:
+        finished = Metadata.load(settings.metadata_path)
+    except MetadataError as exc:
+        print(f"[*] not reusing {settings.metadata_path}: {exc}")
+        return None
+    reason = incompatibility(
+        finished, base_image=settings.base_image, installed=installed_versions()
+    )
+    if reason:
+        print(f"[*] not reusing {settings.metadata_path}: {reason}")
+        return None
+    print(
+        f"[*] also reusing what {settings.metadata_path} found for {len(finished.packages)} "
+        "packages; none of its timings are used"
+    )
+    return finished
+
+
 def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     """Measure every package installed here, plus every import the corpus uses.
 
@@ -281,15 +309,35 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     references. Run this wherever that base image's packages are actually
     importable (see ``installed_packages``).
     """
-    packages = set(installed_packages())
-    if settings.corpus_path.exists():
+    finished: Metadata | None = None
+    requests_using: Counter[str] = Counter()
+    if args.only_known:
+        finished = _finished_discovery(settings)
+        if finished is None:
+            msg = (
+                f"--only-known needs the finished {settings.metadata_path}, measured in this "
+                "image with these package versions"
+            )
+            raise MetadataError(msg)
+        packages = set(finished.packages)
+        print(
+            f"[*] walking only the {len(packages)} names in {settings.metadata_path}, not the "
+            "installed packages or the corpus"
+        )
+    else:
+        packages = set(installed_packages())
+    if not args.only_known and settings.corpus_path.exists():
         corpus = Corpus.load(settings.corpus_path)
         for item in corpus:
             packages.update(item.imports)
+            requests_using.update(set(item.imports))
 
     exclude = list(args.exclude or ())
     if exclude:
         print(f"[*] excluding: {', '.join(exclude)}")
+    defer = list(args.defer or ())
+    if defer:
+        print(f"[*] measuring last: {', '.join(defer)}")
     print(f"[*] analysing {len(packages)} candidate imports in this environment")
 
     def progress(name: str, facts: object) -> None:
@@ -317,6 +365,9 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
     )
 
     known, keep_timings = (None, False) if args.fresh else _prior_run(settings)
+    discovery = None
+    if keep_timings:
+        discovery = finished if finished is not None else _finished_discovery(settings)
     # Each package is appended to a side file as soon as it is measured, so a stop loses at
     # most the package that was being measured.
     journal = ProgressJournal(
@@ -335,7 +386,10 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
                 cold=cold,
                 known=known,
                 keep_timings=keep_timings,
+                discovery=discovery,
                 journal=journal,
+                priority=requests_using,
+                defer=defer,
             ),
             base_image=settings.base_image,
         )
@@ -660,6 +714,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude",
         action="append",
         help="skip a package, and everything under it; repeatable",
+    )
+    analyze_cmd.add_argument(
+        "--defer",
+        action="append",
+        help="measure a package, and everything under it, after all others; repeatable. "
+        "The rest are measured most-used first, by the number of corpus requests that use them",
+    )
+    analyze_cmd.add_argument(
+        "--only-known",
+        action="store_true",
+        help="walk only the names in the finished metadata file, and not the installed "
+        "packages or the corpus's imports; how to finish what an earlier run did not reach",
     )
     analyze_cmd.add_argument(
         "--fresh",

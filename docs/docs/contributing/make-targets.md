@@ -15,6 +15,8 @@ Run all commands from the repository root. Pass variables on the command line, f
 | `FLAVOR` | `cpu` | Which generation to build: `cpu` or `gpu`. Every artifact path and image name includes the flavor, so the two flavors do not overwrite each other. See [flavors and catalogues](/docs/concepts/flavors-and-catalogues). |
 | `TAG` | UTC timestamp (`YYYYMMDD-HHMMSS`) | Tag added to the worker image, alongside `latest`. |
 | `ANALYZE_EXCLUDE` | `google` | Space-separated packages `make analyze` skips, with everything under them. |
+| `ANALYZE_DEFER` | empty | Space-separated packages `make analyze` measures after all others, with everything under them. The remaining packages are measured most-used first, by the number of corpus requests that use them. |
+| `ANALYZE_ONLY_KNOWN` | empty | Set to `1` to make `make analyze` walk only the names in the finished metadata file, and not the installed packages or the corpus's imports. It requires that file, measured in the same image with the same package versions. |
 | `ANALYZE_SAMPLES` | `3` | Timings per package in `make analyze`, each after emptying the host's file cache. The median is kept. |
 | `ANALYZE_FRESH` | empty | Set to `1` to make `make analyze` ignore an unfinished run and the earlier metadata, and measure every package again. By default it continues an unfinished run in the same image. |
 | `ROOTFS_REQUIREMENTS` | `pipeline/rootfs-requirements.txt` (empty) | File of distribution names, relative to the repository root, that the root filesystem installs on top of `ROOTFS_BASE_IMAGE`. `make rootfs-requirements` writes one from a plan. |

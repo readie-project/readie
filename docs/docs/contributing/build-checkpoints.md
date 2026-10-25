@@ -60,6 +60,22 @@ To skip packages, pass a space-separated list. The default excludes `google`:
 make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"
 ```
 
+The target measures the packages that most corpus requests use first, and the rest alphabetically. Measuring a package also measures everything it loads, so a large subtree that few requests use can dominate the run. To measure such a subtree after all others, pass a space-separated list:
+
+```bash
+make analyze ANALYZE_DEFER="tensorflow keras"
+```
+
+An interrupted run continues from its side file, `pipeline/data/metadata/<flavor>.json.partial`, and keeps the packages already measured. `<flavor>` is the value of `FLAVOR`. When a finished `<flavor>.json` from the same image and package versions also exists, the run reuses its discovery results for the names that the side file has not measured. It does not reuse that file's timings.
+
+To measure only the names that the finished `<flavor>.json` already contains, and skip the installed packages and the corpus imports, set `ANALYZE_ONLY_KNOWN`:
+
+```bash
+make analyze ANALYZE_ONLY_KNOWN=1
+```
+
+The step fails when no usable finished `<flavor>.json` exists. The file that the run writes holds the packages of the side file and these names, and it does not hold the names that only the corpus uses.
+
 ## Step 2: Capture checkpoints
 
 Run `make capture` to plan and capture the checkpoints:

@@ -256,7 +256,9 @@ mistake an unfinished run for a finished one.
 When it starts, `analyze` looks at what an earlier run left:
 
 - An unfinished side file from a run with the same number of timings per package is
-  continued. Its packages are kept and not measured again.
+  continued. Its packages are kept and not measured again. When a finished metadata file
+  from the same environment also exists, its discovery results are used for the names the
+  side file has not measured, and none of its timings are used.
 - A finished metadata file supplies only the discovery results, which module each name
   resolves to and what that module loads. No discovery subprocess runs for those names. Their
   timings are measured again, because that file may have been timed another way.
@@ -264,6 +266,18 @@ When it starts, `analyze` looks at what an earlier run left:
   any distribution has another version now. The side file records the versions of every
   installed distribution when the run starts, for this check.
 - A package that failed is not saved, so it is tried again.
+
+`analyze` walks the raw import names in a fixed order: names under `--defer` (`ANALYZE_DEFER`)
+last, then the names that the most corpus requests use, then the rest alphabetically. The order
+changes when a package is measured and not what is measured, so a run continues from a side file
+that another order wrote. A package is measured together with everything it loads, so defer a
+large subtree that few requests use.
+
+`--only-known` (`make analyze ANALYZE_ONLY_KNOWN=1`) walks only the names in the finished
+metadata file, and not the installed packages or the corpus's imports. Together with an
+unfinished side file it measures what the finished file has and the run has not reached. It
+fails when there is no usable finished file. The metadata file the run then writes holds the
+side file's packages and these, so it does not hold the names that only the corpus uses.
 
 `--fresh` (`make analyze ANALYZE_FRESH=1`) ignores both and measures everything again. Use
 it after changing `ANALYZE_EXCLUDE` or the corpus, because a continued run keeps everything

@@ -118,3 +118,26 @@ def test_an_unusable_unfinished_run_falls_back_to_the_finished_file(tmp_path):
 
     assert keep_timings is False
     assert known is not None
+
+
+def test_a_finished_file_supplies_discovery_to_a_run_that_continues(tmp_path, capsys):
+    settings = settings_in(tmp_path)
+    write_finished(settings)
+
+    finished = cli._finished_discovery(settings)
+
+    assert finished is not None
+    assert set(finished.packages) == {"numpy"}
+    assert "none of its timings are used" in capsys.readouterr().out
+
+
+def test_without_a_finished_file_there_is_no_discovery_to_add(tmp_path):
+    assert cli._finished_discovery(settings_in(tmp_path)) is None
+
+
+def test_a_finished_file_from_other_versions_adds_no_discovery(tmp_path, capsys):
+    settings = settings_in(tmp_path)
+    write_finished(settings, versions={"numpy": "1.26.0"})
+
+    assert cli._finished_discovery(settings) is None
+    assert "not reusing" in capsys.readouterr().out

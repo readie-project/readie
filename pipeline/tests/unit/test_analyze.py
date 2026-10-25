@@ -908,6 +908,40 @@ def test_a_package_the_earlier_run_never_measured_is_discovered_and_timed(monkey
     assert metadata.packages["scipy"].import_time == 0.2
 
 
+def test_discovery_only_input_is_reused_but_its_timings_are_not(monkeypatch):
+    # A run that continues a side file also has a finished file's discovery: it spares the
+    # subprocess for a name the side file never measured, and the name is still timed.
+    _forbid_discovery(monkeypatch)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
+    events = _cold_profile_calls(monkeypatch, [{"time": 9.0, "memory_mb": 3.0}])
+
+    metadata = _analyze(
+        ["numpy"],
+        known=_known("scipy"),
+        keep_timings=True,
+        discovery=_known("numpy", seconds=0.5),
+    )
+
+    assert events == ["profile"]
+    assert metadata.packages["numpy"].import_time == 9.0
+
+
+def test_the_side_file_wins_over_the_discovery_only_input(monkeypatch):
+    _forbid_discovery(monkeypatch)
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
+    events = _cold_profile_calls(monkeypatch, [])
+
+    metadata = _analyze(
+        ["numpy"],
+        known=_known("numpy", seconds=0.5),
+        keep_timings=True,
+        discovery=_known("numpy", seconds=7.0),
+    )
+
+    assert events == []
+    assert metadata.packages["numpy"].import_time == 0.5
+
+
 class _RecordingJournal:
     def __init__(self) -> None:
         self.packages: list[tuple[str, str]] = []
@@ -947,3 +981,54 @@ def test_each_resolved_name_reaches_the_journal(monkeypatch):
     _analyze(["sklearn.svm.LinearSVC"], journal=journal)
 
     assert journal.resolutions == [("sklearn.svm.LinearSVC", "sklearn.svm")]
+
+
+# ---------------------------------------------------------------------------
+# The order raw names are walked in
+# ---------------------------------------------------------------------------
+def _walk_order(monkeypatch, names, **kwargs) -> list[str]:
+    """The order ``analyze`` visits ``names`` in, seen through the names that never resolve."""
+    _fake_graph(monkeypatch, {})
+    monkeypatch.setattr(inventory, "packages_distributions", dict)
+    seen: list[str] = []
+    _analyze(names, on_progress=lambda name, _facts: seen.append(name), **kwargs)
+    return seen
+
+
+def test_names_are_walked_alphabetically_unless_told_otherwise(monkeypatch):
+    assert _walk_order(monkeypatch, ["scipy", "numpy", "pandas"]) == ["numpy", "pandas", "scipy"]
+
+
+def test_the_most_used_names_are_walked_first(monkeypatch):
+    order = _walk_order(
+        monkeypatch,
+        ["numpy", "pandas", "scipy", "zlib"],
+        priority={"pandas": 900, "scipy": 50, "numpy": 10},
+    )
+
+    assert order == ["pandas", "scipy", "numpy", "zlib"]
+
+
+def test_names_used_equally_often_are_walked_alphabetically(monkeypatch):
+    order = _walk_order(monkeypatch, ["b", "a", "c"], priority={"a": 3, "b": 3, "c": 3})
+
+    assert order == ["a", "b", "c"]
+
+
+def test_a_deferred_subtree_is_walked_last_however_often_it_is_used(monkeypatch):
+    order = _walk_order(
+        monkeypatch,
+        ["keras.layers", "numpy", "tensorflow", "tensorflow.python.ops", "tensorflowx", "pandas"],
+        priority={"tensorflow": 10_000, "keras.layers": 5_000, "numpy": 2, "pandas": 1},
+        defer=["tensorflow", "keras"],
+    )
+
+    # ``tensorflowx`` is not under ``tensorflow``, so it is not deferred.
+    assert order == [
+        "numpy",
+        "pandas",
+        "tensorflowx",
+        "tensorflow",
+        "keras.layers",
+        "tensorflow.python.ops",
+    ]

@@ -689,7 +689,10 @@ def analyze(
     on_progress: object = None,
     known: Metadata | None = None,
     keep_timings: bool = False,
+    discovery: Metadata | None = None,
     journal: Journal | None = None,
+    priority: Mapping[str, int] | None = None,
+    defer: Iterable[str] = (),
 ) -> Metadata:
     """Measure every named import, resolved, and its full empirical closure.
 
@@ -730,12 +733,26 @@ def analyze(
     ``keep_timings`` its timings are kept too and those packages are not measured again,
     which is how an interrupted run continues. Without it they are all measured afresh.
 
+    ``discovery`` is a second earlier result, used only for its discovery results and never
+    for its timings. A run that continues an unfinished side file has no discovery for the
+    names that side file never measured, and a finished metadata file from the same environment
+    has it. ``known`` wins where both name a package.
+
     ``journal`` is told about each package as soon as it has been measured, and about each
     name as soon as it has resolved, so that a long run can save as it goes and continue after
     a stop.
+
+    Raw names are walked in a fixed order: names under ``defer`` last, then the highest
+    ``priority`` first (how many requests use the name), then alphabetically. The order does not
+    change what is measured, only when, so that a run that is stopped has covered the names
+    most requests need. Measuring a name also measures its closure, so a heavy subtree
+    that few requests use belongs under ``defer``. Without either argument the walk is
+    alphabetical.
     """
     provided = provided_distributions()
     excluded = frozenset(exclude)
+    deferred = frozenset(defer)
+    weight = priority or {}
     all_requested = frozenset(name for name in import_names if name)
     discovered: dict[str, tuple[str | None, frozenset[str]]] = {}
 
@@ -743,6 +760,8 @@ def analyze(
     resolved_map: dict[str, str] = {}
     visiting: set[str] = set()
 
+    if discovery is not None:
+        _seed(discovery, discovered=discovered, results=results, keep_timings=False)
     if known is not None:
         _seed(known, discovered=discovered, results=results, keep_timings=keep_timings)
 
@@ -752,7 +771,11 @@ def analyze(
         if journal is not None:
             journal.package(name, facts)
 
-    for raw in sorted(all_requested):
+    walk = sorted(
+        all_requested,
+        key=lambda raw: (_is_excluded(raw, deferred), -weight.get(raw, 0), raw),
+    )
+    for raw in walk:
         resolved = _visit(
             raw,
             provided=provided,
