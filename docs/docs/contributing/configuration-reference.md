@@ -166,7 +166,7 @@ The pipeline builds checkpoints offline. Settings come from environment variable
 | Variable | Default | Description |
 | --- | --- | --- |
 | `FLAVOR` (or `READIE_FLAVOR`) | `cpu` | `cpu` or `gpu`. Which generation to build. |
-| `READIE_PLANNER` | `greedy` | Planner: `greedy` (adds the checkpoint that lowers total cost most, round by round) or `fixed`. |
+| `READIE_PLANNER` | `greedy` | Planner: `greedy` (adds the checkpoint that lowers total cost most, round by round), `kmedoids`, `toptime`, `jaccard-kmedoids`, `jaccard-agglomerative` or `fixed`. See [Building checkpoints](/docs/architecture/building-checkpoints). |
 | `READIE_MAX_CHECKPOINTS` | `8` | Most checkpoints a plan may produce. |
 | `READIE_SIZE_BUDGET_MB` | `2048.0` | Total checkpoint size budget in MB. |
 | `READIE_ALPHA` | built-in default | Size-versus-time weight in seconds per MB, rounded to 6 decimals. Must be positive. See [cost model](/docs/concepts/cost-model). |

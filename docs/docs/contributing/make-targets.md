@@ -26,7 +26,8 @@ Run all commands from the repository root. Pass variables on the command line, f
 | `ROOTFS_EXTRA_INDEX_URL` | empty | Extra package indexes for pins that the default one lacks, comma separated when there are several. With any set, the install looks at every index for the best match, so each listed index can supply any package name. Set it empty for a base whose pins are all on PyPI. |
 | `PLAN_DIR` | `pipeline/plan/<flavor>` | Where `make rootfs-requirements` writes the plan and the list. |
 | `REUSE_PLAN_DIR` | empty | A plan directory from an earlier `make rootfs-requirements`, relative to the repository root. When set, `make capture` mounts it into the container and reuses that plan instead of planning again. When empty, `capture` plans inside the container. |
-| `READIE_PLANNER` | `greedy` | Checkpoint planner: `greedy` or `fixed`. |
+| `CAPTURE_CPUSET` | empty | Cores the `make capture` container may use, as a value for Docker's `--cpuset-cpus`, for example `0-7`. A sandbox sees as many CPUs as its container has, and a restored sandbox keeps the count it was captured with, so the worker container needs the same number of cores. When empty, the container is not pinned. |
+| `READIE_PLANNER` | `greedy` | Checkpoint planner: `greedy`, `kmedoids`, `toptime`, `jaccard-kmedoids`, `jaccard-agglomerative` or `fixed`. |
 | `READIE_MAX_CHECKPOINTS` | `15` | Most checkpoints a plan may produce. |
 | `READIE_SIZE_BUDGET_MB` | `2048.0` | Total size budget for checkpoints, in MB. |
 | `READIE_ALPHA` | set in the Makefile | Size-versus-time weight. See [cost model](/docs/concepts/cost-model). |

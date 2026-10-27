@@ -64,6 +64,12 @@ WORKER_IMAGE    := readie-worker-$(FLAVOR)
 # Makefile selects it per FLAVOR.
 # A gpu generation uses the Kaggle GPU rootfs and captures under nvproxy with the
 # host's GPUs attached; a cpu generation uses the plain image and no devices.
+# Cores the capture container may use, as a value for docker's --cpuset-cpus (for example 0-7).
+# Empty leaves the container unpinned. A sandbox sees as many CPUs as its container has, and a
+# restored sandbox keeps the count it was captured with, so the worker container should have the
+# same number of cores.
+CAPTURE_CPUSET ?=
+
 ifeq ($(FLAVOR),gpu)
 # Kaggle GPU v170, which uses Python 3.12.
 ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461
@@ -109,7 +115,8 @@ ROOTFS_BUILD_ARGS := \
 	--build-arg ROOTFS_EXTRA_INDEX_URL=$(ROOTFS_EXTRA_INDEX_URL)
 
 # Planner knobs
-# greedy (weighted set cover, the default) | fixed (a configured package set)
+# greedy (weighted set cover, the default) | kmedoids | toptime | jaccard-kmedoids |
+# jaccard-agglomerative | fixed (a configured package set)
 READIE_PLANNER := greedy
 # Upper bound on how many checkpoints a plan may emit.
 READIE_MAX_CHECKPOINTS := 100
@@ -301,6 +308,7 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 	docker run --rm -it \
 		--privileged \
 		$(CAPTURE_GPU_FLAGS) \
+		$(if $(CAPTURE_CPUSET),--cpuset-cpus=$(CAPTURE_CPUSET)) \
 		--security-opt apparmor=unconfined \
 		--security-opt seccomp=unconfined \
 		-e FLAVOR=$(FLAVOR) \

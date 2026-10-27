@@ -18,6 +18,7 @@ be run without the other.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import shutil
@@ -54,23 +55,44 @@ from readie_pipeline.planning.requirements import (
     write_requirements,
 )
 
+PLANNER_NAMES = (
+    "greedy",
+    "kmedoids",
+    "toptime",
+    "jaccard-kmedoids",
+    "jaccard-agglomerative",
+    "fixed",
+)
+
+#: Planners resolved by name: module and class, imported on demand.
+PLANNERS: dict[str, tuple[str, str]] = {
+    "greedy": ("readie_pipeline.planning.greedy", "GreedyPlanner"),
+    "kmedoids": ("readie_pipeline.planning.kmedoids", "KMedoidsPlanner"),
+    "toptime": ("readie_pipeline.planning.toptime", "TopTimePlanner"),
+    "jaccard-kmedoids": ("readie_pipeline.planning.jaccard", "JaccardKMedoidsPlanner"),
+    "jaccard-agglomerative": ("readie_pipeline.planning.jaccard", "JaccardAgglomerativePlanner"),
+}
+
 
 def build_planner(name: str, alpha: float) -> CheckpointPlanner:
     """Resolve a planner by name.
 
-    ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
+    ``alpha`` is the shared size-vs-time weight. ``fixed`` ignores it; the other planners
+    use it to score the plan, and all but ``toptime`` and the Jaccard planners also
+    to select.
     """
-    # Both nested imports avoid an import cycle.
+    # The nested import avoids an import cycle.
     from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415
 
     if name == "fixed":
         return FixedPlanner()
-    if name == "greedy":
-        from readie_pipeline.planning.greedy import GreedyPlanner  # noqa: PLC0415
+    if name in PLANNERS:
+        module, cls = PLANNERS[name]
+        planner_class = getattr(importlib.import_module(module), cls)
+        planner: CheckpointPlanner = planner_class(alpha=alpha)
+        return planner
 
-        return GreedyPlanner(alpha=alpha)
-
-    msg = f"unknown planner {name!r}; choose from fixed, greedy"
+    msg = f"unknown planner {name!r}; choose from {', '.join(PLANNER_NAMES)}"
     raise ConfigError(msg)
 
 
@@ -629,7 +651,7 @@ def cmd_capture(settings: Settings, args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 def add_planner_flags(parser: argparse.ArgumentParser) -> None:
     """Attach the planner's knobs, shared by `plan` and `capture`."""
-    parser.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
+    parser.add_argument("--planner", choices=PLANNER_NAMES, help="selection strategy")
     parser.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
     parser.add_argument(
         "--reuse-plan",

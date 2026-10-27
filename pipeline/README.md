@@ -331,7 +331,23 @@ value, so the first N selections are already the best N. The `fixed` planner ret
 the list of sets it was constructed with, none by default, so a fixed run plans no
 checkpoints and `build` captures none; it is meant for reproducibility runs and tests.
 
-Two bounds apply to the greedy planner:
+Five more planners select checkpoints by other methods. Each subclasses the greedy planner and
+overrides only the selection step, so eligibility, dependency closures, the stdlib filter, the
+bounds below and the scoring of the plan are the greedy planner's, and every plan is comparable
+on the same numbers. A checkpoint is always a union of whole dependency closures, never a
+package without what it loads.
+
+| `READIE_PLANNER` | Method |
+| --- | --- |
+| `kmedoids` | Seeded k-medoids over the distinct closures, using the greedy distance (`alpha` times size, plus the import time the checkpoint leaves unpaid). Starts from the greedy solution and from `restarts` random sets, and improves each by swap and add moves. The seed is fixed, so a run is reproducible. |
+| `toptime` | Ranks each distinct closure once by the import time it removes across the corpus, and takes closures in that order while they fit the remaining budget. Picks are not re-ranked, so overlap between them is not discounted. |
+| `jaccard-kmedoids` | Clusters the distinct closures into at most `max_checkpoints` groups by k-medoids on Jaccard distance. Each checkpoint is the union of one cluster. |
+| `jaccard-agglomerative` | The same, with bottom-up clustering by occurrence-weighted average linkage on Jaccard distance. |
+
+The Jaccard planners cluster on package overlap alone. When a cluster's union does not fit the
+remaining budget, they drop its least frequent closures until it does.
+
+Two bounds apply to every planner:
 
 - `READIE_MAX_CHECKPOINTS` (`--max-checkpoints`) keeps only the first N
   selections.
@@ -561,7 +577,7 @@ build could disagree with the first.
 | `READIE_PLAN_DIR`                                        | where the plan goes, if not with the outputs                                        |
 | `ROOTFS_PYTHONPATH`                                      | must correspond to the rootfs stage; the Dockerfile build argument of the same name sets it |
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's                                                             |
-| `READIE_PLANNER`                                         | `greedy` or `fixed`                                                                 |
+| `READIE_PLANNER`                                         | `greedy`, `kmedoids`, `toptime`, `jaccard-kmedoids`, `jaccard-agglomerative` or `fixed` |
 | `READIE_MAX_CHECKPOINTS`, `READIE_SIZE_BUDGET_MB`        | planner bounds; the size budget is a total across all checkpoints                   |
 | `READIE_ALPHA`                                           | size-versus-time weight used by the planner; `build` records the measured value     |
 | `FLAVOR`                                                 | `cpu` or `gpu`; the generation this run produces                                    |

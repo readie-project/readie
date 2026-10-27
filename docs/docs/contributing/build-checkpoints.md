@@ -90,7 +90,7 @@ The planner settings can be overridden on the command line. The following values
 
 | Variable | Makefile value | Meaning |
 | --- | --- | --- |
-| `READIE_PLANNER` | `greedy` | Planner: `greedy` or `fixed`. |
+| `READIE_PLANNER` | `greedy` | Planner: `greedy`, `kmedoids`, `toptime`, `jaccard-kmedoids`, `jaccard-agglomerative` or `fixed`. |
 | `READIE_MAX_CHECKPOINTS` | `15` | Maximum checkpoints in a plan. The empty checkpoint is added on top. |
 | `READIE_SIZE_BUDGET_MB` | `2048.0` | Total memory budget across all checkpoints. |
 | `READIE_ALPHA` | set in the Makefile | Seconds per MB that the planner charges for size. |

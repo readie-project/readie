@@ -82,6 +82,7 @@ class GreedyPlanner:
                 eligible_packages=eligible_packages,
                 metadata=metadata,
                 size_budget_mb=budget.size_mb,
+                max_checkpoints=budget.max_checkpoints,
             )
             if facility & requested
         ][: budget.max_checkpoints]
@@ -259,23 +260,18 @@ class GreedyPlanner:
         dist: np.ndarray = self._alpha * sizes[:, None] + totals[None, :] - shared
         return dist
 
-    def _select_checkpoints(
+    def _nodes(
         self,
-        *,
         requests: Sequence[CorpusItem],
         eligible_packages: set[str],
         metadata: Metadata,
-        size_budget_mb: float,
-    ) -> list[frozenset[str]]:
-        """Greedy k-median facility selection: each pick is a checkpoint.
+    ) -> tuple[list[frozenset[str]], np.ndarray]:
+        """The distinct eligible-only closures of the corpus, and how often each occurs.
 
-        Facilities and nodes are both the corpus's distinct (eligible-only)
-        import closures; a facility is picked when adding it lowers every
-        node's distance to its nearest picked facility so far more than any
-        other candidate would, until nothing remaining improves on that or
-        the shared size budget is spent. Ties -- including which facility is
-        picked first, when every node's distance is still infinite -- break on
-        ``unique_requests``' sort order, so the result is deterministic.
+        Facilities and nodes of every selection model are these closures: each is
+        already dependency-closed, so a checkpoint made of whole closures never
+        holds a package without what it loads. Sorted, so ties break
+        deterministically.
         """
         closures = self._closures(requests, metadata)
         normalized_requests: list[frozenset[str]] = []
@@ -290,9 +286,6 @@ class GreedyPlanner:
             if imports:
                 normalized_requests.append(imports)
 
-        if not normalized_requests:
-            return []
-
         counts: Counter[frozenset[str]] = Counter(normalized_requests)
 
         unique_requests = sorted(
@@ -300,10 +293,34 @@ class GreedyPlanner:
             key=lambda request: tuple(sorted(request)),
         )
 
-        node_occurrences = np.asarray(
+        occurrences = np.asarray(
             [counts[request] for request in unique_requests],
             dtype=float,
         )
+        return unique_requests, occurrences
+
+    def _select_checkpoints(
+        self,
+        *,
+        requests: Sequence[CorpusItem],
+        eligible_packages: set[str],
+        metadata: Metadata,
+        size_budget_mb: float,
+        max_checkpoints: int,  # noqa: ARG002 -- greedy's prefix is cut by ``plan``
+    ) -> list[frozenset[str]]:
+        """Greedy k-median facility selection: each pick is a checkpoint.
+
+        Facilities and nodes are both the corpus's distinct (eligible-only)
+        import closures; a facility is picked when adding it lowers every
+        node's distance to its nearest picked facility so far more than any
+        other candidate would, until nothing remaining improves on that or
+        the shared size budget is spent. Ties -- including which facility is
+        picked first, when every node's distance is still infinite -- break on
+        ``unique_requests``' sort order, so the result is deterministic.
+        """
+        unique_requests, node_occurrences = self._nodes(requests, eligible_packages, metadata)
+        if not unique_requests:
+            return []
 
         num_nodes = len(unique_requests)
 
