@@ -1,6 +1,6 @@
 import asyncio
 
-from readie_playground.runner import Event, Lane, Runner
+from readie_playground.runner import EvalOptions, Event, Lane, Runner
 from tests.fakes import FakeBackend
 
 
@@ -57,3 +57,23 @@ async def test_invalid_python_fails_both_lanes_without_calling_readie() -> None:
     assert backend.calls == []
     assert [e.ok for e in events] == [False, False]
     assert all("SyntaxError" in e.error for e in events)
+
+
+async def test_closing_a_single_execution_stream_cancels_the_backend() -> None:
+    backend = FakeBackend(hang=True)
+    stream = Runner(backend, 1000).stream("x", EvalOptions())
+    task = asyncio.ensure_future(stream.__anext__())
+    await asyncio.sleep(0.05)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    await stream.aclose()
+    assert backend.cancelled == 1
+
+
+async def test_invalid_single_execution_source_does_not_call_the_backend() -> None:
+    backend = FakeBackend()
+    events = [event async for event in Runner(backend, 1000).stream("x = = 1", EvalOptions())]
+    assert backend.evals == []
+    assert len(events) == 1
+    assert not events[0].ok
+    assert "SyntaxError" in events[0].error

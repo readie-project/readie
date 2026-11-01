@@ -1,7 +1,8 @@
 # readie-playground
 
-The FastAPI service behind the playground on the docs site. A visitor submits
-Python source; the service runs it on Readie twice in parallel, once with
+The FastAPI service for HTTP execution and the playground on the docs site.
+Requests with execution options run once. A code-only request runs on Readie
+twice in parallel, once with
 checkpoint restore and once with `disable_optimized_execution=True` (cold
 start), and streams both outputs back as server-sent events.
 
@@ -18,10 +19,10 @@ Readie. `SECURITY.md` has the full picture. Use a Readie token that only the pla
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/readie_playground/app.py` | FastAPI app: `POST /run` (SSE), `GET /healthz`, CORS |
-| `src/readie_playground/runner.py` | Two-lane parallel execution behind a `Backend` Protocol |
+| `src/readie_playground/app.py` | FastAPI app: `POST /run` (SSE), `POST /eval/run` (JSON), health, CORS |
+| `src/readie_playground/runner.py` | Comparison and single execution behind a `Backend` Protocol |
 | `src/readie_playground/userfn.py` | Builds the visitor's script into a `@remote` function in a real module |
-| `src/readie_playground/limits.py` | Per-client rate limit and concurrent-run cap |
+| `src/readie_playground/limits.py` | Concurrent-run cap |
 | `src/readie_playground/config.py` | `PLAYGROUND_*` settings |
 | `tests/` | Unit tests with a fake backend; no router needed |
 
@@ -38,8 +39,12 @@ data: {"lane": "cold", "ok": true, "duration_s": 1.234, "error": "", "truncated"
 ```
 
 Lanes are `optimized` and `cold`. Each lane ends with one `done` event. Errors
-before streaming return 413 (too large), 422 (empty), 429 (rate limited) or 503
-(busy).
+before streaming return 413 (too large), 422 (invalid) or 503 (busy).
+
+Code-only requests retain the two-lane comparison. Including any `@remote` argument,
+even its default value, selects one execution with those arguments and the same SSE
+response format. See [Send HTTP execution requests](http-api.md) for cURL examples,
+request fields, sessions and response handling.
 
 ### Evaluation route
 
@@ -120,10 +125,15 @@ would write one, and calls it through `readie.Client`. The module is a real file
 the client reads the script's imports and the router can choose a checkpoint for the
 optimized lane. The cold lane sets `disable_optimized_execution=True`.
 
-Every `/run` asks for 1 GiB of initial and maximum memory (`config.MEMORY`) and
-never uses a session, so each lane is a fresh sandbox that is destroyed after the call.
-A request therefore uses two 1 GiB sandboxes. Size `WORKER_MAX_EXECUTORS` on the
-Readie workers to match.
+`/run` adds no fixed memory budget. Code-only comparisons use the SDK and cluster
+resource defaults; requests with `@remote` options pass their resource budgets to
+the SDK. Code-only comparisons use no session and create two independent sandboxes.
+Requests with options execute once and use the caller's session, if supplied.
+Size worker capacity for the expected requests and their resource budgets.
+
+The public route has no application or NGINX rate limit. Code size, output size,
+and concurrent-request caps remain. The comparison uses `PLAYGROUND_TIMEOUT_S`;
+single executions use the caller's `timeout` or the SDK default.
 
 ## Configuration
 
@@ -135,10 +145,8 @@ Readie workers to match.
 | `PLAYGROUND_ALLOWED_ORIGINS` | `https://readie.org` | Comma-separated CORS origins |
 | `PLAYGROUND_MAX_CODE_BYTES` | `16384` | Largest accepted source |
 | `PLAYGROUND_MAX_OUTPUT_CHARS` | `65536` | Output kept per lane |
-| `PLAYGROUND_TIMEOUT_S` | `30` | Deadline per run |
-| `PLAYGROUND_RATE_LIMIT_REQUESTS` / `_WINDOW_S` | `10` / `60` | Runs allowed per client in each window |
+| `PLAYGROUND_TIMEOUT_S` | `30` | Deadline per comparison lane; single executions use the request timeout |
 | `PLAYGROUND_MAX_CONCURRENT_RUNS` | `4` | Simultaneous requests |
-| `PLAYGROUND_TRUST_PROXY` | off | Use the first `X-Forwarded-For` address as the client (on behind nginx) |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
 | `PLAYGROUND_EVAL_MAX_CODE_BYTES` | `8388608` | Largest `code` of one evaluation request |
@@ -158,15 +166,15 @@ curl -N -X POST localhost:50051/playground/run \
 ```
 
 nginx routes `/playground/` to the service and everything else to the router. The
-workers need enough memory for two 1 GiB sandboxes per request, for example
-`READIE_WORKER_MEM_TOTAL=24Gi`.
+workers need capacity for two sandboxes per code-only comparison and one sandbox
+per request with options.
 
 ## Deploy
 
 - The host is a Linux amd64 machine with Docker and the gVisor `runsc` binary registered as a
   Docker runtime named `runsc` in `/etc/docker/daemon.json`.
-- The Readie server the playground calls needs memory for two 1 GiB sandboxes per request
-  (`READIE_WORKER_MEM_TOTAL`, `READIE_WORKER_MAX_EXECUTORS`). A dedicated server is
+- Size `READIE_WORKER_MEM_TOTAL` and `READIE_WORKER_MAX_EXECUTORS` for the requested
+  resource budgets and concurrent executions. A dedicated server is
   recommended, with a token that only the playground uses.
 - gVisor cannot use Docker's built-in DNS, so the service mounts `resolv.conf` from this
   directory. Replace its name server if the host blocks 8.8.8.8.
@@ -174,8 +182,8 @@ workers need enough memory for two 1 GiB sandboxes per request, for example
   example `PLAYGROUND_URL=https://<host>/playground make docs-build`. The Run button stays
   disabled when it is empty. Set `PLAYGROUND_ALLOWED_ORIGINS` on the service to the docs
   site's origin.
-- nginx limits requests to `/playground/` as a backstop, and the service enforces the
-  limits that visitors see (see the table above).
+- nginx caps request body size. The public execution route has no rate limit;
+  the service retains code size, output size and concurrent-request caps.
 
 ## Develop
 

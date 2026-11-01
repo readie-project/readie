@@ -34,6 +34,7 @@ class FakeBackend:
         self.calls: list[tuple[str, bool]] = []
         self.evals: list[EvalCall] = []
         self.cancelled = 0
+        self.started = asyncio.Event()
         self._fail_cold = fail_cold
         self._hang = hang
         self._fail_eval = fail_eval
@@ -62,6 +63,7 @@ class FakeBackend:
         on_log: Callable[[str], None],
     ) -> None:
         self.evals.append(EvalCall(code, key, options))
+        self.started.set()
         try:
             if self._hang:
                 await asyncio.sleep(3600)

@@ -1,9 +1,10 @@
 """The FastAPI app.
 
-``POST /run`` streams both lanes of one script as server-sent events; it is the
-public playground. ``POST /eval/run`` is for evaluations: it takes one piece of code
-and the arguments of the Readie remote function, passes them to it as given, runs
-the code once, and returns its timing as JSON. It has no token and is always served;
+``POST /run`` streams a comparison for code-only requests, or one execution when
+remote arguments are supplied. It is the public HTTP API. ``POST /eval/run`` is for
+evaluations: it takes code and the arguments of the Readie remote function,
+passes them to it as given, runs the code once, and returns its timing as JSON.
+It has no token and is always served;
 the nginx configs answer 404 for ``/playground/eval/``, so it is reachable only on the
 playground's own network.
 """
@@ -14,25 +15,19 @@ import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from readie import ReadieError, Settings, remote
 
 from readie_playground.config import PlaygroundSettings
-from readie_playground.limits import RateLimiter, RunSlots
+from readie_playground.limits import RunSlots
 from readie_playground.runner import EvalOptions, EvalResult, Event, ReadieBackend, Runner
 
 
-class RunRequest(BaseModel):
-    """Body of ``POST /run``. Only source text; the service wraps it."""
-
-    code: str
-
-
 class EvalRequest(BaseModel):
-    """Body of ``POST /eval/run``: the code, and the arguments of ``readie.remote``.
+    """Execution body shared by ``/run`` and ``/eval/run``.
 
     Apart from ``code``, every field is an argument of ``@remote`` under its own
     name, and goes to it untouched. ``session`` is the
@@ -68,14 +63,6 @@ def _frame(event: Event) -> str:
             "truncated": event.truncated,
         }
     return f"event: {event.kind}\ndata: {json.dumps(data)}\n\n"
-
-
-def _client_key(request: Request, trust_proxy: bool) -> str:
-    if trust_proxy:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def _client_settings(settings: PlaygroundSettings) -> Settings:
@@ -125,7 +112,6 @@ def create_app(settings: PlaygroundSettings, runner: Runner | None = None) -> Fa
             Path(settings.workdir),
         )
         runner = Runner(backend, settings.max_output_chars)
-    limiter = RateLimiter(settings.rate_limit_requests, settings.rate_limit_window_s)
     slots = RunSlots(settings.max_concurrent_runs)
 
     app = FastAPI(title="Readie playground", docs_url=None, redoc_url=None, openapi_url=None)
@@ -141,19 +127,18 @@ def create_app(settings: PlaygroundSettings, runner: Runner | None = None) -> Fa
         return {"status": "ok"}
 
     @app.post("/run")
-    async def run(body: RunRequest, request: Request) -> StreamingResponse:
+    async def run(body: EvalRequest) -> StreamingResponse:
         if len(body.code.encode()) > settings.max_code_bytes:
             raise HTTPException(413, "The code is too large.")
         if not body.code.strip():
             raise HTTPException(422, "Enter some code to run.")
-        if not limiter.allow(_client_key(request, settings.trust_proxy)):
-            raise HTTPException(429, "Too many runs. Wait a moment and try again.")
+        options = _eval_options(body) if body.model_fields_set - {"code"} else None
         if not slots.try_acquire():
             raise HTTPException(503, "The playground is busy. Try again shortly.")
 
         async def events() -> AsyncIterator[str]:
             try:
-                async for event in runner.stream(body.code):
+                async for event in runner.stream(body.code, options):
                     yield _frame(event)
             finally:
                 slots.release()

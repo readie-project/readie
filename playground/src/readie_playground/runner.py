@@ -1,11 +1,12 @@
-"""Run code on Readie twice, in parallel: once with checkpoint restore, once without.
+"""Stream Readie comparisons or single executions with caller-selected options.
 
 The two lanes differ only in ``disable_optimized_execution``: the ``optimized``
 lane uses checkpoint restore, the ``cold`` lane does not. Each lane builds the
 script into a ``@remote`` function (``userfn``) and calls it through the Readie
 client, as any user would.
 
-``Runner.stream`` serves the public playground: one script, both lanes streamed.
+``Runner.stream`` serves the public API: code-only comparisons stream both lanes;
+requests with remote arguments stream one execution.
 ``Runner.run_eval`` serves an evaluation: one piece of code run once, with its timing.
 It makes no choices of its own: every argument of the Readie remote function comes
 from the request and goes to ``readie.remote`` as given (so a caller compares optimized
@@ -32,10 +33,8 @@ from readie import (
     Settings,
     remote,
 )
-from readie.budget import build_budgets
 
 from readie_playground import userfn
-from readie_playground.config import MEMORY
 
 
 class Lane(StrEnum):
@@ -109,8 +108,6 @@ class ReadieBackend:
         self._settings = settings
         self._timeout_s = timeout_s
         self._workdir = workdir
-        # Fixed budget: equal initial and maximum, no visitor control, no session.
-        self._budgets = build_budgets(memory=MEMORY, max_memory=MEMORY)
 
     async def execute(self, code: str, *, cold: bool, on_log: Callable[[str], None]) -> None:
         """Build the script into a function and call it. The log sink is per client."""
@@ -119,7 +116,6 @@ class ReadieBackend:
                 remote_main = RemoteFunction(
                     main,
                     client=client,
-                    budgets=self._budgets,
                     timeout=self._timeout_s,
                     disable_optimized_execution=cold,
                 )
@@ -159,16 +155,25 @@ class Runner:
         self._max_output = max_output_chars
         self._clock = clock
 
-    async def stream(self, code: str) -> AsyncGenerator[Event, None]:
-        """Yield log and done events from both lanes as they happen."""
+    async def stream(
+        self, code: str, options: EvalOptions | None = None
+    ) -> AsyncGenerator[Event, None]:
+        """Stream a comparison, or one execution with caller-selected options."""
         queue: asyncio.Queue[Event] = asyncio.Queue()
-        error = userfn.check(code)
+        lanes = (
+            list(Lane)
+            if options is None
+            else [
+                Lane.COLD if options.remote.get("disable_optimized_execution") else Lane.OPTIMIZED
+            ]
+        )
+        error = userfn.check(code) if options is None else userfn.check_step(code)
         if error is not None:
-            # Not valid Python: report it on both lanes without calling Readie.
-            for lane in Lane:
+            # Report syntax errors on the selected lanes without calling Readie.
+            for lane in lanes:
                 yield Event("done", lane, ok=False, error=error)
             return
-        tasks = [asyncio.create_task(self._lane(code, lane, queue)) for lane in Lane]
+        tasks = [asyncio.create_task(self._lane(code, lane, queue, options)) for lane in lanes]
         try:
             remaining = len(tasks)
             while remaining:
@@ -177,12 +182,14 @@ class Runner:
                     remaining -= 1
                 yield event
         finally:
-            # Client went away or the generator closed: stop paying for both runs.
+            # Client went away or the generator closed: cancel unfinished executions.
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _lane(self, code: str, lane: Lane, queue: asyncio.Queue[Event]) -> None:
+    async def _lane(
+        self, code: str, lane: Lane, queue: asyncio.Queue[Event], options: EvalOptions | None = None
+    ) -> None:
         sent = 0
         truncated = False
 
@@ -201,7 +208,11 @@ class Runner:
         start = self._clock()
         ok, error = True, ""
         try:
-            await self._backend.execute(code, cold=lane is Lane.COLD, on_log=on_log)
+            if options is None:
+                await self._backend.execute(code, cold=lane is Lane.COLD, on_log=on_log)
+            else:
+                key = options.remote.get("session") or uuid.uuid4().hex
+                await self._backend.execute_eval(code, key=key, options=options, on_log=on_log)
         except asyncio.CancelledError:
             raise
         except RemoteExecutionError as exc:

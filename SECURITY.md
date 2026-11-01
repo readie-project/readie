@@ -135,11 +135,25 @@ visitor-derived input, so it is contained:
 - It holds a Readie token that only the playground uses, so a compromise exposes a
   token with no other use. Run the playground against a dedicated Readie server with
   `SANDBOX_NETWORK=none` on its workers where possible.
-- Readie has no quotas, so nginx (`limit_req`, body size) and the service (rate limit,
-  size, output and concurrency caps) add their own.
-- `POST /eval/run` runs code with options a visitor must not control (memory,
-  timeout, packages, sessions, a pinned checkpoint, large bodies), and passes every
-  `@remote` argument through without capping it. It has no token and is always served,
+- The public `/playground/run` route has no rate limit and adds no fixed execution
+  memory budget. NGINX retains its body-size cap; the service retains code-size,
+  output and concurrent-request caps, and its container memory limit. Worker
+  capacity accounting is separate from hard resource enforcement: Compose defaults
+  `SANDBOX_IGNORE_CGROUPS` to `true` for development compatibility. Configure cgroup
+  enforcement on hosts that require hard sandbox resource limits.
+- HTTP execution is anonymous and uses the service's Readie credentials. Router
+  authentication authenticates the service, not each HTTP caller. CORS restricts
+  browser access and does not authenticate requests from cURL or other clients.
+  Requests with `@remote` options execute once and can select memory, timeouts,
+  packages, GPUs, sessions and checkpoints. Resource exhaustion remains possible;
+  use a dedicated backend for public traffic.
+- Sessions have caller-supplied identifiers and no per-caller ownership check.
+  Anyone who knows a session identifier can submit code to its interpreter. Do not
+  use sessions to separate mutually untrusted callers or put secrets in shared
+  sessions. The public SSE route cancels its backend tasks when the stream closes.
+- `POST /eval/run` is the internal single-run JSON API, accepts larger code bodies,
+  and passes every `@remote` argument through without capping it. It has no token
+  and is always served,
   so the only thing keeping it from the public is nginx: both configs answer 404 for
   `/playground/eval/`, which makes the route reachable only from the container network
   that runs the service. Keep that rule in place, and never publish the playground's own

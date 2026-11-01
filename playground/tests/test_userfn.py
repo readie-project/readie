@@ -173,3 +173,14 @@ def test_the_step_source_is_embedded_literally_so_awkward_code_survives(
     source = 'text = """triple \'quoted\' with "double" and \\\\ backslash\n"""\nprint(len(text))\n'
     run_step(source, "k", 0, tmp_path)
     assert capsys.readouterr().out.strip().isdigit()
+
+
+def test_comparison_function_uses_remote_defaults_without_a_fixed_memory_budget() -> None:
+    # The public HTTP route must not reintroduce the former fixed 1 GiB budget.
+    tree = ast.parse(userfn.build_module("print(1)"))
+    function = tree.body[1]
+    assert isinstance(function, ast.FunctionDef)
+    decorator = function.decorator_list[0]
+    assert isinstance(decorator, ast.Call)
+    assert decorator.args == []
+    assert decorator.keywords == []

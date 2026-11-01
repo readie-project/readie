@@ -23,13 +23,11 @@ from typing import Any
 
 import cloudpickle
 
-from readie_playground.config import MEMORY
-
 _TEMPLATE = """\
 from readie import remote
 
 
-@remote(memory="{memory}", max_memory="{memory}")
+@remote()
 def main():
 {body}
 """
@@ -38,7 +36,7 @@ def main():
 def build_module(code: str) -> str:
     """Return module source with ``code`` as the body of ``main``."""
     body = textwrap.indent(code.rstrip() or "pass", "    ")
-    return _TEMPLATE.format(memory=MEMORY, body=body)
+    return _TEMPLATE.format(body=body)
 
 
 def check(code: str) -> str | None:
