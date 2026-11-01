@@ -15,8 +15,8 @@ from readie_pipeline.planning._closures import jaccard_distances
 from readie_pipeline.planning.greedy import GreedyPlanner
 from readie_pipeline.planning.jaccard import JaccardAgglomerativePlanner
 from readie_pipeline.planning.kmedoids import KMedoidsPlanner
-from readie_pipeline.planning.ports import Budget, CheckpointPlanner
 from readie_pipeline.planning.knapsack import KnapsackPlanner
+from readie_pipeline.planning.ports import Budget, CheckpointPlanner
 from tests.helpers import item
 
 ALPHA = 0.005
