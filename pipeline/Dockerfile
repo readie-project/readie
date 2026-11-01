@@ -36,7 +36,7 @@ ARG ROOTFS_BASE_IMAGE=python:3.12-slim
 # carries its own metadata and entry point, so the sandbox runs
 # `python -m readie_executor` and the rootfs has no idea where the source lived.
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS executor-wheel
+FROM python:3.15-slim AS executor-wheel
 RUN pip install --no-cache-dir build
 WORKDIR /src
 COPY executor/ ./
@@ -202,7 +202,7 @@ RUN apt-get update \
 # Both the pipeline and the worker-base inherit from this stage so that the
 # massive rootfs is copied exactly once, eliminating duplicate ~26 GB storage.
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS host-base
+FROM python:3.15-slim AS host-base
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
