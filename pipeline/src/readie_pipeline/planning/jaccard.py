@@ -67,32 +67,6 @@ class _JaccardPlanner(GreedyPlanner):
         return selected
 
 
-class JaccardKMedoidsPlanner(_JaccardPlanner):
-    """Cluster closures with k-medoids on Jaccard distance."""
-
-    def _cluster(self, dist: np.ndarray, occurrences: np.ndarray, k: int) -> list[list[int]]:
-        """Weighted farthest-first seeding, then reassign and re-center until stable."""
-        medoids = [int(np.argmax(occurrences))]
-        while len(medoids) < k:
-            spread = dist[medoids].min(axis=0) * occurrences
-            spread[medoids] = -1.0
-            medoids.append(int(np.argmax(spread)))
-
-        for _ in range(MAX_ROUNDS):
-            labels = np.argmin(dist[medoids], axis=0)
-            updated = []
-            for cluster in range(len(medoids)):
-                members = np.flatnonzero(labels == cluster)
-                cost = (dist[np.ix_(members, members)] * occurrences[members][None, :]).sum(axis=1)
-                updated.append(int(members[np.argmin(cost)]))
-            if updated == medoids:
-                break
-            medoids = updated
-
-        labels = np.argmin(dist[medoids], axis=0)
-        return [np.flatnonzero(labels == c).tolist() for c in range(len(medoids))]
-
-
 class JaccardAgglomerativePlanner(_JaccardPlanner):
     """Cluster closures bottom-up by weighted average linkage on Jaccard distance."""
 

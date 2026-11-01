@@ -1,4 +1,4 @@
-"""The planners that share greedy's rules: kmedoids, toptime and the Jaccard pair."""
+"""The planners that share greedy's rules: kmedoids, knapsack and the Jaccard pair."""
 
 from __future__ import annotations
 
@@ -13,19 +13,18 @@ from readie_pipeline.corpus.models import Corpus
 from readie_pipeline.metadata.models import Metadata, PackageFacts
 from readie_pipeline.planning._closures import jaccard_distances
 from readie_pipeline.planning.greedy import GreedyPlanner
-from readie_pipeline.planning.jaccard import JaccardAgglomerativePlanner, JaccardKMedoidsPlanner
+from readie_pipeline.planning.jaccard import JaccardAgglomerativePlanner
 from readie_pipeline.planning.kmedoids import KMedoidsPlanner
 from readie_pipeline.planning.ports import Budget, CheckpointPlanner
-from readie_pipeline.planning.toptime import TopTimePlanner
+from readie_pipeline.planning.knapsack import KnapsackPlanner
 from tests.helpers import item
 
 ALPHA = 0.005
 
 PLANNER_CLASSES = [
     pytest.param(KMedoidsPlanner, id="kmedoids"),
-    pytest.param(TopTimePlanner, id="toptime"),
-    pytest.param(JaccardKMedoidsPlanner, id="jaccard-kmedoids"),
-    pytest.param(JaccardAgglomerativePlanner, id="jaccard-agglomerative"),
+    pytest.param(KnapsackPlanner, id="knapsack"),
+    pytest.param(JaccardAgglomerativePlanner, id="jaccard"),
 ]
 
 
@@ -160,9 +159,8 @@ def test_the_same_inputs_give_the_same_plan(cls):
     ("key", "cls"),
     [
         ("kmedoids", KMedoidsPlanner),
-        ("toptime", TopTimePlanner),
-        ("jaccard-kmedoids", JaccardKMedoidsPlanner),
-        ("jaccard-agglomerative", JaccardAgglomerativePlanner),
+        ("knapsack", KnapsackPlanner),
+        ("jaccard", JaccardAgglomerativePlanner),
     ],
 )
 def test_a_planner_is_resolved_by_its_key(key, cls):
@@ -170,7 +168,7 @@ def test_a_planner_is_resolved_by_its_key(key, cls):
 
 
 def test_an_unknown_planner_lists_the_choices():
-    with pytest.raises(ConfigError, match=r"kmedoids.*toptime"):
+    with pytest.raises(ConfigError, match=r"kmedoids.*knapsack"):
         build_planner("nope", ALPHA)
 
 
@@ -207,31 +205,31 @@ def test_kmedoids_escapes_a_greedy_first_pick_that_wastes_the_budget():
 
 
 # ---------------------------------------------------------------------------
-# Top time
+# Knapsack
 # ---------------------------------------------------------------------------
-def test_toptime_takes_the_largest_time_reductions_first():
+def test_knapsack_takes_the_largest_time_reductions_first():
     corpus = Corpus.of([req("slow")] * 10 + [req("quick")] * 100)
     metadata = facts(slow=(10, 4.0), quick=(10, 0.001))
 
-    plans = TopTimePlanner(alpha=ALPHA).plan(
+    plans = KnapsackPlanner(alpha=ALPHA).plan(
         corpus, metadata, Budget(max_checkpoints=1, size_mb=10)
     )
 
     assert plans[0].imports == ("slow",)
 
 
-def test_toptime_skips_one_that_does_not_fit_and_takes_the_next():
+def test_knapsack_skips_one_that_does_not_fit_and_takes_the_next():
     corpus = Corpus.of([req("huge")] * 10 + [req("small")] * 10)
     metadata = facts(huge=(100, 5.0), small=(10, 1.0))
 
-    plans = TopTimePlanner(alpha=ALPHA).plan(
+    plans = KnapsackPlanner(alpha=ALPHA).plan(
         corpus, metadata, Budget(max_checkpoints=2, size_mb=50)
     )
 
     assert [p.imports for p in plans] == [("small",)]
 
 
-def test_toptime_does_not_discount_overlap_between_its_picks():
+def test_knapsack_does_not_discount_overlap_between_its_picks():
     # Unlike greedy, nothing is re-ranked after a pick: the second closure is taken on
     # its standalone saving even though the first already holds most of it.
     corpus = Corpus.of([req("pandas")] * 10 + [req("pandas", "scipy")] * 10)
@@ -241,7 +239,7 @@ def test_toptime_does_not_discount_overlap_between_its_picks():
         }
     )
 
-    plans = TopTimePlanner(alpha=ALPHA).plan(
+    plans = KnapsackPlanner(alpha=ALPHA).plan(
         corpus, metadata, Budget(max_checkpoints=2, size_mb=500)
     )
 
@@ -260,7 +258,7 @@ def test_jaccard_distance_is_one_minus_overlap_over_union():
     assert np.allclose(dist, dist.T)
 
 
-@pytest.mark.parametrize("cls", [JaccardKMedoidsPlanner, JaccardAgglomerativePlanner])
+@pytest.mark.parametrize("cls", [JaccardAgglomerativePlanner])
 def test_similar_closures_share_a_checkpoint_and_unrelated_ones_do_not(cls):
     corpus = Corpus.of([req("a", "b")] * 5 + [req("a", "b", "c")] * 5 + [req("x", "y")] * 5)
     metadata = facts(a=(5, 1.0), b=(5, 1.0), c=(5, 1.0), x=(5, 1.0), y=(5, 1.0))
@@ -270,7 +268,7 @@ def test_similar_closures_share_a_checkpoint_and_unrelated_ones_do_not(cls):
     assert {p.imports for p in plans} == {("a", "b", "c"), ("x", "y")}
 
 
-@pytest.mark.parametrize("cls", [JaccardKMedoidsPlanner, JaccardAgglomerativePlanner])
+@pytest.mark.parametrize("cls", [JaccardAgglomerativePlanner])
 def test_a_cluster_too_big_for_the_budget_drops_its_lightest_members(cls):
     # a+b+c is 30 MB, over the 25 MB budget, so the rare member is dropped and a+b is kept.
     corpus = Corpus.of([req("a", "b")] * 10 + [req("a", "b", "c")] * 2)
