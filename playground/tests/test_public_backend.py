@@ -1,4 +1,4 @@
-"""The public comparison path uses SDK resource defaults."""
+"""HTTP execution options reach the SDK."""
 
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -12,24 +12,8 @@ from readie_playground.config import PlaygroundSettings
 from readie_playground.runner import ReadieBackend, Runner
 
 
-async def test_comparison_does_not_override_the_sdk_memory_budget(tmp_path: Path) -> None:
-    backend = ReadieBackend(Settings(), 30, tmp_path)
-    with (
-        patch("readie_playground.runner.Client"),
-        patch("readie_playground.runner.RemoteFunction") as remote_function,
-    ):
-        remote_function.return_value.aio = AsyncMock()
-        await backend.execute("print(1)", cold=False, on_log=lambda _: None)
-
-    arguments = remote_function.call_args.kwargs
-    assert "budgets" not in arguments
-    assert "session" not in arguments
-    assert arguments["timeout"] == 30
-    assert arguments["disable_optimized_execution"] is False
-
-
 async def test_http_options_reach_the_real_sdk_call(tmp_path: Path) -> None:
-    backend = ReadieBackend(Settings(), 30, tmp_path)
+    backend = ReadieBackend(Settings(), tmp_path)
     app = create_app(PlaygroundSettings(), Runner(backend, 1000))
     with patch("readie_playground.runner.Client") as client_factory:
         sdk_client = client_factory.return_value.__aenter__.return_value
@@ -69,3 +53,22 @@ async def test_http_options_reach_the_real_sdk_call(tmp_path: Path) -> None:
     assert arguments["packages"] == ("numpy==2.2.0",)
     assert arguments["disable_optimized_execution"] is False
     assert arguments["checkpoint_id"] == "selected-checkpoint"
+
+
+async def test_code_only_http_request_leaves_resources_and_deadline_to_the_sdk(
+    tmp_path: Path,
+) -> None:
+    app = create_app(PlaygroundSettings(), Runner(ReadieBackend(Settings(), tmp_path), 1000))
+    with patch("readie_playground.runner.Client") as factory:
+        sdk = factory.return_value.__aenter__.return_value
+        sdk.acall = AsyncMock(return_value=None)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://t"
+        ) as http:
+            response = await http.post("/run", json={"code": "print(42)"})
+    assert response.text.count("event: done") == 1
+    sdk.acall.assert_awaited_once()
+    arguments = sdk.acall.call_args.kwargs
+    assert arguments["budgets"] == ()
+    assert arguments["timeout"] is None
+    assert arguments["session"] is None

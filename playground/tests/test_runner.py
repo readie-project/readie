@@ -1,79 +1,69 @@
 import asyncio
 
-from readie_playground.runner import EvalOptions, Event, Lane, Runner
+import pytest
+
+from readie_playground.runner import ExecutionOptions, Lane, Runner
 from tests.fakes import FakeBackend
 
 
-async def collect(runner: Runner, code: str) -> list[Event]:
-    return [e async for e in runner.stream(code)]
-
-
-async def test_runs_both_lanes_with_the_code_untouched() -> None:
-    backend = FakeBackend()
-    events = await collect(Runner(backend, 1000), "print(1)  # raw")
-    assert sorted(backend.calls, key=lambda c: c[1]) == [
-        ("print(1)  # raw", False),
-        ("print(1)  # raw", True),
-    ]
-    done = {e.lane: e for e in events if e.kind == "done"}
-    assert set(done) == {Lane.OPTIMIZED, Lane.COLD}
-    assert all(e.ok for e in done.values())
-
-
-async def test_logs_are_tagged_by_lane() -> None:
-    events = await collect(Runner(FakeBackend(), 1000), "x")
-    logs = {e.lane: e.text for e in events if e.kind == "log"}
-    assert logs == {Lane.OPTIMIZED: "fast output\n", Lane.COLD: "cold output\n"}
-
-
-async def test_one_lane_failing_does_not_fail_the_other() -> None:
-    events = await collect(Runner(FakeBackend(fail_cold=True), 1000), "x")
-    done = {e.lane: e for e in events if e.kind == "done"}
-    assert done[Lane.OPTIMIZED].ok
-    assert not done[Lane.COLD].ok
-    assert "ValueError" in done[Lane.COLD].error
+@pytest.mark.parametrize("cold", [False, True])
+async def test_each_request_executes_once_in_the_selected_lane(cold: bool) -> None:
+    backend = FakeBackend(output="hello\n")
+    options = ExecutionOptions(remote={"disable_optimized_execution": cold, "memory": "8Gi"})
+    events = [event async for event in Runner(backend, 1000).stream("print(1)", options)]
+    assert len(backend.calls) == 1
+    assert backend.calls[0].options == options
+    assert [event.kind for event in events] == ["log", "done"]
+    assert all(event.lane == (Lane.COLD if cold else Lane.OPTIMIZED) for event in events)
+    assert events[-1].ok
 
 
 async def test_output_is_truncated_and_flagged() -> None:
-    events = await collect(Runner(FakeBackend(), 5), "x")
-    assert all(len(e.text) <= 5 for e in events if e.kind == "log")
-    assert all(e.truncated for e in events if e.kind == "done")
+    events = [event async for event in Runner(FakeBackend(output="x" * 50), 5).stream("x")]
+    assert events[0].text == "xxxxx"
+    assert events[-1].truncated
 
 
-async def test_closing_the_stream_cancels_both_runs() -> None:
+@pytest.mark.parametrize(
+    ("backend", "error"),
+    [
+        (FakeBackend(fail_execution=True), "ValueError"),
+        (FakeBackend(timeout_execution=True), "RemoteTimeoutError"),
+        (FakeBackend(crash_execution=True), "internal error"),
+    ],
+)
+async def test_failures_end_the_stream_with_an_error(backend: FakeBackend, error: str) -> None:
+    events = [event async for event in Runner(backend, 1000).stream("x")]
+    assert not events[-1].ok
+    assert error in events[-1].error
+
+
+async def test_closing_the_stream_cancels_the_backend() -> None:
     backend = FakeBackend(hang=True)
     stream = Runner(backend, 1000).stream("x")
     task = asyncio.ensure_future(stream.__anext__())
-    await asyncio.sleep(0.05)
-    task.cancel()
-    await asyncio.gather(task, return_exceptions=True)
-    await stream.aclose()
-    assert backend.cancelled == 2
-
-
-async def test_invalid_python_fails_both_lanes_without_calling_readie() -> None:
-    backend = FakeBackend()
-    events = await collect(Runner(backend, 1000), "x = = 1")
-    assert backend.calls == []
-    assert [e.ok for e in events] == [False, False]
-    assert all("SyntaxError" in e.error for e in events)
-
-
-async def test_closing_a_single_execution_stream_cancels_the_backend() -> None:
-    backend = FakeBackend(hang=True)
-    stream = Runner(backend, 1000).stream("x", EvalOptions())
-    task = asyncio.ensure_future(stream.__anext__())
-    await asyncio.sleep(0.05)
+    await backend.started.wait()
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     await stream.aclose()
     assert backend.cancelled == 1
 
 
-async def test_invalid_single_execution_source_does_not_call_the_backend() -> None:
+async def test_invalid_python_fails_without_calling_readie() -> None:
     backend = FakeBackend()
-    events = [event async for event in Runner(backend, 1000).stream("x = = 1", EvalOptions())]
-    assert backend.evals == []
+    events = [event async for event in Runner(backend, 1000).stream("x = = 1")]
+    assert backend.calls == []
     assert len(events) == 1
     assert not events[0].ok
     assert "SyntaxError" in events[0].error
+
+
+async def test_session_requests_reuse_the_namespace_and_other_requests_do_not() -> None:
+    backend = FakeBackend()
+    runner = Runner(backend, 1000)
+    for options in [ExecutionOptions(remote={"session": "mine"})] * 2 + [ExecutionOptions()] * 2:
+        _ = [event async for event in runner.stream("x = 1", options)]
+    keys = [call.key for call in backend.calls]
+    assert keys[:2] == ["mine", "mine"]
+    assert len(set(keys[2:])) == 2
+    assert "mine" not in keys[2:]

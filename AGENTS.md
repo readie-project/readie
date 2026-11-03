@@ -74,11 +74,11 @@ Most tests use fakes and run anywhere (see gVisor note below).
   client and the sandbox must run the same minor version, and the sandbox rootfs
   ships Python 3.12. `router` and `pipeline` target 3.13 because they control their
   own images.
-- **`/eval/run` mirrors the arguments of `@remote`.** The playground's `EvalRequest`
+- **`/run` mirrors the arguments of `@remote`.** The playground's `ReadieExecutionRequest`
   (`playground/src/readie_playground/app.py`) carries every argument of `@remote`
   under the same name and passes it to `readie.remote` untouched, and makes no
   choices of its own. When an argument of `@remote` is added, renamed, removed or
-  has its default changed, update `EvalRequest` to match in the same change (and
+  has its default changed, update `ReadieExecutionRequest` to match in the same change (and
   `playground/README.md`). Only `code` belongs to the route.
 - **`pkg` checks the Python version.** Functions are cloudpickled
   client-side and unpickled in the sandbox, and that is only safe within one minor
@@ -136,7 +136,7 @@ There are three kinds of documentation, each with one audience:
 | A `.proto` file | `make protos` and `make docs-protos`; `protos/README.md` if a rule changes |
 | The executor wire protocol | `executor/README.md`; site `architecture/executor-protocol` and `contributing/changing-executor-protocol` |
 | A setting or environment variable (router, worker, executor, pipeline) | The component README; site `contributing/configuration-reference` and `contributing/configure-services` |
-| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md`; site `guides/sdk`, `guides/errors`, and the Get started pages that mention it. A `@remote` parameter also goes into the playground's `EvalRequest` (`/eval/run`) |
+| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md`; site `guides/sdk`, `guides/errors`, and the Get started pages that mention it. A `@remote` parameter also goes into the playground's `ReadieExecutionRequest` (`/run`) |
 | A Makefile target or variable | Its `##` help text; site `contributing/make-targets` |
 | The catalogue format or how the router selects a checkpoint | `catalogues/README.md`; site `concepts/flavors-and-catalogues`, `concepts/cost-model`, `architecture/placement` |
 | Sandbox or container behavior (network, limits, idle timeout, lifecycle) | `worker/README.md`; site `concepts/sandboxes`, `architecture/container-lifecycle` |

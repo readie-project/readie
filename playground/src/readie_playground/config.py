@@ -16,11 +16,8 @@ class PlaygroundSettings:
     allowed_origins: tuple[str, ...] = ("https://readie.org",)
     max_code_bytes: int = 16 * 1024
     max_output_chars: int = 64 * 1024
-    timeout_s: float = 30.0
-    max_concurrent_runs: int = 4
     router_tls: bool = True
     workdir: str = "/tmp/playground"  # noqa: S108 - a tmpfs inside the container
-    eval_max_code_bytes: int = 8 * 1024 * 1024
 
     @classmethod
     def from_env(cls) -> PlaygroundSettings:
@@ -39,9 +36,6 @@ class PlaygroundSettings:
             ),
             max_code_bytes=int(env("PLAYGROUND_MAX_CODE_BYTES", d.max_code_bytes)),
             max_output_chars=int(env("PLAYGROUND_MAX_OUTPUT_CHARS", d.max_output_chars)),
-            timeout_s=float(env("PLAYGROUND_TIMEOUT_S", d.timeout_s)),
-            max_concurrent_runs=int(env("PLAYGROUND_MAX_CONCURRENT_RUNS", d.max_concurrent_runs)),
             router_tls=env("PLAYGROUND_ROUTER_TLS", "true").lower() in {"1", "true", "yes"},
             workdir=env("PLAYGROUND_WORKDIR", d.workdir),
-            eval_max_code_bytes=int(env("PLAYGROUND_EVAL_MAX_CODE_BYTES", d.eval_max_code_bytes)),
         )

@@ -1,139 +1,46 @@
 # readie-playground
 
 The FastAPI service for HTTP execution and the playground on the docs site.
-Requests with execution options run once. A code-only request runs on Readie
-twice in parallel, once with
-checkpoint restore and once with `disable_optimized_execution=True` (cold
-start), and streams both outputs back as server-sent events.
+Every request runs once and streams output as server-sent events. The docs
+frontend compares optimized and cold starts by sending two requests.
 
 ## Security model
 
 The service interprets visitor code, so it is built to be contained. It runs under
 gVisor (`runtime: runsc`) with no capabilities, a read-only root filesystem and a
 small tmpfs. It uses the Readie client the way any user would, so it contacts the Readie
-server that the client uses by default, through that server's nginx. Importing a visitor's
-module runs only its decorator and `def`: the script is the body of `main`, which runs on
-Readie. `SECURITY.md` has the full picture. Use a Readie token that only the playground has.
+server that the client uses by default, through that server's nginx. The generated
+module defines a wrapper with the visitor source stored as a string; the wrapper
+executes that source on Readie. `SECURITY.md` has the full picture. Use a Readie
+token that only the playground has.
 
 ## Layout
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/readie_playground/app.py` | FastAPI app: `POST /run` (SSE), `POST /eval/run` (JSON), health, CORS |
-| `src/readie_playground/runner.py` | Comparison and single execution behind a `Backend` Protocol |
+| `src/readie_playground/app.py` | FastAPI app: `POST /run` (SSE), health, CORS |
+| `src/readie_playground/runner.py` | Single execution behind a `Backend` Protocol |
 | `src/readie_playground/userfn.py` | Builds the visitor's script into a `@remote` function in a real module |
-| `src/readie_playground/limits.py` | Concurrent-run cap |
 | `src/readie_playground/config.py` | `PLAYGROUND_*` settings |
 | `tests/` | Unit tests with a fake backend; no router needed |
 
 ## API
 
-`POST /run` with `{"code": "<python source>"}` returns `text/event-stream`:
+`POST /run` accepts `code` and the arguments of `@remote` and streams one execution
+as server-sent events. Code-only requests use SDK defaults. The docs playground
+makes two independent calls, one optimized and one cold, with a deadline on each.
 
-```text
-event: log
-data: {"lane": "optimized", "text": "hello\n"}
+See [Send HTTP execution requests](../docs/docs/guides/http-execution.md) for cURL
+examples, fields and responses. `/eval/run` is removed; evaluation callers must
+use `/run` and consume its SSE response.
 
-event: done
-data: {"lane": "cold", "ok": true, "duration_s": 1.234, "error": "", "truncated": false}
-```
+The request model rejects unknown fields and validates remote options before
+streaming. Sessions use caller-supplied identifiers and preserve script state.
+No session is invented when `session` is missing or empty.
 
-Lanes are `optimized` and `cold`. Each lane ends with one `done` event. Errors
-before streaming return 413 (too large), 422 (invalid) or 503 (busy).
-
-Code-only requests retain the two-lane comparison. Including any `@remote` argument,
-even its default value, selects one execution with those arguments and the same SSE
-response format. See [Send HTTP execution requests](http-api.md) for cURL examples,
-request fields, sessions and response handling.
-
-### Evaluation route
-
-`POST /eval/run` runs one piece of code once and returns its timing as JSON. The route
-has no token and is always served, so nothing in the service keeps a visitor out of it. Both nginx configs answer
-404 for `/playground/eval/` (a rule that sits before `/playground/` and must stay), so
-the route is reachable only on the playground's own container network, at the
-service's address on port 8080 (for example `http://<container address>:8080/eval/run`
-from the host). It is meant for a harness run by the operator. Because it is not
-behind nginx, nginx's request limits do not apply to it: a large request, a long run
-and many requests at once are all accepted, and the route has no rate limit or
-concurrency cap of its own.
-
-The route makes no decisions. Apart from `code`, every
-field is an argument of `@remote`, spelled as `@remote` spells it, and goes to
-`readie.remote` untouched. A field left out keeps `remote`'s own default (the
-playground adds no memory, deadline or session of its own).
-
-```json
-{
-  "code": "import pandas as pd\nx = 41\nprint(x + 1)",
-  "timeout": 300, "session": null,
-  "memory": "8Gi", "max_memory": "8Gi",
-  "gpu": false, "gpu_memory": null, "max_gpu_memory": null,
-  "packages": [], "disable_optimized_execution": false, "checkpoint_id": null
-}
-```
-
-Only `code` is required. Unknown fields are refused with a 422, so a removed one
-(`timeout_s`, `total_timeout_s`) is not ignored without a word. The arguments of
-`@remote` are validated by `remote` itself, called once up front, so a bad size, a
-bad requirement or `checkpoint_id` together with `disable_optimized_execution=true`
-returns a 422 before anything runs. The route keeps one limit of its own, on the size
-of `code` (`PLAYGROUND_EVAL_MAX_CODE_BYTES`), and no cap on any `@remote` value.
-The set of fields follows `@remote`: when an argument is added or changed there,
-`EvalRequest` changes with it (see `AGENTS.md`), and a test pins that they match.
-
-- **One run per request.** Comparing an optimized start with a cold start is the
-  caller's job: send the item twice, once with `disable_optimized_execution` false
-  and once true.
-- **Sessions.** `session` is passed as given, except that an empty string means no
-  session (it would otherwise become a made-up id and leave a warm container behind).
-  With none, every request is an independent
-  call. Requests that name the same session share a container and an interpreter: names
-  defined by one request are visible to the next, for as long as the session's container
-  lives. A container that is destroyed (after a failure, or when its idle time runs out) takes
-  those names with it, and a request that names the session after that starts a new container
-  with an empty namespace. The route never invents a session id.
-- **The code runs with module semantics** (`exec` in a namespace that lasts for the
-  session, `__name__ == "__main__"`), so `from x import *`, classes and `global`
-  behave as in a script. The function the client pickles repeats the code's import
-  statements, so it records the same imports as a function you wrote and the router can
-  pick a checkpoint. `MPLBACKEND=Agg` is set so plots need no display.
-- **Code that is not valid Python** is reported as a `SyntaxError` without a call.
-
-```json
-{
-  "session_id": "5f0c...",
-  "ok": true,
-  "duration_s": 1.93,
-  "error": "",
-  "error_type": "",
-  "output": "42\n",
-  "truncated": false
-}
-```
-
-`duration_s` is measured exactly as for `/run`: a monotonic clock around the whole
-backend call (building the function, connecting, the call). `error_type` is
-`RemoteExecutionError` for code that raised, `RemoteTimeoutError` when the deadline
-passed, `SyntaxError`, another Readie error name, or `InternalError`.
-Errors before the run return 413 (too large) or 422 (invalid).
-
-## Resource limits
-
-Each lane builds the script into a function decorated with `@remote`, the way a user
-would write one, and calls it through `readie.Client`. The module is a real file, so
-the client reads the script's imports and the router can choose a checkpoint for the
-optimized lane. The cold lane sets `disable_optimized_execution=True`.
-
-`/run` adds no fixed memory budget. Code-only comparisons use the SDK and cluster
-resource defaults; requests with `@remote` options pass their resource budgets to
-the SDK. Code-only comparisons use no session and create two independent sandboxes.
-Requests with options execute once and use the caller's session, if supplied.
-Size worker capacity for the expected requests and their resource budgets.
-
-The public route has no application or NGINX rate limit. Code size, output size,
-and concurrent-request caps remain. The comparison uses `PLAYGROUND_TIMEOUT_S`;
-single executions use the caller's `timeout` or the SDK default.
+The service adds no memory budget, rate limit or concurrent-request cap. Code-size
+and output-size limits remain. NGINX retains its request-body limit and proxy
+timeout. Worker capacity and configured sandbox limits still apply.
 
 ## Configuration
 
@@ -145,11 +52,8 @@ single executions use the caller's `timeout` or the SDK default.
 | `PLAYGROUND_ALLOWED_ORIGINS` | `https://readie.org` | Comma-separated CORS origins |
 | `PLAYGROUND_MAX_CODE_BYTES` | `16384` | Largest accepted source |
 | `PLAYGROUND_MAX_OUTPUT_CHARS` | `65536` | Output kept per lane |
-| `PLAYGROUND_TIMEOUT_S` | `30` | Deadline per comparison lane; single executions use the request timeout |
-| `PLAYGROUND_MAX_CONCURRENT_RUNS` | `4` | Simultaneous requests |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
-| `PLAYGROUND_EVAL_MAX_CODE_BYTES` | `8388608` | Largest `code` of one evaluation request |
 
 Point the service at a dedicated Readie server with `SANDBOX_NETWORK=none` on its workers
 rather than the one real users share, by setting `PLAYGROUND_ROUTER_URI`.
@@ -166,8 +70,7 @@ curl -N -X POST localhost:50051/playground/run \
 ```
 
 nginx routes `/playground/` to the service and everything else to the router. The
-workers need capacity for two sandboxes per code-only comparison and one sandbox
-per request with options.
+workers need capacity for one sandbox per request and two per frontend comparison.
 
 ## Deploy
 
@@ -183,7 +86,7 @@ per request with options.
   disabled when it is empty. Set `PLAYGROUND_ALLOWED_ORIGINS` on the service to the docs
   site's origin.
 - nginx caps request body size. The public execution route has no rate limit;
-  the service retains code size, output size and concurrent-request caps.
+  the service retains code-size and output-size limits.
 
 ## Develop
 

@@ -8,6 +8,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import {examples} from '../../data/playgroundExamples';
 import useServiceStatus from '../../hooks/useServiceStatus';
 import styles from './styles.module.css';
+import {streamExecution} from '../../utils/streamExecution';
 
 type LaneId = 'optimized' | 'cold';
 type LaneState = {
@@ -20,22 +21,6 @@ type LaneState = {
 
 const idle = (): LaneState => ({output: '', running: false, seconds: null, error: '', truncated: false});
 const initial = (): Record<LaneId, LaneState> => ({optimized: idle(), cold: idle()});
-
-// Server-sent events arrive as blank-line separated frames of "event:" and "data:" lines.
-function parseFrame(frame: string): {event: string; data: Record<string, unknown>} | null {
-  let event = 'message';
-  let data = '';
-  for (const line of frame.split('\n')) {
-    if (line.startsWith('event: ')) event = line.slice(7);
-    else if (line.startsWith('data: ')) data += line.slice(6);
-  }
-  if (!data) return null;
-  try {
-    return {event, data: JSON.parse(data)};
-  } catch {
-    return null;
-  }
-}
 
 /* ------------------------------------------------------------------ Editor */
 
@@ -188,7 +173,6 @@ print("Hello from Readie")
     const [code, setCode] = useState(examples[0].code);
     const [own, setOwn] = useState(OWN_CODE);
     const [lanes, setLanes] = useState(initial);
-    const [message, setMessage] = useState('');
     const abort = useRef<AbortController | null>(null);
     const track = useRef<HTMLDivElement | null>(null);
     const [edges, setEdges] = useState({start: true, end: false});
@@ -225,59 +209,38 @@ print("Hello from Readie")
 
     const run = useCallback(async () => {
       if (!serviceUrl || !code.trim() || abort.current) return;
-      setMessage('');
       setLanes({optimized: {...idle(), running: true}, cold: {...idle(), running: true}});
       const controller = new AbortController();
       abort.current = controller;
-      try {
-        const res = await fetch(`${serviceUrl}/run`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({code}),
-          signal: controller.signal,
-        });
-        if (!res.ok || !res.body) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.detail ?? `The playground returned status ${res.status}.`);
-        }
-        const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-        let buffer = '';
-        for (;;) {
-          const {value, done} = await reader.read();
-          if (done) break;
-          buffer += value;
-          let split = buffer.indexOf('\n\n');
-          while (split !== -1) {
-            const parsed = parseFrame(buffer.slice(0, split));
-            buffer = buffer.slice(split + 2);
-            split = buffer.indexOf('\n\n');
-            if (!parsed) continue;
-            const lane = parsed.data.lane as LaneId;
-            if (parsed.event === 'log') {
+      const runLane = async (lane: LaneId) => {
+        try {
+          await streamExecution(serviceUrl, code, lane === 'cold', controller.signal, (event, data) => {
+            if (event === 'log') {
               setLanes((prev) => ({
                 ...prev,
-                [lane]: {...prev[lane], output: prev[lane].output + String(parsed.data.text)},
+                [lane]: {...prev[lane], output: prev[lane].output + String(data.text)},
               }));
-            } else if (parsed.event === 'done') {
+            } else if (event === 'done') {
               patch(lane, {
                 running: false,
-                seconds: Number(parsed.data.duration_s),
-                error: String(parsed.data.error ?? ''),
-                truncated: Boolean(parsed.data.truncated),
+                seconds: Number(data.duration_s),
+                error: String(data.error || (data.ok === false ? 'Execution failed.' : '')),
+                truncated: Boolean(data.truncated),
               });
             }
+          });
+        } catch (err) {
+          if ((err as Error).name !== 'AbortError') {
+            patch(lane, {error: (err as Error).message || 'Could not reach the playground.'});
           }
+        } finally {
+          patch(lane, {running: false});
         }
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          setMessage((err as Error).message || 'Could not reach the playground.');
-        }
+      };
+      try {
+        await Promise.allSettled([runLane('optimized'), runLane('cold')]);
       } finally {
         abort.current = null;
-        setLanes((prev) => ({
-          optimized: {...prev.optimized, running: false},
-          cold: {...prev.cold, running: false},
-        }));
       }
     }, [code, serviceUrl, patch]);
 
@@ -289,7 +252,6 @@ print("Hello from Readie")
       setSelected(id);
       setCode(id === 'own' ? own : (example?.code ?? ''));
       setLanes(initial());
-      setMessage('');
     };
 
     const original = selected === 'own' ? OWN_CODE : (examples.find((x) => x.id === selected)?.code ?? '');
@@ -419,11 +381,7 @@ print("Hello from Readie")
             <Pane title="Readie" state={optimized} time={readieTime} />
             <Pane title="Cold start" state={cold} time={coldTime} />
             {!serviceUrl && <p className={styles.notice}>The playground service is not configured for this build.</p>}
-            {message && (
-              <p className={styles.notice} role="alert">
-                {message}
-              </p>
-            )}
+
           </div>
         </div>
       </div>

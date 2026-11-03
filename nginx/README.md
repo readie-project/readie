@@ -76,9 +76,9 @@ The configurations also forward `/playground/` to the playground service, when i
 running, and keep every other path for gRPC. The playground itself calls the Readie server
 that the client uses by default, like any other client. See
 [`playground/README.md`](../playground/README.md) and the
-[HTTP execution guide](../playground/http-api.md). `/playground/run` has no NGINX
+[HTTP execution guide](../docs/docs/guides/http-execution.md). `/playground/run` has no NGINX
 rate limit. The body-size cap and streaming proxy settings remain in place.
-`/playground/eval/` remains blocked with a 404 in both configurations.
+The retired `/eval/run` route is no longer registered by the service.
 
 ## Health route
 

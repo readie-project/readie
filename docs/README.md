@@ -29,6 +29,12 @@ make docs-serve     # build, then serve the result
 change run `make docs-tools` once (installs `protoc-gen-doc`), then
 `make docs-protos`, and commit the result. CI fails if it is stale.
 
+## Frontend checks
+
+Run `npm run typecheck` and `npm test` from `docs/`. The tests cover the
+playground HTTP streams, execution-mode options, independent request failures
+and cancellation.
+
 ## Writing style
 
 The pages follow the conventions of the Kubernetes, Google developer and Python

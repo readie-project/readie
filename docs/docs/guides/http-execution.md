@@ -1,9 +1,13 @@
-# Send HTTP execution requests
+---
+title: Send HTTP execution requests
+sidebar_position: 5
+description: Run Python code on Readie with cURL and remote execution options.
+---
 
 `POST /playground/run` executes Python source on Readie and returns server-sent
 events (SSE). Send requests with cURL or another HTTP client; the Python SDK is
-not required. A request containing only `code` runs an optimized/cold comparison.
-Add any `@remote` option to run the code once with those settings.
+not required. Each request runs the code once. Include `@remote` options to choose
+resources, install packages, set a deadline or reuse a session.
 
 ## Send one execution
 
@@ -31,9 +35,7 @@ data: {"lane": "optimized", "ok": true, "duration_s": 0.123, "error": "", "trunc
 shown is an example. To run once without checkpoint optimization, set
 `disable_optimized_execution` to `true`. The response then uses the `cold` lane.
 
-To run once with the default settings, send `code` and
-`"disable_optimized_execution": false`. The explicit option distinguishes this
-request from a code-only comparison.
+Omit execution options to use the SDK defaults.
 
 To send a script from `script.py`, use `jq` to encode it as JSON:
 
@@ -45,9 +47,6 @@ curl --no-buffer --fail-with-body \
   -H 'Content-Type: application/json' \
   --data-binary @request.json
 ```
-
-For a local stack, replace the URL with
-`http://localhost:50051/playground/run`.
 
 ## Request fields
 
@@ -83,27 +82,13 @@ session. Avoid predictable identifiers and do not store secrets in shared sessio
 
 ## Compare optimized and cold execution
 
-Send only `code` to run the same comparison used by the docs playground:
-
-```bash
-curl --no-buffer --fail-with-body \
-  'https://readie.eastus.cloudapp.azure.com/playground/run' \
-  -H 'Content-Type: application/json' \
-  --data '{"code":"print(42)"}'
-```
-
-The service runs the source twice in parallel and streams interleaved `optimized`
-and `cold` events. Each lane ends with one `done` event. For a comparison, the code
-runs inside a function body, without a session, and uses the configured comparison
-timeout.
-
-Any execution option changes the request to a single run, including an option
-set to its default or to null. For example, adding `"session": null` selects one
-execution.
+Send two requests with the same code. Set `disable_optimized_execution` to `false`
+for the optimized execution and `true` for the cold execution. Each request has
+its own output stream and completion event. Omit `session` for independent runs.
 
 ## Handle results and errors
 
-Read the stream until each lane sends `done`. Output arrives in `log` events; use
+Read the stream until it sends `done`. Output arrives in `log` events; use
 `print()` to return text from a script. The API does not return Python objects.
 Each `done` event contains:
 
@@ -126,25 +111,18 @@ Errors before streaming use a JSON `detail` response:
 | ------ | ------- |
 | 413 | Request body or source exceeds its size limit; NGINX may return its own error body |
 | 422 | Missing or empty code, an unknown field, or invalid execution options |
-| 503 | The service's concurrent-request slots are full; retry after an active request finishes |
 
 Closing the stream cancels the active execution tasks. A proxy timeout can also
 close the connection: NGINX currently allows 120 seconds without response data.
 Set an execution deadline with `timeout` when a script may wait without producing
 output.
 
-## Access and remaining limits
+## Access and limits
 
-The public endpoint requires no HTTP authentication. It executes through the
-playground service's Readie credentials. CORS does not restrict cURL access.
+The public endpoint requires no HTTP authentication. It has no per-client rate
+limit, application concurrency cap or fixed playground execution memory budget.
+Cluster resource defaults
+still apply when memory options are omitted.
 
-The endpoint has no per-client rate limit in FastAPI or NGINX and no fixed
-execution memory budget. Limits on code size, output size, concurrent requests
-and the HTTP request body remain. The service container also keeps its memory
-and process limits. See the
-[configuration table](README.md#configuration) and the NGINX configurations for
-current values.
-
-`/eval/run` remains an internal JSON API. NGINX blocks `/playground/eval/`, so
-that route is not available through the public proxy. See the
-[security model](../SECURITY.md#the-playground-service).
+Limits on code size, output size and HTTP request body size remain. A
+`truncated: true` completion event means the output limit was reached.
