@@ -119,10 +119,10 @@ give a shell to.
 
 ### The playground service
 
-The docs playground (`playground/`) accepts visitor code over HTTPS, builds it into a
-`@remote` function in a generated module, and calls Readie through the client, as any
-user would. Importing that module runs only a decorator and a `def`; the visitor's
-statements run on Readie, in the worker's sandbox. The service still handles
+The docs playground (`playground/`) accepts visitor code over HTTPS, builds a
+wrapper in a generated module, and calls Readie through the client, as any user
+would. The wrapper stores visitor source as a string and executes it on Readie,
+in the worker's sandbox. The service still handles
 visitor-derived input, so it is contained:
 
 - It runs under gVisor (`runtime: runsc`) as a non-root user, with all capabilities
@@ -135,18 +135,26 @@ visitor-derived input, so it is contained:
 - It holds a Readie token that only the playground uses, so a compromise exposes a
   token with no other use. Run the playground against a dedicated Readie server with
   `SANDBOX_NETWORK=none` on its workers where possible.
-- Readie has no quotas, so nginx (`limit_req`, body size) and the service (rate limit,
-  size, output and concurrency caps) add their own.
-- `POST /eval/run` runs code with options a visitor must not control (memory,
-  timeout, packages, sessions, a pinned checkpoint, large bodies), and passes every
-  `@remote` argument through without capping it. It has no token and is always served,
-  so the only thing keeping it from the public is nginx: both configs answer 404 for
-  `/playground/eval/`, which makes the route reachable only from the container network
-  that runs the service. Keep that rule in place, and never publish the playground's own
-  port or route another proxy to it without the same block. Anyone who can reach the
-  route can run arbitrary Python on the workers with any memory and time limits they
-  ask for, bounded only by the router and the workers, and the route has no rate limit
-  or concurrency cap of its own.
+- The public `/playground/run` route has no rate limit and adds no fixed execution
+  memory budget or application concurrency cap. NGINX retains its body-size cap
+  and proxy timeout; the service retains code-size, output and container memory
+  limits. Worker
+  capacity accounting is separate from hard resource enforcement: Compose defaults
+  `SANDBOX_IGNORE_CGROUPS` to `true` for development compatibility. Configure cgroup
+  enforcement on hosts that require hard sandbox resource limits.
+- HTTP execution is anonymous and uses the service's Readie credentials. Router
+  authentication authenticates the service, not each HTTP caller. CORS restricts
+  browser access and does not authenticate requests from cURL or other clients.
+  Every request executes once and can select memory, timeouts,
+  packages, GPUs, sessions and checkpoints. Resource exhaustion remains possible;
+  use a dedicated backend for public traffic.
+- Sessions have caller-supplied identifiers and no per-caller ownership check.
+  Anyone who knows a session identifier can submit code to its interpreter. Do not
+  use sessions to separate mutually untrusted callers or put secrets in shared
+  sessions. The public SSE route cancels its backend tasks when the stream closes.
+- `/run` is the only execution route. The former `/eval/run` route is removed,
+  along with its special proxy rule and larger code-size setting. The docs
+  frontend performs comparisons with two independent `/run` requests.
 
 ## Non-vulnerabilities
 

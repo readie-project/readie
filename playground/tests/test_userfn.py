@@ -1,4 +1,3 @@
-import ast
 import os
 import sys
 from collections.abc import Iterator
@@ -9,63 +8,13 @@ from readie.resources import extract_imports
 
 from readie_playground import userfn
 
-ADVERSARIAL = [
-    "print(1)",
-    '"""\nimport os; os.system("x")\n"""',
-    "x = 1 \\\n+ 2",
-    "import os; os.system('id')",
-    "def f():\n    pass\n\nf()",
-]
-
-
-@pytest.mark.parametrize("code", ADVERSARIAL)
-def test_code_never_escapes_main(code: str) -> None:
-    tree = ast.parse(userfn.build_module(code))
-    # One import and one function: nothing of the visitor's runs at import time.
-    assert [type(n) for n in tree.body] == [ast.ImportFrom, ast.FunctionDef]
-
-
-def test_check_reports_the_visitors_own_line() -> None:
-    assert userfn.check("print(1)") is None
-    error = userfn.check("x = 1\ny = = 2")
-    assert error is not None
-    assert "line 2" in error
-
-
-def test_loaded_exposes_source_so_imports_are_extracted(tmp_path: Path) -> None:
-    with userfn.loaded("import math\nprint(math.pi)", tmp_path) as main:
-        assert "math" in extract_imports(main)
-
-
-def test_loaded_cleans_up_after_success_and_failure(tmp_path: Path) -> None:
-    with userfn.loaded("print(1)", tmp_path):
-        assert list(tmp_path.glob("pg_*.py"))
-    assert not list(tmp_path.glob("pg_*.py"))
-    assert not [m for m in sys.modules if m.startswith("pg_")]
-
-    with pytest.raises(RuntimeError), userfn.loaded("print(1)", tmp_path):
-        raise RuntimeError
-    assert not list(tmp_path.glob("pg_*.py"))
-    assert not [m for m in sys.modules if m.startswith("pg_")]
-
-
-def test_importing_does_not_run_the_visitors_code(tmp_path: Path) -> None:
-    marker = tmp_path / "ran"
-    with userfn.loaded(f"open({str(marker)!r}, 'w').close()", tmp_path):
-        assert not marker.exists()
-
-
-# ---------------------------------------------------------------------------
-# Steps (the evaluation path)
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture(autouse=True)
 def _fresh_namespaces() -> Iterator[None]:
     """Session namespaces live on a sys.modules entry; each test starts without one."""
-    sys.modules.pop("__readie_eval__", None)
+    sys.modules.pop("__readie_execution__", None)
     yield
-    sys.modules.pop("__readie_eval__", None)
+    sys.modules.pop("__readie_execution__", None)
 
 
 def run_step(source: str, key: str, index: int, tmp_path: Path) -> None:
@@ -173,3 +122,9 @@ def test_the_step_source_is_embedded_literally_so_awkward_code_survives(
     source = 'text = """triple \'quoted\' with "double" and \\\\ backslash\n"""\nprint(len(text))\n'
     run_step(source, "k", 0, tmp_path)
     assert capsys.readouterr().out.strip().isdigit()
+
+
+def test_loading_a_script_does_not_execute_its_source(tmp_path: Path) -> None:
+    marker = tmp_path / "ran"
+    with userfn.loaded_step(f"open({str(marker)!r}, 'w').close()", "k", 0, tmp_path):
+        assert not marker.exists()
