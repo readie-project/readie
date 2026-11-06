@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/illinoisdata/readie/worker/internal/container"
 	"github.com/illinoisdata/readie/worker/internal/execution"
@@ -305,6 +306,7 @@ type harness struct {
 	dialer     *pipeDialer
 	registry   *fakeregistry.Recorder
 	sink       *fakesink.Sink
+	tracer     trace.Tracer
 }
 
 func newHarness(t *testing.T, cfg execution.RunnerConfig, tune func(*harness)) *harness {
@@ -331,7 +333,7 @@ func newHarness(t *testing.T, cfg execution.RunnerConfig, tune func(*harness)) *
 		cfg.SessionOptions.IdleTimeout = 200 * time.Millisecond
 	}
 
-	h.runner = execution.NewRunner(h.containers, h.dialer, h.registry, cfg, logging.Discard())
+	h.runner = execution.NewRunner(h.containers, h.dialer, h.registry, cfg, logging.Discard(), h.tracer)
 	return h
 }
 
@@ -740,7 +742,7 @@ func TestRun_RoutineSideChannelCancellationIsNotWarned(t *testing.T) {
 				FirstByteTimeout: 5 * time.Second,
 				IdleTimeout:      200 * time.Millisecond,
 			},
-		}, slog.New(handler))
+		}, slog.New(handler), nil)
 
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
 	require.NoError(t, err)
@@ -766,7 +768,7 @@ func TestRun_DoesNotOpenSandboxLogsForClientOutput(t *testing.T) {
 				FirstByteTimeout: 5 * time.Second,
 				IdleTimeout:      200 * time.Millisecond,
 			},
-		}, slog.New(handler))
+		}, slog.New(handler), nil)
 
 	_, err := h.runner.Run(context.Background(), request(), &chunkSource{}, h.sink)
 	require.NoError(t, err)

@@ -8,6 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/illinoisdata/readie/worker/internal/container"
@@ -88,6 +92,7 @@ type Runner struct {
 	reporter   registry.Reporter
 	cfg        RunnerConfig
 	log        *slog.Logger
+	trace      trace.Tracer
 
 	// releaseWG tracks container releases still running in the background
 	// after their owning RPC has already returned. Shutdown waits on it
@@ -103,9 +108,13 @@ func NewRunner(
 	reporter registry.Reporter,
 	cfg RunnerConfig,
 	log *slog.Logger,
+	tracer trace.Tracer,
 ) *Runner {
 	if log == nil {
 		log = slog.Default()
+	}
+	if tracer == nil {
+		tracer = noop.NewTracerProvider().Tracer("worker")
 	}
 	return &Runner{
 		containers: containers,
@@ -113,6 +122,7 @@ func NewRunner(
 		reporter:   reporter,
 		cfg:        cfg.withDefaults(),
 		log:        log,
+		trace:      tracer,
 	}
 }
 
@@ -149,6 +159,10 @@ func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink S
 		"from", req.Alloc.Memory().Alloc, "to", grown.Alloc.Memory().Alloc,
 		logging.KeyError, err)
 
+	trace.SpanFromContext(ctx).AddEvent("execution retrying after possible OOM", trace.WithAttributes(
+		attribute.Int64("from", req.Alloc.Memory().Alloc),
+		attribute.Int64("to", grown.Alloc.Memory().Alloc),
+	))
 	rec.rewind()
 	return r.runOnce(ctx, grown, rec, sink)
 }
@@ -231,7 +245,18 @@ func (r *Runner) grownRequest(req Request) (Request, bool) {
 // outcome variable whose zero value destroys it. Success has to be recorded
 // explicitly on the final line, so every early return - including a timeout -
 // fails safe.
-func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
+func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, sink Sink) (result Result, runErr error) {
+	ctx, span := r.trace.Start(ctx, "execution attempt", trace.WithAttributes(
+		attribute.String(logging.KeyWorkerID, r.cfg.WorkerID),
+		attribute.String(logging.KeyRequestID, req.Ref.RequestID),
+		attribute.String(logging.KeySessionID, req.Ref.SessionID),
+		attribute.Int64("mem_alloc", req.Alloc.Memory().Alloc),
+	))
+	defer func() {
+		span.SetAttributes(attribute.Int("bytes_sent", result.BytesSent))
+		endSpan(span, runErr)
+	}()
+
 	log := r.log.With(
 		logging.KeyRequestID, req.Ref.RequestID,
 		logging.KeySessionID, req.Ref.SessionID,
@@ -240,13 +265,28 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 	execCtx, cancel := context.WithTimeout(ctx, r.cfg.ExecutionTimeout)
 	defer cancel()
 
-	handle, err := r.containers.Acquire(execCtx, req.toAcquire())
+	acquireCtx, acquireSpan := r.trace.Start(execCtx, "container acquire", trace.WithAttributes(
+		attribute.String("requested_container_id", req.ContainerID),
+		attribute.String("requested_checkpoint_id", req.CheckpointID),
+	))
+	handle, err := r.containers.Acquire(acquireCtx, req.toAcquire())
+	endSpan(acquireSpan, err)
 	if err != nil {
 		return Result{}, fmt.Errorf("acquire container: %w", err)
 	}
+	span.SetAttributes(
+		attribute.String(logging.KeyContainerID, handle.ID),
+		attribute.String(logging.KeyCheckpoint, handle.CheckpointID),
+	)
+	span.AddEvent("container acquired", trace.WithAttributes(
+		attribute.String(logging.KeyContainerID, handle.ID),
+		attribute.String(logging.KeyCheckpoint, handle.CheckpointID),
+		attribute.Bool("warm", req.ContainerID != ""),
+		attribute.Int64("mem_alloc", handle.Alloc.Memory().Alloc),
+	))
 	log = log.With(logging.KeyContainerID, handle.ID)
 
-	outcome := container.OutcomeFailure // zero value, restated for emphasis
+	outcome := container.OutcomeFailure
 	defer func() {
 		// Release runs in the background: the caller has already read outcome
 		// by return time (nothing writes it afterward), and teardown is no
@@ -258,18 +298,28 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 		r.releaseWG.Add(1)
 		go func() {
 			defer r.releaseWG.Done()
+			releaseCtx, releaseCancel := context.WithTimeout(
+				context.WithoutCancel(ctx), r.cfg.ReleaseTimeout)
+			defer releaseCancel()
+			// Cleanup can outlive the attempt, but retains its trace parent.
+			releaseCtx, releaseSpan := r.trace.Start(releaseCtx, "container release", trace.WithAttributes(
+				attribute.String(logging.KeyContainerID, handle.ID),
+				attribute.String("outcome", releaseOutcome.String()),
+			))
+			defer releaseSpan.End()
 			defer func() {
 				if rec := recover(); rec != nil {
+					releaseErr := fmt.Errorf("panic during background container release: %v", rec)
+					releaseSpan.RecordError(releaseErr)
+					releaseSpan.SetStatus(codes.Error, releaseErr.Error())
 					log.Error("panic during background container release",
 						"outcome", releaseOutcome.String(), "panic", rec)
 				}
 			}()
 
-			releaseCtx, releaseCancel := context.WithTimeout(
-				context.WithoutCancel(ctx), r.cfg.ReleaseTimeout)
-			defer releaseCancel()
-
 			if releaseErr := r.containers.Release(releaseCtx, req.Ref, handle, releaseOutcome); releaseErr != nil {
+				releaseSpan.RecordError(releaseErr)
+				releaseSpan.SetStatus(codes.Error, releaseErr.Error())
 				log.Error("could not release container", "outcome", releaseOutcome.String(), logging.KeyError, releaseErr)
 			}
 		}()
@@ -281,10 +331,13 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 		return Result{}, fmt.Errorf("provision sink: %w", provisionErr)
 	}
 
-	conn, err := r.dialer.Dial(execCtx, handle.ID)
+	dialCtx, dialSpan := r.trace.Start(execCtx, "executor dial")
+	conn, err := r.dialer.Dial(dialCtx, handle.ID)
+	endSpan(dialSpan, err)
 	if err != nil {
 		return Result{}, fmt.Errorf("dial executor: %w", err)
 	}
+	span.AddEvent("executor connected")
 	session := executor.NewSession(conn, r.cfg.SessionOptions, log)
 	defer func() {
 		if err := session.Close(); err != nil {
@@ -329,6 +382,7 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 	var (
 		sendErr   error
 		bytesSent int
+		responded bool
 	)
 	for ev := range events {
 		if sendErr != nil {
@@ -341,6 +395,9 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 			// Tear the producers down rather than continuing to pull output
 			// nobody can receive.
 			cancel()
+		} else if !responded {
+			span.AddEvent("response started")
+			responded = true
 		}
 	}
 	<-waited // establishes the happens-before edge for reading waitErr
@@ -351,6 +408,15 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 
 	outcome = container.OutcomeSuccess
 	return Result{Handle: handle, BytesSent: bytesSent}, nil
+}
+
+// endSpan records the operation's own error before ending its span.
+func endSpan(span trace.Span, err error) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
 }
 
 // classify turns the various failure signals into one error, preferring the

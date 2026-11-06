@@ -19,7 +19,7 @@ offline. Everything talks gRPC over contracts in `protos/`.
 | ----------- | ------------ | ------------------------------------------------------------------------- |
 | `nginx`     | NGINX        | Client-facing proxy                                                       |
 | `router/`   | Python 3.13  | Placement, cluster registry                                               |
-| `worker/`   | Go 1.25      | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
+| `worker/`   | Go 1.26      | Sandbox lifecycle, checkpoint/restore, executor I/O                       |
 | `executor/` | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
 | `pkg/`      | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
 | `pipeline/` | Python 3.13  | Offline: corpus, package analysis, checkpoint planning and capture        |

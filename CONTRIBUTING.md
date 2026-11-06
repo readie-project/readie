@@ -44,7 +44,7 @@ respectively), so they must work on whatever is already there. `router` and
 
 ## Getting set up
 
-Install [uv](https://docs.astral.sh/uv/), Go 1.25 or later, Docker, and
+Install [uv](https://docs.astral.sh/uv/), Go 1.26 or later, Docker, and
 [buf](https://buf.build/docs/installation). The root `make lint` runs `buf lint`,
 so buf is required for the full gate and not only when you change protos. The Go
 linter comes from `make -C worker tools`.

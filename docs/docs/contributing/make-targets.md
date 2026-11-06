@@ -60,6 +60,10 @@ make pkg-type
 make pipeline-test
 ```
 
+The worker's lint target pins `GOTOOLCHAIN=go1.26.0`, matching `worker/go.mod`.
+Run `make worker-tools` to install the compatible `golangci-lint` release pinned
+in `worker/Makefile`, including after a toolchain update.
+
 See [Repo map](/docs/contributing/repo-map) for the contents of each component.
 
 ## Proto targets

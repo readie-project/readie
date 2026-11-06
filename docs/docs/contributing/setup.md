@@ -13,7 +13,7 @@ Install the following tools.
 | Tool | Purpose |
 | --- | --- |
 | [uv](https://docs.astral.sh/uv/) | Creates and syncs a virtual environment for each Python component. |
-| Go 1.25 or later | Builds and tests the worker. `worker/go.mod` declares `go 1.25.0`. |
+| Go 1.26 or later | Builds and tests the worker. `worker/go.mod` declares `go 1.26.0`. |
 | [buf](https://buf.build/docs/installation) | Lints and formats the `.proto` files. The root `make lint` runs it, so it is required even when you do not edit a proto. |
 | [pre-commit](https://pre-commit.com/) | Runs the fast checks before each commit. |
 | Docker | Builds images and runs the stack. Tests do not require it. |

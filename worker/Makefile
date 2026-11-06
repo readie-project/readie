@@ -6,7 +6,7 @@ PROTOS     := $(PROTO_DIR)/execution.proto $(PROTO_DIR)/registry.proto $(PROTO_D
 # Pinned to the versions recorded in the committed proto/*.pb.go headers.
 PROTOC_GEN_GO      := google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 PROTOC_GEN_GO_GRPC := google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
-GOLANGCI_LINT      := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.6.2
+GOLANGCI_LINT      := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
 
 # protoc itself isn't go-installable; `tools` fetches this exact release into
 # GOBIN so `make proto` reproduces the committed stubs byte-for-byte instead of
@@ -30,8 +30,8 @@ PROTOC_URL := https://github.com/protocolbuffers/protobuf/releases/download/v$(P
 
 # Pin lint's toolchain to the version the module targets so `make lint`
 # is deterministic regardless of what `go` resolves to on PATH.
-# Bump this once golangci-lint supports the newer format.
-GOTOOLCHAIN        := go1.25.0
+# Keep this and the pinned golangci-lint compatible with go.mod.
+GOTOOLCHAIN        := go1.26.0
 
 GO      ?= go
 GOBIN   := $(shell $(GO) env GOPATH)/bin

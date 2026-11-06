@@ -15,6 +15,11 @@ and the [executor protocol](https://readie.org/docs/architecture/executor-protoc
 
 ## Quick start
 
+The worker requires Go 1.26 or later, as declared in `go.mod`. Both the worker
+Docker builder and the pipeline's OCI spec builder use Go 1.26. The lint target
+pins the matching Go toolchain and a compatible `golangci-lint` release in the
+`Makefile`; rerun `make tools` after updating these pins.
+
 ```sh
 make tools     # install pinned protoc, protoc plugins, and golangci-lint
 make test      # go test -race ./...
@@ -172,6 +177,31 @@ Cleanup runs through a deferred `Release` that reads an outcome variable. The
 zero value of that variable destroys the sandbox. Success is recorded on the
 final line, so every early return fails safe. The release context is detached
 so that cleanup survives the deadline that triggered it.
+
+## Tracing
+
+`main.run` injects its OpenTelemetry tracer through `app.New` into the gRPC
+execution service and runner. A nil tracer uses a no-op implementation, so tests
+and workers without a tracing SDK retain the same execution behavior.
+
+The `ExecutionService/RequestExecution` server span extracts W3C `traceparent`
+and `tracestate` from incoming gRPC metadata to continue the router's trace.
+Each execution attempt has child spans for container acquisition and executor
+dialing. Background container release has its own span under the attempt; it
+retains that parent even when the request has ended or been cancelled.
+
+Attributes identify requests, sessions, workers, containers, checkpoints, memory
+allocations, response byte counts, and the final gRPC status. Requested container
+and checkpoint IDs are separate from the IDs actually used. Events mark request
+receipt, container acquisition, executor connection, the first relayed response,
+completion, and the bounded retry after a possible OOM. Failures record exception
+events and error status on the affected spans. A failed attempt can be retried
+without marking a successful request as failed, and a release failure does not
+change the RPC result.
+
+Payloads, results, and function output are not included in spans. This
+instrumentation covers the worker only; it does not propagate trace context over
+the executor socket or instrument Python execution inside the sandbox.
 
 ## Sandbox lifecycle
 

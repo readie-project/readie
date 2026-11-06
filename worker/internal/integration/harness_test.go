@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -112,6 +113,7 @@ type harnessOptions struct {
 	// network provisions a fake sandbox network when set, standing in for a
 	// real network.Provisioner without touching real root/netns/iptables.
 	network *fakenetwork.Provisioner
+	tracer  trace.Tracer
 }
 
 func withExecutor(opts fakeexecutor.Options) option {
@@ -206,7 +208,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 
-	worker, err := app.New(ctx, cfg, logging.Discard(), app.Deps{
+	worker, err := app.New(ctx, cfg, logging.Discard(), options.tracer, app.Deps{
 		Listen: func(string, string) (net.Listener, error) { return workerLis, nil },
 		NewRuntime: func(context.Context, config.Config, container.DirLayout, *slog.Logger) (sandbox.Port, error) {
 			return fakeRuntime, nil
@@ -379,7 +381,7 @@ func newHarnessExpectingFailure(t *testing.T, tuneFakes func(*fakesandbox.Sandbo
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	worker, err := app.New(ctx, cfg, logging.Discard(), app.Deps{
+	worker, err := app.New(ctx, cfg, logging.Discard(), nil, app.Deps{
 		Listen: func(string, string) (net.Listener, error) { return workerLis, nil },
 		NewRuntime: func(context.Context, config.Config, container.DirLayout, *slog.Logger) (sandbox.Port, error) {
 			return fakeRuntime, nil

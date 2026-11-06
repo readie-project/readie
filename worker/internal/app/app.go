@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -294,7 +295,7 @@ func applyCheckpointCompat(strict bool, count int, reasons []string, store check
 // the listener opened. The previous implementation began serving before either
 // client existed, so a request arriving in that window dereferenced a nil
 // runtime client.
-func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*App, error) {
+func New(ctx context.Context, cfg config.Config, log *slog.Logger, tracer trace.Tracer, deps Deps) (*App, error) {
 	deps = deps.withDefaults()
 
 	if log == nil {
@@ -440,7 +441,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 			FirstByteTimeout: cfg.FirstByteTimeout,
 			IdleTimeout:      cfg.ResponseIdleTimeout,
 		},
-	}, log)
+	}, log, tracer)
 	app.runner = runner
 
 	// 5. Reclaim orphans before serving. A process killed without warning
@@ -463,7 +464,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Deps) (*
 
 	app.server = grpcserver.NewServer(
 		listener,
-		grpcserver.NewExecutionService(runner, log),
+		grpcserver.NewExecutionService(runner, log, tracer),
 		grpcserver.ServerOptions{Log: log, EnableReflection: true},
 	)
 	app.push("gRPC server", func(ctx context.Context) error { return app.server.GracefulStop(ctx) })

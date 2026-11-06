@@ -13,7 +13,7 @@ Readie is a single repository that contains several programs. Each folder has it
 | `pkg/` | Python 3.12 | The `readie` SDK, which provides the `@remote` decorator. It is installed and imported as `readie`. |
 | `nginx/` | NGINX config | The entry point. Accepts client connections and forwards them to the router. |
 | `router/` | Python 3.13 | Decides which worker runs each call and keeps the list of live workers. |
-| `worker/` | Go 1.25 | Starts and stops sandboxes, restores checkpoints, and communicates with the executor. |
+| `worker/` | Go 1.26 | Starts and stops sandboxes, restores checkpoints, and communicates with the executor. |
 | `executor/` | Python 3.12 | Runs inside every sandbox. Unpickles the function and calls it. |
 | `pipeline/` | Python 3.13 | Offline tool that builds checkpoints. It is not part of serving a request. |
 | `protos/` | Protocol Buffers | The gRPC message and service definitions shared by all components. |

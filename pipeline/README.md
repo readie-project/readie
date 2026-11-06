@@ -14,7 +14,9 @@ step-by-step procedure, see [Build
 checkpoints](https://readie.org/docs/contributing/build-checkpoints).
 
 The pipeline requires Python 3.12 or later (`requires-python = ">=3.12"` in
-`pyproject.toml`). CI and `.python-version` use Python 3.13.
+`pyproject.toml`). CI and `.python-version` use Python 3.13. The Docker image's
+OCI spec generator builds from `worker/go.mod` and uses Go 1.26, matching the
+worker's minimum Go version.
 
 ```sh
 make install   # sync the virtualenv from the lockfile

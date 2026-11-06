@@ -20,7 +20,8 @@
 # assembles - and so a deployment can pull a published base by digest.
 ARG BASE_IMAGE=readie-worker-base:latest
 
-FROM golang:1.25-bookworm AS go-builder
+# Keep the Go builder aligned with the minimum in go.mod.
+FROM golang:1.26-bookworm AS go-builder
 
 WORKDIR /app
 
