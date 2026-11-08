@@ -9,12 +9,12 @@ key names the Go worker uses so the two services' logs join.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 import structlog
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from structlog.stdlib import BoundLogger
@@ -37,13 +37,13 @@ _LEVELS: dict[str, int] = {
 }
 
 
-def setup_tracer(endpoint: str) -> TracerProvider:
+def setup_tracer(endpoint: str, service_name: str) -> TracerProvider:
     """Set up global tracer provider.
 
     Returns the global `TracerProvider`, which should be explicitly shut down at
     program exit so no traces are lost.
     """
-    tracer = TracerProvider()
+    tracer = TracerProvider(resource=Resource.create(attributes={SERVICE_NAME: service_name}))
     processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
     tracer.add_span_processor(processor)
     trace.set_tracer_provider(tracer)

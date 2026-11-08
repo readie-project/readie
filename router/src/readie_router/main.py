@@ -17,7 +17,7 @@ async def _serve() -> None:
     """Build the router and run it until a signal arrives."""
     settings = Settings()
     instrument.configure_logging(level=settings.log_level, fmt=settings.log_format)
-    tracer = instrument.setup_tracer(settings.otel_agent_endpoint)
+    tracer = instrument.setup_tracer(settings.otel_agent_endpoint, settings.service_name)
     try:
         log = structlog.get_logger("main")
         log.info(

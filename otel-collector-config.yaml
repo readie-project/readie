@@ -7,13 +7,13 @@ receivers:
 exporters:
   debug:
     verbosity: detailed
-  otlp/signoz:
-    endpoint: host.docker.internal:4317
-    tls:
-      insecure: true
+  otlphttp/grafana:                              
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT} 
+    headers:                                     
+      Authorization: ${env:GRAFANA_OTLP_AUTH}
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      exporters: [debug, otlp/signoz]
+      exporters: [debug, otlphttp/grafana]
