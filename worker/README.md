@@ -194,8 +194,10 @@ Attributes identify requests, sessions, workers, containers, checkpoints, memory
 allocations, response byte counts, and the final gRPC status. Requested container
 and checkpoint IDs are separate from the IDs actually used. Events mark request
 receipt, container acquisition, executor connection, the first relayed response,
-completion, and the bounded retry after a possible OOM. Failures record exception
-events and error status on the affected spans. A failed attempt can be retried
+completion, and the bounded retry after a possible OOM. Successful operations
+leave their OpenTelemetry status at the default `Unset`; the final gRPC status
+attribute is independent of span status. Failures record exception events and
+error status on the affected spans. A failed attempt can be retried
 without marking a successful request as failed, and a release failure does not
 change the RPC result.
 

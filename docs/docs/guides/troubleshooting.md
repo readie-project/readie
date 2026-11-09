@@ -82,6 +82,10 @@ Entries that are not valid requirement strings are rejected on the local machine
 
 The message `RemoteTimeoutError: DEADLINE_EXCEEDED from ...: the execution timed out` means the call exceeded a deadline. For a long call, pass a longer `timeout`. See [Tune your calls](/docs/guides/configure#set-timeouts-for-long-calls).
 
+## Missing completion reports
+
+Reporting requires explicit `client_reports=True` and support from the service. Reports are best-effort: queue overflow, process exit, upload failures, or an unavailable per-call report token can prevent delivery. Custom transports do not report automatically. To not lose pending reports on exit, use `await client.aclose()` in async code to begin a bounded drain. Report failures never replace execution results or exceptions. See [Completion reports](/docs/guides/sdk#completion-reports).
+
 ## Get help
 
 If the problem remains, see the [FAQ](/docs/getting-started/faq). Alternatively, [open an issue](https://github.com/illinoisdata/readie/issues/new/choose) that includes the full error message and the Python version.

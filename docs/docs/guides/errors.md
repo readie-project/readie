@@ -50,6 +50,10 @@ An `ExecutionError` indicates that the call ran but produced no usable result. T
 | `RemoteExecutionError` | The function raised, a `packages=` install failed, or the worker marked the run as failed. Has the attributes `remote_type`, `remote_message`, and `remote_traceback`. | Read the traceback. |
 | `EmptyResultError` | The worker sent no result, or sent something that is not a result envelope, for example from an executor that speaks an older protocol. A function that returns `None` does not raise this error. | Check `logs` and consider a larger `memory` value. If the error repeats, report it to the operator. |
 
+## Completion-report failures
+
+Optional [completion reports](/docs/guides/sdk#completion-reports) send fixed error categories, not exception messages or tracebacks. Report delivery failures do not raise a new SDK exception or replace the original call error. A missing report does not mean that an execution succeeded.
+
 ## See also
 
 - [Sessions and errors](/docs/getting-started/sessions-and-errors)

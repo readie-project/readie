@@ -58,6 +58,12 @@ If a test pins a bug that was fixed in the past, a comment on the test says so. 
 
 Every behavior change comes with a test. The pull request template asks for a test that fails without the change. See [Pull requests](/docs/contributing/pull-requests).
 
+## Trace status
+
+Leave the OpenTelemetry status of successful operations at its default, `UNSET` (`codes.Unset` in Go). Do not explicitly set `OK` on successful spans or write `UNSET` to reset an existing error status. This convention applies to RPC, execution-attempt, acquisition, executor-dial, release, and synthetic client-report spans. Protocol status attributes such as a successful gRPC status code remain valid; they are separate from OpenTelemetry span status.
+
+Retain error status on failed operations. A successful parent does not inherit an error solely because a child failed. Worker integration tests and router completion-report tests assert that successful spans remain unset.
+
 ## Tooling per language
 
 | Language | Format | Lint | Types | Tests |

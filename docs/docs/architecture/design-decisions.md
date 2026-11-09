@@ -172,6 +172,28 @@ The following choices can look like gaps. Each is deliberate and in force. The s
 - Decision: The sandbox path targets amd64 only, and the filesystem image is published for amd64 only.
 - Consequences: The sandbox path cannot run on Apple Silicon or in ordinary CI. A passing CI run does not show that the sandbox path works.
 
+## 9. Completion reports create synthetic child spans
+
+- Status: Accepted
+
+### Context
+
+Client-observed latency includes serialization and result decoding that the router cannot measure. Exposing the trusted collector would allow clients to submit arbitrary telemetry.
+
+### Decision
+
+The router issues a bounded, expiring capability and accepts a short completion report on its existing gRPC listener. It constructs a synthetic child of the saved execution context. Execution traces start with router-owned roots, and only internal trace propagation remains enabled. Reports carry timestamps, monotonic duration, and fixed outcome/error enums.
+
+### Consequences
+
+- Client observations remain distinguishable from trusted server measurements.
+- The synthetic child can surround its parent's interval; it is not an actual enclosing client root.
+- Idempotent retries prevent duplicate accepted spans, not backend export loss.
+- Process-local grants fit the single-router deployment but do not survive restart or work across replicas.
+- Opt-in background reporting never waits on network I/O on the execution path.
+
+See [Client completion reports](/docs/architecture/request-lifecycle#client-completion-reports).
+
 ## See also
 
 - [Security model](/docs/architecture/security-model)

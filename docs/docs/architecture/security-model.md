@@ -72,12 +72,22 @@ The executor's docstrings describe the sandbox as having "no network". That desc
 
 By default, the router speaks plaintext gRPC and checks no credentials. To require authentication:
 
-1. Set `AUTH_TOKEN` on the router. The router then requires an `authorization: Bearer <token>` header on every call to `ProxyService`, the only path that runs code.
+1. Set `AUTH_TOKEN` on the router. The router then requires an `authorization: Bearer <token>` header on every call to `ProxyService`, covering execution and completion-report submission.
 2. Set the same token for clients with the `READIE_AUTH_TOKEN` environment variable.
 
 A missing or wrong token receives `UNAUTHENTICATED`. The comparison is constant-time. Health checks, reflection, and `RegistryService` (the worker mesh) are exempt.
 
 The check sits behind an `Authenticator` protocol, so a deployment can replace the single shared token with a stronger mechanism.
+
+## Client telemetry
+
+The collector is private. Opted-in clients submit reports through `ProxyService/SubmitClientReport` on the router, under the same authentication policy as execution. A report additionally requires a random 256-bit per-execution capability returned in initial metadata. It binds to server-held trace context, not to a client-selected request ID. Public trace context, sampling flags, and baggage are ignored; internal router-to-worker propagation remains enabled.
+
+The router validates a decoded report of at most 1 KiB. Reports contain timestamps, monotonic duration, outcome, and fixed error categories, not exception types, messages, tracebacks, arguments, or results. Identical retries are idempotent until expiry; conflicting submissions are rejected. Tokens and full report bodies must not be logged.
+
+NGINX limits the report route to 2 KiB bodies and 20 requests/second per IP with burst 40. These backstops and bounded, expiring capability storage do not provide tenant quotas. Grants and accepted-report records are process-local; restart or routing to another replica loses correlation.
+
+Synthetic child spans carry `readie.telemetry.source=client_report` and do not change server execution outcomes. A capability proves reporting authorization, not that timings or errors are true. Do not use client assertions for billing or authoritative availability data. See [Request lifecycle](/docs/architecture/request-lifecycle#client-completion-reports).
 
 ## TLS
 

@@ -112,6 +112,29 @@ authentication. Run the router-to-worker mesh on a private network, and do not
 expose the worker's port. Do not expose the router's port to anyone you would not
 give a shell to.
 
+### Client telemetry
+
+The collector remains private. Opted-in clients submit bounded completion reports
+to `ProxyService/SubmitClientReport` on the router. The RPC follows the same
+bearer authentication policy as execution and additionally requires an opaque,
+256-bit per-execution capability delivered in initial metadata. Capabilities
+bind reports to server-held trace context, not client-chosen request or span IDs.
+The router ignores incoming public trace context, sampling flags, and baggage;
+router-to-worker propagation remains enabled.
+
+Capabilities and idempotency records are bounded and process-local. Expiry,
+restarts, rate limits, and queue overflow can lose reports. Identical retries do
+not emit additional spans; conflicting submissions are rejected. NGINX applies
+separate body and per-IP rate limits, and the router validates a decoded report
+of at most 1 KiB. These controls do not provide tenant quotas or durable delivery.
+Never log report bodies or capabilities.
+
+Reports include timestamps, monotonic duration, outcome, and allowlisted error
+categories, not exception messages, types, tracebacks, arguments, or results.
+Synthetic child spans carry `readie.telemetry.source=client_report`. A capability
+proves authorization to report for an execution, not the truth of a report.
+Do not use these observations for billing or authoritative availability data.
+
 ### The playground service
 
 The docs playground (`playground/`) accepts visitor code over HTTPS, builds it into a

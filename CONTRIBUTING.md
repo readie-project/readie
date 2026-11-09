@@ -153,6 +153,11 @@ when an implementation lives in another process, as the worker client's transpor
 and codec seams do, and it lets a deployment swap an implementation without
 subclassing anything.
 
+Tracing. Leave successful OpenTelemetry span statuses at their default `UNSET`;
+do not explicitly set `OK` or reset an error status on success. Protocol status
+attributes, such as gRPC status codes, are separate. See
+[Trace status](https://readie.org/docs/contributing/conventions#trace-status).
+
 ## Commits and pull requests
 
 Write the commit subject in the imperative mood, under about 72 characters, with

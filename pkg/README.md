@@ -109,6 +109,30 @@ readie.configure(timeout=120.0, chunk_size=64 * 1024, stream_logs=True)
 | `timeout` | Deadline for a whole call, in seconds. The default is no deadline. |
 | `chunk_size` | Payload bytes per stream message. The default is 1 MiB. |
 | `stream_logs` | If true, print the function's output as it arrives instead of only on failure. The default is true. |
+| `client_reports` | Send best-effort completion timing and error classifications. The default is false. |
+
+## Completion reports
+
+Enable completion reports explicitly:
+
+```python
+import readie
+
+readie.configure(client_reports=True)
+```
+
+Reports contain start/end timestamps, monotonic elapsed time, success or
+cancellation, and a fixed error category. They contain no exception messages,
+class names, tracebacks, arguments, or results. Timing covers serialization,
+the remote call, result decoding, and output callbacks. It excludes the report
+upload and work outside `Client.call` or `Client.acall`.
+
+The built-in transports send reports in the background, only when the service
+provides a per-call report token. Custom transports and older services continue
+working without reports. Upload failures never change a result or exception.
+A bounded queue can drop reports, and process exit can lose pending reports.
+Close the client to allow up to one second of draining; use `await client.aclose()`
+inside an event loop. Reports are diagnostic observations, not guaranteed records.
 
 ## When a remote function raises
 

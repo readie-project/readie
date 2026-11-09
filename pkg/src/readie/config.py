@@ -36,6 +36,9 @@ class Settings:
     max_message_bytes: int = field(default=MAX_MESSAGE_BYTES, init=False)
     """gRPC message cap. Must exceed ``chunk_size`` with room for the envelope."""
 
+    client_reports: bool = False
+    """Send best-effort timing and error classifications after remote calls."""
+
     stream_logs: bool = DEFAULT_STREAM_LOGS
     """Print executor output as it arrives, instead of only on failure."""
 
@@ -73,9 +76,13 @@ class Settings:
         if self.timeout is not None and self.timeout <= 0:
             msg = f"timeout must be positive or None, got {self.timeout}"
             raise ConfigurationError(msg)
-        # Statically stream_logs is always a bool, but nothing stops a caller
+
+        # Even though we have static type annotations, nothing stops a caller
         # constructing Settings from untyped data (e.g. parsed config) from
         # passing something else.
         if self.stream_logs is not None and not isinstance(self.stream_logs, bool):
             msg = f"stream_logs must be a boolean, got {self.stream_logs}"  # type: ignore[unreachable]
+            raise ConfigurationError(msg)
+        if not isinstance(self.client_reports, bool):
+            msg = "client_reports must be a boolean"  # type: ignore[unreachable]
             raise ConfigurationError(msg)

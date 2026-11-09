@@ -29,7 +29,7 @@ def total():
 
 client = readie.default_client()
 with client.session() as s:
-    load.bind(s)()   # runs first
+    load.bind(s)()  # runs first
     total.bind(s)()  # same sandbox: `data` is still there
 ```
 

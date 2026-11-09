@@ -71,7 +71,7 @@ ignore_errors = true
 
 [[tool.mypy.overrides]]
 # grpcio-tools emits no type information for the generated service module.
-module = ["readie.transport", "tests.fakes.*"]
+module = ["readie.transport", "readie._reports", "tests.fakes.*"]
 disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]

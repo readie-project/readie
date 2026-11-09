@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     log_level: Literal["debug", "info", "warning", "error"] = "info"
     log_format: Literal["json", "console"] = "json"
     otel_agent_endpoint: str = "telemetry-agent:4317"
+    client_report_ttl: float = Field(default=300.0, gt=0, allow_inf_nan=False)
+    client_report_capacity: int = Field(default=10000, ge=0)
+    client_report_max_duration: float = Field(default=86400.0, gt=0, allow_inf_nan=False)
 
     @field_validator("log_level", "log_format", mode="before")
     @classmethod

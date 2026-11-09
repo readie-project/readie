@@ -19,6 +19,7 @@ import grpc
 from readie import _status
 from readie._channels import AsyncChannelCache, SyncChannelCache
 from readie._proto import proxy_pb2, proxy_pb2_grpc
+from readie._reports import get_report_token
 from readie.protocol import CallRef, Outcome, RequestEncoder, ResponseAssembler
 
 if TYPE_CHECKING:
@@ -90,8 +91,14 @@ class AsyncTransport(Protocol):
 class GrpcTransport:
     """Blocking transport over ``grpc.Channel``."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        on_report_token: Callable[[CallRef, str], None] | None = None,
+    ) -> None:
         self._settings = settings
+        self._on_report_token = on_report_token
         self._channels = SyncChannelCache(settings)
         self._encoder = RequestEncoder(chunk_size=settings.chunk_size)
         self._metadata = _auth_metadata(settings)
@@ -118,10 +125,17 @@ class GrpcTransport:
             budgets,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            client_reports=self._settings.client_reports and self._on_report_token is not None,
         )
 
         call = stub.RequestExecution(requests, timeout=timeout, metadata=self._metadata)
         try:
+            if self._settings.client_reports:
+                report_token = get_report_token(call.initial_metadata())
+
+                if self._on_report_token is not None and report_token is not None:
+                    self._on_report_token(ref, report_token)
+
             for response in call:
                 assembler.accept(response)
         except grpc.RpcError as exc:
@@ -146,8 +160,14 @@ class GrpcTransport:
 class AsyncGrpcTransport:
     """Transport over ``grpc.aio.Channel``."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        on_report_token: Callable[[CallRef, str], None] | None = None,
+    ) -> None:
         self._settings = settings
+        self._on_report_token = on_report_token
         self._channels = AsyncChannelCache(settings)
         self._encoder = RequestEncoder(chunk_size=settings.chunk_size)
         self._metadata = _auth_metadata(settings)
@@ -178,10 +198,17 @@ class AsyncGrpcTransport:
             budgets,
             gpu=gpu,
             disable_optimized_execution=disable_optimized_execution,
+            client_reports=self._settings.client_reports and self._on_report_token is not None,
         )
 
         call = stub.RequestExecution(requests, timeout=timeout, metadata=self._metadata)
         try:
+            if self._settings.client_reports:
+                report_token = get_report_token(await call.initial_metadata())
+
+                if self._on_report_token is not None and report_token is not None:
+                    self._on_report_token(ref, report_token)
+
             async for response in call:
                 assembler.accept(response)
         except grpc.aio.AioRpcError as exc:

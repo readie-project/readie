@@ -27,6 +27,18 @@ If neither value is set, the call gets a default of 1 GiB. When a sandbox approa
 
 By default, every call gets a fresh sandbox. To keep something loaded between calls, such as a model, use a [session](/docs/concepts/sessions). The sandbox of a session is kept after each call so that the next call starts quickly. The worker removes it after it has been idle for a while (about five minutes by default). A session whose sandbox is gone fails with a session-expired error. See [Sessions and errors](/docs/getting-started/sessions-and-errors).
 
+## Enable diagnostic completion reports
+
+Completion reports are disabled by default. Enable timestamp, elapsed-time, and error-category reporting explicitly:
+
+```python
+import readie
+
+readie.configure(client_reports=True)
+```
+
+Reports contain no exception messages, tracebacks, arguments, or results. Uploads run in the background and never change a call's result or exception. Close the client to allow a bounded drain of pending reports; use `await client.aclose()` in async code. Delivery remains best-effort. See [Completion reports](/docs/guides/sdk#completion-reports) for timing boundaries and privacy details.
+
 ## Set timeouts for long calls
 
 A call has no client-side deadline unless one is set. Pass `timeout` (in seconds) on the function, or set it for every call:

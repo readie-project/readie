@@ -77,6 +77,15 @@ running, and keep every other path for gRPC. The playground itself calls the Rea
 that the client uses by default, like any other client. See
 [`playground/README.md`](../playground/README.md).
 
+## Client-report route
+
+Both configurations give `/ProxyService/SubmitClientReport` an exact gRPC
+location with a 2 KiB body limit, five-second read/send timeouts, and a separate
+per-IP limit of 20 requests/second with burst 40 to limit abuse. Excess requests receive HTTP 429. The router additionally checks
+a per-execution capability, authentication when configured, and a 1 KiB decoded
+report limit. Execution streaming retains its existing limits. The collector is
+not exposed through this route.
+
 ## Local development
 
 Local development needs no domain name and no TLS certificate. The local

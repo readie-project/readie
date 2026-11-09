@@ -110,7 +110,7 @@ A `Session` is also a context manager.
 | `default_client()` | Returns the process-wide client and creates `Client()` on first use. |
 | `reset()` | Closes and drops the default client. |
 
-Only `Settings` fields that take part in `__init__` can be passed to `configure`: `timeout`, `chunk_size`, and `stream_logs`.
+Pass constructor settings such as `timeout`, `chunk_size`, `stream_logs`, and `client_reports` to `configure`. Fields declared with `init=False` are not accepted.
 
 ## `Settings`
 
@@ -121,6 +121,7 @@ Only `Settings` fields that take part in `__init__` can be passed to `configure`
 | `timeout` | `None` | none | Seconds for a whole call. `None` sets no deadline. Must be positive. |
 | `chunk_size` | `1048576` | none | Bytes per streamed message. Must be positive. |
 | `stream_logs` | `True` | none | Prints the function's captured output when the call finishes. Must be a `bool`. |
+| `client_reports` | `False` | none | Sends best-effort completion timestamps, monotonic duration, and error classifications in the background. Must be a `bool`. |
 | `auth_token` | `""` | `READIE_AUTH_TOKEN` | Bearer token. An empty value sends none. Not a constructor argument. |
 | `max_message_bytes` | 16 MiB | none | gRPC message cap. Fixed and not a constructor argument. |
 
@@ -129,6 +130,14 @@ Only `Settings` fields that take part in `__init__` can be passed to `configure`
 ## `Budget` and `ResourceKind`
 
 `Budget(kind, alloc=0, max=0)` is a byte-valued budget. `ResourceKind` defines `MEMORY = 1` and `GPU_MEMORY = 2`. A value of 0 selects the default.
+
+## Completion reports
+
+Enable reports with `configure(client_reports=True)` or `Settings(client_reports=True)`. Timing covers `Client.call` or `Client.acall` from before serialization through result decoding and output callbacks. It excludes report uploads and decorator-level work outside those methods. Monotonic elapsed time measures latency even when the wall clock changes.
+
+Reports contain wall-clock start/end, monotonic duration, outcome, and a fixed error category. They contain no exception class names, messages, tracebacks, arguments, or results. Only built-in gRPC transports report, and only when the service offers a per-call report token. Older services and custom transports continue working without reporting.
+
+A background worker and bounded queue isolate uploads from execution. A failed upload does not change a value or exception. Reports can be lost on overflow or process exit. `close()` permits up to one second of draining before dropping remaining reports; `await aclose()` performs that wait off the event-loop thread. Use the async close method in async applications. Delivery is not guaranteed.
 
 ## Results and exceptions
 

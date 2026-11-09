@@ -14,7 +14,9 @@ from pathlib import Path
 from types import TracebackType
 
 import structlog
+from opentelemetry import trace
 
+from readie_router.client_reports import ClientReports
 from readie_router.clock import Clock, MonotonicClock
 from readie_router.config import Settings
 from readie_router.grpcserver.auth import AuthInterceptor, SharedTokenAuthenticator
@@ -44,6 +46,7 @@ class Deps:
     clock: Clock = field(default_factory=MonotonicClock)
     executions: ExecutionClient | None = None
     health: HealthClient | None = None
+    tracer: trace.Tracer | None = None
 
 
 class App:
@@ -95,6 +98,19 @@ class App:
             failure_threshold=settings.probe_failure_threshold,
         )
 
+        self._reports = ClientReports(
+            clock=self._clock,
+            tracer=deps.tracer or trace.get_tracer("router.client_reports"),
+            ttl=settings.client_report_ttl,
+            active_ttl=(
+                settings.session_wait_timeout
+                + settings.execution_timeout
+                + settings.client_report_ttl
+            ),
+            capacity=settings.client_report_capacity,
+            max_duration=settings.client_report_max_duration,
+        )
+
         self._server = RouterServer(
             proxy=ProxyService(
                 scheduler=self._scheduler,
@@ -102,6 +118,8 @@ class App:
                 gate=SessionGate(wait_timeout=settings.session_wait_timeout),
                 execution_timeout=settings.execution_timeout,
                 default_memory=settings.default_memory,
+                reports=self._reports,
+                tracer=deps.tracer,
             ),
             registry=RegistryService(state=self._state, clock=self._clock),
             listen_addr=settings.listen_addr,
@@ -176,6 +194,7 @@ class App:
             await asyncio.sleep(self._settings.reaper_interval)
             try:
                 result = self._reaper.sweep()
+                self._reports.sweep()
             except Exception as exc:
                 self._log.warning("reaper sweep failed", **{KEY_ERROR: str(exc)})
                 continue

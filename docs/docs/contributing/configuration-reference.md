@@ -59,6 +59,17 @@ The router reads its settings from environment variables, or from a `.env` file 
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warning` or `error`. |
 | `LOG_FORMAT` | `json` | `json` or `console`. |
 
+### Tracing and client reports
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OTEL_AGENT_ENDPOINT` | `telemetry-agent:4317` | Private OTLP/gRPC collector endpoint. |
+| `CLIENT_REPORT_TTL` | `300` | Positive, finite seconds of report grace after execution teardown, capped by the original active deadline. |
+| `CLIENT_REPORT_CAPACITY` | `10000` | Maximum active grants plus accepted-report tombstones. `0` disables issuance. |
+| `CLIENT_REPORT_MAX_DURATION` | `86400` | Positive, finite maximum reported monotonic duration in seconds. |
+
+An active grant initially lasts `SESSION_WAIT_TIMEOUT + EXECUTION_TIMEOUT + CLIENT_REPORT_TTL`. Teardown can shorten but never extend it. Expiry uses monotonic time. Reports and grants are process-local and disappear on restart. See [Configure client reports](/docs/contributing/configure-services#configure-client-reports).
+
 The router image also sets `APP_ENV=production`. The router does not read it.
 
 ## Worker

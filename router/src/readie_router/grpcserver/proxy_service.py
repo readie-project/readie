@@ -20,9 +20,11 @@ from typing import cast
 
 import grpc
 import structlog
-from opentelemetry import propagate, trace
+from opentelemetry import trace
+from opentelemetry.context import Context
 
 from readie_router import instrument
+from readie_router.client_reports import METADATA_KEY, ClientReports, ReportError
 from readie_router.errors import InvalidRequestError, RouterError
 from readie_router.grpcserver.session_gate import SessionGate
 from readie_router.grpcserver.status import to_status
@@ -67,9 +69,12 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         *,
         execution_timeout: float,
         default_memory: int,
+        reports: ClientReports,
+        tracer: trace.Tracer | None = None,
     ) -> None:
         self._log = instrument.get_logger("grpcserver.proxy")
-        self._trace = trace.get_tracer("router.grpcserver.proxy")
+        self._trace = tracer or trace.get_tracer("router.grpcserver.proxy")
+        self._reports = reports
         self._scheduler = scheduler
         self._executions = executions
         self._gate = gate
@@ -82,11 +87,9 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
         context: grpc.aio.ServicerContext,
     ) -> None:
         """Run one execution on the client's behalf."""
-        parent_ctx = propagate.extract(dict(context.invocation_metadata() or {}))
-
         with self._trace.start_as_current_span(
             "ProxyService/RequestExecution",
-            context=parent_ctx,
+            context=Context(),  # public callers cannot choose trace identity or sampling
             kind=trace.SpanKind.SERVER,
             record_exception=False,  # enabling this records `context.abort` exceptions
         ) as span:
@@ -111,9 +114,14 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
                     },
                 }
             )
-            with structlog.contextvars.bound_contextvars(
-                **{KEY_REQUEST_ID: header.request_id, KEY_SESSION_ID: header.session_id}
+            with (
+                self._reports.grant_report_token(span, header) as client_report_token,
+                structlog.contextvars.bound_contextvars(
+                    **{KEY_REQUEST_ID: header.request_id, KEY_SESSION_ID: header.session_id}
+                ),
             ):
+                if client_report_token:
+                    await context.send_initial_metadata(((METADATA_KEY, client_report_token),))
                 try:
                     # An empty session_id means "not part of any session" - there is
                     # no affinity to read and no one else who could ever share this
@@ -145,6 +153,18 @@ class ProxyService(proxy_pb2_grpc.ProxyServiceServicer):
                     self._log.warning("execution rejected", **{KEY_ERROR: str(exc)}, code=code.name)
                     instrument.trace_exc(exc, span, message)
                     await context.abort(code, message)
+
+    async def SubmitClientReport(  # noqa: N802 - generated interface
+        self,
+        request: proxy_pb2.SubmitClientReportRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> proxy_pb2.SubmitClientReportResponse:
+        """Accept a bounded client assertion, independently of execution."""
+        try:
+            self._reports.submit(request)
+        except ReportError as exc:
+            await context.abort(exc.status, "client report rejected")
+        return proxy_pb2.SubmitClientReportResponse()
 
     async def _read_header(
         self,

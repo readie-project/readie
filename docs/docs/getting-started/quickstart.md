@@ -92,7 +92,7 @@ def fail():
 try:
     fail()
 except readie.RemoteExecutionError as err:
-    print(err.remote_type)     # ValueError
+    print(err.remote_type)  # ValueError
     print(err.remote_message)  # bad input
 ```
 

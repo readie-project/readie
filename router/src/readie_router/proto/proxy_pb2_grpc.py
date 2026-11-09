@@ -40,6 +40,11 @@ class ProxyServiceStub:
                 request_serializer=readie__router_dot_proto_dot_proxy__pb2.ClientExecutionRequest.SerializeToString,
                 response_deserializer=readie__router_dot_proto_dot_proxy__pb2.ClientExecutionResponse.FromString,
                 _registered_method=True)
+        self.SubmitClientReport = channel.unary_unary(
+                '/ProxyService/SubmitClientReport',
+                request_serializer=readie__router_dot_proto_dot_proxy__pb2.SubmitClientReportRequest.SerializeToString,
+                response_deserializer=readie__router_dot_proto_dot_proxy__pb2.SubmitClientReportResponse.FromString,
+                _registered_method=True)
 
 
 class ProxyServiceServicer:
@@ -53,6 +58,13 @@ class ProxyServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SubmitClientReport(self, request, context):
+        """Submit one logical report; identical retries are idempotent until expiry.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ProxyServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -60,6 +72,11 @@ def add_ProxyServiceServicer_to_server(servicer, server):
                     servicer.RequestExecution,
                     request_deserializer=readie__router_dot_proto_dot_proxy__pb2.ClientExecutionRequest.FromString,
                     response_serializer=readie__router_dot_proto_dot_proxy__pb2.ClientExecutionResponse.SerializeToString,
+            ),
+            'SubmitClientReport': grpc.unary_unary_rpc_method_handler(
+                    servicer.SubmitClientReport,
+                    request_deserializer=readie__router_dot_proto_dot_proxy__pb2.SubmitClientReportRequest.FromString,
+                    response_serializer=readie__router_dot_proto_dot_proxy__pb2.SubmitClientReportResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -90,6 +107,33 @@ class ProxyService:
             '/ProxyService/RequestExecution',
             readie__router_dot_proto_dot_proxy__pb2.ClientExecutionRequest.SerializeToString,
             readie__router_dot_proto_dot_proxy__pb2.ClientExecutionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SubmitClientReport(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ProxyService/SubmitClientReport',
+            readie__router_dot_proto_dot_proxy__pb2.SubmitClientReportRequest.SerializeToString,
+            readie__router_dot_proto_dot_proxy__pb2.SubmitClientReportResponse.FromString,
             options,
             channel_credentials,
             insecure,

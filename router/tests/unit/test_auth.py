@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
+import grpc
 import pytest
 
 from readie_router.grpcserver.auth import AuthInterceptor, SharedTokenAuthenticator
@@ -35,8 +38,15 @@ class _Details:
         self.invocation_metadata = metadata
 
 
-async def _continuation(_details: object) -> str:
-    return "REAL_HANDLER"
+async def _stream_stream(
+    requests: AsyncIterator[object], _context: object
+) -> AsyncIterator[object]:
+    async for request in requests:
+        yield request
+
+
+async def _continuation(_details: object) -> grpc.RpcMethodHandler:
+    return grpc.stream_stream_rpc_method_handler(_stream_stream)
 
 
 async def test_non_proxy_methods_are_never_guarded() -> None:
@@ -44,7 +54,8 @@ async def test_non_proxy_methods_are_never_guarded() -> None:
     interceptor = AuthInterceptor(SharedTokenAuthenticator("s3cret"))
     for method in ("/RegistryService/PostWorkerStatus", "/grpc.health.v1.Health/Check"):
         handler = await interceptor.intercept_service(_continuation, _Details(method, ()))
-        assert handler == "REAL_HANDLER"
+        assert handler is not None
+        assert handler.stream_stream is _stream_stream
 
 
 async def test_a_proxy_call_with_the_token_is_allowed_through() -> None:
@@ -53,7 +64,8 @@ async def test_a_proxy_call_with_the_token_is_allowed_through() -> None:
         _continuation,
         _Details("/ProxyService/RequestExecution", [("authorization", "Bearer s3cret")]),
     )
-    assert handler == "REAL_HANDLER"
+    assert handler is not None
+    assert handler.stream_stream is _stream_stream
 
 
 async def test_a_proxy_call_without_the_token_is_denied() -> None:
@@ -61,5 +73,6 @@ async def test_a_proxy_call_without_the_token_is_denied() -> None:
     handler = await interceptor.intercept_service(
         _continuation, _Details("/ProxyService/RequestExecution", [])
     )
-    assert handler != "REAL_HANDLER", "a deny handler is substituted, not the real one"
+    assert handler is not None
+    assert handler.stream_stream is not _stream_stream, "a deny handler is substituted"
     assert handler.stream_stream is not None, "it matches RequestExecution's cardinality"

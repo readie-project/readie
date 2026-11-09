@@ -61,6 +61,7 @@ Service on the router to handle execution requests from external clients
 | Method | Request | Response | Description |
 | ------ | ------- | -------- | ----------- |
 | `RequestExecution` | `stream ClientExecutionRequest` | `stream ClientExecutionResponse` | Bi-directional streaming RPC for streaming code execution input and output |
+| `SubmitClientReport` | `SubmitClientReportRequest` | `SubmitClientReportResponse` | Submit one logical report; identical retries are idempotent until expiry. |
 
 ### Message `ClientExecutionRequest`
 
@@ -97,6 +98,54 @@ Per-call configuration the client sends as the first message of a stream.
 | `budgets` | `repeated ResourceBudget` | Resource budgets the user set on the decorator (memory, GPU memory, ...). A budget with alloc == 0 asks the router to apply its default for that kind. |
 | `gpu` | `bool` | Whether the function needs a GPU. The router also treats any GPU-memory budget as a GPU request, so this covers a GPU function that names no size. |
 | `disable_optimized_execution` | `bool` | When true, the router skips checkpoint restore for this call and always cold-starts. Session affinity (warm-container reuse) still applies; the router rejects this only when the session's warm container was itself restored from a checkpoint. |
+| `client_reports` | `bool` | Opt in to a capability for one best-effort client completion report. |
+
+### Message `SubmitClientReportRequest`
+
+One immutable completion report, authorized by initial execution metadata.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `token` | `string` | Opaque bearer capability. Never log this value. |
+| `start_time_unix_ns` | `int64` |  |
+| `end_time_unix_ns` | `int64` |  |
+| `duration_ns` | `uint64` | Measured with a monotonic clock, not by subtracting wall timestamps. |
+| `outcome` | `ClientReportOutcome` |  |
+| `error` | `ClientReportError` |  |
+
+### Message `SubmitClientReportResponse`
+
+Acceptance acknowledges best-effort export, not durable backend delivery.
+
+### Enum `ClientReportError`
+
+Bounded classifications only; no exception messages or user data.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `CLIENT_REPORT_ERROR_UNKNOWN` | 0 | Unset: the outcome is SUCCESS or CANCELLED. |
+| `CLIENT_REPORT_ERROR_REMOTE_EXECUTION` | 1 |  |
+| `CLIENT_REPORT_ERROR_EMPTY_RESULT` | 2 |  |
+| `CLIENT_REPORT_ERROR_SERIALIZATION` | 3 |  |
+| `CLIENT_REPORT_ERROR_TIMEOUT` | 4 |  |
+| `CLIENT_REPORT_ERROR_AUTHORIZATION` | 5 |  |
+| `CLIENT_REPORT_ERROR_INVALID_REQUEST` | 6 |  |
+| `CLIENT_REPORT_ERROR_RESOURCE_EXHAUSTED` | 7 |  |
+| `CLIENT_REPORT_ERROR_SESSION_EXPIRED` | 8 |  |
+| `CLIENT_REPORT_ERROR_UNAVAILABLE` | 9 |  |
+| `CLIENT_REPORT_ERROR_TRANSPORT` | 10 |  |
+| `CLIENT_REPORT_ERROR_CLIENT` | 11 |  |
+
+### Enum `ClientReportOutcome`
+
+Client-observed completion, independent of the server execution outcome.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `CLIENT_REPORT_OUTCOME_UNKNOWN` | 0 |  |
+| `CLIENT_REPORT_OUTCOME_SUCCESS` | 1 |  |
+| `CLIENT_REPORT_OUTCOME_ERROR` | 2 |  |
+| `CLIENT_REPORT_OUTCOME_CANCELLED` | 3 |  |
 
 ## `registry.proto`
 

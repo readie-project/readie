@@ -42,6 +42,10 @@ Running user code is the purpose of the product, and [gVisor](/docs/concepts/glo
 
 The remaining risk is a gVisor escape. The gVisor version is pinned in one place, and checkpoints depend on it, so upgrading it requires rebuilding the checkpoints. Monitor the [gVisor security advisories](https://github.com/google/gvisor/security/advisories).
 
+## Client-reported telemetry
+
+Optional completion reports are untrusted client assertions. The router requires a per-execution capability, validates a bounded report, and creates a synthetic child span marked as client-reported. Clients cannot choose the server trace identity or access the collector. Reports contain timing and fixed error categories, not messages, tracebacks, arguments, or results. A reporting capability does not prove that an observation is true. See [Client telemetry](/docs/architecture/security-model#client-telemetry) for authentication, expiry, and ingress limits.
+
 ## Expected behavior
 
 The following behaviors are not vulnerabilities:

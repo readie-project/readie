@@ -8,7 +8,7 @@ outputs are all generated from them.
 
 | File | Service | Direction | Purpose |
 | ---- | ------- | --------- | ------- |
-| `proxy.proto` | `ProxyService` | client to router | `RequestExecution` is a bidirectional stream. The client sends an `ExecutionConfig` message first, then the pickled call in chunks. The router streams back the result. |
+| `proxy.proto` | `ProxyService` | client to router | `RequestExecution` is a bidirectional stream. The client sends an `ExecutionConfig` message first, then the pickled call in chunks. The router streams back the result. `SubmitClientReport` accepts a bounded completion report authorized by initial execution metadata. |
 | `execution.proto` | `ExecutionService` | router to worker | `RequestExecution` is a bidirectional stream that carries one call to a chosen worker and container. The request names the checkpoint to restore. |
 | `registry.proto` | `RegistryService` | worker to router | Four unary calls (`PostWorkerStatus`, `PostExecutorStatus`, `PostWorkerUtilization`, `PostExecutorUtilization`) with which workers report status, capacity and load. |
 | `resources.proto` | none | shared | `ResourceKind` and `ResourceBudget`, the memory and GPU memory budgets carried in requests and responses. |
@@ -17,6 +17,17 @@ The generated reference with every message and field is published on the
 documentation site, as the "Protobuf contracts" page. It is produced by
 `make docs-protos` from the comments in these files, so write field comments as
 documentation.
+
+## Client reports
+
+`ExecutionConfig.client_reports` opts in to a capability returned as
+`readie-client-report-token` in initial gRPC metadata. `SubmitClientReport` sends
+that token with wall-clock start/end, monotonic duration, outcome, and a fixed
+error classification. It carries no user payload or trace identity. The router
+creates a synthetic child of the execution span. Identical retries are
+idempotent until expiry; the empty response acknowledges best-effort acceptance.
+Older routers ignore the opt-in field, so clients skip reporting without a token.
+See [`router/README.md`](../router/README.md) for validation and retention.
 
 ## Rules
 

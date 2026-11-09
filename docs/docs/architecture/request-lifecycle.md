@@ -43,7 +43,7 @@ Blocking calls use a blocking channel, and `.aio()` calls use an async channel. 
 
 ## 2. nginx forwards the stream
 
-nginx passes the HTTP/2 stream to `router:50051`. It adds no logic. Its read and send timeouts are one hour.
+NGINX passes execution HTTP/2 streams to `router:50051`. Execution read and send timeouts are one hour. The separate completion-report RPC has tighter body, rate, and timeout limits.
 
 ## 3. Router places the call
 
@@ -95,6 +95,16 @@ The executor captures the stdout and stderr of the function and returns them ins
 ## 8. Cleanup
 
 After the response, the worker releases the container in the background. If the call had a session and succeeded, the container stays running and is marked ready for the next call. Otherwise, the worker destroys the container. In both cases, the router closes its lease on the call.
+
+## Client completion reports
+
+When `client_reports=True`, the config header requests a report capability. After authentication and header validation, a recorded router execution offers a random per-execution token in initial metadata before waiting for a session or scheduling. A full or disabled capability store omits it without failing execution.
+
+The client records wall-clock endpoints and monotonic duration around serialization, execution, result decoding, and output callbacks. After completion or an error, a bounded background worker sends the capability and timing/outcome enums to `ProxyService/SubmitClientReport`. Errors inside result envelopes are classified after decoding. Reports contain no exception text or user payload.
+
+The router starts execution traces with a new root context, ignoring public trace metadata and baggage, then propagates its own context to workers. A valid report creates an INTERNAL `client.reported_e2e` child of that root using the saved `SpanContext`, even after the root ends. The child starts at the reported start and ends at start plus monotonic duration; its raw wall-clock end is an attribute. This synthetic interval can surround its parent and is marked `readie.telemetry.source=client_report`.
+
+Identical retries emit no additional span. Reports can be lost through expiry, capacity limits, restarts, queue overflow, or export failure. Acceptance is not durable delivery, and missing reports do not imply success. See [Client telemetry](/docs/architecture/security-model#client-telemetry).
 
 ## Failure modes
 

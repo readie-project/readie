@@ -197,6 +197,45 @@ work while in-flight executions finish.
 The drain runs only because `main.py` installs SIGTERM and SIGINT handlers.
 Without them, `docker stop` sends SIGKILL and the graceful stop never runs.
 
+## Client completion reports
+
+`ProxyService/SubmitClientReport` accepts one logical completion report for an
+execution. Clients opt in with `ExecutionConfig.client_reports`. After validating
+the first header, the router sends `readie-client-report-token` in initial gRPC
+metadata, before waiting for a session or placing work. Unrecorded executions and
+a full or disabled capability store omit the token without failing execution.
+
+The router starts a new root trace at the public boundary and ignores incoming
+trace context, sampling flags, and baggage. Router-to-worker propagation remains
+enabled. The process-local `client_reports.py` store keeps capability digests,
+server execution IDs, and parent `SpanContext` values, not live span objects.
+Tokens are random 256-bit bearer capabilities and must not be logged. Stored
+request/session correlation strings are truncated to 256 characters so a large
+execution header cannot inflate each retained grant.
+
+Reports contain only wall timestamps, monotonic duration, outcome, and an error
+enum. The router validates at most 1 KiB, then creates an INTERNAL
+`client.reported_e2e` child of the saved root, even after that root ends. Its
+start is the reported start and its end is start plus monotonic duration; the raw
+reported end remains an attribute. The interval is synthetic and may surround
+its parent. `readie.telemetry.source=client_report` distinguishes untrusted client
+assertions from server measurements. Error/cancelled reports mark only the child
+as ERROR and never alter the execution outcome.
+
+Identical retries succeed without another span; conflicting reports receive
+`ALREADY_EXISTS`. Invalid payloads receive `INVALID_ARGUMENT`, oversized reports
+receive `RESOURCE_EXHAUSTED`, and unknown/expired capabilities receive a generic
+`PERMISSION_DENIED`. Authentication on this unary RPC follows the same policy as
+execution, in addition to the capability check. Acceptance means best-effort
+export, not durable delivery.
+
+Active grants expire after `SESSION_WAIT_TIMEOUT + EXECUTION_TIMEOUT +
+CLIENT_REPORT_TTL`. Handler teardown shortens the remaining lifetime to at most
+`CLIENT_REPORT_TTL`. Accepted-report tombstones occupy capacity until expiration;
+the existing reaper and issuance path remove expired entries. Capacity exhaustion
+omits new capabilities rather than evicting unexpired grants. A restart loses all
+grants. This supports one router, not report delivery across replicas.
+
 ## Configuration
 
 The router reads settings from the environment through pydantic-settings, using
@@ -217,6 +256,10 @@ full variable reference, see
 | `REAPER_INTERVAL`, `WORKER_TTL`, `EXECUTOR_TTL`, `EXECUTOR_ERROR_TTL` | Eviction of workers, executors, and leases. Sessions have no TTL of their own (see Session lifetime and tombstones). |
 | `SHUTDOWN_GRACE` | Drain budget on SIGTERM. |
 | `LOG_LEVEL`, `LOG_FORMAT` | Logging. `LOG_FORMAT` is `json` or `console`. |
+| `OTEL_AGENT_ENDPOINT` | Private OTLP/gRPC collector endpoint; defaults to `telemetry-agent:4317`. |
+| `CLIENT_REPORT_TTL` | Positive report grace in seconds, default `300`; active grant deadlines are also bounded as described above. |
+| `CLIENT_REPORT_CAPACITY` | Maximum grants plus accepted-report tombstones, default `10000`; `0` disables issuance. |
+| `CLIENT_REPORT_MAX_DURATION` | Maximum reported monotonic duration in seconds, default `86400`; must be positive and finite. |
 
 `BIND_HOST` and `SERVICE_NAME` are separate settings. `BIND_HOST` is the
 interface the server listens on, and `SERVICE_NAME` is the hostname that peers

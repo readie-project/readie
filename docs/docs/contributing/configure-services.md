@@ -125,6 +125,14 @@ The router and the worker log JSON by default. To read logs while debugging, swi
 
 The local compose file already sets the worker's level to `debug`.
 
+## Configure client reports
+
+Client completion reports use the router's existing gRPC listener and private `OTEL_AGENT_ENDPOINT`; do not expose the collector. Clients opt in as described in the [SDK reference](/docs/guides/sdk#completion-reports).
+
+Set `CLIENT_REPORT_CAPACITY=0` to disable report token issuance. Otherwise, capacity bounds active grants and accepted-report tombstones together. At capacity, executions continue without a report token. `CLIENT_REPORT_TTL` bounds post-execution grace, and `CLIENT_REPORT_MAX_DURATION` limits accepted elapsed time. Defaults and active-grant deadlines are in the [configuration reference](/docs/contributing/configuration-reference#tracing-and-client-reports).
+
+Keep completion traffic on the existing single router: grants are in memory, and another replica or a restarted router cannot accept them. NGINX applies a separate body and per-IP rate limit to the report RPC. Neither capabilities nor synthetic client spans are authoritative latency or availability evidence. See [Client telemetry](/docs/architecture/security-model#client-telemetry).
+
 ## Executor and pipeline settings
 
 The executor settings are not normally changed. The pipeline fills in the executor's `READIE_PREIMPORT` list, which determines the libraries that a checkpoint preloads. The pipeline's planner settings, such as the number of checkpoints and the size budget, are described in [Build checkpoints](/docs/contributing/build-checkpoints).

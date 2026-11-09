@@ -11,7 +11,7 @@ import readie
 from readie import remote
 
 # Uncomment the below line to connect to a router running locally.
-readie.configure(router_uri="localhost:50051", tls=False)  # noqa: ERA001 - no TLS for local
+readie.configure(router_uri="localhost:50051", tls=False, client_reports=True)
 
 
 @remote

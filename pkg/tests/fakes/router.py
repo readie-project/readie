@@ -9,6 +9,7 @@ payload itself, which is enough to prove the client's half of the contract.
 from __future__ import annotations
 
 import asyncio
+import secrets
 import traceback
 
 import cloudpickle
@@ -27,6 +28,13 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
 
     def __init__(self) -> None:
         self.abort_with: tuple[grpc.StatusCode, str] | None = None
+        self.offer_reports = False
+        self.report_tokens: dict[str, str] = {}
+        self.reports: list[proxy_pb2.SubmitClientReportRequest] = []
+        self.report_received = asyncio.Condition()
+        self.report_metadata: list[tuple[str, str]] = []
+        self.report_abort: grpc.StatusCode | None = None
+        self.report_delay = 0.0
         self.logs: list[str] = []
         self.swallow_result = False
         self.success = True
@@ -67,6 +75,7 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
                 arm = message.WhichOneof("data")
                 if arm == "config":
                     self.headers.append(message)
+                    await self._offer_report_token(message, context)
                 elif arm == "payload":
                     self.payload_messages.append(message)
                     payload.extend(message.payload)
@@ -109,6 +118,30 @@ class FakeRouter(proxy_pb2_grpc.ProxyServiceServicer):
             return None
         finally:
             self.concurrent -= 1
+
+    async def _offer_report_token(
+        self, message: proxy_pb2.ClientExecutionRequest, context: grpc.aio.ServicerContext
+    ) -> None:
+        if self.offer_reports and message.config.client_reports:
+            report_token = secrets.token_urlsafe(32)
+            self.report_tokens[message.request_id] = report_token
+            await context.send_initial_metadata((("readie-client-report-token", report_token),))
+
+    async def SubmitClientReport(  # noqa: N802 - generated interface
+        self,
+        request: proxy_pb2.SubmitClientReportRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> proxy_pb2.SubmitClientReportResponse:
+        """Record a report independently from the execution stream."""
+        self.report_metadata = [(k, v) for k, v in context.invocation_metadata() or ()]
+        if self.report_delay:
+            await asyncio.sleep(self.report_delay)
+        async with self.report_received:
+            self.reports.append(request)
+            self.report_received.notify_all()
+        if self.report_abort is not None:
+            await context.abort(self.report_abort, "report unavailable")
+        return proxy_pb2.SubmitClientReportResponse()
 
     def _message(
         self,

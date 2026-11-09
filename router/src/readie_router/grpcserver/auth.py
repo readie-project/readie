@@ -75,25 +75,32 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):  # type: ignore[misc]  # grpc
         handler_call_details: grpc.HandlerCallDetails,
     ) -> grpc.RpcMethodHandler | None:
         """Guard ProxyService; pass everything else straight through."""
+        next_handler = await continuation(handler_call_details)
+        if next_handler is None:
+            return None
+
         method = handler_call_details.method
-        if not method.startswith(GUARDED_PREFIX):
-            return await continuation(handler_call_details)
-
         metadata = handler_call_details.invocation_metadata or ()
-        if self._auth.authorize(metadata):
-            return await continuation(handler_call_details)
-        return _deny_handler()
+        if method.startswith(GUARDED_PREFIX) and not self._auth.authorize(metadata):
+            return _deny_handler(next_handler)
+
+        return next_handler
 
 
-def _deny_handler() -> grpc.RpcMethodHandler:
-    """A handler that aborts with UNAUTHENTICATED.
+def _deny_handler(handler: grpc.RpcMethodHandler) -> grpc.RpcMethodHandler:
+    """Return the appropriate abort handler for a given handler."""
 
-    ProxyService.RequestExecution is bidirectional streaming, so the deny handler
-    is stream-stream to match; a mismatched cardinality would confuse the client
-    before it saw the status.
-    """
-
-    async def abort(_request_iterator: object, context: grpc.aio.ServicerContext) -> None:
+    async def abort(_: object, context: grpc.aio.ServicerContext) -> None:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "a valid bearer token is required")
 
-    return grpc.stream_stream_rpc_method_handler(abort)
+    if handler.unary_unary:
+        return grpc.unary_unary_rpc_method_handler(abort)
+    if handler.unary_stream:
+        return grpc.unary_stream_rpc_method_handler(abort)
+    if handler.stream_unary:
+        return grpc.stream_unary_rpc_method_handler(abort)
+    if handler.stream_stream:
+        return grpc.stream_stream_rpc_method_handler(abort)
+
+    # should be unreachable
+    raise AssertionError("RPC method handler has no supported callable")

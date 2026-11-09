@@ -39,6 +39,7 @@ def to_config(
     budgets: tuple[Budget, ...],
     gpu: bool = False,
     disable_optimized_execution: bool = False,
+    client_reports: bool = False,
 ) -> proxy_pb2.ExecutionConfig:
     """Build the per-call config message: import hints, budgets and the GPU flag."""
     return proxy_pb2.ExecutionConfig(
@@ -55,6 +56,7 @@ def to_config(
             )
             for b in budgets
         ],
+        client_reports=client_reports,
     )
 
 
@@ -81,6 +83,7 @@ class RequestEncoder:
         *,
         gpu: bool = False,
         disable_optimized_execution: bool = False,
+        client_reports: bool = False,
     ) -> Iterator[proxy_pb2.ClientExecutionRequest]:
         """Yield the header followed by the payload in chunks.
 
@@ -91,7 +94,7 @@ class RequestEncoder:
         yield proxy_pb2.ClientExecutionRequest(
             request_id=ref.request_id,
             session_id=ref.session_id,
-            config=to_config(imports, budgets, gpu, disable_optimized_execution),
+            config=to_config(imports, budgets, gpu, disable_optimized_execution, client_reports),
         )
 
         buffer = io.BytesIO(payload)

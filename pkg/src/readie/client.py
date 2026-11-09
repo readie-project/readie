@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import TracebackType
 from typing import Any
 
 from readie._compat import check_python_version
+from readie._reports import ClientReporter
 from readie.budget import Budget
 from readie.codec import CloudpickleCodec, ResultCodec
 from readie.config import Settings
@@ -98,11 +99,34 @@ class Client:
         self._log_sink = log_sink if log_sink is not None else _default_log_sink
         self._closed = False
 
+        uses_builtin_transport = transport is None or async_transport is None
+        self._reporter = (
+            ClientReporter(self.settings)
+            if self.settings.client_reports and uses_builtin_transport
+            else None
+        )
+
         # Transports are constructed eagerly but connect lazily, so building a
-        # Client never touches the network and never needs a running loop.
-        self._transport = transport if transport is not None else GrpcTransport(self.settings)
+        # Client doesn't touch the network and doesn't need a running loop.
+        self._transport = (
+            transport
+            if transport is not None
+            else GrpcTransport(
+                self.settings,
+                on_report_token=self._reporter.register_report_token
+                if self._reporter is not None
+                else None,
+            )
+        )
         self._async_transport = (
-            async_transport if async_transport is not None else AsyncGrpcTransport(self.settings)
+            async_transport
+            if async_transport is not None
+            else AsyncGrpcTransport(
+                self.settings,
+                on_report_token=self._reporter.register_report_token
+                if self._reporter is not None
+                else None,
+            )
         )
 
     # -- sessions ----------------------------------------------------------
@@ -139,19 +163,24 @@ class Client:
         Blocks. Raises ``BlockingCallInEventLoopError`` if called from a running
         loop, where blocking would stall the loop the response must arrive on.
         """
-        _reject_running_loop()
-        ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
-        outcome = self._transport.execute(
-            ref,
-            payload,
-            imports,
-            budgets,
-            gpu=gpu,
-            disable_optimized_execution=disable_optimized_execution,
-            timeout=self._deadline(timeout),
-            on_log=self._on_log(),
-        )
-        return self._finish(outcome)
+        with (
+            self._reporter.time_call() if self._reporter is not None else nullcontext() as call_info
+        ):
+            _reject_running_loop()
+            ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
+            if self._reporter is not None:
+                self._reporter.register_call(ref, call_info)
+            outcome = self._transport.execute(
+                ref,
+                payload,
+                imports,
+                budgets,
+                gpu=gpu,
+                disable_optimized_execution=disable_optimized_execution,
+                timeout=self._deadline(timeout),
+                on_log=self._on_log(),
+            )
+            return self._finish(outcome)
 
     async def acall(
         self,
@@ -167,30 +196,41 @@ class Client:
         disable_optimized_execution: bool = False,
     ) -> Any:
         """Execute ``func`` remotely and return its result, without blocking."""
-        ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
-        outcome = await self._async_transport.execute(
-            ref,
-            payload,
-            imports,
-            budgets,
-            gpu=gpu,
-            disable_optimized_execution=disable_optimized_execution,
-            timeout=self._deadline(timeout),
-            on_log=self._on_log(),
-        )
-        return self._finish(outcome)
+        with (
+            self._reporter.time_call() if self._reporter is not None else nullcontext() as call_info
+        ):
+            ref, payload, imports = self._prepare(func, args, kwargs, session, packages)
+            if self._reporter is not None:
+                self._reporter.register_call(ref, call_info)
+            outcome = await self._async_transport.execute(
+                ref,
+                payload,
+                imports,
+                budgets,
+                gpu=gpu,
+                disable_optimized_execution=disable_optimized_execution,
+                timeout=self._deadline(timeout),
+                on_log=self._on_log(),
+            )
+            return self._finish(outcome)
 
     # -- lifecycle ---------------------------------------------------------
     def close(self) -> None:
         """Close the blocking channel. Idempotent."""
         self._closed = True
+        if self._reporter is not None:
+            self._reporter.close()
         self._transport.close()
 
     async def aclose(self) -> None:
         """Close both channels. Idempotent."""
         self._closed = True
-        await self._async_transport.aclose()
-        self._transport.close()
+        try:
+            if self._reporter is not None:
+                await asyncio.to_thread(self._reporter.close)
+        finally:
+            await self._async_transport.aclose()
+            self._transport.close()
 
     def __enter__(self) -> Client:
         """Enter a scope that closes the client on exit."""
