@@ -143,3 +143,5 @@ Only `Settings` fields that take part in `__init__` can be passed to `configure`
 - [Errors](/docs/guides/errors)
 - [Sessions](/docs/concepts/sessions)
 - [Packages and resources](/docs/getting-started/packages-and-resources)
+
+For HTTP clients, see [Send HTTP execution requests](./http-execution.md).

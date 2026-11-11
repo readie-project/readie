@@ -1,20 +1,10 @@
-"""Turn a visitor's script into a ``@remote`` function, the way a user would write one.
-
-The script becomes the body of ``main`` in a real module file. A real file means
-``inspect.getsource`` works, so the client reads the script's imports and the
-router can pick a matching checkpoint. Importing the module runs only the
-decorator and the ``def``; the script itself runs on Readie.
-
-This service runs under gVisor on a network that reaches only nginx. See
-``SECURITY.md``.
-"""
+"""Build a module that runs source on Readie with session-scoped script semantics."""
 
 from __future__ import annotations
 
 import ast
 import importlib.util
 import sys
-import textwrap
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
@@ -22,37 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import cloudpickle
-
-from readie_playground.config import MEMORY
-
-_TEMPLATE = """\
-from readie import remote
-
-
-@remote(memory="{memory}", max_memory="{memory}")
-def main():
-{body}
-"""
-
-
-def build_module(code: str) -> str:
-    """Return module source with ``code`` as the body of ``main``."""
-    body = textwrap.indent(code.rstrip() or "pass", "    ")
-    return _TEMPLATE.format(memory=MEMORY, body=body)
-
-
-def check(code: str) -> str | None:
-    """Return a readable error if ``code`` does not compile, else ``None``.
-
-    Compiling never runs the code. A visitor sees the same message Python would give.
-    """
-    try:
-        compile(build_module(code), "<playground>", "exec")
-    except SyntaxError as exc:
-        # The generated module adds four lines of header; report the visitor's own line.
-        line = max((exc.lineno or 5) - 5, 1)
-        return f"SyntaxError: {exc.msg} (line {line})"
-    return None
 
 
 @contextmanager
@@ -82,22 +41,6 @@ def _module(text: str, workdir: Path) -> Iterator[Any]:
         path.unlink(missing_ok=True)
 
 
-@contextmanager
-def loaded(code: str, workdir: Path) -> Iterator[Callable[..., Any]]:
-    """Write, import and yield the undecorated ``main``; always clean up."""
-    with _module(build_module(code), workdir) as module:
-        yield module.main.func
-
-
-# ---------------------------------------------------------------------------
-# Steps: one code string of a possibly longer sequence, run with module semantics
-# ---------------------------------------------------------------------------
-# A step is run with ``exec`` in a namespace that outlives the call, so a later step of
-# the same session sees what an earlier one defined (a notebook's cells share one
-# interpreter). The function's own source repeats the step's import statements, so
-# the client reads the same imports it would for the user's own function and the
-# router can pick a matching checkpoint; each is guarded, because the original may
-# have imported it conditionally.
 _STEP_TEMPLATE = """\
 import os
 import sys
@@ -106,7 +49,8 @@ import types
 
 def _run(source, key, index):
     os.environ.setdefault("MPLBACKEND", "Agg")
-    holder = sys.modules.setdefault("__readie_eval__", types.ModuleType("__readie_eval__"))
+    name = "__readie_execution__"
+    holder = sys.modules.setdefault(name, types.ModuleType(name))
     spaces = holder.__dict__.setdefault("spaces", {})
     namespace = spaces.setdefault(key, {"__name__": "__main__"})
     exec(compile(source, "<step %%d>" %% index, "exec"), namespace)
