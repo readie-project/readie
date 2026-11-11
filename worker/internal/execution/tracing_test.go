@@ -3,6 +3,7 @@ package execution_test
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -12,9 +13,59 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/illinoisdata/readie/worker/internal/container"
 	"github.com/illinoisdata/readie/worker/internal/execution"
+	"github.com/illinoisdata/readie/worker/internal/executor"
 )
+
+// A trailer read fails immediately, making the regression deterministic rather
+// than depending on the telemetry timeout or warm-call latency measurements.
+type resultOnlyConn struct {
+	executor.Conn
+	remaining    int
+	trailerReads int
+}
+
+func (c *resultOnlyConn) Read(p []byte) (int, error) {
+	if c.remaining == 0 {
+		c.trailerReads++
+		return 0, io.ErrUnexpectedEOF
+	}
+	n, err := c.Conn.Read(p)
+	c.remaining -= n
+	return n, err
+}
+
+func TestTracing_UnrecordedOrUnsampledAttemptsSkipTheTrailer(t *testing.T) {
+	for _, mode := range []string{"disabled", "unsampled"} {
+		t.Run(mode, func(t *testing.T) {
+			var conn *resultOnlyConn
+			h := newHarness(t, execution.RunnerConfig{}, func(h *harness) {
+				if mode == "unsampled" {
+					provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.NeverSample()))
+					t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+					h.tracer = provider.Tracer("worker")
+				}
+				h.dialer.wrapConn = func(raw executor.Conn) executor.Conn {
+					conn = &resultOnlyConn{Conn: raw, remaining: len(h.dialer.reply) + 2*executor.LengthBytes}
+					return conn
+				}
+			})
+			// A disabled tracer may inherit a sampled context without recording.
+			ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled, Remote: true,
+			}))
+			_, err := h.runner.Run(ctx, request(), &chunkSource{}, h.sink)
+			require.NoError(t, err)
+			require.NoError(t, h.runner.WaitPendingReleases(context.Background()))
+			require.NotNil(t, conn)
+			assert.Zero(t, conn.trailerReads)
+			assert.Equal(t, []container.Outcome{container.OutcomeSuccess}, h.containers.Outcomes())
+		})
+	}
+}
 
 func TestTracing_AttemptFailuresIdentifyTheFailingPhase(t *testing.T) {
 	for _, phase := range []string{"container acquire", "executor dial"} {

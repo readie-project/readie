@@ -233,7 +233,11 @@ pipeline/out/<flavor>/
 
 The `manifest.json` and `checkpoints/` layout is the shape that
 `worker/internal/artifact` reads, so nothing is reshaped between capturing a
-checkpoint and shipping it.
+checkpoint and shipping it. `executor_protocol` is currently 3, including the
+post-result JSON timing trailer. Workers require an exact protocol match. After
+changing the executor protocol, rebuild the rootfs and capture a new generation;
+old checkpoints contain the old executor and cannot be upgraded by rebuilding
+only the Go worker.
 
 `catalogue.json` is what the router reads to select a checkpoint. It records
 the alpha measured during `build`, every measured item's cost, and each

@@ -87,7 +87,7 @@ The `packages` key is optional. If it is present, the executor runs `uv pip inst
 
 ### Response
 
-A response is one message that contains a cloudpickle of an envelope:
+A response contains two framed messages. The first contains a cloudpickle of a result envelope:
 
 ```python
 {"ok": True,  "value": <return value>, "output": ["..."]}
@@ -98,11 +98,74 @@ A response is one message that contains a cloudpickle of an envelope:
 
 An `ok: False` envelope is not a worker failure. The sandbox worked and remains reusable, the worker reports success, and the client library turns the envelope into an exception. The worker never decodes the envelope. It passes the bytes to the router, and the [client](/docs/guides/sdk) unpickles them.
 
+### Telemetry trailer
+
+The second response message contains JSON for the worker, not the router or SDK.
+Its maximum encoded size is 8 KiB. The executor constructs it only after sending
+the result terminator:
+
+```json
+{
+  "start_time_unix_ns": 1700000000000000000,
+  "duration_ns": 100,
+  "outcome": "success",
+  "phases": [
+    {"phase": "receive", "start_offset_ns": 0, "duration_ns": 100, "outcome": "success"}
+  ]
+}
+```
+
+The wall-clock anchor and monotonic start are fresh for each request after
+restore. `duration_ns` ends after result transmission and excludes telemetry
+encoding and transmission. Phase offsets and durations use the monotonic clock.
+All numeric fields are integers in nanoseconds.
+
+There are at most seven phases, in this order: `receive`, `decode`, `dns`,
+`install`, `invoke`, `serialize`, and `send`. Phases not reached are absent.
+Outcomes are `success` or the phase name followed by `_error`. The overall outcome
+is the last failed phase's outcome, or `success`. A serialization fallback still
+reports `serialize_error` even when its replacement envelope is sent successfully.
+
+The worker rejects duplicate, unknown, or missing fields, invalid integers,
+unknown phase names or outcomes, repeated or unordered phases, overlapping or
+out-of-range phase intervals, overflowing timestamps, and durations beyond the
+execution timeout. The anchor must lie in the worker's observed attempt window,
+with five seconds of clock-skew tolerance. The worker does not rewrite reported
+timestamps to force alignment.
+
+The executor limits the trailer socket write to 100 ms. The worker finishes the
+gRPC stream at the result terminator, then reads the trailer in background work
+with an absolute 100 ms deadline only for recorded, sampled attempts. Eligibility
+is captured before the worker attempt span ends. With tracing disabled or the
+attempt unsampled, the worker closes the socket and releases the container
+without reading the trailer or acquiring a collector slot. These calls do not
+wait for the telemetry timeout. At most 64 collectors run at once; saturation
+drops telemetry. Invalid or missing metadata cannot fail a completed call or
+trigger an execution retry. The worker closes the executor connection and
+releases the container after collection. An immediate same-container call waits
+for this finalization; independent containers do not.
+
+For sampled traces, the worker reconstructs an INTERNAL `executor execution`
+child of the original attempt, with phase children and
+`readie.telemetry.source=executor_report`. Reconstruction can occur after the
+parent ends. Successful spans retain `UNSET`; a failed function marks reported
+spans as errors without changing transport success or container reuse. An
+executor crash or incomplete result can lose all executor timings.
+
+Telemetry contains fixed categories and timing only. It includes no arguments,
+results, output, package specifications, exception text, or executor-chosen trace
+identity. The sandbox does not contact the collector. Its timings remain
+untrusted observations, not billing or authoritative availability evidence.
+
 ## Version checking
 
-The framing has a version, currently 2. The pipeline writes it into `manifest.json` as `executor_protocol`. When the worker loads its checkpoints, it compares that number with the version it implements. A manifest with no number counts as version 1.
+The framing has a version, currently 3. The pipeline writes it into `manifest.json` as `executor_protocol`. When the worker loads its checkpoints, it compares that number with the version it implements. A manifest with no number counts as version 1.
 
 On a mismatch, the worker refuses to load the artifacts. The error names both versions and instructs you to rebuild the worker image with the current pipeline. This check replaces the alternative failure mode, a call that connects and then hangs.
+
+There is no handshake, negotiation, or multi-version fallback. Version 3 adds
+the JSON timing trailer to version 2's result message. Deploy matching workers
+and rebuilt checkpoint generations together.
 
 Version 1 used a literal `EOF` and connection close. It could not distinguish a short message from a truncated one, and a function that raised sent nothing back. Version 2 fixes both.
 
@@ -110,7 +173,7 @@ Version 1 used a literal `EOF` and connection close. It could not distinguish a 
 
 The format is implemented twice: in Python (`executor/src/readie_executor/protocol.py`) and in Go (`worker/internal/executor/`). The Python side is the server and the Go side is the client, so an ordinary unit test cannot exercise them against each other.
 
-Both implementations share the fixture `executor/tests/data/frames.golden.json`. It holds payloads and their encoded bytes for cases such as empty, one chunk, many chunks, and payloads that contain the old `EOF` bytes or every byte value.
+Both implementations share the fixture `executor/tests/data/frames.golden.json`. It holds payloads and their encoded bytes for cases such as empty, one chunk, many chunks, and payloads that contain the old `EOF` bytes or every byte value. It also includes a complete two-message response to verify that the trailer stays separate from the result.
 
 - The Python tests encode and decode against the fixture.
 - The Go tests decode the Python bytes and check that Go-written bytes decode back to the same payload.

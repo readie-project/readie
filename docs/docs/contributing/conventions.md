@@ -52,7 +52,7 @@ Any class with a matching `score` method can serve as a scorer. The client SDK f
 
 ## Test names
 
-A test name describes the behavior and not the function under test. For example, `test_the_version_is_two` and `test_the_golden_encoding_decodes_to_its_payload` describe behavior, whereas `test_result_2` does not.
+A test name describes the behavior and not the function under test. For example, `test_the_version_is_three` and `test_the_golden_encoding_decodes_to_its_payload` describe behavior, whereas `test_result_2` does not.
 
 If a test pins a bug that was fixed in the past, a comment on the test says so. That comment is often the only record of why the test exists. *(Review only.)*
 
@@ -60,7 +60,7 @@ Every behavior change comes with a test. The pull request template asks for a te
 
 ## Trace status
 
-Leave the OpenTelemetry status of successful operations at its default, `UNSET` (`codes.Unset` in Go). Do not explicitly set `OK` on successful spans or write `UNSET` to reset an existing error status. This convention applies to RPC, execution-attempt, acquisition, executor-dial, release, and synthetic client-report spans. Protocol status attributes such as a successful gRPC status code remain valid; they are separate from OpenTelemetry span status.
+Leave the OpenTelemetry status of successful operations at its default, `UNSET` (`codes.Unset` in Go). Do not explicitly set `OK` on successful spans or write `UNSET` to reset an existing error status. This convention applies to RPC, execution-attempt, acquisition, executor-dial, release, and synthetic client-report and executor-report spans. Protocol status attributes such as a successful gRPC status code remain valid; they are separate from OpenTelemetry span status.
 
 Retain error status on failed operations. A successful parent does not inherit an error solely because a child failed. Worker integration tests and router completion-report tests assert that successful spans remain unset.
 

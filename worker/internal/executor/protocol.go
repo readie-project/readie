@@ -1,7 +1,7 @@
 // Package executor speaks the unix-socket protocol shared with the Python
 // executor in executor/src/readie_executor/.
 //
-// # Protocol (version 2)
+// # Protocol (version 3)
 //
 // The executor is the server: it binds $EXECUTOR_DIR/executor.sock inside its
 // container, which the worker sees at <workerDir>/<containerID>/executor.sock
@@ -13,7 +13,7 @@
 //	message:   ([8-byte big-endian length][chunk])* [8 zero bytes]
 //
 //	request:   one message, the cloudpickle of {func, args, kwargs}
-//	response:  one message, the cloudpickle of a result envelope
+//	response:  one cloudpickled result message, then one bounded JSON telemetry message
 //
 // Framed per chunk rather than once per message so a sender can stream without
 // knowing the total size. This side relays request bytes straight from a gRPC
@@ -65,7 +65,7 @@ import (
 )
 
 // ProtocolVersion is the wire format this package implements.
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 // LengthBytes is the size of a chunk's length prefix.
 //

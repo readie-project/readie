@@ -32,7 +32,12 @@ const goldenPath = "../../../executor/tests/data/frames.golden.json"
 
 type goldenFile struct {
 	ProtocolVersion int `json:"protocol_version"`
-	Cases           []struct {
+	Response        struct {
+		ResultHex    string `json:"result_hex"`
+		TelemetryHex string `json:"telemetry_hex"`
+		EncodedHex   string `json:"encoded_hex"`
+	} `json:"response"`
+	Cases []struct {
 		Name       string `json:"name"`
 		PayloadHex string `json:"payload_hex"`
 		EncodedHex string `json:"encoded_hex"`
@@ -56,6 +61,24 @@ func decodeHex(t *testing.T, s string) []byte {
 	b, err := hex.DecodeString(s)
 	require.NoError(t, err)
 	return b
+}
+
+func TestGolden_CompleteResponseKeepsTelemetryOutOfTheResult(t *testing.T) {
+	response := loadGolden(t).Response
+	client, server := net.Pipe()
+	t.Cleanup(func() { _ = client.Close(); _ = server.Close() })
+	encoded := decodeHex(t, response.EncodedHex)
+	go func() { _, _ = server.Write(encoded) }()
+	session := newSession(t, client, executor.SessionOptions{ChunkSize: 7})
+	var payload bytes.Buffer
+	require.NoError(t, session.ReadResponse(context.Background(), func(p []byte) error { _, err := payload.Write(p); return err }))
+	assert.Equal(t, decodeHex(t, response.ResultHex), payload.Bytes())
+	trailer, err := session.ReadTelemetry(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, decodeHex(t, response.TelemetryHex), trailer)
+	anchor := time.Unix(1700000000, 0)
+	_, err = executor.ParseTelemetry(trailer, anchor, anchor, time.Hour)
+	require.NoError(t, err)
 }
 
 func TestGolden_MatchesThisProtocolVersion(t *testing.T) {

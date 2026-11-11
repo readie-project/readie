@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -28,6 +29,14 @@ def cases() -> list[dict[str, str]]:
 
 def ids() -> list[str]:
     return [c["name"] for c in cases()]
+
+
+def test_the_complete_response_contains_two_independent_messages():
+    response = cast("dict[str, str]", load()["response"])
+    encoded = bytes.fromhex(response["encoded_hex"])
+    reader = ScriptedReader([encoded])
+    assert read_message(reader, chunk_size=64) == bytes.fromhex(response["result_hex"])
+    assert read_message(reader, chunk_size=64) == bytes.fromhex(response["telemetry_hex"])
 
 
 def test_the_fixture_matches_this_protocol_version():

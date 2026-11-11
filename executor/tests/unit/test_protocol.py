@@ -58,8 +58,8 @@ def test_a_prefix_of_the_wrong_size_is_rejected():
         decode_length(b"\x00\x01")
 
 
-def test_the_version_is_two():
-    assert PROTOCOL_VERSION == 2
+def test_the_version_is_three():
+    assert PROTOCOL_VERSION == 3
 
 
 # ---------------------------------------------------------------------------

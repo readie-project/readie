@@ -41,19 +41,21 @@ The executor binds the socket after the checkpoint. A socket bound earlier would
 be part of the checkpoint image, and a restored sandbox would hold a socket
 attached to a worker that no longer exists.
 
-An ordinary worker does not enable capture mode, so its terminal stream contains
-only output from the called function and errors. If `EXECUTOR_DIR` is unset, the
-executor exits with code 2.
+An ordinary worker does not enable capture mode. Its sandbox log contains
+executor diagnostics, called-function output, and errors. The result envelope
+contains captured function output rather than executor diagnostics. If
+`EXECUTOR_DIR` is unset, the executor exits with code 2.
 
 ## Wire protocol
 
-The protocol is at version 2. The worker dials, and the executor is the server.
+The protocol is at version 3. The worker dials, and the executor is the server.
 
 ```
 message:   ([8-byte big-endian length][chunk])* [8 zero bytes]
 
 request:   one message, the cloudpickle of {func, args, kwargs, packages}
 response:  one message, the cloudpickle of a result envelope
+           one message, bounded JSON telemetry (worker-only)
 
 envelope = {"ok": True,  "value": <return value>, "output": [str, ...]}
          | {"ok": False, "exc_type": str, "message": str, "traceback": str,
@@ -87,6 +89,30 @@ opens nothing, so every framing case is a unit test with no socket. The cases
 include a frame delivered one byte at a time, a stream that ends mid-body, and a
 length prefix large enough to exhaust memory.
 
+### Post-result telemetry
+
+After sending the complete result, the executor sends a JSON timing message of
+at most 8 KiB. It contains `start_time_unix_ns`, monotonic `duration_ns`, an
+`outcome`, and up to seven `phases`. Each phase has `phase`, `start_offset_ns`,
+`duration_ns`, and `outcome`. The fixed phase names are `receive`, `decode`,
+`dns`, `install`, `invoke`, `serialize`, and `send`; phases not reached are absent.
+Outcomes are `success` or `<phase>_error`. A serialization fallback remains a
+`serialize_error` even when its failure envelope travels successfully.
+
+Timing state starts after restore, separately for each request. JSON encoding
+runs only after the result terminator has been sent. The telemetry write has a
+100 ms socket timeout. Telemetry contains no exception text, results, output,
+arguments, package specifications, or caller-supplied span names.
+
+For recorded, sampled attempts, the worker finishes its gRPC response before
+collecting this second message. It reconstructs executor spans under the original
+worker attempt, then closes the socket and releases the container. With tracing
+disabled or the attempt unsampled, it closes the socket without reading the
+trailer or acquiring a collector slot; the executor tolerates a failed trailer
+write. Failed or missing telemetry does
+not change the result. The executor has no OpenTelemetry dependency and does
+not contact the collector. See the site protocol reference for validation limits.
+
 ### Failed calls
 
 An envelope with `ok: False` is deliberately not a worker failure. The sandbox
@@ -105,6 +131,10 @@ A generation records `executor_protocol` in its manifest. A worker refuses a
 generation whose version it does not implement, instead of dialing an executor
 that never sends a terminator the worker recognizes. A manifest without the field
 counts as version 1.
+
+Version 2 introduced chunk framing and failure envelopes. Version 3 adds the
+worker-only telemetry message. There is no runtime version negotiation: rebuild
+the generation and deploy it with its matching worker.
 
 Version 1 used a literal `EOF` and a connection close. It could not distinguish
 a short message from a truncated one, and a function that raised sent nothing

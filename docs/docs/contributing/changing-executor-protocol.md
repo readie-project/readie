@@ -4,7 +4,7 @@ sidebar_position: 4
 description: How the worker and executor frame bytes over a socket, and the files to update together when that format changes.
 ---
 
-The worker (Go) and the [executor](/docs/concepts/glossary) (Python) communicate over a unix socket inside each sandbox. The framing format is implemented once in each language, so a change must land in both implementations at the same time. This page applies only to changes in how requests or results are framed on that socket. For gRPC messages, see [Change protos](/docs/contributing/changing-protos).
+The worker (Go) and the [executor](/docs/concepts/glossary) (Python) communicate over a unix socket inside each sandbox. The framing format is implemented once in each language, so a change must land in both implementations at the same time. This page covers socket framing and the bounded JSON telemetry trailer. For gRPC messages, see [Change protos](/docs/contributing/changing-protos).
 
 ## Current format
 
@@ -14,11 +14,12 @@ A message is a series of chunks. Each chunk is an 8-byte big-endian length follo
 message:  ([8-byte length][chunk bytes])*  [8 zero bytes]
 request:  one message holding the cloudpickle of {func, args, kwargs}
 response: one message holding the cloudpickle of a result envelope
+          one message holding bounded worker-only JSON telemetry
 ```
 
 The result envelope is a small dictionary. On success it is `{"ok": True, "value": ...}`. When the function raises, it is `{"ok": False, "exc_type": ..., "message": ..., "traceback": ...}`. A raised exception is data and does not indicate a worker failure.
 
-The current version number is 2. For the design, see [Executor protocol](/docs/architecture/executor-protocol).
+The current version number is 3. For the design, see [Executor protocol](/docs/architecture/executor-protocol).
 
 ## Code locations
 
@@ -26,12 +27,15 @@ The current version number is 2. For the design, see [Executor protocol](/docs/a
 | --- | --- |
 | Python framing and `PROTOCOL_VERSION` | `executor/src/readie_executor/protocol.py` |
 | Go framing and `ProtocolVersion` | `worker/internal/executor/protocol.go` |
+| Python timing collection and JSON | `executor/src/readie_executor/telemetry.py` |
+| Go trailer reader and validation | `worker/internal/executor/telemetry.go` |
+| Background reconstruction and release | `worker/internal/execution/finalize.go` |
 | Version written into the manifest | `pipeline/src/readie_pipeline/config.py` (`EXECUTOR_PROTOCOL`) |
 | Version check in the worker | `worker/internal/artifact/artifact.go` |
 | Shared test fixture | `executor/tests/data/frames.golden.json` |
 | Script that writes the fixture | `executor/tests/generate_golden.py` |
 
-The client SDK (`pkg/`) does not use the framing. It reads only the result envelope after the worker and router relay it. If the shape of the envelope changes, update `pkg/src/readie/protocol.py` as well. The golden fixture does not cover the envelope, so add tests for it.
+The client SDK (`pkg/`) does not use the framing. It reads only the result envelope after the worker and router relay it. If the shape of the envelope changes, update `pkg/src/readie/protocol.py` as well. The golden fixture treats the result as opaque bytes, so add envelope tests when changing it. The full-response fixture covers the second message's separation from the result. Keep telemetry bounded and independent of execution success; never make gRPC completion wait for it.
 
 ## Golden fixture
 
@@ -44,12 +48,12 @@ The generator script writes the encoded bytes by hand with `struct.pack` and doe
 1. Change the Python framing in `executor/src/readie_executor/protocol.py`.
 2. Change the Go framing in `worker/internal/executor/protocol.go` to match.
 3. If the change creates a new situation worth pinning, add cases to the `CASES` list in `executor/tests/generate_golden.py`.
-4. If the new format cannot read the old one, bump the version. Change all of the following by hand:
+4. If the response layout or required socket contract changes, bump the version. The worker retains an exact-match gate rather than supporting multiple versions. Change all of the following by hand:
    - `PROTOCOL_VERSION` in `executor/src/readie_executor/protocol.py`
    - `ProtocolVersion` in `worker/internal/executor/protocol.go`
    - `EXECUTOR_PROTOCOL` in `pipeline/src/readie_pipeline/config.py`
    - the `"protocol_version"` value inside `main()` in `executor/tests/generate_golden.py`
-   - the test `test_the_version_is_two` in `executor/tests/unit/test_protocol.py`, which pins the number
+   - the test `test_the_version_is_three` in `executor/tests/unit/test_protocol.py`, which pins the number
 5. Regenerate the fixture.
 
    ```bash

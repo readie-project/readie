@@ -88,4 +88,7 @@ After a change, check that:
 
 - `buf.yaml` at the repository root holds the lint and breaking-change rules.
 - The wire protocol between the worker and the executor inside a sandbox is not
-  protobuf. It is a length-prefixed binary framing described in `executor/README.md`.
+  protobuf. It uses length-prefixed messages: a cloudpickled call, followed by a
+  cloudpickled result and a worker-only bounded JSON telemetry trailer. Its
+  contract is documented in `executor/README.md` and the site's executor protocol
+  reference; no protobuf stubs are involved.

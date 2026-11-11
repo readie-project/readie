@@ -112,6 +112,25 @@ authentication. Run the router-to-worker mesh on a private network, and do not
 expose the worker's port. Do not expose the router's port to anyone you would not
 give a shell to.
 
+### Executor telemetry
+
+The executor has no collector connection or OpenTelemetry dependency. After its
+result, it writes a bounded JSON trailer over the existing Unix socket. The
+worker completes gRPC before collecting it and reconstructs sampled spans with
+`readie.telemetry.source=executor_report` under a worker-selected trace context.
+The worker never unpickles the result or accepts executor-selected trace IDs.
+
+Trailer bodies are limited to 8 KiB and seven fixed phases, with a 100 ms absolute
+read deadline and at most 64 simultaneous collectors. Validation checks required
+fields, integer bounds, intervals, clock placement, and allowlisted categories.
+No arguments, results, output, package specifications, or exception text enter
+spans or telemetry diagnostics. Missing, invalid, or dropped telemetry does not
+change the completed execution result or trigger a retry.
+
+User code shares the executor process, so timings remain untrusted assertions.
+Do not use them for billing or authoritative availability data. Crashes and
+incomplete results can lose all executor observations.
+
 ### Client telemetry
 
 The collector remains private. Opted-in clients submit bounded completion reports

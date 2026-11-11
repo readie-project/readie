@@ -79,6 +79,25 @@ A missing or wrong token receives `UNAUTHENTICATED`. The comparison is constant-
 
 The check sits behind an `Authenticator` protocol, so a deployment can replace the single shared token with a stronger mechanism.
 
+## Executor telemetry
+
+The executor sends timing observations over its existing Unix socket, after the
+result message. It has no collector connection or OpenTelemetry dependency. The
+worker completes gRPC before collecting the trailer and reconstructs spans with
+`readie.telemetry.source=executor_report` under its saved attempt context.
+
+The worker limits JSON to 8 KiB and seven fixed phases, uses an absolute 100 ms
+read deadline, and admits at most 64 concurrent collectors. It validates fields,
+integer bounds, intervals, clock placement, and fixed outcomes. Metadata never
+enters the forwarded result and contains no arguments, output, results, package
+specifications, exception text, or executor-selected trace identity. Diagnostics
+do not log the body.
+
+A submitted function shares the reporting process and can falsify timings. These
+observations are not billing or authoritative availability data. Invalid or
+missing telemetry cannot fail an already delivered result or trigger a retry.
+See [Executor protocol](/docs/architecture/executor-protocol#telemetry-trailer).
+
 ## Client telemetry
 
 The collector is private. Opted-in clients submit reports through `ProxyService/SubmitClientReport` on the router, under the same authentication policy as execution. A report additionally requires a random 256-bit per-execution capability returned in initial metadata. It binds to server-held trace context, not to a client-selected request ID. Public trace context, sampling flags, and baggage are ignored; internal router-to-worker propagation remains enabled.

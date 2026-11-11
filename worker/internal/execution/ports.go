@@ -75,7 +75,10 @@ type Sink interface {
 
 // Request is one execution request.
 type Request struct {
-	Ref registry.ExecutionRef
+	// ResponseDone closes after the transport finishes its response. Nil is
+	// reserved for transportless callers, whose response ends when Run returns.
+	ResponseDone <-chan struct{}
+	Ref          registry.ExecutionRef
 	// ContainerID names a warm container to reuse. Empty provisions a new one.
 	ContainerID  string
 	CheckpointID string

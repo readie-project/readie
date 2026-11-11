@@ -24,7 +24,7 @@ EXECUTOR_ARGV: tuple[str, ...] = ("python", "-u", "-m", "readie_executor")
 #: The executor wire format the rootfs speaks, recorded in the manifest. The
 #: worker refuses a generation whose version it does not implement. Must match
 #: readie_executor.protocol.PROTOCOL_VERSION.
-EXECUTOR_PROTOCOL = 2
+EXECUTOR_PROTOCOL = 3
 
 # Support upto 6 decimal places for `alpha` value
 ALPHA_PRECISION = 6

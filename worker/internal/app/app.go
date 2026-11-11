@@ -673,15 +673,15 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 
 		// The server draining no longer guarantees every in-flight execution's
-		// container is gone: release now finishes in the background rather
-		// than before the RPC returns. Give stragglers up to ReleaseTimeout -
-		// the bound already placed on any single release - to land, then let
+		// container is gone: telemetry collection and release finish in the
+		// background. Give stragglers the trailer budget plus ReleaseTimeout
+		// to land, then let
 		// CleanupOrphans reconcile whatever is still left. A race between the
 		// two is a harmless double-cleanup: Destroy already tolerates
 		// ErrNotFound/ErrConflict.
 		if step.name == "gRPC server" && a.manager != nil {
 			if a.runner != nil {
-				waitCtx, cancelWait := context.WithTimeout(ctx, a.cfg.ReleaseTimeout)
+				waitCtx, cancelWait := context.WithTimeout(ctx, a.runner.FinalizationTimeout())
 				if err := a.runner.WaitPendingReleases(waitCtx); err != nil {
 					a.log.Warn("container releases still pending after drain window; cleanup orphans will finish what's left",
 						logging.KeyError, err)

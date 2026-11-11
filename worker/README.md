@@ -156,9 +156,9 @@ directory determines what the build can see.
 
 ## Request flow
 
-`execution.Runner.Run` owns one request. The executor response reader and the
-stats sampler publish to a single channel, and only the goroutine that called
-`Run` drains it into the `Sink`. gRPC streams are not safe for concurrent sends
+`execution.Runner.Run` owns one request. The executor response reader publishes
+to a channel, and only the goroutine that called `Run` drains it into the `Sink`.
+The stats sampler reports utilization separately through the registry. gRPC streams are not safe for concurrent sends
 and corrupt frames rather than failing cleanly, so this single-owner rule is
 required.
 
@@ -176,7 +176,11 @@ both groups together would deadlock.
 Cleanup runs through a deferred `Release` that reads an outcome variable. The
 zero value of that variable destroys the sandbox. Success is recorded on the
 final line, so every early return fails safe. The release context is detached
-so that cleanup survives the deadline that triggered it.
+so that cleanup survives the deadline that triggered it. After a complete result,
+a tracked finalizer waits for gRPC's end notification, reads the telemetry trailer,
+closes the executor socket, and releases the container. The RPC does not wait for
+this work. A later call naming the same container waits for its prior finalizer;
+other containers proceed independently.
 
 ## Tracing
 
@@ -201,9 +205,33 @@ error status on the affected spans. A failed attempt can be retried
 without marking a successful request as failed, and a release failure does not
 change the RPC result.
 
-Payloads, results, and function output are not included in spans. This
-instrumentation covers the worker only; it does not propagate trace context over
-the executor socket or instrument Python execution inside the sandbox.
+Payloads, results, function output, package specifications, and exception text
+from the executor are not included in spans. For recorded, sampled attempts,
+the worker completes gRPC, reads the executor's bounded JSON trailer, and
+reconstructs an INTERNAL
+`executor execution` child of the ended attempt, with children for `receive`,
+`decode`, `dns`, `install`, `invoke`, `serialize`, and `send`. These spans use
+reported timestamps and monotonic durations, follow parent sampling, and carry
+`readie.telemetry.source=executor_report`. Function failures mark reported spans
+as errors without failing transport spans or changing container reuse.
+Eligibility is captured while the attempt span is active. With tracing disabled
+or the attempt unsampled, finalization closes the socket and releases the
+container without reading telemetry or acquiring a collector slot. A stalled
+trailer therefore adds no telemetry timeout to those calls' container reuse.
+
+The trailer reader has an absolute 100 ms deadline and an 8 KiB size limit.
+Validation rejects unknown/duplicate/missing fields, invalid phase order or
+outcomes, arithmetic overflow, durations beyond the execution timeout, and
+wall-clock anchors outside the attempt window with five seconds of tolerance.
+There are at most 64 concurrent collectors; saturation drops telemetry rather
+than waiting. These are internal constructor defaults, not environment settings.
+Missing or invalid telemetry never triggers a retry or invalidates a result.
+Shutdown drains finalization before runtime and tracer teardown. An immediate
+same-container call can wait for finalization, including a stalled trailer's
+bounded timeout. Crashes and incomplete results can lose executor telemetry.
+
+The sandbox does not contact the collector or receive trace context. Timings
+are untrusted observations, not billing or authoritative availability evidence.
 
 ## Sandbox lifecycle
 
@@ -293,9 +321,10 @@ The executor (`../executor/`) is the socket server. It binds
 `$EXECUTOR_DIR/executor.sock`, which the worker sees at
 `$WORKER_DIR/<id>/executor.sock` through the sandbox's one bind mount.
 
-Both directions are a sequence of length-prefixed chunks that ends with a
-zero-length chunk. The payload is cloudpickle: `{func, args, kwargs}` outbound
-and a result envelope inbound. `internal/executor` implements the worker side.
+Each message is a sequence of length-prefixed chunks ending with a zero-length
+chunk. Protocol 3 sends a cloudpickled `{func, args, kwargs}` request and two
+response messages: the cloudpickled result envelope, then worker-only JSON
+telemetry. Only the result body is forwarded over gRPC. `internal/executor` implements the worker side.
 The Python side is in `../executor/`. Both test suites decode
 `../executor/tests/data/frames.golden.json`, so the two implementations cannot
 drift apart. For the wire format, see the

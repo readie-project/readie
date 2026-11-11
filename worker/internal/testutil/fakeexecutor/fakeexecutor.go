@@ -8,6 +8,7 @@
 package fakeexecutor
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -54,6 +55,10 @@ type Options struct {
 	BindDelay time.Duration
 	// ResponseDelay is the pause before replying in ModeSlowResponse.
 	ResponseDelay time.Duration
+	// Telemetry overrides the default trailer; TelemetryGate delays it without
+	// delaying the result.
+	Telemetry     []byte
+	TelemetryGate <-chan struct{}
 }
 
 // Server is a fake executor listening on a unix socket.
@@ -148,6 +153,7 @@ func (s *Server) run(t *testing.T) {
 
 // handle serves one connection, mirroring app.py's per-request loop.
 func (s *Server) handle(conn net.Conn) {
+	started := time.Now()
 	defer func() { _ = conn.Close() }()
 
 	body, err := s.readRequest(conn)
@@ -188,6 +194,28 @@ func (s *Server) handle(conn net.Conn) {
 		if _, err := conn.Write(append(executor.EncodeLength(len(piece)), piece...)); err != nil {
 			return
 		}
+	}
+	if _, err := conn.Write(executor.Terminator()); err != nil {
+		return
+	}
+
+	if s.opts.TelemetryGate != nil {
+		select {
+		case <-s.opts.TelemetryGate:
+		case <-s.stop:
+			return
+		}
+	}
+	data := s.opts.Telemetry
+	if data == nil {
+		duration := time.Since(started).Nanoseconds()
+		data, _ = json.Marshal(executor.Telemetry{
+			StartTimeUnixNS: started.UnixNano(), DurationNS: duration, Outcome: "success",
+			Phases: []executor.Phase{{Name: "receive", DurationNS: duration, Outcome: "success"}},
+		})
+	}
+	if _, err := conn.Write(append(executor.EncodeLength(len(data)), data...)); err != nil {
+		return
 	}
 	if _, err := conn.Write(executor.Terminator()); err != nil {
 		return

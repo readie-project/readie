@@ -15,6 +15,7 @@ from readie_executor.codec import DecodeError, decode_call, encode_result
 from readie_executor.config import Settings
 from readie_executor.install import install_packages
 from readie_executor.network import ensure_dns
+from readie_executor.telemetry import TELEMETRY_TIMEOUT, Clock, RequestTimings
 
 if TYPE_CHECKING:
     from typing import Any
@@ -58,8 +59,9 @@ class ExecutorServer:
     budget at all.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, clock: Clock | None = None) -> None:
         self._settings = settings
+        self._clock = clock
         self._socket: socket.socket | None = None
         self._closed = False
 
@@ -137,58 +139,76 @@ class ExecutorServer:
         request and stay available for the next one, because the container it
         lives in is meant to be reused.
         """
+        timings = RequestTimings(self._clock) if self._clock is not None else RequestTimings()
         try:
             print("[executor] received request", flush=True)
-            raw = protocol.read_message(conn, chunk_size=self._settings.chunk_size)
+            with timings.phase("receive"):
+                raw = protocol.read_message(conn, chunk_size=self._settings.chunk_size)
         except protocol.ProtocolError as exc:
             # A framing failure means the peer is not speaking this protocol, so
             # there is nothing it would understand coming back. Log and close.
             print(f"[executor] malformed request: {exc}", file=sys.stderr, flush=True)
             return
 
-        envelope, output = self._run(raw)
+        envelope, output = self._run(raw, timings)
         envelope["output"] = output
 
-        try:
-            payload = encode_result(envelope)
-        except Exception as exc:  # noqa: BLE001 - cloudpickle raises broadly
-            # The value came back but will not travel. Report *that* rather than
-            # closing silently, which would look identical to a crash.
-            payload = encode_result(
-                protocol.failure_envelope(exc, traceback.format_exc()),
-            )
+        with timings.phase("serialize"):
+            try:
+                payload = encode_result(envelope)
+            except Exception as exc:  # noqa: BLE001 - cloudpickle raises broadly
+                timings.fail("serialize_error")
+                payload = encode_result(
+                    protocol.failure_envelope(exc, traceback.format_exc()),
+                )
 
         try:
-            protocol.write_message(conn, payload, chunk_size=self._settings.chunk_size)
+            with timings.phase("send"):
+                protocol.write_message(conn, payload, chunk_size=self._settings.chunk_size)
         except OSError as exc:
             # The worker hung up mid-response, usually because the client
             # cancelled. Not this process's problem, and not worth a traceback.
             print(f"[executor] could not send response: {exc}", file=sys.stderr, flush=True)
+            return
 
-    def _run(self, raw: bytes) -> tuple[dict[str, Any], list[str]]:
+        # Nothing below this point is on the client's result path. The worker
+        # reads this second message only after finishing its gRPC response.
+        try:
+            data = timings.serialize()
+            conn.settimeout(TELEMETRY_TIMEOUT)
+            protocol.write_message(conn, data, chunk_size=self._settings.chunk_size)
+        except Exception:  # noqa: BLE001 - observability must not stop the serving loop
+            print("[executor] telemetry unavailable", file=sys.stderr, flush=True)
+
+    def _run(self, raw: bytes, timings: RequestTimings) -> tuple[dict[str, Any], list[str]]:
         """Decode, install packages, and invoke, turning any failure into a response.
 
         Every path returns an envelope. Version 1 returned nothing when the
         function raised, so the caller saw an empty response and had to infer
         what happened from log lines; that inference is what this removes.
 
-        Installing runs unconditionally, even for a package the rootfs already
-        carries: every request restores a fresh container, so there is no warm
-        state to check an "already installed" claim against. DNS is bootstrapped
-        unconditionally too, before anything that might need it.
+        Installing runs unconditionally, including for packages already present,
+        so uv resolves each call's requested requirements. DNS is bootstrapped
+        after decoding and before installation and invocation.
         """
         try:
-            call = decode_call(raw)
+            with timings.phase("decode"):
+                call = decode_call(raw)
         except DecodeError as exc:
             print(f"[executor] {exc}", file=sys.stderr, flush=True)
             return protocol.failure_envelope(exc, traceback.format_exc()), []
 
-        ensure_dns()
+        try:
+            with timings.phase("dns"):
+                ensure_dns()
+        except Exception as exc:  # noqa: BLE001 - DNS failures are failed calls, not process exits
+            return protocol.failure_envelope(exc, traceback.format_exc()), []
         output: list[str] = []
         if call.packages:
             print(f"[executor] installing packages: {sorted(call.packages)}", flush=True)
         try:
-            install_output = install_packages(list(call.packages))
+            with timings.phase("install"):
+                install_output = install_packages(list(call.packages))
         except Exception as exc:  # noqa: BLE001 - any install failure must produce a response, not a crash
             print(f"[executor] {exc}", file=sys.stderr, flush=True)
             return protocol.failure_envelope(exc, traceback.format_exc()), output
@@ -202,7 +222,8 @@ class ExecutorServer:
                 contextlib.redirect_stderr(_OutputTee(sys.stderr, output)),
             ):
                 try:
-                    value = call.invoke()
+                    with timings.phase("invoke"):
+                        value = call.invoke()
                 except BaseException as exc:  # noqa: BLE001 - user code may raise anything
                     # Including SystemExit and KeyboardInterrupt: a called function
                     # raising either is still a failed call, not a reason to take the

@@ -25,7 +25,8 @@ the one thing they share.
 | [`pipeline/`](pipeline/) | Python 3.13 | Offline: corpus, package analysis, checkpoint planning and capture        |
 | [`playground/`](playground/) | Python 3.12 | FastAPI service behind the docs playground; runs visitor code under gVisor; calls Readie like any client |
 
-`protos/` is the single source of truth for every wire contract.
+`protos/` is the single source of truth for protobuf contracts. The executor's
+framed cloudpickle and JSON socket contract is documented in `executor/README.md`.
 `pipeline/Dockerfile` is the single source of truth for everything a checkpoint is
 bound to. It has two targets: `pipeline`, the tool that captures checkpoints, and
 `worker-base`, the base image that carries the pinned runsc, the root filesystem,
@@ -104,10 +105,12 @@ See [Change protos](https://readie.org/docs/contributing/changing-protos).
 
 ## Changing the executor protocol
 
-`executor/`, `worker/internal/executor`, and `pkg` implement the same wire format
-in two languages. A change must land in both languages together. A cross-language
-golden fixture (`executor/tests/data/frames.golden.json`, read by the Go tests)
-prevents silent drift.
+`executor/` and `worker/internal/executor` implement the socket framing in two
+languages. Protocol 3 returns a cloudpickled result followed by a bounded JSON
+telemetry message. The worker forwards only the result to `pkg`; the SDK does
+not implement socket framing. A change must land in both languages together. A
+cross-language golden fixture (`executor/tests/data/frames.golden.json`, read by
+the Go tests) prevents silent drift.
 
 If the framing changes, bump `executor_protocol` in the generation manifest. The
 worker refuses a generation whose protocol it does not implement, and it names

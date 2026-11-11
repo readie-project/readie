@@ -58,6 +58,7 @@ func NewServer(listener net.Listener, svc pb.ExecutionServiceServer, opts Server
 	opts = opts.withDefaults()
 
 	grpcServer := grpc.NewServer(
+		grpc.StatsHandler(completionHandler{}),
 		grpc.MaxRecvMsgSize(opts.MaxRecvMsgSize),
 		grpc.MaxSendMsgSize(opts.MaxSendMsgSize),
 	)

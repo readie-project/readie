@@ -55,7 +55,7 @@ func TestTracing_InjectedTracerFollowsRequestThroughWorkerAndRelease(t *testing.
 		assert.Equal(t, codes.Unset, span.Status().Code)
 		assert.NotContains(t, fmt.Sprint(span.Attributes(), span.Events()), "private request")
 	}
-	require.Len(t, byName, 5)
+	require.Len(t, byName, 7)
 	server := byName["ExecutionService/RequestExecution"]
 	attempt := byName["execution attempt"]
 	require.NotNil(t, server)
@@ -63,11 +63,20 @@ func TestTracing_InjectedTracerFollowsRequestThroughWorkerAndRelease(t *testing.
 	assert.Equal(t, trace.SpanKindServer, server.SpanKind())
 	assert.Equal(t, "00f067aa0ba902b7", server.Parent().SpanID().String())
 	assert.Equal(t, server.SpanContext().SpanID(), attempt.Parent().SpanID())
-	for _, name := range []string{"container acquire", "executor dial", "container release"} {
+	for _, name := range []string{"container acquire", "executor dial", "container release", "executor execution"} {
 		span := byName[name]
 		require.NotNil(t, span, name)
 		assert.Equal(t, attempt.SpanContext().SpanID(), span.Parent().SpanID(), name)
 	}
+	reported := byName["executor execution"]
+	receive := byName["executor receive"]
+	require.NotNil(t, receive)
+	assert.Equal(t, reported.SpanContext().SpanID(), receive.Parent().SpanID())
+	assert.Equal(t, reported.StartTime(), receive.StartTime())
+	assert.Equal(t, reported.EndTime(), receive.EndTime())
+	source := attribute.NewSet(reported.Attributes()...)
+	value, _ := source.Value("readie.telemetry.source")
+	assert.Equal(t, "executor_report", value.AsString())
 	attrs := attribute.NewSet(server.Attributes()...)
 	id, _ := attrs.Value("request_id")
 	assert.Equal(t, "req-traced", id.AsString())

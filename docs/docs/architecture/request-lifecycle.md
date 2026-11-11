@@ -22,10 +22,13 @@ sequenceDiagram
     W->>W: get container, report busy
     W->>E: framed request over unix socket
     E->>E: install packages, run function
-    E-->>W: framed result envelope
+    E-->>W: result message, then telemetry trailer
     W-->>R: payload chunks
     R-->>C: payload chunks
+    W-->>R: finish execution stream
+    R-->>C: finish execution stream
     C->>C: unpickle envelope, return value or raise
+    W->>W: read telemetry, reconstruct spans, release container
 ```
 
 ## 1. Client packs the call
@@ -94,7 +97,24 @@ The executor captures the stdout and stderr of the function and returns them ins
 
 ## 8. Cleanup
 
-After the response, the worker releases the container in the background. If the call had a session and succeeded, the container stays running and is marked ready for the next call. Otherwise, the worker destroys the container. In both cases, the router closes its lease on the call.
+After gRPC finishes, the worker reads the executor's second response message, a bounded JSON timing trailer, only for recorded, sampled attempts. It reconstructs executor spans in the background. With tracing disabled or the attempt unsampled, it skips collector admission and trailer reading. This collection never delays completion of the current client RPC. The worker then closes the executor socket and releases the container. If the call had a session and succeeded, the container stays running and is marked ready for the next call. Otherwise, the worker destroys the container. In both cases, the router closes its lease on the call.
+
+## Executor telemetry
+
+The executor records fixed phases for request reception, call decoding, DNS setup,
+package installation, invocation, serialization, and result transmission. The
+worker reconstructs an `executor execution` span and phase children under the
+ended worker attempt, using the reported wall-clock anchor and monotonic offsets.
+Spans carry `readie.telemetry.source=executor_report` and contain no user payload,
+output, package specifications, or exception text. The executor does not connect
+to the collector.
+
+The trailer is limited to 8 KiB, seven phases, and a 100 ms worker read deadline.
+Collection saturation or invalid, absent, or stalled telemetry drops observations
+without changing the result or triggering a retry. An immediate call reusing the
+same container waits for its previous finalization; other containers proceed
+independently. See [Executor protocol](/docs/architecture/executor-protocol#telemetry-trailer)
+for the schema and validation rules.
 
 ## Client completion reports
 

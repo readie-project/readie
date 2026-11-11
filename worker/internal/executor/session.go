@@ -27,6 +27,8 @@ type SessionOptions struct {
 	// complete", because nothing on the wire said where it ended. Framing says
 	// so explicitly, and this is now what it sounds like: a stalled peer.
 	IdleTimeout time.Duration
+	// TelemetryTimeout bounds the entire post-response trailer, not each read.
+	TelemetryTimeout time.Duration
 }
 
 func (o SessionOptions) withDefaults() SessionOptions {
@@ -41,6 +43,9 @@ func (o SessionOptions) withDefaults() SessionOptions {
 	}
 	if o.IdleTimeout <= 0 {
 		o.IdleTimeout = 30 * time.Second
+	}
+	if o.TelemetryTimeout <= 0 {
+		o.TelemetryTimeout = TelemetryTimeout
 	}
 	return o
 }
@@ -126,11 +131,22 @@ func (s *Session) ReadResponse(ctx context.Context, sink func([]byte) error) err
 
 	// AfterFunc runs immediately when ctx is already done, so an
 	// already-cancelled caller never performs a blocking read.
+	finished := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
+		defer close(finished)
 		cancelled.Store(true)
 		_ = s.conn.SetReadDeadline(time.Now())
 	})
-	defer stop()
+	// The telemetry reader runs after `ReadResponse`` finishes.
+	// If we don't wait for the AfterFunc to finish before returning,
+	// the telemetry reader might have its ReadDeadline set while running,
+	// causing it to fail. Thus, we need to wait for the AfterFunc with
+	// this finished channel.
+	defer func() {
+		if !stop() {
+			<-finished
+		}
+	}()
 
 	r := &frameReader{session: s, cancelled: &cancelled}
 	buf := make([]byte, s.opts.ChunkSize)

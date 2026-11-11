@@ -4,14 +4,15 @@ Nothing here opens a socket. Everything operates on the two-method ``Reader``
 and ``Writer`` seams below, so framing is testable with an in-memory stream and
 with one that hands over a single byte at a time.
 
-# Protocol (version 2)
+# Protocol (version 3)
 
 A message is a sequence of length-prefixed chunks ending in a zero-length one::
 
     message:   ([8-byte big-endian length][chunk])* [8 zero bytes]
 
     request:   one message, the cloudpickle of {func, args, kwargs}
-    response:  one message, the cloudpickle of an envelope
+    response:  one message, the cloudpickle of an envelope,
+               then one message containing bounded JSON telemetry
 
     envelope = {"ok": True,  "value": <return value>}
              | {"ok": False, "exc_type": str, "message": str, "traceback": str}
@@ -58,7 +59,7 @@ from typing import Any, Protocol
 #: ``executor_protocol`` so the worker can refuse a checkpoint whose executor
 #: speaks something else, rather than hanging against a peer that will never
 #: send a terminator it recognises.
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 #: Big-endian unsigned 64-bit. Big-endian because it is the wire convention and
 #: reads correctly in a hex dump; 64-bit because a payload can legitimately be a

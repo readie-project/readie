@@ -136,6 +136,7 @@ func (s *ExecutionService) RequestExecution(stream executionStream) error {
 	// concurrent sends on a gRPC stream corrupt frames rather than failing.
 	sink := execution.NewSerialSink(&streamSink{stream: stream})
 
+	req.ResponseDone, _ = ctx.Value(responseDoneKey{}).(chan struct{})
 	result, err := s.runner.Run(ctx, req, streamSource{stream: stream}, sink)
 	if err != nil {
 		log.Error("execution failed", logging.KeyError, err)

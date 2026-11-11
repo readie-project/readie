@@ -3,6 +3,7 @@ package execution_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -188,6 +189,7 @@ type pipeDialer struct {
 	// writing anything - the executor produced no response at all.
 	noReply     bool
 	dialErr     error
+	wrapConn    func(executor.Conn) executor.Conn
 	stop        chan struct{}
 	mu          sync.Mutex
 	requestBody []byte
@@ -200,6 +202,9 @@ func (d *pipeDialer) Dial(_ context.Context, _ string) (executor.Conn, error) {
 
 	client, server := net.Pipe()
 	go d.serve(server)
+	if d.wrapConn != nil {
+		return d.wrapConn(client), nil
+	}
 	return client, nil
 }
 
@@ -230,6 +235,7 @@ func readFramedMessage(r io.Reader) ([]byte, error) {
 }
 
 func (d *pipeDialer) serve(conn executor.Conn) {
+	started := time.Now()
 	defer func() { _ = conn.Close() }()
 
 	body, err := readFramedMessage(conn)
@@ -259,6 +265,17 @@ func (d *pipeDialer) serve(conn executor.Conn) {
 		// executor killed mid-reply. Version 1 could not tell this from a
 		// finished response.
 		_, _ = io.Copy(io.Discard, conn)
+		return
+	}
+	if _, err := conn.Write(executor.Terminator()); err != nil {
+		return
+	}
+	duration := time.Since(started).Nanoseconds()
+	data, _ := json.Marshal(executor.Telemetry{
+		StartTimeUnixNS: started.UnixNano(), DurationNS: duration, Outcome: "success",
+		Phases: []executor.Phase{{Name: "receive", DurationNS: duration, Outcome: "success"}},
+	})
+	if _, err := conn.Write(append(executor.EncodeLength(len(data)), data...)); err != nil {
 		return
 	}
 	if _, err := conn.Write(executor.Terminator()); err != nil {

@@ -116,6 +116,11 @@ After a change to worker code only, run this step alone. It does not capture che
 | Package measurements | `pipeline/data/metadata/<flavor>.json` |
 | Images | `readie-pipeline-<flavor>`, `readie-worker-base-<flavor>`, `readie-worker-<flavor>` |
 
+Rebuild the generation after an executor protocol change. Protocol 3 includes a
+worker-only JSON timing trailer; existing checkpoints retain the older executor.
+The worker's exact version check rejects mismatched generations, with no runtime
+negotiation or fallback.
+
 The router reads the catalogue to choose a checkpoint for each request. The compose files mount `catalogues/` read-only, so restart the router after replacing a catalogue. The `make clean-artifacts` target removes the manifest and checkpoints for a flavor.
 
 ## Verify

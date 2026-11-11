@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import socket
 import tempfile
 import threading
 from pathlib import Path
+from typing import Any
 
 import cloudpickle
 import pytest
@@ -29,7 +31,13 @@ def call(func: object, *args: object, packages: list[str] | None = None, **kwarg
     )
 
 
-def exchange(request: bytes, *, settings: Settings | None = None) -> dict[str, object]:
+def exchange(
+    request: bytes,
+    *,
+    settings: Settings | None = None,
+    observations: list[dict[str, Any]] | None = None,
+    read_telemetry: bool = True,
+) -> dict[str, object]:
     """Drive one handle() over a socketpair and return the decoded envelope.
 
     A socketpair rather than a mock: the framing bugs worth catching are about
@@ -54,6 +62,11 @@ def exchange(request: bytes, *, settings: Settings | None = None) -> dict[str, o
     client_side.settimeout(10)
     try:
         raw = protocol.read_message(client_side, chunk_size=CHUNK)
+        if read_telemetry:
+            trailer = protocol.read_message(client_side, chunk_size=CHUNK)
+            report = json.loads(trailer)
+            if observations is not None:
+                observations.append(report)
     except TimeoutError:  # pragma: no cover - only on a regression
         pytest.fail("the executor neither responded nor closed the connection")
     finally:
@@ -61,7 +74,10 @@ def exchange(request: bytes, *, settings: Settings | None = None) -> dict[str, o
 
     worker.join(timeout=10)
     assert not worker.is_alive(), "handle() did not return"
-    return protocol.validate_envelope(cloudpickle.loads(raw))
+    envelope = protocol.validate_envelope(cloudpickle.loads(raw))
+    if read_telemetry:
+        assert (report["outcome"] == "success") == envelope["ok"]
+    return envelope
 
 
 def value_of(envelope: dict[str, object]) -> object:
@@ -69,8 +85,45 @@ def value_of(envelope: dict[str, object]) -> object:
     return envelope["value"]
 
 
+def test_a_dns_failure_returns_a_failure_envelope(monkeypatch):
+    def broken():
+        raise OSError("DNS unavailable")
+
+    monkeypatch.setattr("readie_executor.server.ensure_dns", broken)
+    observations: list[dict[str, Any]] = []
+    assert exchange(call(add, 2, 40), observations=observations)["ok"] is False
+    assert observations[0]["outcome"] == "dns_error"
+    assert "invoke" not in [phase["phase"] for phase in observations[0]["phases"]]
+
+
+def test_a_telemetry_encoding_failure_does_not_lose_the_result(monkeypatch):
+    def broken(self):
+        raise ValueError("private exception")
+
+    monkeypatch.setattr("readie_executor.server.RequestTimings.serialize", broken)
+    assert value_of(exchange(call(add, 2, 40), read_telemetry=False)) == 42
+
+
 def test_a_call_round_trips():
-    assert value_of(exchange(call(add, 2, 40))) == 42
+    observations: list[dict[str, Any]] = []
+    assert value_of(exchange(call(add, 2, 40), observations=observations)) == 42
+    report = observations[0]
+    assert [phase["phase"] for phase in report["phases"]] == [
+        "receive",
+        "decode",
+        "dns",
+        "install",
+        "invoke",
+        "serialize",
+        "send",
+    ]
+    assert all(
+        0
+        <= phase["start_offset_ns"]
+        <= phase["start_offset_ns"] + phase["duration_ns"]
+        <= report["duration_ns"]
+        for phase in report["phases"]
+    )
 
 
 def test_function_output_is_returned_with_the_result():
@@ -109,7 +162,10 @@ def test_a_raising_function_returns_a_failure_envelope_with_its_traceback():
     def explode() -> None:
         raise ValueError("boom")
 
-    envelope = exchange(call(explode))
+    observations: list[dict[str, Any]] = []
+    envelope = exchange(call(explode), observations=observations)
+    assert observations[0]["outcome"] == "invoke_error"
+    assert "boom" not in json.dumps(observations[0])
 
     assert envelope["ok"] is False
     assert envelope["exc_type"] == "ValueError"
@@ -142,8 +198,10 @@ def test_an_unpicklable_result_is_reported_rather_than_swallowed():
     def make_a_lock() -> object:
         return threading.Lock()
 
-    envelope = exchange(call(make_a_lock))
+    observations: list[dict[str, Any]] = []
+    envelope = exchange(call(make_a_lock), observations=observations)
     assert envelope["ok"] is False
+    assert observations[0]["outcome"] == "serialize_error"
 
 
 def test_packages_are_installed_before_the_call_runs(monkeypatch: pytest.MonkeyPatch):

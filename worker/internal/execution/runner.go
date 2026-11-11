@@ -34,6 +34,8 @@ type RunnerConfig struct {
 	StatusTimeout time.Duration
 
 	SessionOptions executor.SessionOptions
+	// TelemetryCollectors bounds concurrent post-response trailer work.
+	TelemetryCollectors int
 
 	// StreamLogs and StreamStats enable the best-effort side channels.
 	StreamLogs  bool
@@ -82,6 +84,9 @@ func (c RunnerConfig) withDefaults() RunnerConfig {
 	if c.MemoryHeadroom <= 0 || c.MemoryHeadroom > 1 {
 		c.MemoryHeadroom = 0.9
 	}
+	if c.TelemetryCollectors <= 0 {
+		c.TelemetryCollectors = 64
+	}
 	return c
 }
 
@@ -94,11 +99,14 @@ type Runner struct {
 	log        *slog.Logger
 	trace      trace.Tracer
 
-	// releaseWG tracks container releases still running in the background
+	// releaseWG tracks telemetry collection and container releases in the background
 	// after their owning RPC has already returned. Shutdown waits on it
 	// (bounded) before sweeping orphans, so a straggling Destroy isn't raced
 	// by that sweep as a matter of course.
-	releaseWG sync.WaitGroup
+	releaseWG      sync.WaitGroup
+	finalizeMu     sync.Mutex
+	finalizing     map[string]chan struct{}
+	telemetrySlots chan struct{}
 }
 
 // NewRunner builds a Runner.
@@ -116,13 +124,16 @@ func NewRunner(
 	if tracer == nil {
 		tracer = noop.NewTracerProvider().Tracer("worker")
 	}
+	cfg = cfg.withDefaults()
 	return &Runner{
-		containers: containers,
-		dialer:     dialer,
-		reporter:   reporter,
-		cfg:        cfg.withDefaults(),
-		log:        log,
-		trace:      tracer,
+		finalizing:     make(map[string]chan struct{}),
+		telemetrySlots: make(chan struct{}, cfg.TelemetryCollectors),
+		containers:     containers,
+		dialer:         dialer,
+		reporter:       reporter,
+		cfg:            cfg,
+		log:            log,
+		trace:          tracer,
 	}
 }
 
@@ -143,6 +154,9 @@ func NewRunner(
 // accumulated in-container state anyway. Growing memory only ever helps a
 // fresh container, which this always has room to create.
 func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink Sink) (Result, error) {
+	if err := r.waitFinalization(ctx, req.ContainerID); err != nil {
+		return Result{}, err
+	}
 	rec := &recordingSource{inner: src}
 
 	result, err := r.runOnce(ctx, req, rec, sink)
@@ -168,14 +182,14 @@ func (r *Runner) Run(ctx context.Context, req Request, src PayloadSource, sink S
 }
 
 // WaitPendingReleases blocks until every container release started by a past
-// runOnce has finished, or ctx is done, whichever comes first.
+// runOnce, including its telemetry collection, has finished, or ctx is done.
 //
 // It exists for shutdown: the RPC response no longer waits on teardown, so
 // the gRPC server draining is no longer proof that a request's container is
 // gone. This gives the caller a bounded window to let straggling releases
-// land before CleanupOrphans double-checks the runtime. No single release
-// can run longer than ReleaseTimeout by construction, so callers should bound
-// ctx by roughly that same duration.
+// land before CleanupOrphans double-checks the runtime. Each release
+// has its own ReleaseTimeout; callers should allow FinalizationTimeout to
+// include the trailer budget as well.
 func (r *Runner) WaitPendingReleases(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -235,8 +249,8 @@ func (r *Runner) grownRequest(req Request) (Request, bool) {
 
 // runOnce executes a request and relays its output to sink.
 //
-// Concurrency shape: several producers (the response reader, the log tailer,
-// the stats sampler) feed a single events channel, and only this goroutine
+// Concurrency shape: the response reader feeds a single events channel, and
+// only this goroutine
 // drains it into sink. That single-owner rule is what makes the sink safe
 // without locking; the previous implementation sent to the gRPC stream from
 // two goroutines at once, which is a data race by construction.
@@ -246,15 +260,20 @@ func (r *Runner) grownRequest(req Request) (Request, bool) {
 // explicitly on the final line, so every early return - including a timeout -
 // fails safe.
 func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, sink Sink) (result Result, runErr error) {
+	attemptStart := time.Now()
+	attemptFinished := make(chan struct{})
 	ctx, span := r.trace.Start(ctx, "execution attempt", trace.WithAttributes(
 		attribute.String(logging.KeyWorkerID, r.cfg.WorkerID),
 		attribute.String(logging.KeyRequestID, req.Ref.RequestID),
 		attribute.String(logging.KeySessionID, req.Ref.SessionID),
 		attribute.Int64("mem_alloc", req.Alloc.Memory().Alloc),
 	))
+	// Finalization runs after this span ends, when IsRecording is always false.
+	collectTelemetry := span.IsRecording() && span.SpanContext().IsSampled()
 	defer func() {
 		span.SetAttributes(attribute.Int("bytes_sent", result.BytesSent))
 		endSpan(span, runErr)
+		close(attemptFinished)
 	}()
 
 	log := r.log.With(
@@ -287,42 +306,9 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 	log = log.With(logging.KeyContainerID, handle.ID)
 
 	outcome := container.OutcomeFailure
+	var session *executor.Session
 	defer func() {
-		// Release runs in the background: the caller has already read outcome
-		// by return time (nothing writes it afterward), and teardown is no
-		// longer something the RPC response waits on. Cleanup must survive
-		// the very deadline that caused it, so it runs on a context detached
-		// from execCtx and from ctx's cancellation.
-		releaseOutcome := outcome
-
-		r.releaseWG.Add(1)
-		go func() {
-			defer r.releaseWG.Done()
-			releaseCtx, releaseCancel := context.WithTimeout(
-				context.WithoutCancel(ctx), r.cfg.ReleaseTimeout)
-			defer releaseCancel()
-			// Cleanup can outlive the attempt, but retains its trace parent.
-			releaseCtx, releaseSpan := r.trace.Start(releaseCtx, "container release", trace.WithAttributes(
-				attribute.String(logging.KeyContainerID, handle.ID),
-				attribute.String("outcome", releaseOutcome.String()),
-			))
-			defer releaseSpan.End()
-			defer func() {
-				if rec := recover(); rec != nil {
-					releaseErr := fmt.Errorf("panic during background container release: %v", rec)
-					releaseSpan.RecordError(releaseErr)
-					releaseSpan.SetStatus(codes.Error, releaseErr.Error())
-					log.Error("panic during background container release",
-						"outcome", releaseOutcome.String(), "panic", rec)
-				}
-			}()
-
-			if releaseErr := r.containers.Release(releaseCtx, req.Ref, handle, releaseOutcome); releaseErr != nil {
-				releaseSpan.RecordError(releaseErr)
-				releaseSpan.SetStatus(codes.Error, releaseErr.Error())
-				log.Error("could not release container", "outcome", releaseOutcome.String(), logging.KeyError, releaseErr)
-			}
-		}()
+		r.finalize(ctx, req, handle, session, outcome, collectTelemetry, attemptStart, time.Now(), attemptFinished, log)
 	}()
 
 	// The router reads the scheduling decision off the first response, so the
@@ -338,21 +324,13 @@ func (r *Runner) runOnce(ctx context.Context, req Request, src PayloadSource, si
 		return Result{}, fmt.Errorf("dial executor: %w", err)
 	}
 	span.AddEvent("executor connected")
-	session := executor.NewSession(conn, r.cfg.SessionOptions, log)
-	defer func() {
-		if err := session.Close(); err != nil {
-			log.Debug("closing executor session", logging.KeyError, err)
-		}
-	}()
+	session = executor.NewSession(conn, r.cfg.SessionOptions, log)
 
 	events := make(chan event, r.cfg.EventBuffer)
 
-	// The pumps are split into two groups by lifetime. The primary group does
-	// the work the execution is for; the side group carries logs and stats,
-	// which follow open-ended streams that only end when the container does.
-	// Waiting on both together would deadlock: a log tail blocks until the
-	// execution is cancelled, and the execution is not cancelled until it has
-	// finished waiting.
+	// The primary group ends at the result terminator. The stats side group
+	// follows an open-ended stream, so cancel it rather than waiting for it
+	// to end naturally. Telemetry belongs to the post-RPC finalizer.
 	primary, primaryCtx := errgroup.WithContext(execCtx)
 	primary.Go(func() error { return r.pumpRequest(primaryCtx, req, src, session) })
 	primary.Go(func() error { return r.pumpResponse(primaryCtx, session, events) })

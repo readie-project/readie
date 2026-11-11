@@ -113,7 +113,7 @@ checkpoints/
   ...
 ```
 
-- **`manifest.json`** records the gVisor version, a fingerprint of the sandbox spec, the executor command, the executor protocol version, the Python path, and the overlay and network modes. The worker refuses checkpoints whose protocol version it does not implement.
+- **`manifest.json`** records the gVisor version, a fingerprint of the sandbox spec, the executor command, the executor protocol version, the Python path, and the overlay and network modes. The worker requires an exact executor protocol match. Protocol 3 adds the post-result JSON timing trailer; deploy a rebuilt rootfs and checkpoint generation with its matching worker.
 - **`meta.json`** repeats the version and fingerprint for one checkpoint and lists its imports.
 - **`catalogue.json`** is for the router. It lists every measured package with its memory size, import time, and dependencies, plus the contents and size of each checkpoint. It also stores the measured `alpha`.
 

@@ -53,7 +53,7 @@ Dotted lines show offline work. The pipeline builds checkpoints and writes a cat
 Components agree on two contracts. A change to either requires coordinated edits.
 
 - **Protos.** `protos/` contains four files: `proxy.proto` (client to router), `execution.proto` (router to worker), `registry.proto` (workers reporting to the router), and `resources.proto` (shared resource budgets). Generated code is committed. See [Changing protos](/docs/contributing/changing-protos).
-- **Executor wire format.** The worker and the executor frame bytes the same way over their socket. The format is implemented in two languages. See [Changing the executor protocol](/docs/contributing/changing-executor-protocol).
+- **Executor wire format.** The worker and the executor frame bytes the same way over their socket. The format is implemented in two languages; protocol 3 returns a result message and a worker-only JSON timing trailer. See [Changing the executor protocol](/docs/contributing/changing-executor-protocol).
 
 ## Test locations
 
@@ -73,7 +73,7 @@ Python components keep code under `src/<package>/` and tests under `tests/`:
 
 - `pkg/src/readie/` contains the SDK. `_proto/` holds generated code.
 - `router/src/readie_router/` contains `scheduling/` (placement), `workers/` (communication with workers), `grpcserver/` (the gRPC services), and `proto/` (generated code).
-- `executor/src/readie_executor/` contains `protocol.py` (framing) and `server.py`.
+- `executor/src/readie_executor/` contains `protocol.py` (framing), `telemetry.py` (timings and JSON), and `server.py`.
 - `pipeline/src/readie_pipeline/` contains `corpus/`, `metadata/`, `planning/`, and `capture/`.
 
 In Go, `worker/cmd/` holds two programs (`worker` and `ocispec`) and `worker/internal/` holds the packages. `worker/proto/` is generated.
