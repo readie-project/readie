@@ -7,7 +7,6 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -23,19 +22,11 @@ from readie import (
 from readie_playground import userfn
 
 
-class Lane(StrEnum):
-    """Which start path a run used."""
-
-    OPTIMIZED = "optimized"
-    COLD = "cold"
-
-
 @dataclass(frozen=True, slots=True)
 class Event:
     """One frame of the response stream."""
 
     kind: str  # "log" or "done"
-    lane: Lane
     text: str = ""
     ok: bool = True
     duration_s: float = 0.0
@@ -112,13 +103,12 @@ class Runner:
     ) -> AsyncGenerator[Event, None]:
         """Yield output followed by one completion event."""
         options = options or ExecutionOptions()
-        lane = Lane.COLD if options.remote.get("disable_optimized_execution") else Lane.OPTIMIZED
         error = userfn.check_step(code)
         if error is not None:
-            yield Event("done", lane, ok=False, error=error)
+            yield Event("done", ok=False, error=error)
             return
         queue: asyncio.Queue[Event] = asyncio.Queue()
-        task = asyncio.create_task(self._lane(code, lane, queue, options))
+        task = asyncio.create_task(self._execute(code, queue, options))
         try:
             while True:
                 event = await queue.get()
@@ -129,8 +119,8 @@ class Runner:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    async def _lane(
-        self, code: str, lane: Lane, queue: asyncio.Queue[Event], options: ExecutionOptions
+    async def _execute(
+        self, code: str, queue: asyncio.Queue[Event], options: ExecutionOptions
     ) -> None:
         sent = 0
         truncated = False
@@ -145,7 +135,7 @@ class Runner:
                 truncated = True
             sent += len(text)
             if text:
-                queue.put_nowait(Event("log", lane, text=text))
+                queue.put_nowait(Event("log", text=text))
 
         start = self._clock()
         ok, error = True, ""
@@ -163,7 +153,6 @@ class Runner:
         queue.put_nowait(
             Event(
                 "done",
-                lane,
                 ok=ok,
                 duration_s=round(self._clock() - start, 3),
                 error=error,

@@ -25,15 +25,16 @@ The response has content type `text/event-stream`:
 
 ```text
 event: log
-data: {"lane": "optimized", "text": "42\n"}
+data: {"text": "42\n"}
 
 event: done
-data: {"lane": "optimized", "ok": true, "duration_s": 0.123, "error": "", "truncated": false}
+data: {"ok": true, "duration_s": 0.123, "error": "", "truncated": false}
 ```
 
 `duration_s` includes function construction, connection and execution; the value
 shown is an example. To run once without checkpoint optimization, set
-`disable_optimized_execution` to `true`. The response then uses the `cold` lane.
+`disable_optimized_execution` to `true`. Both modes return the same event format.
+Each request sends output events followed by one `done` event for its execution.
 
 Omit execution options to use the SDK defaults.
 
@@ -85,6 +86,8 @@ session. Avoid predictable identifiers and do not store secrets in shared sessio
 Send two requests with the same code. Set `disable_optimized_execution` to `false`
 for the optimized execution and `true` for the cold execution. Each request has
 its own output stream and completion event. Omit `session` for independent runs.
+The website playground sends these two requests itself and displays their results
+side by side; the API does not run a comparison within one request.
 
 ## Handle results and errors
 
@@ -94,7 +97,6 @@ Each `done` event contains:
 
 | Field | Meaning |
 | ----- | ------- |
-| `lane` | `optimized` or `cold` |
 | `ok` | Whether execution succeeded |
 | `duration_s` | Backend call duration in seconds |
 | `error` | Execution failure details, or an empty string |

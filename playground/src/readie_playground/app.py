@@ -43,10 +43,9 @@ class ReadieExecutionRequest(BaseModel):
 
 def _frame(event: Event) -> str:
     if event.kind == "log":
-        data: dict[str, object] = {"lane": event.lane.value, "text": event.text}
+        data: dict[str, object] = {"text": event.text}
     else:
         data = {
-            "lane": event.lane.value,
             "ok": event.ok,
             "duration_s": event.duration_s,
             "error": event.error,

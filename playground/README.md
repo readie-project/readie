@@ -51,7 +51,7 @@ timeout. Worker capacity and configured sandbox limits still apply.
 | `READIE_AUTH_TOKEN` | empty | Bearer token for the router, read by the client |
 | `PLAYGROUND_ALLOWED_ORIGINS` | `https://readie.org` | Comma-separated CORS origins |
 | `PLAYGROUND_MAX_CODE_BYTES` | `16384` | Largest accepted source |
-| `PLAYGROUND_MAX_OUTPUT_CHARS` | `65536` | Output kept per lane |
+| `PLAYGROUND_MAX_OUTPUT_CHARS` | `65536` | Output kept per execution |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
 

@@ -23,8 +23,7 @@ async def test_code_only_request_streams_one_execution_as_sse() -> None:
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("text/event-stream")
     assert res.text.count("event: done") == 1
-    assert '"lane": "optimized"' in res.text
-    assert '"lane": "cold"' not in res.text
+    assert '"lane"' not in res.text
 
 
 @pytest.mark.parametrize(
@@ -63,7 +62,7 @@ async def test_healthz() -> None:
 
 
 @pytest.mark.parametrize("cold", [False, True])
-async def test_remote_options_select_one_lane_and_reach_the_backend(cold: bool) -> None:
+async def test_remote_options_execute_once_with_the_same_response_shape(cold: bool) -> None:
     backend = FakeBackend(output="hello\n")
     settings = PlaygroundSettings()
     app = create_app(settings, Runner(backend, settings.max_output_chars))
@@ -83,9 +82,11 @@ async def test_remote_options_select_one_lane_and_reach_the_backend(cold: bool) 
         )
     assert res.status_code == 200
     assert res.text.count("event: done") == 1
-    lane = "cold" if cold else "optimized"
-    assert f'"lane": "{lane}"' in res.text
+    assert '"lane"' not in res.text
     assert '"text": "hello\\n"' in res.text
+    payloads = [json.loads(line[6:]) for line in res.text.splitlines() if line.startswith("data: ")]
+    assert payloads[0] == {"text": "hello\n"}
+    assert set(payloads[-1]) == {"ok", "duration_s", "error", "truncated"}
     (call,) = backend.calls
     assert call.key == "mine"
     assert call.options.remote["memory"] == "8Gi"
@@ -102,6 +103,7 @@ async def test_an_explicit_null_option_selects_one_execution_with_sdk_defaults()
     ) as client:
         res = await client.post("/run", json={"code": "x = 1", "memory": None})
     assert res.text.count("event: done") == 1
+    assert '"lane"' not in res.text
     (call,) = backend.calls
     assert call.options.remote["memory"] is None
     assert call.options.remote["timeout"] is None

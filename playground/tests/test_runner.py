@@ -2,19 +2,18 @@ import asyncio
 
 import pytest
 
-from readie_playground.runner import ExecutionOptions, Lane, Runner
+from readie_playground.runner import ExecutionOptions, Runner
 from tests.fakes import FakeBackend
 
 
 @pytest.mark.parametrize("cold", [False, True])
-async def test_each_request_executes_once_in_the_selected_lane(cold: bool) -> None:
+async def test_each_request_executes_once_with_the_selected_options(cold: bool) -> None:
     backend = FakeBackend(output="hello\n")
     options = ExecutionOptions(remote={"disable_optimized_execution": cold, "memory": "8Gi"})
     events = [event async for event in Runner(backend, 1000).stream("print(1)", options)]
     assert len(backend.calls) == 1
     assert backend.calls[0].options == options
     assert [event.kind for event in events] == ["log", "done"]
-    assert all(event.lane == (Lane.COLD if cold else Lane.OPTIMIZED) for event in events)
     assert events[-1].ok
 
 
