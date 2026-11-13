@@ -54,11 +54,24 @@ The target builds an analyzer image directly from the Kaggle base image and impo
 
 The repository already contains a measured file for `cpu`. Run this step again only if the base image's packages changed.
 
-To skip packages, pass a space-separated list. The default excludes `google`:
+To skip packages, pass a space-separated list. The default excludes `package:google`:
 
 ```bash
 make analyze ANALYZE_EXCLUDE="package:google.cloud.aiplatform package:foo"
 ```
+
+The target measures the resources used by the most corpus requests first, then
+orders the rest alphabetically. To measure a subtree after other resources:
+
+```bash
+make analyze ANALYZE_DEFER="package:tensorflow package:keras"
+```
+
+An interrupted run resumes from `pipeline/data/metadata/<flavor>.json.partial`.
+It retains completed samples from that run and reuses compatible finished metadata
+for discovery without reusing its timings. Set `ANALYZE_ONLY_KNOWN=1` to analyze
+only IDs in compatible finished metadata rather than installed packages and corpus
+resources. This requires an existing usable finished metadata file.
 
 ### Add missing resource measurements
 
@@ -95,9 +108,9 @@ The planner settings can be overridden on the command line. The following values
 
 | Variable | Makefile value | Meaning |
 | --- | --- | --- |
-| `READIE_PLANNER` | `greedy` | Planner: `greedy` or `fixed`. |
-| `READIE_MAX_CHECKPOINTS` | `15` | Maximum checkpoints in a plan. The empty checkpoint is added on top. |
-| `READIE_SIZE_BUDGET_MB` | `2048.0` | Total memory budget across all checkpoints. |
+| `READIE_PLANNER` | `greedy` | Planner: `greedy`, `kmedoids`, `knapsack`, `jaccard`, or `fixed`. |
+| `READIE_MAX_CHECKPOINTS` | `100` | Maximum checkpoints in a plan. The empty checkpoint is added on top. |
+| `READIE_SIZE_BUDGET_MB` | `12288.0` | Total memory budget across all checkpoints. |
 | `READIE_ALPHA` | set in the Makefile | Seconds per MB that the planner charges for size. |
 
 For example, to override the checkpoint count and the size weight:

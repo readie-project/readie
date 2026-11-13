@@ -108,7 +108,7 @@ A routing decision that selects the worker for a call. The router considers capa
 
 ### planner
 
-A pipeline component that decides which packages go into which checkpoints. The default is a greedy planner that keeps adding a package while the time it saves is worth more than its size cost. A fixed planner uses a set of packages that the user chooses. See [Building checkpoints](/docs/architecture/building-checkpoints).
+A pipeline component that decides which packages go into which checkpoints. The default is a greedy planner that keeps adding a package while the time it saves is worth more than its size cost. Other planners select by k-medoids, by mixed-integer programming, by the largest time reduction, or by clustering on Jaccard similarity. A fixed planner uses a set of packages that the user chooses. See [Building checkpoints](/docs/architecture/building-checkpoints).
 
 ### protobuf
 

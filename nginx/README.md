@@ -77,6 +77,18 @@ running, and keep every other path for gRPC. The playground itself calls the Rea
 that the client uses by default, like any other client. See
 [`playground/README.md`](../playground/README.md).
 
+## Health route
+
+Both configurations answer `GET /healthz` (and `HEAD`) from NGINX itself with
+`200 {"status":"ok"}`, without reaching the router, and reject other methods with `405`.
+The route needs no authentication and allows cross-origin `GET`, so load balancers, uptime
+monitors and the docs site can call it. The docs site probes it every 30 seconds. The footer
+shows the result, and while the probe fails the playground shows a down notice in place of the
+code (see `docs/src/hooks/useServiceStatus.ts`). The probe address comes from the
+`PLAYGROUND_URL` build setting.
+Because the route answers from NGINX, it reports that the proxy is reachable, not that the
+router or the workers are healthy.
+
 ## Local development
 
 Local development needs no domain name and no TLS certificate. The local

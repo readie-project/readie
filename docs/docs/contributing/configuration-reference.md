@@ -166,11 +166,13 @@ The pipeline builds checkpoints offline. Settings come from environment variable
 | Variable | Default | Description |
 | --- | --- | --- |
 | `FLAVOR` (or `READIE_FLAVOR`) | `cpu` | `cpu` or `gpu`. Which generation to build. |
-| `READIE_PLANNER` | `greedy` | Planner: `greedy` (adds the checkpoint that lowers total cost most, round by round) or `fixed`. |
+| `READIE_PLANNER` | `greedy` | Planner: `greedy` (adds the checkpoint that lowers total cost most, round by round), `kmedoids`, `knapsack`, `jaccard` or `fixed`. See [Building checkpoints](/docs/architecture/building-checkpoints). |
 | `READIE_MAX_CHECKPOINTS` | `8` | Most checkpoints a plan may produce. |
 | `READIE_SIZE_BUDGET_MB` | `2048.0` | Total checkpoint size budget in MB. |
 | `READIE_ALPHA` | built-in default | Size-versus-time weight in seconds per MB, rounded to 6 decimals. Must be positive. See [cost model](/docs/concepts/cost-model). |
 | `READIE_CHECKPOINT_TIMEOUT` | `300.0` | Seconds a sandbox may take to checkpoint. |
+| `READIE_PROFILE_SAMPLES` | `3` | `analyze` only. Timings per package, each after emptying the host's file cache. The median is kept. Must be at least 1. |
+| `READIE_DROP_CACHES_FILE` | `/proc/sys/vm/drop_caches` | `analyze` only. The file written to empty the cache. Writing it needs root and empties the cache of the whole host. `make analyze` sets it to a mount of the host's file. |
 | `READIE_DATA_DIR` | the pipeline's `data/` folder | Corpus and package metadata. |
 | `READIE_BASE_IMAGE` | empty | `analyze` only. The image being measured, written to the metadata as `base_image`. `make analyze` sets it from `ROOTFS_BASE_IMAGE`. |
 | `READIE_PLAN_DIR` | empty (use the output folder) | Where the plan, spec fingerprint and `rootfs-requirements.txt` go. |
