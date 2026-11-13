@@ -23,10 +23,10 @@ STAGE := .build/proto-stage
 # other's checkpoints. Everything below hangs off FLAVOR.
 FLAVOR          ?= cpu
 # Packages `analyze` should skip entirely, and everything under them. 
-# Space-separated; e.g. `make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"`.
-ANALYZE_EXCLUDE ?= google
+# Space-separated; e.g. `make analyze ANALYZE_EXCLUDE="package:google.cloud.aiplatform package:foo"`.
+ANALYZE_EXCLUDE ?= package:google
 # Packages `analyze` should measure after all the others, and everything under them. The rest
-# are measured most-used first. Space-separated; e.g. `make analyze ANALYZE_DEFER="tensorflow keras"`.
+# are measured most-used first. Space-separated; e.g. `make analyze ANALYZE_DEFER="package:tensorflow package:keras"`.
 ANALYZE_DEFER   ?=
 # Set to 1 to make `analyze` walk only the names in the finished metadata file, and not the
 # installed packages or the corpus's imports. With an unfinished run it measures what that
@@ -40,6 +40,10 @@ ANALYZE_SAMPLES ?= 3
 # `analyze` saves as it goes and continues from an earlier run in the same image. Set to 1 to
 # ignore that and measure every package again, e.g. after changing ANALYZE_EXCLUDE.
 ANALYZE_FRESH   ?=
+# Preserve finished measurements and add only resource IDs not already measured.
+ANALYZE_ONLY_MISSING ?=
+# Dataset loaders need network access; package-only profiling stays offline by default.
+ANALYZE_NETWORK ?= none
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
 ARTIFACTS_DIR   := pipeline/out/$(FLAVOR)
@@ -275,7 +279,7 @@ analyzer-image: ## Build the analyzer image (readie-pipeline on the base image i
 		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
 		-f $(PIPELINE_DOCKERFILE) .
 
-analyze: analyzer-image ## Measure every package the $(FLAVOR) base image installs
+analyze: analyzer-image ## Measure installed and corpus resources (ANALYZE_ONLY_MISSING preserves existing values)
 	@echo "==> analysing $(FLAVOR) packages against $(ROOTFS_BASE_IMAGE)"
 	@mkdir -p pipeline/data/metadata
 	# --network none: a checkpoint's restore-time import must not depend on
@@ -285,15 +289,16 @@ analyze: analyzer-image ## Measure every package the $(FLAVOR) base image instal
 	# immediately, which turned individual packages into 30-100+ second
 	# hangs during analysis (confirmed against a real run).
 	docker run --rm \
-		--network none \
+		--network $(ANALYZE_NETWORK) \
 		-e FLAVOR=$(FLAVOR) \
 		-e READIE_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
+		-e KAGGLE_API_TOKEN -e KAGGLE_USERNAME -e KAGGLE_KEY \
 		-e PYTHONUNBUFFERED=1 \
 		-e READIE_PROFILE_SAMPLES=$(ANALYZE_SAMPLES) \
 		-e READIE_DROP_CACHES_FILE=/host-drop-caches \
 		-v /proc/sys/vm/drop_caches:/host-drop-caches \
 		-v "$(CURDIR)/pipeline/data:/app/data" \
-		$(ANALYZER_IMAGE) analyze -v $(if $(ANALYZE_FRESH),--fresh) $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg)) $(foreach pkg,$(ANALYZE_DEFER),--defer $(pkg)) $(if $(ANALYZE_ONLY_KNOWN),--only-known)
+		$(ANALYZER_IMAGE) analyze -v $(if $(filter 1,$(ANALYZE_ONLY_MISSING)),--only-missing,) $(if $(ANALYZE_FRESH),--fresh) $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg)) $(foreach pkg,$(ANALYZE_DEFER),--defer $(pkg)) $(if $(ANALYZE_ONLY_KNOWN),--only-known)
 	@echo "==> wrote pipeline/data/metadata/$(FLAVOR).json"
 
 # One run, not two: `capture` plans and captures in the same container because

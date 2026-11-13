@@ -1,20 +1,7 @@
-"""Saving a long ``analyze`` run as it goes, and picking it up again.
+"""Append completed resource measurements and resolutions to a resumable journal.
 
-A run that times every package with the file cache emptied first takes many hours, and it
-used to write its result once, at the end, so a crash or an interrupt lost all of it. The run
-now appends one line to a side file as each package finishes. Appending costs the size of one
-entry, where rewriting the whole metadata file after every package would cost hundreds of
-megabytes each time, so nothing but the package being measured can be lost. The final metadata
-file is still written only when the run is done, so nothing that reads it can mistake an
-unfinished run for a finished one.
-
-What an earlier run left behind is used in two ways:
-
-* Its discovery results (which module each name resolves to, and what that module loads) are
-  reused by any run in the same environment. Discovery does not depend on how the timings are
-  taken, so a finished metadata file serves for this too.
-* Its timings are kept only when they come from an unfinished run of the same kind, so that
-  the run continues where it stopped. A finished file is measured again from the start.
+Each entry is flushed before the coordinator moves on. Finished metadata is replaced
+only after analysis succeeds. Journal policy is independent of resource type.
 """
 
 from __future__ import annotations
@@ -25,7 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import IO, Any, Protocol
 
-from readie_pipeline.metadata.models import Metadata, MetadataError, PackageFacts
+from readie_pipeline.metadata.models import Metadata, MetadataError, ResourceFacts
 
 PARTIAL_SUFFIX = ".partial"
 
@@ -41,12 +28,12 @@ def partial_path(metadata_path: Path) -> Path:
 class Journal(Protocol):
     """Receives each result as it is reached. A seam for ``analyze``."""
 
-    def package(self, name: str, facts: PackageFacts) -> None:
-        """Record the facts of a package that has just been measured."""
+    def resource(self, name: str, facts: ResourceFacts) -> None:
+        """Persist a resource outcome, including failures, before returning."""
         ...
 
     def resolution(self, raw: str, resolved: str) -> None:
-        """Record that the raw import string ``raw`` resolved to the module ``resolved``."""
+        """Record a resource candidate and its canonical ID."""
         ...
 
 
@@ -79,10 +66,18 @@ class ProgressJournal:
             header = {"samples": samples, "base_image": base_image, "installed": dict(installed)}
             self._append({"header": header})
 
-    def package(self, name: str, facts: PackageFacts) -> None:
-        """Record ``facts``, unless the package failed: a failure is tried again next time."""
+    def resource(self, name: str, facts: ResourceFacts) -> None:
+        """Persist successes for resume and failures for diagnostics, without caching failures."""
         if facts.usable:
-            self._append({"package": name, "facts": facts.to_json()})
+            self._append({"resource": name, "facts": facts.to_json()})
+        else:
+            record = {"failure": name, "facts": facts.to_json(), "error": facts.error}
+            self._append(record)
+            failure_path = self._path.with_name(self._path.name + ".failures.jsonl")
+            with failure_path.open("a") as stream:
+                stream.write(json.dumps(record) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
 
     def resolution(self, raw: str, resolved: str) -> None:
         """Record what ``raw`` resolved to."""
@@ -118,14 +113,14 @@ def read_progress(path: Path) -> tuple[Metadata, int]:
         msg = f"{path} is not an unfinished analyze run: it has no readable header"
         raise MetadataError(msg) from exc
 
-    packages: dict[str, PackageFacts] = {}
+    packages: dict[str, ResourceFacts] = {}
     resolved: dict[str, str] = {}
     for line in lines[1:]:
         try:
             record = json.loads(line)
-            if "package" in record:
-                packages[record["package"]] = PackageFacts.from_json(
-                    record["package"], record["facts"]
+            if "resource" in record:
+                packages[record["resource"]] = ResourceFacts.from_json(
+                    record["resource"], record["facts"]
                 )
             elif "resolved" in record:
                 raw, target = record["resolved"]

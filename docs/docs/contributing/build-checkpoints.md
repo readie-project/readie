@@ -54,27 +54,45 @@ The target builds an analyzer image directly from the Kaggle base image and impo
 
 The repository already contains a measured file for `cpu`. Run this step again only if the base image's packages changed.
 
-To skip packages, pass a space-separated list. The default excludes `google`:
+To skip packages, pass a space-separated list. The default excludes `package:google`:
 
 ```bash
-make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"
+make analyze ANALYZE_EXCLUDE="package:google.cloud.aiplatform package:foo"
 ```
 
-The target measures the packages that most corpus requests use first, and the rest alphabetically. Measuring a package also measures everything it loads, so a large subtree that few requests use can dominate the run. To measure such a subtree after all others, pass a space-separated list:
+The target measures the resources used by the most corpus requests first, then
+orders the rest alphabetically. To measure a subtree after other resources:
 
 ```bash
-make analyze ANALYZE_DEFER="tensorflow keras"
+make analyze ANALYZE_DEFER="package:tensorflow package:keras"
 ```
 
-An interrupted run continues from its side file, `pipeline/data/metadata/<flavor>.json.partial`, and keeps the packages already measured. `<flavor>` is the value of `FLAVOR`. When a finished `<flavor>.json` from the same image and package versions also exists, the run reuses its discovery results for the names that the side file has not measured. It does not reuse that file's timings.
+An interrupted run resumes from `pipeline/data/metadata/<flavor>.json.partial`.
+It retains completed samples from that run and reuses compatible finished metadata
+for discovery without reusing its timings. Set `ANALYZE_ONLY_KNOWN=1` to analyze
+only IDs in compatible finished metadata rather than installed packages and corpus
+resources. This requires an existing usable finished metadata file.
 
-To measure only the names that the finished `<flavor>.json` already contains, and skip the installed packages and the corpus imports, set `ANALYZE_ONLY_KNOWN`:
+### Add missing resource measurements
 
-```bash
-make analyze ANALYZE_ONLY_KNOWN=1
+Use incremental analysis to retain the metadata file's existing package values
+and measure additional resource IDs from the corpus:
+
+```sh
+make analyze FLAVOR=cpu ANALYZE_ONLY_MISSING=1 ANALYZE_NETWORK=bridge
 ```
 
-The step fails when no usable finished `<flavor>.json` exists. The file that the run writes holds the packages of the side file and these names, and it does not hold the names that only the corpus uses.
+Run this on the same Linux base image used for the recorded measurements. The
+pipeline checks image and distribution versions before reusing results. It uses
+the common resume journal and dispatches each ID to its registered analyzer.
+
+For long dataset runs, use a dedicated `KAGGLEHUB_CACHE` directory and pass
+`analyze --cleanup-cache` with that same absolute path to release each dataset's
+downloads after its result is journaled. The directory requires the profiling
+cache marker described in the [pipeline README](https://github.com/readie-project/readie/blob/main/pipeline/README.md).
+Networking permits dataset downloads; the default analysis network is `none`.
+Resource IDs in `ANALYZE_EXCLUDE` and `ANALYZE_DEFER` include their type prefix,
+such as `package:google` or `kaggle_dataset:owner/name`.
 
 ## Step 2: Capture checkpoints
 
@@ -91,8 +109,8 @@ The planner settings can be overridden on the command line. The following values
 | Variable | Makefile value | Meaning |
 | --- | --- | --- |
 | `READIE_PLANNER` | `greedy` | Planner: `greedy`, `kmedoids`, `knapsack`, `jaccard`, or `fixed`. |
-| `READIE_MAX_CHECKPOINTS` | `15` | Maximum checkpoints in a plan. The empty checkpoint is added on top. |
-| `READIE_SIZE_BUDGET_MB` | `2048.0` | Total memory budget across all checkpoints. |
+| `READIE_MAX_CHECKPOINTS` | `100` | Maximum checkpoints in a plan. The empty checkpoint is added on top. |
+| `READIE_SIZE_BUDGET_MB` | `12288.0` | Total memory budget across all checkpoints. |
 | `READIE_ALPHA` | set in the Makefile | Seconds per MB that the planner charges for size. |
 
 For example, to override the checkpoint count and the size weight:

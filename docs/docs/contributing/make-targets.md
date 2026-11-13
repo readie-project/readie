@@ -137,3 +137,11 @@ The documentation site has its own targets in the root Makefile:
 - [Configuration reference](/docs/contributing/configuration-reference)
 - [Build checkpoints](/docs/contributing/build-checkpoints)
 - [Run the stack locally](/docs/contributing/run-the-stack)
+
+### Incremental resource analysis
+
+`make analyze ANALYZE_ONLY_MISSING=1` preserves measurements already in the
+metadata file and adds missing resource IDs. `ANALYZE_NETWORK` controls the
+analyzer container network and defaults to `none`; use `bridge` when dataset
+sources require downloads. These options do not change sandbox networking for
+execution workers. Exclusion and defer values use qualified IDs.

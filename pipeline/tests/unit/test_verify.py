@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from readie_pipeline.corpus.models import ResourceKind
 from readie_pipeline.corpus.verify import LiveChecker, ResourceLookupError, ResourceVerifier
+from readie_pipeline.resources.identifiers import ResourceType
 
 
 class Checker:
@@ -80,18 +80,18 @@ class FakeHttp:
 
 def test_the_standard_library_needs_no_lookup():
     http = FakeHttp(set())
-    assert LiveChecker(None, None, http).exists(ResourceKind.PACKAGE, "os.path")
+    assert LiveChecker(None, None, http).exists(ResourceType.PACKAGE, "os.path")
     assert http.urls == []
 
 
 def test_an_import_name_is_mapped_to_the_project_that_provides_it():
     http = FakeHttp({"scikit-learn"})
-    assert LiveChecker(None, None, http).exists(ResourceKind.PACKAGE, "sklearn.svm.LinearSVC")
+    assert LiveChecker(None, None, http).exists(ResourceType.PACKAGE, "sklearn.svm.LinearSVC")
 
 
 def test_a_package_pypi_does_not_know_is_missing():
     assert not LiveChecker(None, None, FakeHttp(set())).exists(
-        ResourceKind.PACKAGE, "totally_made_up_pkg"
+        ResourceType.PACKAGE, "totally_made_up_pkg"
     )
 
 
@@ -101,12 +101,12 @@ def test_an_unexpected_pypi_status_is_a_lookup_failure_not_a_missing_package():
             return FakeResponse(503)
 
     with pytest.raises(ResourceLookupError, match="503"):
-        LiveChecker(None, None, Down(set())).exists(ResourceKind.PACKAGE, "numpy_x")
+        LiveChecker(None, None, Down(set())).exists(ResourceType.PACKAGE, "numpy_x")
 
 
 def test_a_kaggle_resource_without_credentials_cannot_be_checked():
     with pytest.raises(ResourceLookupError, match="Kaggle"):
-        LiveChecker(None, None).exists(ResourceKind.KAGGLE_DATASET, "o/d")
+        LiveChecker(None, None).exists(ResourceType.KAGGLE_DATASET, "o/d")
 
 
 class Catalog:
@@ -119,16 +119,21 @@ class Catalog:
 
 def test_kaggle_resources_go_to_the_kaggle_catalog():
     checker = LiveChecker(Catalog(), None)
-    assert checker.exists(ResourceKind.KAGGLE_DATASET, "o/real")
-    assert not checker.exists(ResourceKind.KAGGLE_DATASET, "o/fake")
-    assert checker.exists(ResourceKind.KAGGLE_MODEL, "o/model")
+    assert checker.exists(ResourceType.KAGGLE_DATASET, "o/real")
+    assert not checker.exists(ResourceType.KAGGLE_DATASET, "o/fake")
+    assert checker.exists(ResourceType.KAGGLE_MODEL, "o/model")
 
 
 # ---------------------------------------------------------------------------
 # Recall: real packages must not be rejected for having an unfamiliar import name
 # ---------------------------------------------------------------------------
 def image_verifier(checker, known, path=None):
-    return ResourceVerifier(checker, path, known_packages=frozenset(known), sleep=lambda _: None)
+    return ResourceVerifier(
+        checker,
+        path,
+        known_resources=frozenset(f"package:{name}" for name in known),
+        sleep=lambda _: None,
+    )
 
 
 def test_pypi_is_asked_first_and_the_base_image_list_only_when_it_has_no_answer():
@@ -207,7 +212,7 @@ def test_two_flavors_share_the_cache_but_not_each_others_images(tmp_path: Path):
     ],
 )
 def test_common_imports_whose_name_differs_from_their_project_are_found(import_name, project):
-    assert LiveChecker(None, None, FakeHttp({project})).exists(ResourceKind.PACKAGE, import_name)
+    assert LiveChecker(None, None, FakeHttp({project})).exists(ResourceType.PACKAGE, import_name)
 
 
 def test_missing_answers_from_the_first_rules_are_dropped_but_found_ones_are_kept(tmp_path: Path):

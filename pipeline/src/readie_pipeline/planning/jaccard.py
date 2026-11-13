@@ -37,13 +37,13 @@ class _JaccardPlanner(GreedyPlanner):
         self,
         *,
         requests: Sequence[CorpusItem],
-        eligible_packages: set[str],
+        eligible_resources: set[str],
         metadata: Metadata,
         size_budget_mb: float,
         max_checkpoints: int,
     ) -> list[frozenset[str]]:
         """Return one union-of-cluster checkpoint per cluster that fits, heaviest first."""
-        unique_requests, occurrences = self._nodes(requests, eligible_packages, metadata)
+        unique_requests, occurrences = self._nodes(requests, eligible_resources, metadata)
         if not unique_requests:
             return []
 

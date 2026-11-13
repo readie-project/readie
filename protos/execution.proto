@@ -13,7 +13,7 @@ message WorkerExecutionRequest {
   string checkpoint_id = 5;
   bytes payload = 6;
   reserved 7, 8; // were cpu_alloc, gpu_alloc; replaced by budgets below
-  // Import and artefact hints from the client's static analysis, forwarded
+  // Import and artifact hints from the client's static analysis, forwarded
   // by the router so a worker can pick a checkpoint that already has them.
   repeated string resources = 9;
   // The resource budgets (memory, GPU memory, ...) the router placed this

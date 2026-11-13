@@ -9,7 +9,7 @@ import pytest
 
 from readie_pipeline import cli
 from readie_pipeline.config import Settings
-from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata.models import Metadata, ResourceFacts
 from readie_pipeline.metadata.progress import ProgressJournal, partial_path
 
 INSTALLED = {"numpy": "2.0.2"}
@@ -31,14 +31,16 @@ def settings_in(tmp_path: Path, *, samples: int = 3) -> Settings:
     )
 
 
-def facts() -> PackageFacts:
-    return PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"}), import_time=0.4)
+def facts() -> ResourceFacts:
+    return ResourceFacts(
+        base_import="package:numpy", dependencies=frozenset({"package:numpy"}), import_time=0.4
+    )
 
 
 def write_finished(settings: Settings, *, versions: dict[str, str] = INSTALLED) -> None:
     settings.metadata_path.parent.mkdir(parents=True)
     metadata = Metadata(
-        {"numpy": facts()}, distributions=dict(versions), base_image=IMAGE, resolved={}
+        {"package:numpy": facts()}, distributions=dict(versions), base_image=IMAGE, resolved={}
     )
     settings.metadata_path.write_text(json.dumps(metadata.to_json()))
 
@@ -51,7 +53,7 @@ def write_unfinished(settings: Settings, *, samples: int = 3, image: str = IMAGE
         installed=INSTALLED,
         resume=False,
     )
-    journal.package("numpy", facts())
+    journal.resource("package:numpy", facts())
     journal.close()
 
 
@@ -68,7 +70,7 @@ def test_an_unfinished_run_of_the_same_kind_is_continued(tmp_path, capsys):
 
     assert keep_timings is True
     assert known is not None
-    assert set(known.packages) == {"numpy"}
+    assert set(known.resources) == {"package:numpy"}
     assert "continuing" in capsys.readouterr().out
 
 
@@ -98,7 +100,7 @@ def test_a_finished_file_gives_its_discovery_but_not_its_timings(tmp_path, capsy
 
     assert keep_timings is False
     assert known is not None
-    assert set(known.packages) == {"numpy"}
+    assert set(known.resources) == {"package:numpy"}
     assert "timings are measured again" in capsys.readouterr().out
 
 
@@ -127,7 +129,7 @@ def test_a_finished_file_supplies_discovery_to_a_run_that_continues(tmp_path, ca
     finished = cli._finished_discovery(settings)
 
     assert finished is not None
-    assert set(finished.packages) == {"numpy"}
+    assert set(finished.resources) == {"package:numpy"}
     assert "none of its timings are used" in capsys.readouterr().out
 
 

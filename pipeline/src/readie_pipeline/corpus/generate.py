@@ -370,7 +370,7 @@ def generate(
     total: int | None = None,
     only_sources: tuple[Source, ...] = (),
     only_domains: tuple[str, ...] = (),
-    known_packages: frozenset[str] = frozenset(),
+    known_resources: frozenset[str] = frozenset(),
     standins: StandIns | None = None,
     exclude: Sequence[Path] = (),
     on_line: Callable[[str], None] = print,
@@ -401,7 +401,7 @@ def generate(
         from readie_pipeline.corpus.live import build  # noqa: PLC0415 - optional extra
 
         live = build(
-            settings, weights, cache_path, seed=settings.seed, known_packages=known_packages
+            settings, weights, cache_path, seed=settings.seed, known_resources=known_resources
         )
         sources = sources or live.sources
         judge = judge or live.judge

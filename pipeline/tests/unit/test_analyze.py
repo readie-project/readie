@@ -13,8 +13,9 @@ import subprocess
 
 import pytest
 
-from readie_pipeline.metadata import analyze, inventory
-from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata import inventory
+from readie_pipeline.metadata.models import Metadata, ResourceFacts
+from readie_pipeline.resources import packages as analyze
 
 
 class _NoDrop:
@@ -122,7 +123,9 @@ def test_a_candidate_that_never_resolves_gets_an_error_entry_under_its_own_name(
 
     metadata = _analyze(["nonexistent"])
 
-    assert metadata.packages["nonexistent"].error == "could not be resolved to an importable module"
+    assert (
+        metadata.resources["nonexistent"].error == "could not be resolved to an importable module"
+    )
     assert "nonexistent" not in metadata.resolved
 
 
@@ -178,8 +181,8 @@ def test_a_resolved_candidate_is_recorded_in_the_resolved_map(monkeypatch):
     metadata = _analyze(["pandas"])
 
     assert metadata.resolved == {"pandas": "pandas"}
-    assert metadata.packages["pandas"].import_time == 0.3
-    assert metadata.packages["pandas"].memory_size_mb == 40.0
+    assert metadata.resources["pandas"].import_time == 0.3
+    assert metadata.resources["pandas"].memory_size_mb == 40.0
 
 
 def test_a_deeper_candidate_resolves_to_its_shorter_prefix(monkeypatch):
@@ -195,8 +198,8 @@ def test_a_deeper_candidate_resolves_to_its_shorter_prefix(monkeypatch):
     metadata = _analyze(["sklearn.svm.LinearSVC"])
 
     assert metadata.resolved == {"sklearn.svm.LinearSVC": "sklearn.svm"}
-    assert "sklearn.svm" in metadata.packages
-    assert "sklearn.svm.LinearSVC" not in metadata.packages
+    assert "sklearn.svm" in metadata.resources
+    assert "sklearn.svm.LinearSVC" not in metadata.resources
 
 
 def test_a_shared_dependency_is_only_ever_profiled_once(monkeypatch):
@@ -222,7 +225,7 @@ def test_a_shared_dependency_is_only_ever_profiled_once(monkeypatch):
 
     metadata = _analyze(["pandas", "scipy"])
 
-    assert set(metadata.packages) == {"pandas", "scipy", "numpy"}
+    assert set(metadata.resources) == {"pandas", "scipy", "numpy"}
     numpy_calls = [c for c in calls if c[1] == "numpy"]
     assert len(numpy_calls) == 1, "numpy must be profiled exactly once despite two paths to it"
     # Both pandas and scipy warm numpy up before their own timed import.
@@ -242,7 +245,7 @@ def test_an_internal_submodule_owned_by_an_ancestor_is_never_independently_measu
     # because it also happens to turn up there -- confirmed against a real
     # base image, where exactly this caused dozens of redundant passes per
     # large package. It must never get an independent *measurement*, i.e.
-    # its own entry in ``metadata.packages``, no matter which node reaches
+    # its own entry in ``metadata.resources``, no matter which node reaches
     # it first.
     graph = {
         "sklearn": (
@@ -267,7 +270,7 @@ def test_an_internal_submodule_owned_by_an_ancestor_is_never_independently_measu
 
     metadata = _analyze(["sklearn"])
 
-    assert set(metadata.packages) == {"sklearn", "scipy", "scipy.linalg"}
+    assert set(metadata.resources) == {"sklearn", "scipy", "scipy.linalg"}
 
 
 def test_a_sibling_not_related_by_descent_still_gets_its_own_measurement(monkeypatch):
@@ -308,7 +311,7 @@ def test_a_sibling_not_related_by_descent_still_gets_its_own_measurement(monkeyp
     metadata = _analyze(["keras.applications.vgg16"])
 
     assert "keras.src.applications.vgg16" in discovered
-    assert set(metadata.packages) == {"keras.applications.vgg16", "keras.src.applications.vgg16"}
+    assert set(metadata.resources) == {"keras.applications.vgg16", "keras.src.applications.vgg16"}
 
 
 def _counting_discover(monkeypatch, graph: dict[str, tuple[str | None, frozenset[str]]]):
@@ -347,7 +350,7 @@ def test_a_name_still_visiting_is_only_ever_discovered_once(monkeypatch):
 
     assert calls["owner"] == 1, "owner is reached 3x but must only be discovered once"
     assert calls["sib1"] == 1, "sib1 is reached 2x (from owner, and from sib2) but only once"
-    assert set(metadata.packages) == {"owner", "sib1", "sib2"}
+    assert set(metadata.resources) == {"owner", "sib1", "sib2"}
 
 
 def test_a_failed_resolution_is_never_cached_and_is_retried_every_time(monkeypatch):
@@ -394,8 +397,8 @@ def test_a_genuinely_deep_non_cyclic_chain_does_not_overflow_the_stack(monkeypat
 
     metadata = _analyze(["n0"])
 
-    assert set(metadata.packages) == {f"n{i}" for i in range(depth)}
-    assert all(metadata.packages[f"n{i}"].usable for i in range(depth))
+    assert set(metadata.resources) == {f"n{i}" for i in range(depth)}
+    assert all(metadata.resources[f"n{i}"].usable for i in range(depth))
 
 
 def test_a_genuine_cycle_terminates_instead_of_recursing_forever(monkeypatch):
@@ -418,15 +421,15 @@ def test_a_genuine_cycle_terminates_instead_of_recursing_forever(monkeypatch):
 
     metadata = _analyze(["a"])
 
-    assert set(metadata.packages) == {"a", "b"}
-    assert metadata.packages["a"].usable
-    assert metadata.packages["b"].usable
+    assert set(metadata.resources) == {"a", "b"}
+    assert metadata.resources["a"].usable
+    assert metadata.resources["b"].usable
 
 
 def test_a_profiling_failure_still_records_the_resolution(monkeypatch):
     # Resolution and profiling are separate subprocess passes -- a package
     # that resolves fine but hangs or errors during profiling must still be
-    # recorded as resolved, so Metadata.resolve_imports still includes it
+    # recorded as resolved, so Metadata.resolve_resources still includes it
     # (with a nominal fallback cost) rather than dropping it as if it had
     # never been requested at all.
     _fake_graph(monkeypatch, {"torch": ("torch", frozenset({"torch"}))})
@@ -438,8 +441,8 @@ def test_a_profiling_failure_still_records_the_resolution(monkeypatch):
     metadata = _analyze(["torch"])
 
     assert metadata.resolved == {"torch": "torch"}
-    assert metadata.packages["torch"].error
-    assert not metadata.packages["torch"].usable
+    assert metadata.resources["torch"].error
+    assert not metadata.resources["torch"].usable
 
 
 def test_disk_size_is_measured_from_the_resolved_names_own_distribution(monkeypatch):
@@ -450,8 +453,8 @@ def test_disk_size_is_measured_from_the_resolved_names_own_distribution(monkeypa
 
     metadata = _analyze(["pandas"])
 
-    assert metadata.packages["pandas"].disk_size_mb == 12.5
-    assert metadata.packages["pandas"].distribution == "pandas"
+    assert metadata.resources["pandas"].disk_size_mb == 12.5
+    assert metadata.resources["pandas"].distribution == "pandas"
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +481,7 @@ def test_an_excluded_top_level_candidate_is_never_discovered(monkeypatch):
     metadata = _analyze(["google.cloud.aiplatform"], exclude=["google"])
 
     assert discovered == [], "an excluded candidate must not even spawn a discovery subprocess"
-    assert metadata.packages["google.cloud.aiplatform"].error == "excluded from analysis"
+    assert metadata.resources["google.cloud.aiplatform"].error == "excluded from analysis"
 
 
 def test_an_excluded_name_discovered_via_someone_elses_closure_is_also_skipped(monkeypatch):
@@ -506,7 +509,7 @@ def test_an_excluded_name_discovered_via_someone_elses_closure_is_also_skipped(m
     metadata = _analyze(["some-package"], exclude=["google"])
 
     assert "google.cloud.aiplatform.base" not in discovered
-    assert set(metadata.packages) == {"some-package", "numpy"}
+    assert set(metadata.resources) == {"some-package", "numpy"}
 
 
 def test_a_descendant_discovered_out_of_order_is_never_independently_measured(monkeypatch):
@@ -540,7 +543,7 @@ def test_a_descendant_discovered_out_of_order_is_never_independently_measured(mo
 
     metadata = _analyze(["w", "x"])
 
-    assert set(metadata.packages) == {"w", "x"}
+    assert set(metadata.resources) == {"w", "x"}
 
 
 def test_an_explicitly_requested_descendant_still_gets_its_own_measurement(monkeypatch):
@@ -566,7 +569,7 @@ def test_an_explicitly_requested_descendant_still_gets_its_own_measurement(monke
     metadata = _analyze(["w", "x", "x.y._z"])
 
     assert "x.y._z" in discovered
-    assert set(metadata.packages) == {"w", "x", "x.y._z"}
+    assert set(metadata.resources) == {"w", "x", "x.y._z"}
 
 
 def test_a_meaningful_non_underscore_name_is_never_folded_just_for_sharing_a_top_level(
@@ -603,7 +606,7 @@ def test_a_meaningful_non_underscore_name_is_never_folded_just_for_sharing_a_top
     metadata = _analyze(["w", "sklearn"])
 
     assert "sklearn.svm" in discovered
-    assert set(metadata.packages) == {"w", "sklearn", "sklearn.svm"}
+    assert set(metadata.resources) == {"w", "sklearn", "sklearn.svm"}
 
 
 def test_a_private_name_rooted_in_the_standard_library_is_still_folded(monkeypatch):
@@ -635,7 +638,7 @@ def test_a_private_name_rooted_in_the_standard_library_is_still_folded(monkeypat
 
     metadata = _analyze(["w"])
 
-    assert set(metadata.packages) == {"w", "email"}
+    assert set(metadata.resources) == {"w", "email"}
 
 
 def test_a_private_intermediate_segment_folds_its_own_non_underscore_leaf_too(
@@ -665,7 +668,7 @@ def test_a_private_intermediate_segment_folds_its_own_non_underscore_leaf_too(
 
     metadata = _analyze(["w", "scipy"])
 
-    assert set(metadata.packages) == {"w", "scipy"}
+    assert set(metadata.resources) == {"w", "scipy"}
 
 
 def test_a_private_name_shared_by_two_unrelated_referrers_is_still_folded(monkeypatch):
@@ -701,7 +704,7 @@ def test_a_private_name_shared_by_two_unrelated_referrers_is_still_folded(monkey
 
     metadata = _analyze(["w1", "w2"])
 
-    assert set(metadata.packages) == {"w1", "w2", "shared"}
+    assert set(metadata.resources) == {"w1", "w2", "shared"}
     assert "shared" in profile_calls["w1"], "w1 must warm shared away, not capture its cost"
     assert "shared" in profile_calls["w2"], "w2 must warm shared away, not capture its cost"
 
@@ -833,9 +836,9 @@ def test_the_timed_import_writes_no_bytecode(monkeypatch):
 def _known(*names: str, resolved: dict[str, str] | None = None, seconds: float = 0.5) -> Metadata:
     """What an earlier run recorded: each name measured, loading itself and ``numpy``."""
     packages = {
-        name: PackageFacts(
+        name: ResourceFacts(
             base_import=name,
-            loaded_modules=frozenset({name}),
+            dependencies=frozenset({name}),
             import_time=seconds,
             memory_size_mb=2.0,
         )
@@ -859,7 +862,7 @@ def test_the_discovery_of_an_earlier_run_is_reused(monkeypatch):
 
     metadata = _analyze(["numpy"], known=_known("numpy"))
 
-    assert metadata.packages["numpy"].loaded_modules == frozenset({"numpy"})
+    assert metadata.resources["numpy"].dependencies == frozenset({"numpy"})
 
 
 def test_a_raw_name_resolves_through_the_map_of_the_earlier_run(monkeypatch):
@@ -882,7 +885,7 @@ def test_without_keep_timings_everything_is_measured_again(monkeypatch):
     metadata = _analyze(["numpy"], known=_known("numpy", seconds=0.5))
 
     assert events == ["profile"]
-    assert metadata.packages["numpy"].import_time == 9.0
+    assert metadata.resources["numpy"].import_time == 9.0
 
 
 def test_with_keep_timings_a_measured_package_is_not_measured_again(monkeypatch):
@@ -894,7 +897,7 @@ def test_with_keep_timings_a_measured_package_is_not_measured_again(monkeypatch)
     metadata = _analyze(["numpy"], known=_known("numpy", seconds=0.5), keep_timings=True)
 
     assert events == []
-    assert metadata.packages["numpy"].import_time == 0.5
+    assert metadata.resources["numpy"].import_time == 0.5
 
 
 def test_a_package_the_earlier_run_never_measured_is_discovered_and_timed(monkeypatch):
@@ -905,7 +908,7 @@ def test_a_package_the_earlier_run_never_measured_is_discovered_and_timed(monkey
     metadata = _analyze(["scipy"], known=_known("numpy"), keep_timings=True)
 
     assert events == ["profile"]
-    assert metadata.packages["scipy"].import_time == 0.2
+    assert metadata.resources["scipy"].import_time == 0.2
 
 
 def test_discovery_only_input_is_reused_but_its_timings_are_not(monkeypatch):
@@ -923,7 +926,7 @@ def test_discovery_only_input_is_reused_but_its_timings_are_not(monkeypatch):
     )
 
     assert events == ["profile"]
-    assert metadata.packages["numpy"].import_time == 9.0
+    assert metadata.resources["numpy"].import_time == 9.0
 
 
 def test_the_side_file_wins_over_the_discovery_only_input(monkeypatch):
@@ -939,16 +942,16 @@ def test_the_side_file_wins_over_the_discovery_only_input(monkeypatch):
     )
 
     assert events == []
-    assert metadata.packages["numpy"].import_time == 0.5
+    assert metadata.resources["numpy"].import_time == 0.5
 
 
 class _RecordingJournal:
     def __init__(self) -> None:
-        self.packages: list[tuple[str, str]] = []
+        self.resources: list[tuple[str, str]] = []
         self.resolutions: list[tuple[str, str]] = []
 
-    def package(self, name: str, facts: PackageFacts) -> None:
-        self.packages.append((name, facts.error))
+    def resource(self, name: str, facts: ResourceFacts) -> None:
+        self.resources.append((name, facts.error))
 
     def resolution(self, raw: str, resolved: str) -> None:
         self.resolutions.append((raw, resolved))
@@ -969,7 +972,7 @@ def test_each_package_reaches_the_journal_as_soon_as_it_is_measured(monkeypatch)
 
     _analyze(["pandas"], journal=journal)
 
-    assert journal.packages == [("numpy", ""), ("pandas", "")]
+    assert journal.resources == [("numpy", ""), ("pandas", "")]
 
 
 def test_each_resolved_name_reaches_the_journal(monkeypatch):

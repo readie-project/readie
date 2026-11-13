@@ -9,6 +9,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "numpy>=2.5.2",
     "packaging>=24.0",
+    "kagglehub[pandas-datasets]>=0.3.12",
 ]
 
 [project.optional-dependencies]

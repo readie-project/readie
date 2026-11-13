@@ -26,7 +26,7 @@ make lint type # ruff + mypy --strict
 
 ```sh
 readie-pipeline corpus    # build the workload corpus for FLAVOR (Kaggle, Hugging Face, hosted model)
-readie-pipeline analyze   # measure every package installed here, and their deps
+readie-pipeline analyze   # dispatch installed and corpus resources to their analyzers
 readie-pipeline plan      # choose checkpoint contents, write the OCI spec
 readie-pipeline build     # capture one gVisor checkpoint per planned set
 readie-pipeline capture   # plan and then build, in one process
@@ -186,19 +186,86 @@ the pipeline image does not include it. `plan` and `analyze` read the result.
 
 ### analyze
 
-`analyze` measures whatever is importable in the environment it runs in. That
-environment is the base image, not the corpus's imports. The stage must run
-natively inside the base image, not alongside a copy of it. Mixing the tool's
-own libc with a foreign one crashes with SIGFPE as soon as anything beyond pure
-Python is involved, and `import pandas` is enough to trigger it.
+`analyze` receives source-qualified IDs and dispatches them through a handler
+registry. `metadata/analyze.py` owns exclusion, resume, ordering, progress and
+persistence. Implementations in `resources/` own resolution and loading. The
+registered analyzers are `package` and `kaggle_dataset`; another resource type
+without a registered analyzer is reported as unsupported, not sent to a package
+loader.
 
-`make analyze FLAVOR=cpu|gpu` (root `Makefile`) builds the `analyzer` target of
-`pipeline/Dockerfile` and runs it. That target installs `readie-pipeline` with
-`--no-deps` directly on top of the base image, so only one libc is present. The
-result is written on the host to `data/metadata/<flavor>.json`.
+Package analysis runs natively inside the base image. It retains subprocess
+isolation, dependency discovery, private-module folding, cold-cache profiling,
+repeated samples and median timings. Dataset analysis uses a separate process
+per sample, downloads an inventory through KaggleHub, loads supported formats
+locally through pandas, and retains unsupported or unparseable files as bytes. Disk and memory
+costs include all loaded files. Each sample clears the host filesystem cache
+after downloading and inventorying the dataset, before timing its load.
+Download time and cache clearing are excluded from load time.
+Declared loader dependencies are imported before cache clearing and timing, so
+dataset load costs do not count their package import costs again.
+Timed file reads do not call KaggleHub's pandas adapter, which downloads files
+again even after the archive has been extracted.
+XML syntax errors use the same raw-byte fallback as other parse failures.
+Dataset subprocesses send loader messages to stderr and only the measurement
+JSON to stdout, including messages from logging handlers created during imports.
+Dataset samples have no fixed subprocess timeout. An operator can stop the
+container when a resource cannot complete within the available profiling window.
 
-`plan` and `capture` read whatever `data/metadata/<flavor>.json` already
-contains. They do not regenerate it.
+For long dataset runs, `analyze --cleanup-cache /path/to/cache` removes each
+dataset's downloaded files after all samples finish and its successful result
+has been flushed and synced to the resume journal. The cache must be a dedicated
+absolute directory with a `.readie-profile-cache` file containing
+`readie-profile-cache-v1` followed by a newline. Set `KAGGLEHUB_CACHE` to that
+same directory. Cleanup does not remove metadata, journals, or other datasets;
+failed attempts are recorded in a separate `.partial.failures.jsonl` file before
+their downloads are released, and remain eligible for retry. An interrupted
+process must exit before its incomplete downloads can be removed. The option
+does not change measurement values or the sample count.
+
+The checked-in CPU measurements have a [coverage report](reports/dataset-coverage.md)
+and a [machine-readable inventory](reports/dataset-coverage.json). These record
+measured, failed, deferred and unattempted dataset IDs separately. Failed attempts
+do not supply measurement values; an approved deferral records its reason.
+
+`make analyze FLAVOR=cpu|gpu` builds the analyzer image and writes
+`data/metadata/<flavor>.json`. Dataset downloads require networking and any
+credentials required by their source. Package-only profiling stays offline by
+default. To preserve every existing measurement and add missing resource IDs:
+
+```sh
+make analyze FLAVOR=cpu ANALYZE_ONLY_MISSING=1 ANALYZE_NETWORK=bridge
+```
+
+The target forwards `KAGGLE_API_TOKEN`, `KAGGLE_USERNAME` and `KAGGLE_KEY` from
+the host environment when they are set. Public datasets may not need credentials.
+
+This runs on the Linux profiling host, not a developer's Mac. Existing image and
+distribution versions must match before measurements are reused. The incremental
+mode also resumes a compatible partial journal. It refuses `--fresh` because that
+would discard the measurements it is meant to preserve.
+
+Metadata has one `resources` mapping and a `resolved` ID-to-ID map. Each
+`ResourceFacts` entry records `resource_type`, `base_import`, `distribution`,
+`disk_size_mb`, `memory_size_mb`, `import_time` and `dependencies`. Package
+`dependencies` includes the full observed module closure formerly stored as
+`loaded_modules`, using qualified IDs. Dataset dependencies include its loader
+packages and observed imports. Distribution names and versions remain package
+manager names, not resource IDs.
+
+The one-time migration is separate from analysis:
+
+```sh
+python tools/migrate_resources.py old-metadata.json data/metadata/cpu.json
+```
+
+It changes identifiers and dependency fields without rerunning measurements or
+rounding stored values. Existing corpus workload code and provenance remain
+unchanged. Old flat metadata, `packages` envelopes and generic resource kinds
+are not supported by the normal reader after migration.
+
+`plan` and `capture` read the metadata file; they do not regenerate it. Plans
+have one `resources` array. Dataset checkpoint loading is outside this change:
+capture rejects a plan containing a resource whose loader is not implemented.
 
 #### Cold timings
 
@@ -267,7 +334,7 @@ When it starts, `analyze` looks at what an earlier run left:
   installed distribution when the run starts, for this check.
 - A package that failed is not saved, so it is tried again.
 
-`analyze` walks the raw import names in a fixed order: names under `--defer` (`ANALYZE_DEFER`)
+`analyze` walks the resource IDs in a fixed order: names under `--defer` (`ANALYZE_DEFER`)
 last, then the names that the most corpus requests use, then the rest alphabetically. The order
 changes when a package is measured and not what is measured, so a run continues from a side file
 that another order wrote. A package is measured together with everything it loads, so defer a
@@ -311,10 +378,10 @@ it reads the plan. The directory itself is kept.
 ```json
 [
     {
-        "imports": ["pandas", "numpy"],
-        "datasets": [],
-        "models": [],
-        "tokenizers": []
+        "resources": ["package:pandas", "package:numpy"],
+        "requests_served": 0,
+        "seconds_saved": 0.0,
+        "size_mb": 0.0
     }
 ]
 ```
@@ -595,10 +662,9 @@ build could disagree with the first.
 
 ## Known gaps
 
-- `datasets`, `tokenizers` and `models` are carried through the schema and the
-  plan, but only packages are pre-imported. Loading a model into the captured
-  process is a much larger change, because it alters what a checkpoint costs to
-  store.
+- Plans use one `resources` list for all resource types. Capture accepts only
+  package resources and rejects plans containing other types. Dataset and model
+  capture require separate loaders and are outside this change.
 - The rootfs is the full base image regardless of what the plan selects. This is
   deliberate: a new request distribution then regenerates only checkpoints, not
   tens of gigabytes of filesystem. A sandbox does carry far more than any one

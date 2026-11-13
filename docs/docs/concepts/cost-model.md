@@ -77,3 +77,8 @@ The router therefore prices size with the value that the pipeline measured on th
 - [Checkpoints](/docs/concepts/checkpoints)
 - [Flavors and catalogues](/docs/concepts/flavors-and-catalogues)
 - [Placement](/docs/architecture/placement)
+
+Resource costs and dependencies use source-qualified identifiers throughout
+metadata and planning. Package identifiers retain their full dotted names, for
+example `package:sklearn.svm`. The package measurements are incremental; changing
+an identifier does not require measuring its cost again.
