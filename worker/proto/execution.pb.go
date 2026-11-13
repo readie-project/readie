@@ -30,7 +30,7 @@ type WorkerExecutionRequest struct {
 	ContainerId  *string                `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3,oneof" json:"container_id,omitempty"`
 	CheckpointId string                 `protobuf:"bytes,5,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
 	Payload      []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
-	// Import and artefact hints from the client's static analysis, forwarded
+	// Import and artifact hints from the client's static analysis, forwarded
 	// by the router so a worker can pick a checkpoint that already has them.
 	Resources []string `protobuf:"bytes,9,rep,name=resources,proto3" json:"resources,omitempty"`
 	// The resource budgets (memory, GPU memory, ...) the router placed this
