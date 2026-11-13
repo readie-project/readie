@@ -60,14 +60,14 @@ class GreedyPlanner:
         if not requests:
             return []
 
-        eligible_packages = self._eligible_packages(requests, metadata)
-        if not eligible_packages:
+        eligible_resources = self._eligible_resources(requests, metadata)
+        if not eligible_resources:
             return []
 
         closures = self._closures(requests, metadata)
         requested: set[str] = set()
         for request in requests:
-            requested.update(metadata.resolve_imports(request.imports))
+            requested.update(metadata.resolve_resources(request.resources))
 
         # A facility with no overlap with `requested` is nothing but shared
         # dependencies nobody ever asks for directly: the executor is told to
@@ -79,9 +79,10 @@ class GreedyPlanner:
             facility
             for facility in self._select_checkpoints(
                 requests=requests,
-                eligible_packages=eligible_packages,
+                eligible_resources=eligible_resources,
                 metadata=metadata,
                 size_budget_mb=budget.size_mb,
+                max_checkpoints=budget.max_checkpoints,
             )
             if facility & requested
         ][: budget.max_checkpoints]
@@ -99,7 +100,7 @@ class GreedyPlanner:
         remaining_latency = 0.0
 
         for request in requests:
-            closure = closures[metadata.resolve_imports(request.imports)]
+            closure = closures[metadata.resolve_resources(request.resources)]
             baseline = self._cost(closure, frozenset(), 0.0, metadata)
             total_latency += baseline
 
@@ -152,15 +153,12 @@ class GreedyPlanner:
         """
         cache: dict[frozenset[str], frozenset[str]] = {}
         for request in requests:
-            imports = metadata.resolve_imports(request.imports)
+            imports = metadata.resolve_resources(request.resources)
             if imports not in cache:
-                cache[imports] = frozenset(
-                    name.partition(":")[2] if ":" in name else name
-                    for name in metadata.closure(imports)
-                )
+                cache[imports] = metadata.closure(imports)
         return cache
 
-    def _eligible_packages(
+    def _eligible_resources(
         self,
         requests: Sequence[CorpusItem],
         metadata: Metadata,
@@ -169,8 +167,8 @@ class GreedyPlanner:
         users: dict[str, set[int]] = {}
 
         for index, request in enumerate(requests):
-            for name in closures[metadata.resolve_imports(request.imports)]:
-                if name in STDLIB:
+            for name in closures[metadata.resolve_resources(request.resources)]:
+                if name.startswith("package:") and name.partition(":")[2] in STDLIB:
                     continue
 
                 users.setdefault(name, set()).add(index)
@@ -230,7 +228,7 @@ class GreedyPlanner:
         The same formula ``_select_checkpoints`` picks facilities by: the
         checkpoint's own restore overhead, plus the import time for whatever
         the request needs that the checkpoint does not already hold resident.
-        ``packages=frozenset()`` and ``size_mb=0.0`` is the no-checkpoint case.
+        ``resources=frozenset()`` and ``size_mb=0.0`` is the no-checkpoint case.
         """
         residual = [name for name in closure if name not in STDLIB and name not in packages]
         return self._alpha * size_mb + sum(self._import_time(name, metadata) for name in residual)
@@ -262,13 +260,53 @@ class GreedyPlanner:
         dist: np.ndarray = self._alpha * sizes[:, None] + totals[None, :] - shared
         return dist
 
+    def _nodes(
+        self,
+        requests: Sequence[CorpusItem],
+        eligible_resources: set[str],
+        metadata: Metadata,
+    ) -> tuple[list[frozenset[str]], np.ndarray]:
+        """The distinct eligible-only closures of the corpus, and how often each occurs.
+
+        Facilities and nodes of every selection model are these closures: each is
+        already dependency-closed, so a checkpoint made of whole closures never
+        holds a package without what it loads. Sorted, so ties break
+        deterministically.
+        """
+        closures = self._closures(requests, metadata)
+        normalized_requests: list[frozenset[str]] = []
+
+        for request in requests:
+            imports = frozenset(
+                name
+                for name in closures[metadata.resolve_resources(request.resources)]
+                if name in eligible_resources
+            )
+
+            if imports:
+                normalized_requests.append(imports)
+
+        counts: Counter[frozenset[str]] = Counter(normalized_requests)
+
+        unique_requests = sorted(
+            counts,
+            key=lambda request: tuple(sorted(request)),
+        )
+
+        occurrences = np.asarray(
+            [counts[request] for request in unique_requests],
+            dtype=float,
+        )
+        return unique_requests, occurrences
+
     def _select_checkpoints(
         self,
         *,
         requests: Sequence[CorpusItem],
-        eligible_packages: set[str],
+        eligible_resources: set[str],
         metadata: Metadata,
         size_budget_mb: float,
+        max_checkpoints: int,  # noqa: ARG002 -- greedy's prefix is cut by ``plan``
     ) -> list[frozenset[str]]:
         """Greedy k-median facility selection: each pick is a checkpoint.
 
@@ -280,33 +318,9 @@ class GreedyPlanner:
         picked first, when every node's distance is still infinite -- break on
         ``unique_requests``' sort order, so the result is deterministic.
         """
-        closures = self._closures(requests, metadata)
-        normalized_requests: list[frozenset[str]] = []
-
-        for request in requests:
-            imports = frozenset(
-                name
-                for name in closures[metadata.resolve_imports(request.imports)]
-                if name in eligible_packages
-            )
-
-            if imports:
-                normalized_requests.append(imports)
-
-        if not normalized_requests:
+        unique_requests, node_occurrences = self._nodes(requests, eligible_resources, metadata)
+        if not unique_requests:
             return []
-
-        counts: Counter[frozenset[str]] = Counter(normalized_requests)
-
-        unique_requests = sorted(
-            counts,
-            key=lambda request: tuple(sorted(request)),
-        )
-
-        node_occurrences = np.asarray(
-            [counts[request] for request in unique_requests],
-            dtype=float,
-        )
 
         num_nodes = len(unique_requests)
 
@@ -415,12 +429,12 @@ class GreedyPlanner:
             self._import_time(package, metadata)
             for request in assigned
             for package in selected.intersection(
-                closures[metadata.resolve_imports(request.imports)]
+                closures[metadata.resolve_resources(request.resources)]
             )
         )
 
         return CheckpointPlan(
-            imports=tuple(sorted(selected.intersection(requested))),
+            resources=tuple(sorted(selected.intersection(requested))),
             requests_served=len(assigned),
             seconds_saved=saved,
             size_mb=sum(self._size_mb(package, metadata) for package in selected),

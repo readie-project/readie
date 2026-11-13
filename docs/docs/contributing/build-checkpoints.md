@@ -57,8 +57,29 @@ The repository already contains a measured file for `cpu`. Run this step again o
 To skip packages, pass a space-separated list. The default excludes `google`:
 
 ```bash
-make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"
+make analyze ANALYZE_EXCLUDE="package:google.cloud.aiplatform package:foo"
 ```
+
+### Add missing resource measurements
+
+Use incremental analysis to retain the metadata file's existing package values
+and measure additional resource IDs from the corpus:
+
+```sh
+make analyze FLAVOR=cpu ANALYZE_ONLY_MISSING=1 ANALYZE_NETWORK=bridge
+```
+
+Run this on the same Linux base image used for the recorded measurements. The
+pipeline checks image and distribution versions before reusing results. It uses
+the common resume journal and dispatches each ID to its registered analyzer.
+
+For long dataset runs, use a dedicated `KAGGLEHUB_CACHE` directory and pass
+`analyze --cleanup-cache` with that same absolute path to release each dataset's
+downloads after its result is journaled. The directory requires the profiling
+cache marker described in the [pipeline README](https://github.com/readie-project/readie/blob/main/pipeline/README.md).
+Networking permits dataset downloads; the default analysis network is `none`.
+Resource IDs in `ANALYZE_EXCLUDE` and `ANALYZE_DEFER` include their type prefix,
+such as `package:google` or `kaggle_dataset:owner/name`.
 
 ## Step 2: Capture checkpoints
 

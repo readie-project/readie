@@ -18,12 +18,13 @@ from typing import Any
 
 from readie_pipeline.corpus.domains import SEARCH_TERMS
 from readie_pipeline.corpus.keywords import Keywords
-from readie_pipeline.corpus.models import CorpusError, ResourceKind, Source, resource
+from readie_pipeline.corpus.models import CorpusError, Source
 from readie_pipeline.corpus.popularity import Tier, pick_tier
 from readie_pipeline.corpus.sources import Candidate
 from readie_pipeline.corpus.sources.notebooks import notebook_cells
 from readie_pipeline.corpus.sources.pacing import RETRY_STATUSES, Pacer, http_status
 from readie_pipeline.corpus.verify import ResourceLookupError
+from readie_pipeline.resources.identifiers import ResourceType, resource
 
 _FLAVOR_HINTS = {"cpu": ("scikit-learn", "pandas", "xgboost"), "gpu": ("pytorch", "gpu", "cuda")}
 #: Share of requests that append a flavor hint to the search. Kaggle search needs
@@ -320,11 +321,11 @@ def _declared(metadata: Mapping[str, Any]) -> tuple[str, ...]:
     part that can be looked up. Competition data has no resource kind yet.
     """
     declared = [
-        resource(ResourceKind.KAGGLE_DATASET, slug)
+        resource(ResourceType.KAGGLE_DATASET, slug)
         for slug in _slugs(metadata.get("dataset_sources"), parts=2)
     ]
     declared.extend(
-        resource(ResourceKind.KAGGLE_MODEL, "/".join(slug.split("/")[:2]))
+        resource(ResourceType.KAGGLE_MODEL, "/".join(slug.split("/")[:2]))
         for slug in _slugs(metadata.get("model_sources"), parts=2)
     )
     return tuple(declared)

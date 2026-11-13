@@ -18,11 +18,13 @@ be run without the other.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import shutil
 import sys
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -34,35 +36,64 @@ from readie_pipeline.capture.spec import ExecutorMode, SpecError, build_config, 
 from readie_pipeline.catalogue import build_catalogue, write_catalogue
 from readie_pipeline.config import ALPHA_PRECISION, ConfigError, CorpusSettings, Settings
 from readie_pipeline.corpus.generate import Report
-from readie_pipeline.corpus.models import Corpus, CorpusError, ResourceKind, Source
+from readie_pipeline.corpus.models import Corpus, CorpusError, Source
 from readie_pipeline.manifest import CheckpointMeta, Manifest, write_plan
-from readie_pipeline.metadata.analyze import analyze, installed_packages
-from readie_pipeline.metadata.datasets import measure_datasets
+from readie_pipeline.metadata.analyze import analyze
+from readie_pipeline.metadata.cache import KernelCacheDropper
+from readie_pipeline.metadata.inventory import installed_versions
 from readie_pipeline.metadata.models import Metadata, MetadataError
+from readie_pipeline.metadata.progress import (
+    ProgressJournal,
+    incompatibility,
+    partial_path,
+    read_progress,
+)
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
 from readie_pipeline.planning.requirements import (
     distributions_for,
     requirement_lines,
     write_requirements,
 )
+from readie_pipeline.resources.cleanup import cache_cleanup
+from readie_pipeline.resources.identifiers import ResourceType, resource
+from readie_pipeline.resources.packages import ColdProfile, installed_packages
+
+PLANNER_NAMES = (
+    "greedy",
+    "kmedoids",
+    "knapsack",
+    "jaccard",
+    "fixed",
+)
+
+#: Planners resolved by name: module and class, imported on demand.
+PLANNERS: dict[str, tuple[str, str]] = {
+    "greedy": ("readie_pipeline.planning.greedy", "GreedyPlanner"),
+    "kmedoids": ("readie_pipeline.planning.kmedoids", "KMedoidsPlanner"),
+    "knapsack": ("readie_pipeline.planning.knapsack", "KnapsackPlanner"),
+    "jaccard": ("readie_pipeline.planning.jaccard", "JaccardAgglomerativePlanner"),
+}
 
 
 def build_planner(name: str, alpha: float) -> CheckpointPlanner:
     """Resolve a planner by name.
 
-    ``alpha`` is the shared size-vs-time weight; only the greedy planner uses it.
+    ``alpha`` is the shared size-vs-time weight. ``fixed`` ignores it; the other planners
+    use it to score the plan, and all but ``knapsack`` and the Jaccard planners also
+    to select.
     """
-    # Both nested imports avoid an import cycle.
+    # The nested import avoids an import cycle.
     from readie_pipeline.planning.fixed import FixedPlanner  # noqa: PLC0415
 
     if name == "fixed":
         return FixedPlanner()
-    if name == "greedy":
-        from readie_pipeline.planning.greedy import GreedyPlanner  # noqa: PLC0415
+    if name in PLANNERS:
+        module, cls = PLANNERS[name]
+        planner_class = getattr(importlib.import_module(module), cls)
+        planner: CheckpointPlanner = planner_class(alpha=alpha)
+        return planner
 
-        return GreedyPlanner(alpha=alpha)
-
-    msg = f"unknown planner {name!r}; choose from fixed, greedy"
+    msg = f"unknown planner {name!r}; choose from {', '.join(PLANNER_NAMES)}"
     raise ConfigError(msg)
 
 
@@ -121,7 +152,7 @@ def cmd_corpus(settings: Settings, args: argparse.Namespace) -> int:
         settings.corpus_cache_path,
         only_sources=only_sources,
         only_domains=only_domains,
-        known_packages=_installed_packages(settings),
+        known_resources=_installed_packages(settings),
         exclude=tuple(args.exclude or ()),
     )
     _report_generation(corpus, report, corpus_path)
@@ -209,34 +240,157 @@ def _installed_packages(settings: Settings) -> frozenset[str]:
     """
     if not settings.metadata_path.exists():
         return frozenset()
-    return frozenset(Metadata.load(settings.metadata_path).packages)
+    return frozenset(Metadata.load(settings.metadata_path).resources)
+
+
+def _prior_run(settings: Settings) -> tuple[Metadata | None, bool]:
+    """Find what an earlier run left that this one can build on, and whether to continue it.
+
+    An unfinished run of the same kind (the same number of timings per package) is
+    continued: its timings are kept. A finished metadata file is used only for its discovery
+    results, because its timings are measured again. Either is ignored, with the reason
+    printed, when it was measured in another image or with other package versions.
+    """
+    installed = installed_versions()
+
+    def usable(known: Metadata, where: Path) -> bool:
+        reason = incompatibility(known, base_image=settings.base_image, installed=installed)
+        if reason:
+            print(f"[*] not reusing {where}: {reason}")
+        return not reason
+
+    unfinished = partial_path(settings.metadata_path)
+    if unfinished.exists():
+        try:
+            known, samples = read_progress(unfinished)
+        except MetadataError as exc:
+            print(f"[*] not reusing {unfinished}: {exc}")
+        else:
+            if samples != settings.profile_samples:
+                print(
+                    f"[*] not continuing {unfinished}: it took {samples} timing(s) per package "
+                    f"and this run takes {settings.profile_samples}"
+                )
+            elif usable(known, unfinished):
+                print(
+                    f"[*] continuing {unfinished}: {len(known.resources)} packages already measured"
+                )
+                return known, True
+    if settings.metadata_path.exists():
+        try:
+            known = Metadata.load(settings.metadata_path)
+        except MetadataError as exc:
+            print(f"[*] not reusing {settings.metadata_path}: {exc}")
+        else:
+            if usable(known, settings.metadata_path):
+                print(
+                    f"[*] reusing what {settings.metadata_path} found for {len(known.resources)} "
+                    "packages; their timings are measured again"
+                )
+                return known, False
+    return None, False
+
+
+def _finished_discovery(settings: Settings) -> Metadata | None:
+    """The finished metadata file, for the discovery results of a run that continues a side file.
+
+    A side file holds only the packages that were measured, so it knows nothing about a name
+    that has not been measured yet. The finished file from the same environment does, and no
+    timing of it is used. ``None`` when there is no such file or it is unusable here.
+    """
+    if not settings.metadata_path.exists():
+        return None
+    try:
+        finished = Metadata.load(settings.metadata_path)
+    except MetadataError as exc:
+        print(f"[*] not reusing {settings.metadata_path}: {exc}")
+        return None
+    reason = incompatibility(
+        finished, base_image=settings.base_image, installed=installed_versions()
+    )
+    if reason:
+        print(f"[*] not reusing {settings.metadata_path}: {reason}")
+        return None
+    print(
+        f"[*] also reusing what {settings.metadata_path} found for {len(finished.resources)} "
+        "packages; none of its timings are used"
+    )
+    return finished
+
+
+def _analysis_prior(settings: Settings, args: argparse.Namespace) -> tuple[Metadata | None, bool]:
+    """Choose resume state without remeasuring finished resources in incremental mode."""
+    if getattr(args, "only_missing", False):
+        if args.fresh:
+            msg = "--only-missing cannot be combined with --fresh"
+            raise ConfigError(msg)
+        finished = Metadata.load(settings.metadata_path)
+        reason = incompatibility(
+            finished, base_image=settings.base_image, installed=installed_versions()
+        )
+        if reason:
+            msg = f"cannot preserve measurements: {reason}"
+            raise MetadataError(msg)
+        unfinished = partial_path(settings.metadata_path)
+        if unfinished.exists():
+            prior, samples = read_progress(unfinished)
+            reason = incompatibility(
+                prior, base_image=settings.base_image, installed=installed_versions()
+            )
+            if reason or samples != settings.profile_samples:
+                detail = reason or "profile sample count differs"
+                msg = f"cannot resume incremental analysis: {detail}"
+                raise MetadataError(msg)
+            finished = replace(
+                finished,
+                resources={**prior.resources, **finished.resources},
+                resolved={**prior.resolved, **finished.resolved},
+            )
+        return finished, True
+    return (None, False) if args.fresh else _prior_run(settings)
+
+
+def _analysis_cleanup(args: argparse.Namespace) -> Callable[[str], None] | None:
+    root = getattr(args, "cleanup_cache", None)
+    return None if root is None else cache_cleanup(root)
 
 
 def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
-    """Measure every package installed here, plus every import the corpus uses.
+    """Dispatch installed package IDs and corpus resources through shared analysis.
 
-    ``installed_packages()`` alone only ever names top-level packages -- it
-    can never surface a specific dotted import like ``sklearn.svm``, since
-    nothing else would ask to resolve or measure one. The corpus's raw
-    ``package:`` resources are exactly those candidates (see ``CorpusItem.imports``), so
-    both are measured together: the base image's own universe (a checkpoint
-    restores into the base image, not into whatever a sample of requests
-    happens to reference, so the planner needs a real number for all of it,
-    corpus or not) plus whatever specific dotted names the corpus actually
-    references. Run this wherever that base image's packages are actually
-    importable (see ``installed_packages``).
+    Installed package discovery supplies the base image's top-level candidates;
+    the corpus adds specific submodules and resources from other sources.
     """
-    packages = set(installed_packages())
-    corpus: Corpus | None = None
-    if settings.corpus_path.exists():
+    finished: Metadata | None = None
+    requests_using: Counter[str] = Counter()
+    if args.only_known:
+        finished = _finished_discovery(settings)
+        if finished is None:
+            msg = (
+                f"--only-known needs the finished {settings.metadata_path}, measured in this "
+                "image with these package versions"
+            )
+            raise MetadataError(msg)
+        resources = set(finished.resources)
+        print(
+            f"[*] walking only the {len(resources)} names in {settings.metadata_path}, not the "
+            "installed resources or the corpus"
+        )
+    else:
+        resources = {resource(ResourceType.PACKAGE, name) for name in installed_packages()}
+    if not args.only_known and settings.corpus_path.exists():
         corpus = Corpus.load(settings.corpus_path)
         for item in corpus:
-            packages.update(item.imports)
+            resources.update(item.resources)
+            requests_using.update(set(item.resources))
 
     exclude = list(args.exclude or ())
     if exclude:
         print(f"[*] excluding: {', '.join(exclude)}")
-    print(f"[*] analysing {len(packages)} candidate imports in this environment")
+    defer = list(args.defer or ())
+    if defer:
+        print(f"[*] measuring last: {', '.join(defer)}")
+    print(f"[*] analysing {len(resources)} candidate resource IDs in this environment")
 
     def progress(name: str, facts: object) -> None:
         # An error is worth seeing on every run, verbose or not, because the
@@ -253,25 +407,59 @@ def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
                 f"{getattr(facts, 'import_time', 0.0):.3f} s"
             )
 
-    metadata = replace(
-        analyze(packages, exclude=exclude, on_progress=progress), base_image=settings.base_image
+    dropper = KernelCacheDropper(settings.drop_caches_file)
+    # Fail now, not partway through a run that takes hours.
+    dropper.check()
+    cold = ColdProfile(dropper, settings.profile_samples)
+    print(
+        f"[*] the file cache is emptied before each of {settings.profile_samples} timings "
+        "per resource sample, and the median is kept"
     )
-    if corpus is not None:
-        dataset_slugs = {
-            dataset for item in corpus for dataset in item.of_kind(ResourceKind.KAGGLE_DATASET)
-        }
-        if dataset_slugs:
-            dataset_facts = measure_datasets(sorted(dataset_slugs), on_progress=progress)
-            metadata = replace(
-                metadata,
-                packages={**metadata.packages, **dataset_facts},
-            )
+
+    known, keep_timings = _analysis_prior(settings, args)
+    discovery = None
+    if keep_timings:
+        discovery = finished if finished is not None else _finished_discovery(settings)
+    # Each package is appended to a side file as soon as it is measured, so a stop loses at
+    # most the package that was being measured.
+    journal = ProgressJournal(
+        partial_path(settings.metadata_path),
+        samples=settings.profile_samples,
+        base_image=settings.base_image,
+        installed=installed_versions(),
+        resume=keep_timings,
+    )
+    try:
+        metadata = replace(
+            analyze(
+                resources,
+                exclude=exclude,
+                on_progress=progress,
+                cold=cold,
+                known=known,
+                keep_timings=keep_timings,
+                discovery=discovery,
+                journal=journal,
+                priority=requests_using,
+                defer=defer,
+                after_persist=_analysis_cleanup(args),
+                on_start=(lambda name: print(f"[*] starting resource: {name}"))
+                if args.verbose
+                else None,
+            ),
+            base_image=settings.base_image,
+        )
+    except BaseException:
+        # Leave the side file for the next run to continue from.
+        journal.close()
+        raise
 
     settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.metadata_path.write_text(json.dumps(metadata.to_json(), indent=2) + "\n")
+    metadata.save(settings.metadata_path)
+    journal.remove()
 
-    usable = sum(1 for f in metadata.packages.values() if f.usable)
-    print(f"[*] {usable}/{len(metadata)} packages measured -> {settings.metadata_path}")
+    usable = sum(1 for f in metadata.resources.values() if f.usable)
+    print(f"[*] {usable}/{len(metadata)} resources measured -> {settings.metadata_path}")
     print(f"[*] versions recorded for {len(metadata.distributions)} distributions")
     print(f"[*] measured in {settings.base_image or 'an image that was not named'}")
     return 0
@@ -298,11 +486,11 @@ def _plan(settings: Settings) -> list[CheckpointPlan]:
 
     for i, plan in enumerate(plans, start=1):
         print(
-            f"[*] checkpoint {i}: {len(plan.imports)} packages, "
+            f"[*] checkpoint {i}: {len(plan.resources)} packages, "
             f"{plan.requests_served} requests, {plan.seconds_saved:.0f}s saved, "
             f"{plan.size_mb:.0f} MB"
         )
-        print(f"    {', '.join(plan.imports)}")
+        print(f"    {', '.join(plan.resources)}")
 
     write_plan(settings.plan_path, [p.to_json() for p in plans])
     print(f"[*] plan written to {settings.plan_path}")
@@ -377,7 +565,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
 
     plans = [CheckpointPlan.from_json(e) for e in json.loads(settings.plan_path.read_text())]
     if settings.planner != "fixed":
-        plans = [CheckpointPlan(), *plans]
+        plans.append(CheckpointPlan())
 
     fingerprint = settings.fingerprint_path.read_text().strip()
     version = runsc_version(settings.runsc_binary)
@@ -390,7 +578,7 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
     restore_times: list[float] = []
     for index, plan in enumerate(plans):
         checkpoint_id = f"checkpoint_{index}"
-        print(f"[*] {checkpoint_id}: {', '.join(plan.imports) or '(nothing pre-imported)'}")
+        print(f"[*] {checkpoint_id}: {', '.join(plan.resources) or '(nothing pre-imported)'}")
 
         def write_spec(mode: ExecutorMode, checkpoint_dir: Path, preimport: str) -> None:
             # The fingerprint is discarded here on purpose: only process.env
@@ -404,10 +592,9 @@ def cmd_build(settings: Settings, args: argparse.Namespace) -> int:
             checkpoint_id=checkpoint_id,
             runsc_version=version,
             spec_fingerprint=fingerprint,
-            imports=plan.imports,
-            datasets=plan.datasets,
-            models=plan.models,
-            tokenizers=plan.tokenizers,
+            imports=tuple(
+                name.partition(":")[2] for name in plan.resources if name.startswith("package:")
+            ),
         ).write(destination)
         entries.append((checkpoint_id, plan))
         print(f"    captured at {destination}")
@@ -497,7 +684,7 @@ def cmd_capture(settings: Settings, args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 def add_planner_flags(parser: argparse.ArgumentParser) -> None:
     """Attach the planner's knobs, shared by `plan` and `capture`."""
-    parser.add_argument("--planner", choices=("greedy", "fixed"), help="selection strategy")
+    parser.add_argument("--planner", choices=PLANNER_NAMES, help="selection strategy")
     parser.add_argument("--max-checkpoints", type=int, help="how many checkpoints to plan")
     parser.add_argument(
         "--reuse-plan",
@@ -582,6 +769,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude",
         action="append",
         help="skip a package, and everything under it; repeatable",
+    )
+    analyze_cmd.add_argument(
+        "--defer",
+        action="append",
+        help="measure a package, and everything under it, after all others; repeatable. "
+        "The rest are measured most-used first, by the number of corpus requests that use them",
+    )
+    analyze_cmd.add_argument(
+        "--only-known",
+        action="store_true",
+        help="walk only the names in the finished metadata file, and not the installed "
+        "packages or the corpus's imports; how to finish what an earlier run did not reach",
+    )
+    analyze_cmd.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="keep existing resource measurements and analyze only additional IDs",
+    )
+    analyze_cmd.add_argument(
+        "--cleanup-cache",
+        type=Path,
+        help="release resource downloads from a marked dedicated cache after journaling",
+    )
+    analyze_cmd.add_argument(
+        "--fresh",
+        action="store_true",
+        help="ignore an unfinished run and the earlier metadata, and measure everything again",
     )
     analyze_cmd.set_defaults(handler=cmd_analyze)
 

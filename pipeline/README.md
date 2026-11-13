@@ -26,7 +26,7 @@ make lint type # ruff + mypy --strict
 
 ```sh
 readie-pipeline corpus    # build the workload corpus for FLAVOR (Kaggle, Hugging Face, hosted model)
-readie-pipeline analyze   # measure every package installed here, and their deps
+readie-pipeline analyze   # dispatch installed and corpus resources to their analyzers
 readie-pipeline plan      # choose checkpoint contents, write the OCI spec
 readie-pipeline build     # capture one gVisor checkpoint per planned set
 readie-pipeline capture   # plan and then build, in one process
@@ -186,33 +186,169 @@ the pipeline image does not include it. `plan` and `analyze` read the result.
 
 ### analyze
 
-`analyze` measures whatever is importable in the environment it runs in. That
-environment is the base image, not the corpus's imports. The stage must run
-natively inside the base image, not alongside a copy of it. Mixing the tool's
-own libc with a foreign one crashes with SIGFPE as soon as anything beyond pure
-Python is involved, and `import pandas` is enough to trigger it.
+`analyze` receives source-qualified IDs and dispatches them through a handler
+registry. `metadata/analyze.py` owns exclusion, resume, ordering, progress and
+persistence. Implementations in `resources/` own resolution and loading. The
+registered analyzers are `package` and `kaggle_dataset`; another resource type
+without a registered analyzer is reported as unsupported, not sent to a package
+loader.
 
-`make analyze FLAVOR=cpu|gpu` (root `Makefile`) builds the `analyzer` target of
-`pipeline/Dockerfile` and runs it. That target installs `readie-pipeline` with
-`--no-deps` directly on top of the base image, so only one libc is present. The
-result is written on the host to `data/metadata/<flavor>.json`.
+Package analysis runs natively inside the base image. It retains subprocess
+isolation, dependency discovery, private-module folding, cold-cache profiling,
+repeated samples and median timings. Dataset analysis uses a separate process
+per sample, downloads an inventory through KaggleHub, loads supported formats
+locally through pandas, and retains unsupported or unparseable files as bytes. Disk and memory
+costs include all loaded files. Each sample clears the host filesystem cache
+after downloading and inventorying the dataset, before timing its load.
+Download time and cache clearing are excluded from load time.
+Declared loader dependencies are imported before cache clearing and timing, so
+dataset load costs do not count their package import costs again.
+Timed file reads do not call KaggleHub's pandas adapter, which downloads files
+again even after the archive has been extracted.
+XML syntax errors use the same raw-byte fallback as other parse failures.
+Dataset subprocesses send loader messages to stderr and only the measurement
+JSON to stdout, including messages from logging handlers created during imports.
+Dataset samples have no fixed subprocess timeout. An operator can stop the
+container when a resource cannot complete within the available profiling window.
 
-`plan` and `capture` read whatever `data/metadata/<flavor>.json` already
-contains. They do not regenerate it.
+For long dataset runs, `analyze --cleanup-cache /path/to/cache` removes each
+dataset's downloaded files after all samples finish and its successful result
+has been flushed and synced to the resume journal. The cache must be a dedicated
+absolute directory with a `.readie-profile-cache` file containing
+`readie-profile-cache-v1` followed by a newline. Set `KAGGLEHUB_CACHE` to that
+same directory. Cleanup does not remove metadata, journals, or other datasets;
+failed attempts are recorded in a separate `.partial.failures.jsonl` file before
+their downloads are released, and remain eligible for retry. An interrupted
+process must exit before its incomplete downloads can be removed. The option
+does not change measurement values or the sample count.
 
-Besides the per-package measurements and the `resolved` map, the file has a
-top-level `distributions` object: canonical distribution name to the version
-installed in the image that was measured (`"scikit-learn": "1.6.1"`). There is one
-entry per distribution, not per package, because many packages share one. `analyze`
-fills it from the environment it runs in. A distribution that was measured in an
-older image than the one the versions were read from has no entry. The file stays
-valid without the key, and `plan` then writes bare names instead of pins.
+The checked-in CPU measurements have a [coverage report](reports/dataset-coverage.md)
+and a [machine-readable inventory](reports/dataset-coverage.json). These record
+measured, failed, deferred and unattempted dataset IDs separately. Failed attempts
+do not supply measurement values; an approved deferral records its reason.
 
-The top-level `base_image` string names the image the file was measured in. An image
-does not record its own `FROM`, so `make analyze` passes it in as `READIE_BASE_IMAGE`
-(the Makefile's `ROOTFS_BASE_IMAGE`, a digest unless overridden) and `analyze` writes
-it, or an empty string when the image was not named. The writer always emits both
-`base_image` and `distributions`, with the top-level keys sorted.
+`make analyze FLAVOR=cpu|gpu` builds the analyzer image and writes
+`data/metadata/<flavor>.json`. Dataset downloads require networking and any
+credentials required by their source. Package-only profiling stays offline by
+default. To preserve every existing measurement and add missing resource IDs:
+
+```sh
+make analyze FLAVOR=cpu ANALYZE_ONLY_MISSING=1 ANALYZE_NETWORK=bridge
+```
+
+The target forwards `KAGGLE_API_TOKEN`, `KAGGLE_USERNAME` and `KAGGLE_KEY` from
+the host environment when they are set. Public datasets may not need credentials.
+
+This runs on the Linux profiling host, not a developer's Mac. Existing image and
+distribution versions must match before measurements are reused. The incremental
+mode also resumes a compatible partial journal. It refuses `--fresh` because that
+would discard the measurements it is meant to preserve.
+
+Metadata has one `resources` mapping and a `resolved` ID-to-ID map. Each
+`ResourceFacts` entry records `resource_type`, `base_import`, `distribution`,
+`disk_size_mb`, `memory_size_mb`, `import_time` and `dependencies`. Package
+`dependencies` includes the full observed module closure formerly stored as
+`loaded_modules`, using qualified IDs. Dataset dependencies include its loader
+packages and observed imports. Distribution names and versions remain package
+manager names, not resource IDs.
+
+The one-time migration is separate from analysis:
+
+```sh
+python tools/migrate_resources.py old-metadata.json data/metadata/cpu.json
+```
+
+It changes identifiers and dependency fields without rerunning measurements or
+rounding stored values. Existing corpus workload code and provenance remain
+unchanged. Old flat metadata, `packages` envelopes and generic resource kinds
+are not supported by the normal reader after migration.
+
+`plan` and `capture` read the metadata file; they do not regenerate it. Plans
+have one `resources` array. Dataset checkpoint loading is outside this change:
+capture rejects a plan containing a resource whose loader is not implemented.
+
+#### Cold timings
+
+For each package, `analyze` first runs a discovery subprocess that imports it and
+records what it loads. It then runs a second subprocess that times the import. The
+discovery run has already read the package's files, so the host's file cache holds them
+and a timed import would be a warm one. A worker that starts a fresh sandbox may meet the
+same package with a cold cache, where the import takes longer, and by an amount that
+differs from package to package. The router prices a cold start from these timings, so
+warm numbers make a restore look less valuable than it is.
+
+For this reason, `analyze` empties the host's file cache after discovery and before each
+timed subprocess, and repeats this `READIE_PROFILE_SAMPLES` times for each package. It keeps
+the median time and the median memory. The dependencies are still imported without timing
+inside the subprocess, so the time stays the package's own, with its dependencies already
+resident.
+
+The cache is emptied by writing `3` to `/proc/sys/vm/drop_caches`, which empties the
+whole host's file cache. This needs root, and it slows every other process on the host
+until the cache fills again, so run `analyze` on a machine where that is acceptable.
+Before a run starts, `analyze` checks that it can write the file. It confirms each drop
+with a file of its own: it reads a 32 MiB file so that the file is in the cache, drops,
+and asks the kernel (`mincore`) how much of that file is still resident. It stops with an
+error when more than a tenth is, so a drop that did nothing cannot produce warm numbers
+silently. The size of the whole cache would not do for this, because running processes
+keep some of it resident whatever is dropped, and how much differs from host to host. For
+the same reason, files that another running process has mapped stay in memory, so run
+`analyze` on a host where nothing else uses the packages being timed.
+
+Root inside a container is not enough: Docker mounts `/proc/sys` read-only. `make analyze`
+therefore mounts the host's file at `/host-drop-caches` and sets `READIE_DROP_CACHES_FILE`
+to that path. When running the command in another way, do the same or run it on the host.
+
+Bytecode is the other state that a run could change. The first import of a module that has
+no `.pyc` compiles it and writes the file, so later runs would find a compiled package. A
+worker's sandbox starts from the image's own bytecode and discards what it writes, so a
+module that the image never imported is compiled again on every cold start. `analyze`
+therefore runs the discovery and the timed subprocesses with `python -B`, which writes no
+bytecode. Every run, sample and package then sees the bytecode as the image has it, which is
+what a fresh sandbox sees.
+
+A run takes much longer than one without the drops, because each timing reads the package
+from disk again.
+
+#### Saving progress and reusing earlier results
+
+`analyze` appends a line to `data/metadata/<flavor>.json.partial` as each package finishes,
+and syncs the file to disk before it measures the next one. A stop, whether a crash or an
+interrupt, loses at most the package that was being measured. Rewriting the metadata file,
+which is hundreds of megabytes, after every package would cost more than measuring it, so
+the side file is append-only. The final metadata file is written once, when the run is
+complete, and the side file is then deleted. Nothing that reads the metadata file can
+mistake an unfinished run for a finished one.
+
+When it starts, `analyze` looks at what an earlier run left:
+
+- An unfinished side file from a run with the same number of timings per package is
+  continued. Its packages are kept and not measured again. When a finished metadata file
+  from the same environment also exists, its discovery results are used for the names the
+  side file has not measured, and none of its timings are used.
+- A finished metadata file supplies only the discovery results, which module each name
+  resolves to and what that module loads. No discovery subprocess runs for those names. Their
+  timings are measured again, because that file may have been timed another way.
+- Either is ignored, with the reason printed, when it was measured in another image or when
+  any distribution has another version now. The side file records the versions of every
+  installed distribution when the run starts, for this check.
+- A package that failed is not saved, so it is tried again.
+
+`analyze` walks the resource IDs in a fixed order: names under `--defer` (`ANALYZE_DEFER`)
+last, then the names that the most corpus requests use, then the rest alphabetically. The order
+changes when a package is measured and not what is measured, so a run continues from a side file
+that another order wrote. A package is measured together with everything it loads, so defer a
+large subtree that few requests use.
+
+`--only-known` (`make analyze ANALYZE_ONLY_KNOWN=1`) walks only the names in the finished
+metadata file, and not the installed packages or the corpus's imports. Together with an
+unfinished side file it measures what the finished file has and the run has not reached. It
+fails when there is no usable finished file. The metadata file the run then writes holds the
+side file's packages and these, so it does not hold the names that only the corpus uses.
+
+`--fresh` (`make analyze ANALYZE_FRESH=1`) ignores both and measures everything again. Use
+it after changing `ANALYZE_EXCLUDE` or the corpus, because a continued run keeps everything
+in the side file.
 
 ### capture
 
@@ -242,10 +378,10 @@ it reads the plan. The directory itself is kept.
 ```json
 [
     {
-        "imports": ["pandas", "numpy"],
-        "datasets": [],
-        "models": [],
-        "tokenizers": []
+        "resources": ["package:pandas", "package:numpy"],
+        "requests_served": 0,
+        "seconds_saved": 0.0,
+        "size_mb": 0.0
     }
 ]
 ```
@@ -262,16 +398,27 @@ value, so the first N selections are already the best N. The `fixed` planner ret
 the list of sets it was constructed with, none by default, so a fixed run plans no
 checkpoints and `build` captures none; it is meant for reproducibility runs and tests.
 
-Two bounds apply to the greedy planner:
+Five more planners select checkpoints by other methods. Each subclasses the greedy planner and
+overrides only the selection step, so eligibility, dependency closures, the stdlib filter, the
+bounds below and the scoring of the plan are the greedy planner's, and every plan is comparable
+on the same numbers. A checkpoint is always a union of whole dependency closures, never a
+package without what it loads.
+
+| `READIE_PLANNER` | Method |
+| --- | --- |
+| `kmedoids` | Seeded k-medoids over the distinct closures, using the greedy distance (`alpha` times size, plus the import time the checkpoint leaves unpaid). Starts from the greedy solution and from `restarts` random sets, and improves each by swap and add moves. The seed is fixed, so a run is reproducible. |
+| `knapsack` | Ranks each distinct closure once by the import time it removes across the corpus, and takes closures in that order while they fit the remaining budget. Picks are not re-ranked, so overlap between them is not discounted. |
+| `jaccard` | Clusters the distinct closures into at most `max_checkpoints` groups on Jaccard distance. Each checkpoint is the union of one cluster., with bottom-up clustering by occurrence-weighted average linkage on Jaccard distance. |
+
+The Jaccard planners cluster on package overlap alone. When a cluster's union does not fit the
+remaining budget, they drop its least frequent closures until it does.
+
+Two bounds apply to every planner:
 
 - `READIE_MAX_CHECKPOINTS` (`--max-checkpoints`) keeps only the first N
   selections.
 - `READIE_SIZE_BUDGET_MB` (`--size-budget-mb`) is a total budget across all
   selected checkpoints, not a limit on each one. The default is 2048 MB.
-
-The `--size-budget-mb` help text in `cli.py` reads "per-checkpoint size budget".
-That text is inaccurate: `GreedyPlanner.plan` documents the budget as bounding
-the total size across every checkpoint selected.
 
 ### imports
 
@@ -492,7 +639,7 @@ build could disagree with the first.
 | `READIE_PLAN_DIR`                                        | where the plan goes, if not with the outputs                                        |
 | `ROOTFS_PYTHONPATH`                                      | must correspond to the rootfs stage; the Dockerfile build argument of the same name sets it |
 | `SANDBOX_NETWORK`, `SANDBOX_HOST_UDS`, `SANDBOX_OVERLAY` | must match the worker's                                                             |
-| `READIE_PLANNER`                                         | `greedy` or `fixed`                                                                 |
+| `READIE_PLANNER`                                         | `greedy`, `kmedoids`, `knapsack`, `jaccard`, or `fixed`                             |
 | `READIE_MAX_CHECKPOINTS`, `READIE_SIZE_BUDGET_MB`        | planner bounds; the size budget is a total across all checkpoints                   |
 | `READIE_ALPHA`                                           | size-versus-time weight used by the planner; `build` records the measured value     |
 | `FLAVOR`                                                 | `cpu` or `gpu`; the generation this run produces                                    |
@@ -500,6 +647,8 @@ build could disagree with the first.
 | `READIE_BASE_IMAGE`                                      | `analyze` only; the image being measured, recorded as `base_image` in the metadata. `make analyze` sets it |
 | `RUNSC_BINARY`, `OCISPEC_BINARY`                         | the runtime and the OCI-spec generator (defaults `runsc`, `/usr/local/bin/ocispec`) |
 | `READIE_CHECKPOINT_TIMEOUT`                              | how long a sandbox may take to checkpoint before `build` gives up (default `300`)   |
+| `READIE_PROFILE_SAMPLES`                                 | `analyze` only; timings per package, each after emptying the file cache, of which the median is kept (default `3`). See [Cold timings](#cold-timings) |
+| `READIE_DROP_CACHES_FILE`                                | `analyze` only; the file written to empty the cache (default `/proc/sys/vm/drop_caches`). `make analyze` sets it to a mount of the host's file |
 | `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_MODEL_NAME`    | `corpus` only; the model endpoint, key and model name                                                     |
 | `KAGGLE_API_TOKEN`                                       | `corpus` only; Kaggle access token. Required when a Kaggle source has weight        |
 | `HF_TOKEN`                                               | `corpus` only; Hugging Face token. Required when a Hugging Face source has weight   |
@@ -513,10 +662,9 @@ build could disagree with the first.
 
 ## Known gaps
 
-- `datasets`, `tokenizers` and `models` are carried through the schema and the
-  plan, but only packages are pre-imported. Loading a model into the captured
-  process is a much larger change, because it alters what a checkpoint costs to
-  store.
+- Plans use one `resources` list for all resource types. Capture accepts only
+  package resources and rejects plans containing other types. Dataset and model
+  capture require separate loaders and are outside this change.
 - The rootfs is the full base image regardless of what the plan selects. This is
   deliberate: a new request distribution then regenerates only checkpoints, not
   tens of gigabytes of filesystem. A sandbox does carry far more than any one

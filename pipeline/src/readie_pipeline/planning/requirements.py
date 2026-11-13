@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata.models import Metadata, ResourceFacts
 from readie_pipeline.planning.ports import CheckpointPlan
 
 #: File name beside the plan. The Dockerfile's ``ROOTFS_REQUIREMENTS`` build
@@ -27,7 +27,7 @@ from readie_pipeline.planning.ports import CheckpointPlan
 REQUIREMENTS_FILE = "rootfs-requirements.txt"
 
 
-def _facts_for(name: str, metadata: Metadata) -> PackageFacts | None:
+def _facts_for(name: str, metadata: Metadata) -> ResourceFacts | None:
     """Facts for ``name``, or for its closest dotted parent that has any.
 
     A module a package loads (``numpy.core._multiarray_umath``) usually has no
@@ -47,7 +47,7 @@ def distributions_for(plans: Iterable[CheckpointPlan], metadata: Metadata) -> tu
     Sorted and without duplicates. A module that belongs to no distribution (the
     standard library) or that the metadata knows nothing about adds nothing.
     """
-    imports = {name for plan in plans for name in plan.imports}
+    imports = {name for plan in plans for name in plan.resources}
     found: set[str] = set()
     for module in metadata.closure(imports):
         facts = _facts_for(module, metadata)

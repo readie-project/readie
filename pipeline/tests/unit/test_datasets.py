@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import contextlib
+import json
+import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd  # type: ignore[import-untyped]
 import pytest
 
-from readie_pipeline.metadata.datasets import (
+from readie_pipeline.resources.identifiers import ResourceType
+from readie_pipeline.resources.kaggle_dataset import (
     DatasetReferenceKind,
     dataset_handle,
     dataset_reference_kind,
@@ -13,7 +19,126 @@ from readie_pipeline.metadata.datasets import (
     measure_dataset,
     measure_datasets,
 )
-from readie_pipeline.metadata.models import ResourceType
+
+
+@pytest.mark.parametrize(
+    ("filename", "contents"),
+    [
+        ("data.csv", "value\n1\n"),
+        ("data.tsv", "value\n1\n"),
+        ("data.json", '[{"value": 1}]'),
+        ("data.jsonl", '{"value": 1}\n'),
+    ],
+)
+def test_production_loader_reads_extracted_files_without_redownloading(
+    tmp_path: Path, monkeypatch, filename: str, contents: str
+) -> None:
+    # The adapter's second download compared extracted CSV sizes with compressed
+    # download sizes, then attempted a corrupt resume inside the timed section.
+    (tmp_path / filename).write_text(contents)
+    downloads = []
+
+    def download(*args, **kwargs):
+        downloads.append(args)
+        assert len(downloads) == 1
+        return str(tmp_path)
+
+    def adapter(*args, **kwargs):
+        raise AssertionError("the KaggleHub adapter would download the file again")
+
+    monkeypatch.setattr(
+        "readie_pipeline.resources.kaggle_dataset.kagglehub.dataset_download", download
+    )
+    monkeypatch.setattr("readie_pipeline.resources.kaggle_dataset.kagglehub.dataset_load", adapter)
+    result = measure_dataset("owner/data")
+    assert not result.facts.error
+    assert result.values[filename].to_dict("list") == {"value": [1]}
+    assert len(downloads) == 1
+
+
+def test_xml_syntax_errors_fall_back_to_bytes(tmp_path: Path, monkeypatch) -> None:
+    # The DAIGT dataset contains XML that raises a SyntaxError subclass in lxml.
+    # A parser failure must not discard the other files in the dataset.
+    contents = b"<row>first</row><row>second</row>"
+    (tmp_path / "data.xml").write_bytes(contents)
+    (tmp_path / "data.csv").write_text("value\n1\n")
+
+    def read_xml(*args, **kwargs):
+        raise SyntaxError("Extra content at the end of the document")
+
+    monkeypatch.setattr(
+        "readie_pipeline.resources.kaggle_dataset.kagglehub.dataset_download",
+        lambda *_args, **_kwargs: str(tmp_path),
+    )
+    monkeypatch.setattr(pd, "read_xml", read_xml)
+    result = measure_dataset("owner/data")
+
+    assert not result.facts.error
+    assert result.values["data.xml"] == contents
+    assert result.values["data.csv"].to_dict("list") == {"value": [1]}
+    assert result.facts.disk_size_mb > 0
+    assert result.facts.memory_size_mb > 0
+
+
+def test_production_loader_reads_sqlite_tables_without_redownloading(tmp_path: Path, monkeypatch):
+    path = tmp_path / "data.sqlite"
+    with contextlib.closing(sqlite3.connect(path)) as connection:
+        connection.execute('CREATE TABLE "first table" (value INTEGER)')
+        connection.execute('INSERT INTO "first table" VALUES (1)')
+        connection.execute('CREATE TABLE "second table" (value INTEGER)')
+        connection.execute('INSERT INTO "second table" VALUES (2)')
+        connection.commit()
+    downloads = []
+
+    def download(*args, **kwargs):
+        downloads.append(args)
+        assert len(downloads) == 1
+        return str(tmp_path)
+
+    monkeypatch.setattr(
+        "readie_pipeline.resources.kaggle_dataset.kagglehub.dataset_download", download
+    )
+    result = measure_dataset("owner/data")
+    assert not result.facts.error
+    assert result.values["data.sqlite::first table"].to_dict("list") == {"value": [1]}
+    assert result.values["data.sqlite::second table"].to_dict("list") == {"value": [2]}
+    assert len(downloads) == 1
+
+
+def test_dataset_process_keeps_existing_log_handlers_off_the_json_channel() -> None:
+    # KaggleHub retains stdout in its handler before _main redirects output.
+    script = """
+import logging
+import os
+import sys
+from readie_pipeline.resources import kaggle_dataset as datasets
+from readie_pipeline.metadata.models import ResourceFacts
+from readie_pipeline.resources.identifiers import ResourceType
+
+logger = logging.getLogger('download-regression')
+logger.addHandler(logging.StreamHandler(sys.stdout))
+logger.setLevel(logging.INFO)
+
+def measure(*args, **kwargs):
+    logger.info('Downloading to cache...')
+    print('Extracting files...')
+    os.write(1, b'native library output\\n')
+    return datasets.DatasetMeasurement(
+        facts=ResourceFacts(base_import='owner/data', resource_type=ResourceType.KAGGLE_DATASET),
+        values={},
+    )
+
+datasets.measure_dataset = measure
+sys.argv = ['datasets', 'owner/data']
+datasets._main()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=True
+    )
+    assert json.loads(result.stdout)["base_import"] == "owner/data"
+    assert "Downloading to cache..." in result.stderr
+    assert "Extracting files..." in result.stderr
+    assert "native library output" in result.stderr
 
 
 class FakeDownloader:
@@ -71,6 +196,49 @@ class FailingDownloader:
     ) -> object:
         del sql_query
         raise AssertionError("dataset_load must not run after download failure")
+
+
+def test_dependencies_and_download_precede_cache_drop_and_timed_load(tmp_path: Path, monkeypatch):
+    # Downloading can warm the files, so dropping before download gives warm timings.
+    (tmp_path / "data.csv").write_text("value\n1\n")
+    events: list[str] = []
+    from readie_pipeline.resources import kaggle_dataset as datasets
+
+    prepare = datasets._prepare_dependencies
+
+    def prepare_dependencies():
+        events.append("dependencies")
+        prepare()
+
+    monkeypatch.setattr(datasets, "_prepare_dependencies", prepare_dependencies)
+
+    class Downloader(FakeDownloader):
+        def dataset_download(
+            self,
+            handle: str,
+            path: str | None = None,
+            *,
+            force_download: bool | None = False,
+        ) -> Path:
+            events.append("download")
+            return self.path
+
+        def dataset_load(self, *args: object, **kwargs: object) -> object:
+            events.append("load")
+            return pd.DataFrame({"value": [1]})
+
+    def clock() -> float:
+        events.append("clock")
+        return 1.0
+
+    result = measure_dataset(
+        "owner/data",
+        downloader=Downloader(tmp_path),
+        clock=clock,
+        before_load=lambda: events.append("drop"),
+    )
+    assert not result.facts.error
+    assert events == ["download", "dependencies", "drop", "clock", "load", "clock"]
 
 
 def test_dataset_handle_extracts_a_kaggle_dataset_url() -> None:
@@ -163,9 +331,9 @@ def test_one_invalid_file_does_not_discard_other_files(tmp_path: Path) -> None:
 
     measurement = measure_dataset("owner/data", downloader=FakeDownloader(tmp_path))
 
-    assert set(measurement.values) == {"valid.csv"}
-    assert measurement.facts.error == "resource could not be loaded"
-    assert not measurement.facts.usable
+    assert set(measurement.values) == {"valid.csv", "invalid.json"}
+    assert measurement.values["invalid.json"] == b"{not json"
+    assert measurement.facts.usable
 
 
 def test_one_file_stat_failure_does_not_discard_other_files(
@@ -176,7 +344,7 @@ def test_one_file_stat_failure_does_not_discard_other_files(
     valid.write_text("value\n1\n")
     failed.write_text("value\n2\n")
     monkeypatch.setattr(
-        "readie_pipeline.metadata.datasets._files",
+        "readie_pipeline.resources.kaggle_dataset._files",
         lambda _downloaded: (tmp_path, [failed, valid]),
     )
     original_stat = Path.stat

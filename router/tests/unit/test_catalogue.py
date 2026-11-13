@@ -172,3 +172,17 @@ def test_a_catalogue_without_distributions_filters_nothing() -> None:
 
     assert kept == ("numpy",)
     assert ignored == ()
+
+
+def test_sdk_import_hints_select_a_source_qualified_package_checkpoint() -> None:
+    document = _document(
+        items={
+            "package:pandas": {"size_mb": 1, "load_time": 2, "dependencies": ["package:numpy"]},
+            "package:numpy": {"size_mb": 1, "load_time": 1},
+        },
+        checkpoints=[{"id": "typed", "items": ["package:pandas", "package:numpy"], "size_mb": 2}],
+    )
+    catalogue = Catalogue.from_document(document)
+    assert catalogue.closure(["pandas"]) == {"package:pandas", "package:numpy"}
+    assert catalogue.select(["pandas"]) == "typed"
+    assert catalogue.select(["package:pandas"]) == "typed"

@@ -1,1 +1,1 @@
-"""Measured resource facts and resource analyzers."""
+"""Measured resource facts and shared analysis coordination."""

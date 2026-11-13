@@ -23,8 +23,27 @@ STAGE := .build/proto-stage
 # other's checkpoints. Everything below hangs off FLAVOR.
 FLAVOR          ?= cpu
 # Packages `analyze` should skip entirely, and everything under them. 
-# Space-separated; e.g. `make analyze ANALYZE_EXCLUDE="google.cloud.aiplatform foo"`.
-ANALYZE_EXCLUDE ?= google
+# Space-separated; e.g. `make analyze ANALYZE_EXCLUDE="package:google.cloud.aiplatform package:foo"`.
+ANALYZE_EXCLUDE ?= package:google
+# Packages `analyze` should measure after all the others, and everything under them. The rest
+# are measured most-used first. Space-separated; e.g. `make analyze ANALYZE_DEFER="package:tensorflow package:keras"`.
+ANALYZE_DEFER   ?=
+# Set to 1 to make `analyze` walk only the names in the finished metadata file, and not the
+# installed packages or the corpus's imports. With an unfinished run it measures what that
+# file has and the run has not reached.
+ANALYZE_ONLY_KNOWN ?=
+# `analyze` times each import ANALYZE_SAMPLES times, emptying the host's file cache before
+# each one and keeping the median. That is how a worker meets a package it has not read
+# recently. It writes the host's /proc/sys/vm/drop_caches, which needs root and empties the
+# cache of the whole host, so run it on a machine where that is acceptable.
+ANALYZE_SAMPLES ?= 3
+# `analyze` saves as it goes and continues from an earlier run in the same image. Set to 1 to
+# ignore that and measure every package again, e.g. after changing ANALYZE_EXCLUDE.
+ANALYZE_FRESH   ?=
+# Preserve finished measurements and add only resource IDs not already measured.
+ANALYZE_ONLY_MISSING ?=
+# Dataset loaders need network access; package-only profiling stays offline by default.
+ANALYZE_NETWORK ?= none
 # Where this flavor's captured checkpoints and catalogue go, and where worker-base
 # copies them from. Per-flavor so the two generations coexist.
 ARTIFACTS_DIR   := pipeline/out/$(FLAVOR)
@@ -49,6 +68,12 @@ WORKER_IMAGE    := readie-worker-$(FLAVOR)
 # Makefile selects it per FLAVOR.
 # A gpu generation uses the Kaggle GPU rootfs and captures under nvproxy with the
 # host's GPUs attached; a cpu generation uses the plain image and no devices.
+# Cores the capture container may use, as a value for docker's --cpuset-cpus (for example 0-7).
+# Empty leaves the container unpinned. A sandbox sees as many CPUs as its container has, and a
+# restored sandbox keeps the count it was captured with, so the worker container should have the
+# same number of cores.
+CAPTURE_CPUSET ?=
+
 ifeq ($(FLAVOR),gpu)
 # Kaggle GPU v170, which uses Python 3.12.
 ROOTFS_BASE_IMAGE := gcr.io/kaggle-gpu-images/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461
@@ -94,12 +119,13 @@ ROOTFS_BUILD_ARGS := \
 	--build-arg ROOTFS_EXTRA_INDEX_URL=$(ROOTFS_EXTRA_INDEX_URL)
 
 # Planner knobs
-# greedy (weighted set cover, the default) | fixed (a configured package set)
+# greedy (weighted set cover, the default) | kmedoids | knapsack |
+# jaccard | fixed (a configured package set)
 READIE_PLANNER := greedy
 # Upper bound on how many checkpoints a plan may emit.
-READIE_MAX_CHECKPOINTS := 15
+READIE_MAX_CHECKPOINTS := 100
 # Total size budget, in MB.
-READIE_SIZE_BUDGET_MB := 2048.0
+READIE_SIZE_BUDGET_MB := 12288.0
 # Size-vs-time weight (seconds per MB): the planner adds a package while it saves
 # more than alpha*size. Tuned over time; the pipeline measures the real value
 # after capture and writes it into the catalogue the router reads.
@@ -238,7 +264,10 @@ rootfs-requirements: ## Plan and list the distributions the rootfs must install
 # mixing two images' system libraries, which crashed even `import pandas`
 # when this instead ran inside `pipeline` via a PYTHONPATH into a copied
 # rootfs. Needs neither gVisor nor --privileged: it only imports packages and
-# times them in a subprocess. Same amd64-only constraint as `capture` though,
+# times them in a subprocess. It does need root on the host, because each timing
+# is preceded by emptying the host's file cache, and the host's drop_caches file
+# is mounted into the container for that (root in a container cannot write
+# /proc/sys by itself). Same amd64-only constraint as `capture` though,
 # since the base image itself publishes no other architecture.
 #
 # Mounts the whole data dir, not just metadata/, so the result lands on the
@@ -250,7 +279,7 @@ analyzer-image: ## Build the analyzer image (readie-pipeline on the base image i
 		--build-arg ROOTFS_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
 		-f $(PIPELINE_DOCKERFILE) .
 
-analyze: analyzer-image ## Measure every package the $(FLAVOR) base image installs
+analyze: analyzer-image ## Measure installed and corpus resources (ANALYZE_ONLY_MISSING preserves existing values)
 	@echo "==> analysing $(FLAVOR) packages against $(ROOTFS_BASE_IMAGE)"
 	@mkdir -p pipeline/data/metadata
 	# --network none: a checkpoint's restore-time import must not depend on
@@ -260,12 +289,16 @@ analyze: analyzer-image ## Measure every package the $(FLAVOR) base image instal
 	# immediately, which turned individual packages into 30-100+ second
 	# hangs during analysis (confirmed against a real run).
 	docker run --rm \
-		--network none \
+		--network $(ANALYZE_NETWORK) \
 		-e FLAVOR=$(FLAVOR) \
 		-e READIE_BASE_IMAGE=$(ROOTFS_BASE_IMAGE) \
+		-e KAGGLE_API_TOKEN -e KAGGLE_USERNAME -e KAGGLE_KEY \
 		-e PYTHONUNBUFFERED=1 \
+		-e READIE_PROFILE_SAMPLES=$(ANALYZE_SAMPLES) \
+		-e READIE_DROP_CACHES_FILE=/host-drop-caches \
+		-v /proc/sys/vm/drop_caches:/host-drop-caches \
 		-v "$(CURDIR)/pipeline/data:/app/data" \
-		$(ANALYZER_IMAGE) analyze -v $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg))
+		$(ANALYZER_IMAGE) analyze -v $(if $(filter 1,$(ANALYZE_ONLY_MISSING)),--only-missing,) $(if $(ANALYZE_FRESH),--fresh) $(foreach pkg,$(ANALYZE_EXCLUDE),--exclude $(pkg)) $(foreach pkg,$(ANALYZE_DEFER),--defer $(pkg)) $(if $(ANALYZE_ONLY_KNOWN),--only-known)
 	@echo "==> wrote pipeline/data/metadata/$(FLAVOR).json"
 
 # One run, not two: `capture` plans and captures in the same container because
@@ -280,6 +313,7 @@ capture: pipeline-image ## Capture checkpoints into $(ARTIFACTS_DIR)
 	docker run --rm -it \
 		--privileged \
 		$(CAPTURE_GPU_FLAGS) \
+		$(if $(CAPTURE_CPUSET),--cpuset-cpus=$(CAPTURE_CPUSET)) \
 		--security-opt apparmor=unconfined \
 		--security-opt seccomp=unconfined \
 		-e FLAVOR=$(FLAVOR) \

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
+import importlib
+import json
+import os
 import sqlite3
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -14,12 +18,24 @@ from urllib.parse import urlparse
 
 import kagglehub  # type: ignore[import-untyped]
 
-from readie_pipeline.metadata.models import ResourceFacts, ResourceType
+from readie_pipeline.config import Settings
+from readie_pipeline.metadata.cache import KernelCacheDropper
+from readie_pipeline.metadata.models import ResourceFacts
+from readie_pipeline.resources.identifiers import ResourceType
 
 _MB = 1024 * 1024
 _DATASET_PATH_PARTS = 3
 _OWNER_DATASET_PARTS = 2
-_FILE_LOAD_ERRORS = (OSError, TypeError, ValueError, AttributeError, RuntimeError)
+_FILE_LOAD_ERRORS = (
+    OSError,
+    TypeError,
+    ValueError,
+    SyntaxError,
+    AttributeError,
+    RuntimeError,
+    ImportError,
+    sqlite3.Error,
+)
 _PANDAS_EXTENSIONS = frozenset(
     {
         ".csv",
@@ -110,7 +126,7 @@ def dataset_handle(value: str) -> str:
 
 
 class DatasetDownloader(Protocol):
-    """The KaggleHub operations needed to inventory and load a dataset."""
+    """Download a dataset once and load files from its local inventory."""
 
     def dataset_download(
         self,
@@ -129,7 +145,7 @@ class DatasetDownloader(Protocol):
         *,
         sql_query: str | None = None,
     ) -> Any:
-        """Load one dataset file through KaggleHub's adapter."""
+        """Load one inventoried file without another download."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,8 +156,61 @@ class DatasetMeasurement:
     values: Mapping[str, Any]
 
 
+class KaggleDatasetLoader:
+    """Use KaggleHub for inventory and pandas for reads from the extracted files."""
+
+    def __init__(self) -> None:
+        self._root: Path | None = None
+
+    def dataset_download(
+        self,
+        slug: str,
+        path: str | None = None,
+        *,
+        force_download: bool | None = False,
+    ) -> str | Path:
+        """Download the inventory before any timed reads."""
+        downloaded = kagglehub.dataset_download(slug, path, force_download=force_download)
+        root = Path(downloaded)
+        self._root = root.parent if root.is_file() else root
+        return cast(str | Path, downloaded)
+
+    def dataset_load(
+        self,
+        adapter: Any,
+        handle: str,
+        path: str,
+        *,
+        sql_query: str | None = None,
+    ) -> Any:
+        """Read an extracted file locally; KaggleHub's adapter would download it again."""
+        del adapter, handle
+        import pandas as pd  # type: ignore[import-untyped]  # noqa: PLC0415 - timed dependency
+
+        if self._root is None:
+            msg = "download the dataset inventory before loading a file"
+            raise ValueError(msg)
+        local = self._root / path
+        extension = local.suffix.lower()
+        if extension in _SQLITE_EXTENSIONS:
+            with contextlib.closing(sqlite3.connect(local)) as connection:
+                return pd.read_sql_query(sql_query, connection)
+        if extension in {".csv", ".tsv"}:
+            return pd.read_csv(local, sep="\t" if extension == ".tsv" else ",")
+        if extension in {".json", ".jsonl"}:
+            return pd.read_json(local, lines=extension == ".jsonl")
+        readers = {
+            ".xml": pd.read_xml,
+            ".parquet": pd.read_parquet,
+            ".feather": pd.read_feather,
+        }
+        if extension in readers:
+            return readers[extension](local)
+        return pd.read_excel(local)
+
+
 def _kagglehub() -> DatasetDownloader:
-    return cast(DatasetDownloader, kagglehub)
+    return KaggleDatasetLoader()
 
 
 def _files(downloaded: str | Path) -> tuple[Path, list[Path]]:
@@ -158,6 +227,12 @@ def dependencies() -> tuple[str, ...]:
     return ("package:pandas", "package:kagglehub")
 
 
+def _prepare_dependencies() -> None:
+    """Import the loader's package prerequisites outside the timed operation."""
+    for identifier in dependencies():
+        importlib.import_module(identifier.partition(":")[2])
+
+
 def _load_values(
     loader: DatasetDownloader,
     handle: str,
@@ -166,11 +241,14 @@ def _load_values(
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     relative = path.relative_to(root).as_posix()
     if path.suffix.lower() not in _PANDAS_EXTENSIONS:
-        return {relative: path.read_bytes()}, ()
+        try:
+            return {relative: path.read_bytes()}, ()
+        except OSError:
+            return {}, (relative,)
     try:
         adapter = cast(Any, kagglehub.KaggleDatasetAdapter.PANDAS)
         if path.suffix.lower() in _SQLITE_EXTENSIONS:
-            with sqlite3.connect(path) as connection:
+            with contextlib.closing(sqlite3.connect(path)) as connection:
                 table_names = [
                     row[0]
                     for row in connection.execute(
@@ -194,7 +272,10 @@ def _load_values(
             values = {relative: loaded}
         return values, ()  # noqa: TRY300 - both result shapes share one exception handler
     except _FILE_LOAD_ERRORS:
-        return {}, (relative,)
+        try:
+            return {relative: path.read_bytes()}, ()
+        except OSError:
+            return {}, (relative,)
 
 
 def measure_dataset(
@@ -202,14 +283,15 @@ def measure_dataset(
     *,
     downloader: DatasetDownloader | None = None,
     clock: Callable[[], float] = time.perf_counter,
+    before_load: Callable[[], None] | None = None,
 ) -> DatasetMeasurement:
     """Enumerate and load every file in one Kaggle dataset sequentially.
 
     Downloading provides the complete inventory. CSV and JSON files are loaded
-    through KaggleHub's pandas adapter; unsupported or failed files are retained
+    locally through pandas; unsupported or failed files are retained
     as raw bytes. Download time is excluded from ``import_time``.
     """
-    return _measure_dataset_once(slug, downloader=downloader, clock=clock)
+    return _measure_dataset_once(slug, downloader=downloader, clock=clock, before_load=before_load)
 
 
 def _failed_measurement(slug: str) -> DatasetMeasurement:
@@ -233,15 +315,18 @@ def _measure_dataset_once(  # noqa: PLR0912 - each measurement decision is logge
     *,
     downloader: DatasetDownloader | None,
     clock: Callable[[], float],
+    before_load: Callable[[], None] | None,
 ) -> DatasetMeasurement:
     """Measure one sequential pass over the downloaded dataset."""
     try:
         reference_kind = dataset_reference_kind(slug)
-        if reference_kind == DatasetReferenceKind.COMPETITION:
-            _log(slug, "skipped (competition URL)")
-            return _failed_measurement(slug)
-        if reference_kind == DatasetReferenceKind.INVALID:
-            _log(slug, "skipped (invalid dataset reference)")
+        if reference_kind != DatasetReferenceKind.DATASET:
+            reason = (
+                "competition URL"
+                if reference_kind == DatasetReferenceKind.COMPETITION
+                else "invalid dataset reference"
+            )
+            _log(slug, f"skipped ({reason})")
             return _failed_measurement(slug)
 
         if downloader is None:
@@ -251,7 +336,7 @@ def _measure_dataset_once(  # noqa: PLR0912 - each measurement decision is logge
         try:
             downloaded = downloader.dataset_download(handle)
         except Exception as exc:  # noqa: BLE001 - external resource failures are expected
-            _log(slug, f"failed to download ({type(exc).__name__})")
+            _log(slug, f"failed to download ({type(exc).__name__}): {exc}")
             return _failed_measurement(slug)
 
         root, paths = _files(downloaded)
@@ -263,6 +348,12 @@ def _measure_dataset_once(  # noqa: PLR0912 - each measurement decision is logge
         file_errors: list[str] = []
         disk_size = 0
         memory_size = 0
+        before_modules = set(sys.modules)
+        # Resource timings exclude declared package dependencies, as package
+        # timings do. Import them before clearing caches and starting the clock.
+        _prepare_dependencies()
+        if before_load is not None:
+            before_load()
         start = clock()
         for path in paths:
             relative = path.relative_to(root).as_posix()
@@ -296,7 +387,8 @@ def _measure_dataset_once(  # noqa: PLR0912 - each measurement decision is logge
             memory_size_mb=memory_size / _MB,
             import_time=load_time,
             resource_type=ResourceType.KAGGLE_DATASET,
-            dependencies=frozenset(dependencies()),
+            dependencies=frozenset(dependencies())
+            | frozenset(f"package:{name}" for name in set(sys.modules) - before_modules),
             error="resource could not be loaded" if file_errors else "",
         )
         if file_errors:
@@ -309,7 +401,7 @@ def _measure_dataset_once(  # noqa: PLR0912 - each measurement decision is logge
             _log(slug, f"measured successfully ({len(values)} loaded value(s))")
         return DatasetMeasurement(facts=facts, values=values)
     except Exception as exc:  # noqa: BLE001 - external resource failures become one generic state
-        _log(slug, f"failed during measurement ({type(exc).__name__})")
+        _log(slug, f"failed during measurement ({type(exc).__name__}): {exc}")
         return _failed_measurement(slug)
 
 
@@ -328,3 +420,40 @@ def measure_datasets(
         if callable(on_progress):
             on_progress(bare_slug, measurement.facts)
     return results
+
+
+@contextlib.contextmanager
+def _measurement_output() -> Iterator[None]:
+    """Keep library output off the result channel, including existing log handlers."""
+    stdout_fd = sys.stdout.fileno()
+    sys.stdout.flush()
+    saved_stdout = os.dup(stdout_fd)
+    try:
+        # KaggleHub installs a handler before this entry point runs. Replacing
+        # sys.stdout alone does not redirect the stream that handler retained.
+        os.dup2(sys.stderr.fileno(), stdout_fd)
+        with contextlib.redirect_stdout(sys.stderr):
+            yield
+    finally:
+        try:
+            sys.stdout.flush()
+        finally:
+            os.dup2(saved_stdout, stdout_fd)
+            os.close(saved_stdout)
+
+
+def _main() -> None:
+    """Emit one dataset measurement for the isolated analysis handler."""
+    with _measurement_output():
+        before_load = None
+        if "--cold" in sys.argv[2:]:
+            dropper = KernelCacheDropper(Settings.from_env().drop_caches_file)
+            before_load = dropper.drop
+        result = measure_dataset(sys.argv[1], before_load=before_load)
+    payload = result.facts.to_json()
+    payload["error"] = result.facts.error
+    print(json.dumps(payload))
+
+
+if __name__ == "__main__":
+    _main()
