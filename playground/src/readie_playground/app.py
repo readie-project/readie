@@ -6,13 +6,14 @@ import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from readie import ReadieError, Settings, remote
 
 from readie_playground.config import PlaygroundSettings
+from readie_playground.limits import RateLimiter
 from readie_playground.runner import Event, ExecutionOptions, ReadieBackend, Runner
 
 
@@ -54,6 +55,14 @@ def _frame(event: Event) -> str:
     return f"event: {event.kind}\ndata: {json.dumps(data)}\n\n"
 
 
+def _client_key(request: Request, trust_proxy: bool) -> str:
+    if trust_proxy:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _client_settings(settings: PlaygroundSettings) -> Settings:
     """Use the Readie client's own defaults unless the settings override them."""
     if settings.router_uri:
@@ -89,6 +98,8 @@ def create_app(settings: PlaygroundSettings, runner: Runner | None = None) -> Fa
         )
         runner = Runner(backend, settings.max_output_chars)
 
+    limiter = RateLimiter(settings.rate_limit_requests, settings.rate_limit_window_s)
+
     app = FastAPI(title="Readie playground", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(
         CORSMiddleware,
@@ -102,11 +113,13 @@ def create_app(settings: PlaygroundSettings, runner: Runner | None = None) -> Fa
         return {"status": "ok"}
 
     @app.post("/run")
-    async def run(body: ReadieExecutionRequest) -> StreamingResponse:
+    async def run(body: ReadieExecutionRequest, request: Request) -> StreamingResponse:
         if len(body.code.encode()) > settings.max_code_bytes:
             raise HTTPException(413, "The code is too large.")
         if not body.code.strip():
             raise HTTPException(422, "Enter some code to run.")
+        if not limiter.allow(_client_key(request, settings.trust_proxy)):
+            raise HTTPException(429, "Too many runs. Wait a moment and try again.")
         options = _execution_options(body)
 
         async def events() -> AsyncIterator[str]:

@@ -16,6 +16,9 @@ class PlaygroundSettings:
     allowed_origins: tuple[str, ...] = ("https://readie.org",)
     max_code_bytes: int = 16 * 1024
     max_output_chars: int = 64 * 1024
+    rate_limit_requests: int = 20
+    rate_limit_window_s: float = 60.0
+    trust_proxy: bool = False
     router_tls: bool = True
     workdir: str = "/tmp/playground"  # noqa: S108 - a tmpfs inside the container
 
@@ -36,6 +39,9 @@ class PlaygroundSettings:
             ),
             max_code_bytes=int(env("PLAYGROUND_MAX_CODE_BYTES", d.max_code_bytes)),
             max_output_chars=int(env("PLAYGROUND_MAX_OUTPUT_CHARS", d.max_output_chars)),
+            rate_limit_requests=int(env("PLAYGROUND_RATE_LIMIT_REQUESTS", d.rate_limit_requests)),
+            rate_limit_window_s=float(env("PLAYGROUND_RATE_LIMIT_WINDOW_S", d.rate_limit_window_s)),
+            trust_proxy=env("PLAYGROUND_TRUST_PROXY", "").lower() in {"1", "true", "yes"},
             router_tls=env("PLAYGROUND_ROUTER_TLS", "true").lower() in {"1", "true", "yes"},
             workdir=env("PLAYGROUND_WORKDIR", d.workdir),
         )

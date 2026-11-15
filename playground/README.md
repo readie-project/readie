@@ -38,9 +38,10 @@ The request model rejects unknown fields and validates remote options before
 streaming. Sessions use caller-supplied identifiers and preserve script state.
 No session is invented when `session` is missing or empty.
 
-The service adds no memory budget, rate limit or concurrent-request cap. Code-size
-and output-size limits remain. NGINX retains its request-body limit and proxy
-timeout. Worker capacity and configured sandbox limits still apply.
+The service limits each client to a number of requests per window and answers 429 past it.
+It adds no memory budget or concurrent-request cap. Code-size and output-size limits
+remain. NGINX retains its request-body limit and proxy timeout. Worker capacity and
+configured sandbox limits still apply.
 
 ## Configuration
 
@@ -52,6 +53,8 @@ timeout. Worker capacity and configured sandbox limits still apply.
 | `PLAYGROUND_ALLOWED_ORIGINS` | `https://readie.org` | Comma-separated CORS origins |
 | `PLAYGROUND_MAX_CODE_BYTES` | `16384` | Largest accepted source |
 | `PLAYGROUND_MAX_OUTPUT_CHARS` | `65536` | Output kept per execution |
+| `PLAYGROUND_RATE_LIMIT_REQUESTS` / `_WINDOW_S` | `20` / `60` | Requests allowed per client in each window |
+| `PLAYGROUND_TRUST_PROXY` | off | Use the first `X-Forwarded-For` address as the client (on behind nginx) |
 | `PLAYGROUND_ROUTER_TLS` | `true` | Connect to the Readie server over TLS. Turn off only for a local plaintext server |
 | `PLAYGROUND_WORKDIR` | `/tmp/playground` | Where generated modules are written. Must be writable |
 
@@ -85,8 +88,9 @@ workers need capacity for one sandbox per request and two per frontend compariso
   example `PLAYGROUND_URL=https://<host>/playground make docs-build`. The Run button stays
   disabled when it is empty. Set `PLAYGROUND_ALLOWED_ORIGINS` on the service to the docs
   site's origin.
-- nginx caps request body size. The public execution route has no rate limit;
-  the service retains code-size and output-size limits.
+- nginx limits requests to `/playground/` as a backstop and caps request body size. The
+  service enforces the per-client rate limit that visitors see (see the table above) and
+  keeps code-size and output-size limits.
 
 ## Develop
 

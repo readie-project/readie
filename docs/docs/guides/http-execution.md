@@ -113,6 +113,7 @@ Errors before streaming use a JSON `detail` response:
 | ------ | ------- |
 | 413 | Request body or source exceeds its size limit; NGINX may return its own error body |
 | 422 | Missing or empty code, an unknown field, or invalid execution options |
+| 429 | Too many requests from the client address; wait and retry |
 
 Closing the stream cancels the active execution tasks. A proxy timeout can also
 close the connection: NGINX currently allows 120 seconds without response data.
@@ -121,10 +122,10 @@ output.
 
 ## Access and limits
 
-The public endpoint requires no HTTP authentication. It has no per-client rate
-limit, application concurrency cap or fixed playground execution memory budget.
-Cluster resource defaults
-still apply when memory options are omitted.
+The public endpoint requires no HTTP authentication. Each client address
+is limited to a number of requests per minute, and further requests receive a 429
+status. The endpoint has no application concurrency cap or fixed playground execution
+memory budget. Cluster resource defaults still apply when memory options are omitted.
 
 Limits on code size, output size and HTTP request body size remain. A
 `truncated: true` completion event means the output limit was reached.

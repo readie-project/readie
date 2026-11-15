@@ -36,10 +36,32 @@ async def test_rejects_bad_input(body: dict[str, str], status: int) -> None:
     assert res.status_code == status
 
 
-async def test_repeated_requests_have_no_rate_limit() -> None:
-    async with make_client() as client:
-        for _ in range(12):
-            assert (await client.post("/run", json={"code": "1"})).status_code == 200
+async def test_rate_limit_returns_429() -> None:
+    async with make_client(rate_limit_requests=1) as client:
+        assert (await client.post("/run", json={"code": "1"})).status_code == 200
+        assert (await client.post("/run", json={"code": "1"})).status_code == 429
+
+
+async def test_rate_limit_uses_forwarded_address_only_when_proxy_is_trusted() -> None:
+    async with make_client(rate_limit_requests=1, trust_proxy=True) as client:
+        first = await client.post(
+            "/run", json={"code": "1"}, headers={"x-forwarded-for": "1.1.1.1"}
+        )
+        other = await client.post(
+            "/run", json={"code": "1"}, headers={"x-forwarded-for": "2.2.2.2"}
+        )
+        again = await client.post(
+            "/run", json={"code": "1"}, headers={"x-forwarded-for": "1.1.1.1"}
+        )
+    assert (first.status_code, other.status_code, again.status_code) == (200, 200, 429)
+    async with make_client(rate_limit_requests=1) as client:
+        first = await client.post(
+            "/run", json={"code": "1"}, headers={"x-forwarded-for": "1.1.1.1"}
+        )
+        other = await client.post(
+            "/run", json={"code": "1"}, headers={"x-forwarded-for": "2.2.2.2"}
+        )
+    assert (first.status_code, other.status_code) == (200, 429)
 
 
 async def test_cors_allows_only_the_configured_origin() -> None:

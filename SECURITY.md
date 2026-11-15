@@ -135,10 +135,11 @@ visitor-derived input, so it is contained:
 - It holds a Readie token that only the playground uses, so a compromise exposes a
   token with no other use. Run the playground against a dedicated Readie server with
   `SANDBOX_NETWORK=none` on its workers where possible.
-- The public `/playground/run` route has no rate limit and adds no fixed execution
-  memory budget or application concurrency cap. NGINX retains its body-size cap
-  and proxy timeout; the service retains code-size, output and container memory
-  limits. Worker
+- The public `/playground/run` route is rate limited per client address, by nginx
+  (`limit_req`, a looser backstop) and by the service (429 past the limit). It adds
+  no fixed execution memory budget or application concurrency cap. NGINX retains
+  its body-size cap and proxy timeout; the service retains code-size, output and
+  container memory limits. Worker
   capacity accounting is separate from hard resource enforcement: Compose defaults
   `SANDBOX_IGNORE_CGROUPS` to `true` for development compatibility. Configure cgroup
   enforcement on hosts that require hard sandbox resource limits.
