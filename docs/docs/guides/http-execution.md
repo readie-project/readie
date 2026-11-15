@@ -6,18 +6,6 @@ description: Run Python code on Readie with one HTTP request, without installing
 
 The HTTP execution endpoint runs Python source code on Readie and streams the output back as server-sent events (SSE). Any HTTP client can call it, so the Python client is not required. Each request runs the code once. To run code with the Python client instead, see the [Quickstart](/docs/getting-started/quickstart) and the [SDK reference](/docs/guides/sdk).
 
-## Endpoint
-
-```text
-POST https://readie.eastus.cloudapp.azure.com/playground/run
-```
-
-| Property | Value |
-| -------- | ----- |
-| Request content type | `application/json` |
-| Response content type | `text/event-stream` |
-| Authentication | None |
-
 ## Example
 
 Send a JSON body with the Python source code in the `code` field:
@@ -38,7 +26,17 @@ event: done
 data: {"ok": true, "duration_s": 0.123, "error": "", "truncated": false}
 ```
 
-The request sets only `code`, so every option uses its default. The value of `duration_s` is an example.
+## Endpoint
+
+```text
+POST https://readie.eastus.cloudapp.azure.com/playground/run
+```
+
+| Property | Value |
+| -------- | ----- |
+| Request content type | `application/json` |
+| Response content type | `text/event-stream` |
+| Authentication | None |
 
 ## Request
 

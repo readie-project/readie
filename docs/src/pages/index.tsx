@@ -144,6 +144,9 @@ function Hero(): ReactNode {
         <p className={styles.tagline}>{description}</p>
         <div className={styles.install}>
           <CodeBlock language="bash">pip install readie</CodeBlock>
+          <p className={styles.installNote}>
+            or <Link to="/docs/guides/http-execution">run code over HTTP</Link>
+          </p>
         </div>
         <div className={styles.actions}>
           <Link className={clsx("button button--primary", styles.cta)} to="/docs/getting-started/quickstart">

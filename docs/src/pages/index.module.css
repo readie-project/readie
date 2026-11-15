@@ -27,7 +27,7 @@
 
 /* A light subtitle, as on react.dev: larger than body text, not bold. */
 .tagline {
-  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  font-size: clamp(1.05rem, 1.9vw, 1.25rem);
   font-weight: 500;
   line-height: 1.35;
   color: var(--rd-ink-2);
@@ -44,6 +44,14 @@
 
 .install :global(.theme-code-block) {
   margin: 0;
+}
+
+/* A line under the install command that points to the HTTP alternative. */
+.installNote {
+  margin: 0.6rem 0 0;
+  text-align: center;
+  font-size: 0.9375rem;
+  color: var(--rd-ink-2);
 }
 
 .cta {
