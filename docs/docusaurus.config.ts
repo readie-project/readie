@@ -8,7 +8,7 @@ const repoUrl = 'https://github.com/readie-project/readie';
 
 const config: Config = {
   title: 'Readie',
-  tagline: 'Rapid code execution for Python via adaptive checkpointed environments',
+  tagline: 'Low-latency code sandboxes',
   favicon: 'img/favicon.ico',
   headTags: [
     // Browsers that support SVG icons use the logo directly; the .ico above is the fallback.

@@ -23,7 +23,7 @@ POST https://readie.eastus.cloudapp.azure.com/playground/run
 Send a JSON body with the Python source code in the `code` field:
 
 ```bash
-curl --no-buffer 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+curl -N 'https://readie.eastus.cloudapp.azure.com/playground/run' \
   -H 'Content-Type: application/json' \
   --data '{"code": "print(\"Hello World\")"}'
 ```
@@ -105,7 +105,7 @@ Closing the connection cancels the execution. A connection that receives no data
 
 ## Limits
 
-The endpoint limits the number of requests from each client address in a period of time, and it limits the size of the request body, the size of the source code and the size of the output. A `done` event with `truncated` set to `true` means that the output reached its limit.
+The endpoint accepts 20 requests every 60 seconds from each client address. Further requests receive status 429 until the period ends. The endpoint also limits the size of the request body, the size of the source code and the size of the output. A `done` event with `truncated` set to `true` means that the output reached its limit.
 
 ## More examples
 
@@ -114,7 +114,7 @@ The endpoint limits the number of requests from each client address in a period 
 This request sets a memory budget and a deadline:
 
 ```bash
-curl --no-buffer 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+curl -N 'https://readie.eastus.cloudapp.azure.com/playground/run' \
   -H 'Content-Type: application/json' \
   --data '{"code": "print(\"Hello World\")", "memory": "2Gi", "max_memory": "4Gi", "timeout": 30}'
 ```
@@ -127,7 +127,7 @@ Encode the contents of a file as a JSON string with `jq`, and send the result:
 
 ```bash
 jq -n --rawfile code script.py '{code: $code, timeout: 30}' > request.json
-curl --no-buffer 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+curl -N 'https://readie.eastus.cloudapp.azure.com/playground/run' \
   -H 'Content-Type: application/json' \
   --data-binary @request.json
 ```
