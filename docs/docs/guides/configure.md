@@ -1,6 +1,6 @@
 ---
 title: Tune your calls
-sidebar_position: 1
+sidebar_position: 2
 description: Settings for memory, sessions, timeouts, output, and snapshot restore on functions and on the client.
 ---
 

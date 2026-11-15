@@ -1,6 +1,6 @@
 ---
 title: SDK reference
-sidebar_position: 2
+sidebar_position: 3
 description: Signatures, parameters, and behavior of the readie decorator, Client, Session, Settings, and configure.
 ---
 
@@ -144,4 +144,4 @@ Only `Settings` fields that take part in `__init__` can be passed to `configure`
 - [Sessions](/docs/concepts/sessions)
 - [Packages and resources](/docs/getting-started/packages-and-resources)
 
-For HTTP clients, see [Send HTTP execution requests](./http-execution.md).
+For HTTP clients, see [Run code over HTTP](/docs/guides/http-execution).

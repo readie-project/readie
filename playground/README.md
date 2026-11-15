@@ -30,7 +30,7 @@ token that only the playground has.
 as server-sent events. Code-only requests use SDK defaults. The docs playground
 makes two independent calls, one optimized and one cold, with a deadline on each.
 
-See [Send HTTP execution requests](../docs/docs/guides/http-execution.md) for cURL
+See [Run code over HTTP](../docs/docs/guides/http-execution.md) for cURL
 examples, fields and responses. `/eval/run` is removed; evaluation callers must
 use `/run` and consume its SSE response.
 

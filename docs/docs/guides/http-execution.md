@@ -1,131 +1,139 @@
 ---
-title: Send HTTP execution requests
-sidebar_position: 5
-description: Run Python code on Readie with cURL and remote execution options.
+title: Run code over HTTP
+sidebar_position: 1
+description: Run Python code on Readie with one HTTP request, without installing the client.
 ---
 
-`POST /playground/run` executes Python source on Readie and returns server-sent
-events (SSE). Send requests with cURL or another HTTP client; the Python SDK is
-not required. Each request runs the code once. Include `@remote` options to choose
-resources, install packages, set a deadline or reuse a session.
+The HTTP execution endpoint runs Python source code on Readie and streams the output back as server-sent events (SSE). Any HTTP client can call it, so the Python client is not required. Each request runs the code once. To run code with the Python client instead, see the [Quickstart](/docs/getting-started/quickstart) and the [SDK reference](/docs/guides/sdk).
 
-## Send one execution
+## Endpoint
 
-Send a JSON body containing `code` and the execution options. This example runs
-once with checkpoint optimization, a memory budget and a deadline:
-
-```bash
-curl --no-buffer --fail-with-body \
-  'https://readie.eastus.cloudapp.azure.com/playground/run' \
-  -H 'Content-Type: application/json' \
-  --data '{"code":"print(42)","disable_optimized_execution":false,"memory":"2Gi","max_memory":"4Gi","timeout":30}'
+```text
+POST https://readie.eastus.cloudapp.azure.com/playground/run
 ```
 
-The response has content type `text/event-stream`:
+| Property | Value |
+| -------- | ----- |
+| Request content type | `application/json` |
+| Response content type | `text/event-stream` |
+| Authentication | None |
+
+## Example
+
+Send a JSON body with the Python source code in the `code` field:
+
+```bash
+curl --no-buffer 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+  -H 'Content-Type: application/json' \
+  --data '{"code": "print(\"Hello World\")"}'
+```
+
+The response contains the output in `log` events, followed by one `done` event:
 
 ```text
 event: log
-data: {"text": "42\n"}
+data: {"text": "Hello World\n"}
 
 event: done
 data: {"ok": true, "duration_s": 0.123, "error": "", "truncated": false}
 ```
 
-`duration_s` includes function construction, connection and execution; the value
-shown is an example. To run once without checkpoint optimization, set
-`disable_optimized_execution` to `true`. Both modes return the same event format.
-Each request sends output events followed by one `done` event for its execution.
+The request sets only `code`, so every option uses its default. The value of `duration_s` is an example.
 
-Omit execution options to use the SDK defaults.
+## Request
 
-To send a script from `script.py`, use `jq` to encode it as JSON:
+The request body is a JSON object. The `code` field is required and must contain more than whitespace. The other fields are optional and correspond to the arguments of `@remote` in the Python client, which the [SDK reference](/docs/guides/sdk) describes. The endpoint rejects fields that are not listed.
+
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `code` | `string` | required | Python source code. |
+| `timeout` | `number` or `null` | `3600` | Deadline for the whole call, in seconds. The execution ends with an error when the deadline passes. Default is 3600 seconds. |
+| `session` | `string` or `null` | `null` | Session whose interpreter the request reuses. An empty string means no session. |
+| `gpu` | `boolean` | `false` | Request GPU execution. |
+| `memory` | `string`, `integer` or `null` | `"1Gi"` | Initial memory budget. Default is 1 GiB. An integer is a number of bytes. |
+| `max_memory` | `string`, `integer` or `null` | `"4Gi"` | Memory ceiling. The memory of the sandbox grows from the initial budget up to this value when the code needs more. Default is 4 GiB. |
+| `gpu_memory` | `string`, `integer` or `null` | `null` | Initial GPU memory budget. |
+| `max_gpu_memory` | `string`, `integer` or `null` | `null` | GPU memory ceiling. |
+| `packages` | `array of strings` or `null` | `[]` | Package requirements to install, in the [PEP 508](https://peps.python.org/pep-0508/) format. |
+| `disable_optimized_execution` | `boolean` | `false` | Run without restoring a [checkpoint](/docs/concepts/checkpoints). |
+| `checkpoint_id` | `string` or `null` | `null` | Checkpoint to restore. Readie chooses one when this is not set. Cannot be combined with `disable_optimized_execution`. |
+
+Omit a field to use its default. The endpoint checks the options before it runs the code. An invalid option returns status 422.
+
+### Sessions
+
+Requests that name the same session share Python state while the session exists. See [Sessions](/docs/concepts/sessions). Send requests that depend on one another one at a time.
+
+A session identifier has no owner: anyone who knows the identifier can run code in that session. Choose unpredictable identifiers and do not store secrets in a shared session.
+
+## Response
+
+The response is a stream of events. Read the stream until the `done` event arrives. Use `print()` to return text, because the endpoint does not return Python objects.
+
+### The `log` event
+
+A `log` event carries a piece of the output. The stream can contain any number of `log` events.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `text` | `string` | A piece of the output. |
+
+### The `done` event
+
+The `done` event is the last event of the stream.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `ok` | `boolean` | Whether the execution succeeded. |
+| `duration_s` | `number` | Time the execution took, in seconds. |
+| `error` | `string` | Details of the failure, or an empty string. |
+| `truncated` | `boolean` | Whether the output exceeded the character limit. |
+
+Status 200 means that the stream started, not that the code succeeded. A syntax error, an execution error or an execution timeout produces a `done` event with `ok` set to `false`. Check this field in automated clients.
+
+## Errors
+
+An error that occurs before the stream starts returns a JSON body with a `detail` field:
+
+| Status | Description |
+| ------ | ------- |
+| 413 | The request body or the source code exceeds its size limit. |
+| 422 | The code is missing or empty, a field is unknown, or an execution option is invalid. |
+| 429 | The client address sent too many requests. Wait, and send the request again. |
+
+Closing the connection cancels the execution. A connection that receives no data for a long time can also be closed by the server. Set `timeout` when a script can run for a long time without printing.
+
+## Limits
+
+The endpoint limits the number of requests from each client address in a period of time, and it limits the size of the request body, the size of the source code and the size of the output. A `done` event with `truncated` set to `true` means that the output reached its limit.
+
+## More examples
+
+### Set execution options
+
+This request sets a memory budget and a deadline:
 
 ```bash
-jq -n --rawfile code script.py \
-  '{code: $code, disable_optimized_execution: false, timeout: 30}' > request.json
-curl --no-buffer --fail-with-body \
-  'https://readie.eastus.cloudapp.azure.com/playground/run' \
+curl --no-buffer 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+  -H 'Content-Type: application/json' \
+  --data '{"code": "print(\"Hello World\")", "memory": "2Gi", "max_memory": "4Gi", "timeout": 30}'
+```
+
+The response has the same format as in the first example.
+
+### Send a script file
+
+Encode the contents of a file as a JSON string with `jq`, and send the result:
+
+```bash
+jq -n --rawfile code script.py '{code: $code, timeout: 30}' > request.json
+curl --no-buffer 'https://readie.eastus.cloudapp.azure.com/playground/run' \
   -H 'Content-Type: application/json' \
   --data-binary @request.json
 ```
 
-## Request fields
+## Related pages
 
-`code` is required and cannot be empty or contain only whitespace. Unknown fields
-are rejected. The other fields match `@remote`, with two exceptions: `session` is
-a string identifier, and `client` is not accepted because it refers to a Python
-client object.
-
-| Field | JSON type | Default | Meaning |
-| ----- | --------- | ------- | ------- |
-| `code` | string | required | Python source |
-| `timeout` | number or null | null | Whole-call deadline in seconds; null uses the SDK default, currently no deadline |
-| `session` | string or null | null | Reuse a session's interpreter; an empty string means no session |
-| `gpu` | boolean | false | Request GPU execution |
-| `memory` | string, integer or null | null | Initial memory budget; integer values are bytes |
-| `max_memory` | string, integer or null | null | Memory ceiling |
-| `gpu_memory` | string, integer or null | null | Initial GPU memory budget |
-| `max_gpu_memory` | string, integer or null | null | GPU memory ceiling |
-| `packages` | array of strings or null | null | PEP 508 package requirements to install |
-| `disable_optimized_execution` | boolean | false | Execute without checkpoint optimization |
-| `checkpoint_id` | string or null | null | Pin a checkpoint; incompatible with disabling optimized execution |
-
-Use size strings such as `2Gi` or an integer number of bytes for memory values.
-The SDK validates the options before execution. There is no fixed playground
-memory budget: omitted values use the cluster defaults. Worker capacity and
-configured sandbox limits still apply.
-
-Single executions run the code as a script, with `__name__ == "__main__"`.
-Requests with the same session identifier share Python state while that session
-exists. Send dependent session requests sequentially. Session identifiers have no
-caller ownership check: anyone who knows an identifier can execute code in that
-session. Avoid predictable identifiers and do not store secrets in shared sessions.
-
-## Compare optimized and cold execution
-
-Send two requests with the same code. Set `disable_optimized_execution` to `false`
-for the optimized execution and `true` for the cold execution. Each request has
-its own output stream and completion event. Omit `session` for independent runs.
-The website playground sends these two requests itself and displays their results
-side by side; the API does not run a comparison within one request.
-
-## Handle results and errors
-
-Read the stream until it sends `done`. Output arrives in `log` events; use
-`print()` to return text from a script. The API does not return Python objects.
-Each `done` event contains:
-
-| Field | Meaning |
-| ----- | ------- |
-| `ok` | Whether execution succeeded |
-| `duration_s` | Backend call duration in seconds |
-| `error` | Execution failure details, or an empty string |
-| `truncated` | Whether output exceeded the configured character limit |
-
-HTTP 200 means the stream started, not that the code succeeded. Syntax errors,
-execution errors and execution timeouts produce a `done` event with `ok: false`.
-Check this field in automated clients: cURL's `--fail-with-body` only checks the
-HTTP status.
-
-Errors before streaming use a JSON `detail` response:
-
-| Status | Meaning |
-| ------ | ------- |
-| 413 | Request body or source exceeds its size limit; NGINX may return its own error body |
-| 422 | Missing or empty code, an unknown field, or invalid execution options |
-| 429 | Too many requests from the client address; wait and retry |
-
-Closing the stream cancels the active execution tasks. A proxy timeout can also
-close the connection: NGINX currently allows 120 seconds without response data.
-Set an execution deadline with `timeout` when a script may wait without producing
-output.
-
-## Access and limits
-
-The public endpoint requires no HTTP authentication. Each client address
-is limited to a number of requests per minute, and further requests receive a 429
-status. The endpoint has no application concurrency cap or fixed playground execution
-memory budget. Cluster resource defaults still apply when memory options are omitted.
-
-Limits on code size, output size and HTTP request body size remain. A
-`truncated: true` completion event means the output limit was reached.
+- [SDK reference](/docs/guides/sdk): the arguments of `@remote`.
+- [Sessions and errors](/docs/getting-started/sessions-and-errors): keep state between calls.
+- [Packages and resources](/docs/getting-started/packages-and-resources): extra libraries, memory, and GPUs.

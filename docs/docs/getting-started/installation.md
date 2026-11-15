@@ -6,6 +6,10 @@ description: Install the readie Python package and verify that it imports on Pyt
 
 The Readie client is a Python package that sends functions decorated with `@remote` to the hosted Readie service, which runs them and returns the result. Install the client on the machine that runs your program.
 
+:::note[Get started without any setup]
+To run Python code on Readie without installing the client, send an HTTP request instead. See [Run code over HTTP](/docs/guides/http-execution).
+:::
+
 ## Prerequisites
 
 - Python 3.12. The client requires this minor version.

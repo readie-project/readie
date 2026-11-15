@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-sidebar_position: 4
+sidebar_position: 5
 description: Match an error raised by the Readie client to its cause and fix.
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: Errors
-sidebar_position: 3
+sidebar_position: 4
 description: Exceptions raised by the Readie client, with the condition that triggers each and the recommended action.
 ---
 
