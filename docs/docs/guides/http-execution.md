@@ -6,6 +6,10 @@ description: Run Python code on Readie with one HTTP request, without installing
 
 The HTTP execution endpoint runs Python source code on Readie and streams the output back as server-sent events (SSE). Any HTTP client can call it, so the Python client is not required. Each request runs the code once. To run code with the Python client instead, see the [Quickstart](/docs/getting-started/quickstart) and the [SDK reference](/docs/guides/sdk).
 
+:::warning[Return values are not sent]
+This method runs the code as a script and returns only the output that the code prints. It returns no result value, so an expression such as `1 + 1` produces no output. Use `print()` to return a result.
+:::
+
 ## Example
 
 Send a JSON body with the Python source code in the `code` field:
@@ -13,14 +17,14 @@ Send a JSON body with the Python source code in the `code` field:
 ```bash
 curl -N 'https://run.readie.org' \
   -H 'Content-Type: application/json' \
-  --data '{"code": "print(\"Hello World\")"}'
+  --data '{"code": "print(\"Hello from Readie\")"}'
 ```
 
 The response contains the output in `log` events, followed by one `done` event:
 
 ```text
 event: log
-data: {"text": "Hello World\n"}
+data: {"text": "Hello from Readie\n"}
 
 event: done
 data: {"ok": true, "duration_s": 0.123, "error": "", "truncated": false}
@@ -66,7 +70,7 @@ A session identifier has no owner: anyone who knows the identifier can run code 
 
 ## Response
 
-The response is a stream of events. Read the stream until the `done` event arrives. Use `print()` to return text, because the endpoint does not return Python objects.
+The response is a stream of events. Read the stream until the `done` event arrives.
 
 ### The `log` event
 
@@ -114,7 +118,7 @@ This request sets a memory budget and a deadline:
 ```bash
 curl -N 'https://run.readie.org' \
   -H 'Content-Type: application/json' \
-  --data '{"code": "print(\"Hello World\")", "memory": "2Gi", "max_memory": "4Gi", "timeout": 30}'
+  --data '{"code": "print(\"Hello from Readie\")", "memory": "2Gi", "max_memory": "4Gi", "timeout": 30}'
 ```
 
 The response has the same format as in the first example.

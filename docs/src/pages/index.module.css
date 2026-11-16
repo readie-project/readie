@@ -136,7 +136,7 @@
 
 .install {
   width: 100%;
-  max-width: 18rem;
+  max-width: 40rem;
   margin-top: 1.75rem;
   text-align: left;
 }
@@ -145,7 +145,7 @@
   margin: 0;
 }
 
-/* A line under the install command that points to the HTTP alternative. */
+/* A line under the curl command that points to the Python client. */
 .installNote {
   margin: 0.6rem 0 0;
   text-align: center;

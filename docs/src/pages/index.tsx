@@ -9,6 +9,7 @@ import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import CodeBlock from '@theme/CodeBlock';
 import Playground from '../components/Playground';
+import TypedCommand from '../components/TypedCommand';
 
 import styles from './index.module.css';
 
@@ -132,6 +133,11 @@ const sections: [string, string, string][] = [
 const description =
   'Readie offers secure and isolated sandboxes with minimal startup and import times for running Python code remotely.';
 
+// The first thing a visitor can run: one request, no install. It matches the example in the
+// HTTP execution guide.
+const curlExample = `curl -N https://run.readie.org -H 'Content-Type: application/json' \\
+  --data '{"code": "print(\\"Hello from Readie\\")"}'`;
+
 function Hero(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
   return (
@@ -143,9 +149,9 @@ function Hero(): ReactNode {
         </Heading>
         <p className={styles.tagline}>{description}</p>
         <div className={styles.install}>
-          <CodeBlock language="bash">pip install readie</CodeBlock>
+          <TypedCommand language="bash" prefix="curl ">{curlExample}</TypedCommand>
           <p className={styles.installNote}>
-            or <Link to="/docs/guides/http-execution">run code over HTTP</Link>
+            or use the <Link to="/docs/getting-started/installation">Python client SDK</Link>
           </p>
         </div>
         <div className={styles.actions}>

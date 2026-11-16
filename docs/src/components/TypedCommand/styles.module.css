@@ -1,0 +1,67 @@
+/* The complete block is the one that a visitor uses: it holds the size, the selectable text and
+   the copy button, which always copies the whole command. Its text is transparent, and the typed
+   text is drawn on top of it. */
+.typed {
+  position: relative;
+}
+
+/* Every element in the complete block hides its text. The fill color is set as well as the
+   color, because the code block gives each token an inline color, and the fill color wins over
+   it. */
+.ghost :global(.theme-code-block) pre,
+.ghost :global(.theme-code-block) pre * {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: none !important;
+}
+
+.live {
+  position: absolute;
+  inset: 0;
+  /* Clicks, hovers and selections reach the complete block underneath. */
+  pointer-events: none;
+}
+
+.live :global(.theme-code-block) {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+.live :global(.theme-code-block) pre {
+  background-color: transparent !important;
+}
+
+/* Only the complete block has a copy button. */
+.live [class*='buttonGroup'] {
+  display: none;
+}
+
+/* A caret after the last typed character while the command is typing. The line break that ends
+   each line is hidden on the last line, so that the caret stays beside the text. */
+.typing .live :global(.token-line):last-child br {
+  display: none;
+}
+
+.typing .live :global(.token-line):last-child::after {
+  content: '';
+  display: inline-block;
+  width: 0.55ch;
+  height: 1.15em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: caret 1s steps(1) infinite;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing .live :global(.token-line):last-child::after {
+    animation: none;
+  }
+}
