@@ -59,8 +59,7 @@ publishes port `443`.
 
 `nginx/certs/server.crt` is committed to the repository. It is a certificate
 chain in PEM format, with four certificates. The leaf certificate is issued by
-Let's Encrypt for `readie.eastus.cloudapp.azure.com`, the hostname in
-`nginx.prod.conf`. The file contains no private key, so it is public
+Let's Encrypt for the hostnames in `nginx.prod.conf`. The file contains no private key, so it is public
 information. The matching `server.key` is ignored by `nginx/.gitignore` and
 must never be committed.
 
@@ -69,6 +68,19 @@ when the key is supplied separately. It is not a self-signed development
 certificate. Let's Encrypt certificates expire after 90 days, so the file must
 be replaced on renewal, and a deployment under a different hostname must replace
 it with its own chain. The local configuration does not use it.
+
+## Hostnames
+
+`nginx.prod.conf` has two server blocks, and one certificate covers every hostname in them.
+
+| Hostname | Serves |
+| -------- | ------ |
+| `api.readie.org` | The gRPC router, `/healthz`, and `/playground/` |
+| `run.readie.org` | Only `POST /` (the execution endpoint) and `/healthz`. Every other path returns 404, and the router is not reachable |
+
+`run.readie.org` forwards the root path to the `/run` route of the playground service, with the
+same rate limit, body cap and streaming settings as `/playground/`. The docs site uses it
+as its `PLAYGROUND_URL`.
 
 ## Playground route
 

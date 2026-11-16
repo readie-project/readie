@@ -26,7 +26,7 @@ test('comparison requests select independent execution modes and handle split fr
   };
   const controller = new AbortController();
   await Promise.all([false, true].map((cold, index) => streamExecution(
-    '/playground', 'print(1)', cold, controller.signal,
+    '/playground/run', 'print(1)', cold, controller.signal,
     (event, data) => received[index].push({event, data}), mockFetch,
   )));
   assert.deepEqual(requests.map(r => r.body), [

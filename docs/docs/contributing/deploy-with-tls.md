@@ -68,7 +68,7 @@ The repository includes the certificate chain `nginx/certs/server.crt` for the e
 
 ## Step 3: Set the hostname in the NGINX configuration
 
-In `nginx/nginx.prod.conf`, change `server_name` to the hostname. The file currently holds the example name `readie.eastus.cloudapp.azure.com`.
+In `nginx/nginx.prod.conf`, change `server_name` to the hostname. The file currently holds the example name `api.readie.org`. A second `server` block with `server_name run.readie.org` serves the HTTP execution endpoint only, and a deployment that does not offer that endpoint removes it. The certificate must list every `server_name`.
 
 ```nginx
 server {

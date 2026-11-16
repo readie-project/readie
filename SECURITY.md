@@ -128,14 +128,16 @@ visitor-derived input, so it is contained:
 - It runs under gVisor (`runtime: runsc`) as a non-root user, with all capabilities
   dropped, no-new-privileges, a read-only root filesystem, a small `noexec` tmpfs, and
   pid and memory limits.
-- nginx is the only published container. It forwards `/playground/` to the service. The
+- nginx is the only published container. It forwards `/playground/` to the service, and
+  on `run.readie.org` forwards the root path to its `/run` route. That hostname serves nothing else, so it
+  cannot reach the router. The
   service calls the Readie server that the client uses by default, over TLS, through that
   server's nginx like any other client. It sits on the normal compose network and has
   outbound network access, so a compromise could reach other hosts.
 - It holds a Readie token that only the playground uses, so a compromise exposes a
   token with no other use. Run the playground against a dedicated Readie server with
   `SANDBOX_NETWORK=none` on its workers where possible.
-- The public `/playground/run` route is rate limited per client address, by nginx
+- The public `/playground/run` and `run.readie.org` routes are rate limited per client address, by nginx
   (`limit_req`, a looser backstop) and by the service (429 past the limit). It adds
   no fixed execution memory budget or application concurrency cap. NGINX retains
   its body-size cap and proxy timeout; the service retains code-size, output and

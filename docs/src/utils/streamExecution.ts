@@ -16,14 +16,14 @@ function parseFrame(frame: string): {event: string; data: Record<string, unknown
 
 
 export async function streamExecution(
-  serviceUrl: string,
+  serviceUrl: string, // the full URL of the execution endpoint
   code: string,
   cold: boolean,
   signal: AbortSignal,
   onEvent: (event: string, data: Record<string, unknown>) => void,
   fetchRequest: typeof fetch = fetch,
 ): Promise<void> {
-  const res = await fetchRequest(`${serviceUrl}/run`, {
+  const res = await fetchRequest(serviceUrl, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({code, disable_optimized_execution: cold, timeout: 30}),
