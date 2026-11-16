@@ -135,7 +135,7 @@ Pass constructor settings such as `timeout`, `chunk_size`, `stream_logs`, and `c
 
 Enable reports with `configure(client_reports=True)` or `Settings(client_reports=True)`. Timing covers `Client.call` or `Client.acall` from before serialization through result decoding and output callbacks. It excludes report uploads and decorator-level work outside those methods. Monotonic elapsed time measures latency even when the wall clock changes.
 
-Reports contain wall-clock start/end, monotonic duration, outcome, and a fixed error category. They contain no exception class names, messages, tracebacks, arguments, or results. Only built-in gRPC transports report, and only when the service offers a per-call report token. Older services and custom transports continue working without reporting.
+Reports contain wall-clock start/end, monotonic duration, outcome, and a fixed error category. They contain no exception class names, messages, tracebacks, arguments, or results. Only the built-in transport reports, and only when the service supports reports. Custom transports and services without support continue to work without reporting.
 
 A background worker and bounded queue isolate uploads from execution. A failed upload does not change a value or exception. Reports can be lost on overflow or process exit. `close()` permits up to one second of draining before dropping remaining reports; `await aclose()` performs that wait off the event-loop thread. Use the async close method in async applications. Delivery is not guaranteed.
 

@@ -52,7 +52,7 @@ When a call succeeds and the request belongs to a session, the container becomes
 
 A call that returns an error from the function still counts as a success for the worker, because the sandbox ran correctly. See [Executor protocol](/docs/architecture/executor-protocol). A failure of the sandbox itself, a timeout, or a client that disconnected destroys the container instead.
 
-After gRPC completes, a background finalizer collects the executor's JSON timing trailer with a 100 ms read deadline only for recorded, sampled attempts, then closes its socket and releases the container. With tracing disabled or the attempt unsampled, it skips trailer reading and collector admission, so a stalled trailer does not delay reuse. Release has its own 30-second limit (`ReleaseTimeout`). The completed call does not wait for collection or teardown. Missing or invalid telemetry does not change reuse eligibility.
+After gRPC completes, a background finalizer collects the executor's JSON [timing trailer](/docs/architecture/executor-protocol#telemetry-trailer) under a short read deadline only for recorded, sampled attempts, then closes its socket and releases the container. With tracing disabled or the attempt unsampled, it skips trailer reading and collector admission, so a stalled trailer does not delay reuse. Release has its own 30-second limit (`ReleaseTimeout`). The completed call does not wait for collection or teardown. Missing or invalid telemetry does not change reuse eligibility.
 
 ## Resuming an idle container
 
@@ -78,7 +78,7 @@ If the function has side effects, such as writing to an external service, a retr
 
 ## Reclaiming orphans
 
-If a worker crashes, its containers and host directories remain. On startup, before it accepts requests, the worker lists every container whose name carries its prefix and destroys them. It does the same during shutdown, after draining in-flight finalization for the trailer read budget plus `ReleaseTimeout`. A failure in this step is logged and does not stop the worker from starting.
+If a worker crashes, its containers and host directories remain. On startup, before it accepts requests, the worker lists every container whose name carries its prefix and destroys them. It does the same during shutdown, after draining in-flight finalization for the trailer read deadline plus `ReleaseTimeout`. A failure in this step is logged and does not stop the worker from starting.
 
 ## Starting without checkpoints
 

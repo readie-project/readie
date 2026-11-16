@@ -46,7 +46,7 @@ Blocking calls use a blocking channel, and `.aio()` calls use an async channel. 
 
 ## 2. nginx forwards the stream
 
-NGINX passes execution HTTP/2 streams to `router:50051`. Execution read and send timeouts are one hour. The separate completion-report RPC has tighter body, rate, and timeout limits.
+NGINX passes execution HTTP/2 streams to `router:50051`. The separate completion-report RPC has tighter body, rate, and timeout limits than execution.
 
 ## 3. Router places the call
 
@@ -109,7 +109,7 @@ Spans carry `readie.telemetry.source=executor_report` and contain no user payloa
 output, package specifications, or exception text. The executor does not connect
 to the collector.
 
-The trailer is limited to 8 KiB, seven phases, and a 100 ms worker read deadline.
+The trailer has fixed size, phase and read-deadline limits, listed in the executor protocol page.
 Collection saturation or invalid, absent, or stalled telemetry drops observations
 without changing the result or triggering a retry. An immediate call reusing the
 same container waits for its previous finalization; other containers proceed
@@ -118,13 +118,16 @@ for the schema and validation rules.
 
 ## Client completion reports
 
-When `client_reports=True`, the config header requests a report capability. After authentication and header validation, a recorded router execution offers a random per-execution token in initial metadata before waiting for a session or scheduling. A full or disabled capability store omits it without failing execution.
+A completion report is an optional message in which the client submits its own timings for a call. Clients opt in with `client_reports=True`, and the router then adds the report flow to the call.
 
-The client records wall-clock endpoints and monotonic duration around serialization, execution, result decoding, and output callbacks. After completion or an error, a bounded background worker sends the capability and timing/outcome enums to `ProxyService/SubmitClientReport`. Errors inside result envelopes are classified after decoding. Reports contain no exception text or user payload.
+1. **Grant.** After authentication and header validation, the router offers a random per-execution token in the initial response metadata. If the capability store is full or disabled, the router omits the token and the execution continues.
+2. **Record.** The client measures wall-clock endpoints and a monotonic duration around serialization, execution, result decoding, and output callbacks.
+3. **Submit.** A bounded background worker sends the token, timings, and outcome enums to `ProxyService/SubmitClientReport`.
+4. **Reconstruct.** For a valid report, the router creates an INTERNAL `client.reported_e2e` child of the execution root, using the saved `SpanContext`. The child carries `readie.telemetry.source=client_report`.
 
-The router starts execution traces with a new root context, ignoring public trace metadata and baggage, then propagates its own context to workers. A valid report creates an INTERNAL `client.reported_e2e` child of that root using the saved `SpanContext`, even after the root ends. The child starts at the reported start and ends at start plus monotonic duration; its raw wall-clock end is an attribute. This synthetic interval can surround its parent and is marked `readie.telemetry.source=client_report`.
+The router starts every execution trace with a new root, ignores public trace metadata, and propagates only its own context to workers. The child span uses the reported start and the monotonic duration, so it can extend past its parent. Identical retries emit no additional span.
 
-Identical retries emit no additional span. Reports can be lost through expiry, capacity limits, restarts, queue overflow, or export failure. Acceptance is not durable delivery, and missing reports do not imply success. See [Client telemetry](/docs/architecture/security-model#client-telemetry).
+Reports are best-effort and can be lost. See [Client telemetry](/docs/architecture/security-model#client-telemetry) for the limits and trust model.
 
 ## Failure modes
 

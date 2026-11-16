@@ -107,11 +107,11 @@ One immutable completion report, authorized by initial execution metadata.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `token` | `string` | Opaque bearer capability. Never log this value. |
-| `start_time_unix_ns` | `int64` |  |
-| `end_time_unix_ns` | `int64` |  |
+| `start_time_unix_ns` | `int64` | Wall-clock start of the call, in nanoseconds since the Unix epoch. |
+| `end_time_unix_ns` | `int64` | Wall-clock end of the call, in nanoseconds since the Unix epoch. |
 | `duration_ns` | `uint64` | Measured with a monotonic clock, not by subtracting wall timestamps. |
-| `outcome` | `ClientReportOutcome` |  |
-| `error` | `ClientReportError` |  |
+| `outcome` | `ClientReportOutcome` | Client-observed outcome. |
+| `error` | `ClientReportError` | Error category; unset unless the outcome is ERROR. |
 
 ### Message `SubmitClientReportResponse`
 
@@ -124,17 +124,17 @@ Bounded classifications only; no exception messages or user data.
 | Name | Number | Description |
 | ---- | ------ | ----------- |
 | `CLIENT_REPORT_ERROR_UNKNOWN` | 0 | Unset: the outcome is SUCCESS or CANCELLED. |
-| `CLIENT_REPORT_ERROR_REMOTE_EXECUTION` | 1 |  |
-| `CLIENT_REPORT_ERROR_EMPTY_RESULT` | 2 |  |
-| `CLIENT_REPORT_ERROR_SERIALIZATION` | 3 |  |
-| `CLIENT_REPORT_ERROR_TIMEOUT` | 4 |  |
-| `CLIENT_REPORT_ERROR_AUTHORIZATION` | 5 |  |
-| `CLIENT_REPORT_ERROR_INVALID_REQUEST` | 6 |  |
-| `CLIENT_REPORT_ERROR_RESOURCE_EXHAUSTED` | 7 |  |
-| `CLIENT_REPORT_ERROR_SESSION_EXPIRED` | 8 |  |
-| `CLIENT_REPORT_ERROR_UNAVAILABLE` | 9 |  |
-| `CLIENT_REPORT_ERROR_TRANSPORT` | 10 |  |
-| `CLIENT_REPORT_ERROR_CLIENT` | 11 |  |
+| `CLIENT_REPORT_ERROR_REMOTE_EXECUTION` | 1 | The function raised an exception in the sandbox. |
+| `CLIENT_REPORT_ERROR_EMPTY_RESULT` | 2 | The stream ended without a result. |
+| `CLIENT_REPORT_ERROR_SERIALIZATION` | 3 | The client could not serialize the call or decode the result. |
+| `CLIENT_REPORT_ERROR_TIMEOUT` | 4 | The call exceeded its deadline. |
+| `CLIENT_REPORT_ERROR_AUTHORIZATION` | 5 | The service rejected the credentials. |
+| `CLIENT_REPORT_ERROR_INVALID_REQUEST` | 6 | The service rejected the request as invalid. |
+| `CLIENT_REPORT_ERROR_RESOURCE_EXHAUSTED` | 7 | The service had no capacity for the call. |
+| `CLIENT_REPORT_ERROR_SESSION_EXPIRED` | 8 | The session no longer exists. |
+| `CLIENT_REPORT_ERROR_UNAVAILABLE` | 9 | The service was unavailable. |
+| `CLIENT_REPORT_ERROR_TRANSPORT` | 10 | Another transport failure occurred. |
+| `CLIENT_REPORT_ERROR_CLIENT` | 11 | An unexpected failure occurred inside the client. |
 
 ### Enum `ClientReportOutcome`
 
@@ -142,10 +142,10 @@ Client-observed completion, independent of the server execution outcome.
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| `CLIENT_REPORT_OUTCOME_UNKNOWN` | 0 |  |
-| `CLIENT_REPORT_OUTCOME_SUCCESS` | 1 |  |
-| `CLIENT_REPORT_OUTCOME_ERROR` | 2 |  |
-| `CLIENT_REPORT_OUTCOME_CANCELLED` | 3 |  |
+| `CLIENT_REPORT_OUTCOME_UNKNOWN` | 0 | Unset. |
+| `CLIENT_REPORT_OUTCOME_SUCCESS` | 1 | The call returned a result. |
+| `CLIENT_REPORT_OUTCOME_ERROR` | 2 | The call raised an error. |
+| `CLIENT_REPORT_OUTCOME_CANCELLED` | 3 | The caller cancelled the call. |
 
 ## `registry.proto`
 

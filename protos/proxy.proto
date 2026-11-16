@@ -58,9 +58,13 @@ message ClientExecutionResponse {
 
 // Client-observed completion, independent of the server execution outcome.
 enum ClientReportOutcome {
+  // Unset.
   CLIENT_REPORT_OUTCOME_UNKNOWN = 0;
+  // The call returned a result.
   CLIENT_REPORT_OUTCOME_SUCCESS = 1;
+  // The call raised an error.
   CLIENT_REPORT_OUTCOME_ERROR = 2;
+  // The caller cancelled the call.
   CLIENT_REPORT_OUTCOME_CANCELLED = 3;
 }
 
@@ -68,16 +72,27 @@ enum ClientReportOutcome {
 enum ClientReportError {
   // Unset: the outcome is SUCCESS or CANCELLED.
   CLIENT_REPORT_ERROR_UNKNOWN = 0;
+  // The function raised an exception in the sandbox.
   CLIENT_REPORT_ERROR_REMOTE_EXECUTION = 1;
+  // The stream ended without a result.
   CLIENT_REPORT_ERROR_EMPTY_RESULT = 2;
+  // The client could not serialize the call or decode the result.
   CLIENT_REPORT_ERROR_SERIALIZATION = 3;
+  // The call exceeded its deadline.
   CLIENT_REPORT_ERROR_TIMEOUT = 4;
+  // The service rejected the credentials.
   CLIENT_REPORT_ERROR_AUTHORIZATION = 5;
+  // The service rejected the request as invalid.
   CLIENT_REPORT_ERROR_INVALID_REQUEST = 6;
+  // The service had no capacity for the call.
   CLIENT_REPORT_ERROR_RESOURCE_EXHAUSTED = 7;
+  // The session no longer exists.
   CLIENT_REPORT_ERROR_SESSION_EXPIRED = 8;
+  // The service was unavailable.
   CLIENT_REPORT_ERROR_UNAVAILABLE = 9;
+  // Another transport failure occurred.
   CLIENT_REPORT_ERROR_TRANSPORT = 10;
+  // An unexpected failure occurred inside the client.
   CLIENT_REPORT_ERROR_CLIENT = 11;
 }
 
@@ -85,11 +100,15 @@ enum ClientReportError {
 message SubmitClientReportRequest {
   // Opaque bearer capability. Never log this value.
   string token = 1;
+  // Wall-clock start of the call, in nanoseconds since the Unix epoch.
   int64 start_time_unix_ns = 2;
+  // Wall-clock end of the call, in nanoseconds since the Unix epoch.
   int64 end_time_unix_ns = 3;
   // Measured with a monotonic clock, not by subtracting wall timestamps.
   uint64 duration_ns = 4;
+  // Client-observed outcome.
   ClientReportOutcome outcome = 5;
+  // Error category; unset unless the outcome is ERROR.
   ClientReportError error = 6;
 }
 

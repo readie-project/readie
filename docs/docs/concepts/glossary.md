@@ -34,6 +34,10 @@ A Python library that serializes functions, including functions defined in a scr
 
 A delay that occurs when a function runs on a fresh interpreter that must import its libraries first. Readie shortens this delay. See [Cold starts and restore](/docs/concepts/cold-starts-and-restore).
 
+### completion report
+
+An optional, best-effort message in which a client reports the timestamps, elapsed time and error category of one call. Reports are disabled by default. See [Completion reports](/docs/guides/sdk#completion-reports).
+
 ### container
 
 A running sandbox, as tracked by the worker. Logs and settings use "container" where this documentation uses "sandbox". See [Sandboxes](/docs/concepts/sandboxes) and [Container lifecycle](/docs/architecture/container-lifecycle).
@@ -141,6 +145,12 @@ A handle that pins a series of calls to the same warm container. State that one 
 ### spec fingerprint
 
 A hash of the parts of a sandbox that a checkpoint depends on: the program, the mount list, the namespaces, and the runtime modes. The worker checks it before a restore, so a checkpoint is never restored into a sandbox of a different shape. See [Sandboxes](/docs/concepts/sandboxes).
+
+## T
+
+### telemetry trailer
+
+A bounded JSON message that the executor sends after the result of a call. It holds timing observations for the worker. See [Telemetry trailer](/docs/architecture/executor-protocol#telemetry-trailer).
 
 ## W
 

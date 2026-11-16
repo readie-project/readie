@@ -84,7 +84,7 @@ The message `RemoteTimeoutError: DEADLINE_EXCEEDED from ...: the execution timed
 
 ## Missing completion reports
 
-Reporting requires explicit `client_reports=True` and support from the service. Reports are best-effort: queue overflow, process exit, upload failures, or an unavailable per-call report token can prevent delivery. Custom transports do not report automatically. To not lose pending reports on exit, use `await client.aclose()` in async code to begin a bounded drain. Report failures never replace execution results or exceptions. See [Completion reports](/docs/guides/sdk#completion-reports).
+Reporting requires explicit `client_reports=True` and support from the service. Reports are best-effort: queue overflow, process exit, upload failures, or a service without report support can prevent delivery. Custom transports do not report automatically. To avoid losing pending reports on exit, use `await client.aclose()` in async code to begin a bounded drain. Report failures never replace execution results or exceptions. See [Completion reports](/docs/guides/sdk#completion-reports).
 
 ## Get help
 

@@ -52,7 +52,7 @@ so these observations are untrusted. See [Executor telemetry](/docs/architecture
 
 ## Client-reported telemetry
 
-Optional completion reports are untrusted client assertions. The router requires a per-execution capability, validates a bounded report, and creates a synthetic child span marked as client-reported. Clients cannot choose the server trace identity or access the collector. Reports contain timing and fixed error categories, not messages, tracebacks, arguments, or results. A reporting capability does not prove that an observation is true. See [Client telemetry](/docs/architecture/security-model#client-telemetry) for authentication, expiry, and ingress limits.
+Completion reports are untrusted client assertions. The router requires a per-execution capability, validates each report, and marks the resulting span as client-reported. See [Client telemetry](/docs/architecture/security-model#client-telemetry).
 
 ## Expected behavior
 

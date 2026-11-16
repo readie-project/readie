@@ -100,8 +100,8 @@ An `ok: False` envelope is not a worker failure. The sandbox worked and remains 
 
 ### Telemetry trailer
 
-The second response message contains JSON for the worker, not the router or SDK.
-Its maximum encoded size is 8 KiB. The executor constructs it only after sending
+The telemetry trailer is the second message of a response. It carries JSON timing
+observations that only the worker reads. Its maximum encoded size is 8 KiB. The executor constructs it only after sending
 the result terminator:
 
 ```json
