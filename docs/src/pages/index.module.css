@@ -4,8 +4,106 @@
 /* ---------------------------------------------------------------- Hero */
 
 .hero {
-  padding-block: 4.5rem 4.5rem;
+  /* Light theme: the page tints are too faint on white, so the glows and dots use stronger
+     colors there. The dark themes keep the tints from the tokens, which show well on dark. */
+  --glow-accent: color-mix(in srgb, var(--rd-accent) 22%, transparent);
+  --glow-warm: color-mix(in srgb, var(--rd-time) 45%, transparent);
+  --dot: color-mix(in srgb, var(--rd-ink-2) 32%, transparent);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* The hero starts under the navbar, which is clear at the top of the page, so the
+     background shows behind it. The top padding makes up for the height that moves up. */
+  margin-top: calc(-1 * var(--ifm-navbar-height));
+  padding-top: calc(4.5rem + var(--ifm-navbar-height));
+  padding-bottom: 4.5rem;
   text-align: center;
+}
+
+/* The background has two layers behind the content: a faint dot grid that fades out toward
+   the edges, and two soft glows, in the accent color and the warm time color, that drift
+   slowly. Both read their colors from the theme tokens, so they follow the light and dark
+   themes, and both fade out at the bottom so the hero meets the next section without an edge. */
+.hero::before,
+.hero::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.hero::before {
+  inset: 0;
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 65% 75% at 50% 35%, #000 15%, transparent 78%);
+  mask-image: radial-gradient(ellipse 65% 75% at 50% 35%, #000 15%, transparent 78%);
+}
+
+.hero::after {
+  inset: -12% -8%;
+  background:
+    radial-gradient(38rem 24rem at 24% 22%, var(--glow-accent), transparent 70%),
+    radial-gradient(32rem 22rem at 78% 34%, var(--glow-warm), transparent 70%);
+  -webkit-mask-image: linear-gradient(#000 65%, transparent);
+  mask-image: linear-gradient(#000 65%, transparent);
+  animation: drift 20s ease-in-out infinite alternate;
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(-2.5%, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2.5%, 3%, 0) scale(1.07);
+  }
+}
+
+/* Dark themes: the original tints and the border color for the dots. */
+:global(:root[data-theme='dark']) .hero {
+  --glow-accent: var(--rd-accent-tint);
+  --glow-warm: var(--rd-time-tint);
+  --dot: var(--rd-line);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme='light'])) .hero {
+    --glow-accent: var(--rd-accent-tint);
+    --glow-warm: var(--rd-time-tint);
+    --dot: var(--rd-line);
+  }
+}
+
+/* The content rises into place one piece after another when the page loads. */
+.heroInner > * {
+  animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.heroInner > :nth-child(2) {
+  animation-delay: 0.06s;
+}
+
+.heroInner > :nth-child(3) {
+  animation-delay: 0.12s;
+}
+
+.heroInner > :nth-child(4) {
+  animation-delay: 0.18s;
+}
+
+.heroInner > :nth-child(5) {
+  animation-delay: 0.24s;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .heroInner {
@@ -16,6 +114,7 @@
 
 .mark {
   margin-bottom: 1rem;
+  filter: drop-shadow(0 10px 24px var(--rd-accent-tint));
 }
 
 .title {
@@ -358,7 +457,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .fill,
-  .flag {
+  .flag,
+  .hero::after,
+  .heroInner > * {
     animation: none;
   }
 }
@@ -453,7 +554,8 @@
   }
 
   .hero {
-    padding-block: 3rem;
+    padding-top: calc(3rem + var(--ifm-navbar-height));
+    padding-bottom: 3rem;
   }
 
 }

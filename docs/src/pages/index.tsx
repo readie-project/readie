@@ -236,7 +236,7 @@ export default function Home(): ReactNode {
   // which leads with the site name.
   const title = `${siteConfig.title} | ${siteConfig.tagline}`;
   return (
-    <Layout description={siteConfig.tagline}>
+    <Layout description={siteConfig.tagline} wrapperClassName="landing-page">
       <Head>
         <title>{title}</title>
         <meta property="og:title" content={title} />
