@@ -115,8 +115,8 @@ ROOTFS_BUILD_ARGS := \
 	--build-arg ROOTFS_EXTRA_INDEX_URL=$(ROOTFS_EXTRA_INDEX_URL)
 
 # Planner knobs
-# greedy (weighted set cover, the default) | kmedoids | toptime | jaccard-kmedoids |
-# jaccard-agglomerative | fixed (a configured package set)
+# greedy (weighted set cover, the default) | kmedoids | knapsack |
+# jaccard | fixed (a configured package set)
 READIE_PLANNER := greedy
 # Upper bound on how many checkpoints a plan may emit.
 READIE_MAX_CHECKPOINTS := 100

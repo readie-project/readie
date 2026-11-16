@@ -20,7 +20,7 @@ from readie_pipeline.planning._closures import membership
 from readie_pipeline.planning.greedy import GreedyPlanner
 
 
-class TopTimePlanner(GreedyPlanner):
+class KnapsackPlanner(GreedyPlanner):
     """Select checkpoint contents by standalone import-time reduction."""
 
     def _select_checkpoints(

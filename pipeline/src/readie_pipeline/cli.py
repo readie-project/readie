@@ -58,9 +58,8 @@ from readie_pipeline.planning.requirements import (
 PLANNER_NAMES = (
     "greedy",
     "kmedoids",
-    "toptime",
-    "jaccard-kmedoids",
-    "jaccard-agglomerative",
+    "knapsack",
+    "jaccard",
     "fixed",
 )
 
@@ -68,9 +67,8 @@ PLANNER_NAMES = (
 PLANNERS: dict[str, tuple[str, str]] = {
     "greedy": ("readie_pipeline.planning.greedy", "GreedyPlanner"),
     "kmedoids": ("readie_pipeline.planning.kmedoids", "KMedoidsPlanner"),
-    "toptime": ("readie_pipeline.planning.toptime", "TopTimePlanner"),
-    "jaccard-kmedoids": ("readie_pipeline.planning.jaccard", "JaccardKMedoidsPlanner"),
-    "jaccard-agglomerative": ("readie_pipeline.planning.jaccard", "JaccardAgglomerativePlanner"),
+    "knapsack": ("readie_pipeline.planning.knapsack", "KnapsackPlanner"),
+    "jaccard": ("readie_pipeline.planning.jaccard", "JaccardAgglomerativePlanner"),
 }
 
 
@@ -78,7 +76,7 @@ def build_planner(name: str, alpha: float) -> CheckpointPlanner:
     """Resolve a planner by name.
 
     ``alpha`` is the shared size-vs-time weight. ``fixed`` ignores it; the other planners
-    use it to score the plan, and all but ``toptime`` and the Jaccard planners also
+    use it to score the plan, and all but ``knapsack`` and the Jaccard planners also
     to select.
     """
     # The nested import avoids an import cycle.

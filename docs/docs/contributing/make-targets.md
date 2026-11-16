@@ -27,7 +27,7 @@ Run all commands from the repository root. Pass variables on the command line, f
 | `PLAN_DIR` | `pipeline/plan/<flavor>` | Where `make rootfs-requirements` writes the plan and the list. |
 | `REUSE_PLAN_DIR` | empty | A plan directory from an earlier `make rootfs-requirements`, relative to the repository root. When set, `make capture` mounts it into the container and reuses that plan instead of planning again. When empty, `capture` plans inside the container. |
 | `CAPTURE_CPUSET` | empty | Cores the `make capture` container may use, as a value for Docker's `--cpuset-cpus`, for example `0-7`. A sandbox sees as many CPUs as its container has, and a restored sandbox keeps the count it was captured with, so the worker container needs the same number of cores. When empty, the container is not pinned. |
-| `READIE_PLANNER` | `greedy` | Checkpoint planner: `greedy`, `kmedoids`, `toptime`, `jaccard-kmedoids`, `jaccard-agglomerative` or `fixed`. |
+| `READIE_PLANNER` | `greedy` | Checkpoint planner: `greedy`, `kmedoids`, `knapsack`, `jaccard`, or `fixed`. |
 | `READIE_MAX_CHECKPOINTS` | `15` | Most checkpoints a plan may produce. |
 | `READIE_SIZE_BUDGET_MB` | `2048.0` | Total size budget for checkpoints, in MB. |
 | `READIE_ALPHA` | set in the Makefile | Size-versus-time weight. See [cost model](/docs/concepts/cost-model). |
