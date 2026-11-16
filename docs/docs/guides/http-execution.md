@@ -11,7 +11,7 @@ The HTTP execution endpoint runs Python source code on Readie and streams the ou
 Send a JSON body with the Python source code in the `code` field:
 
 ```bash
-curl -N 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+curl -N 'https://run.readie.org' \
   -H 'Content-Type: application/json' \
   --data '{"code": "print(\"Hello World\")"}'
 ```
@@ -29,7 +29,7 @@ data: {"ok": true, "duration_s": 0.123, "error": "", "truncated": false}
 ## Endpoint
 
 ```text
-POST https://readie.eastus.cloudapp.azure.com/playground/run
+POST https://run.readie.org
 ```
 
 | Property | Value |
@@ -112,7 +112,7 @@ The endpoint accepts 20 requests every 60 seconds from each client address. Furt
 This request sets a memory budget and a deadline:
 
 ```bash
-curl -N 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+curl -N 'https://run.readie.org' \
   -H 'Content-Type: application/json' \
   --data '{"code": "print(\"Hello World\")", "memory": "2Gi", "max_memory": "4Gi", "timeout": 30}'
 ```
@@ -125,7 +125,7 @@ Encode the contents of a file as a JSON string with `jq`, and send the result:
 
 ```bash
 jq -n --rawfile code script.py '{code: $code, timeout: 30}' > request.json
-curl -N 'https://readie.eastus.cloudapp.azure.com/playground/run' \
+curl -N 'https://run.readie.org' \
   -H 'Content-Type: application/json' \
   --data-binary @request.json
 ```

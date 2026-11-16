@@ -72,7 +72,8 @@ curl -N -X POST localhost:50051/playground/run \
   -H 'content-type: application/json' -d '{"code": "print(1)"}'
 ```
 
-nginx routes `/playground/` to the service and everything else to the router. The
+nginx routes `/playground/` to the service and everything else to the router. In production,
+the hostname `run.readie.org` serves only `POST /` (the `/run` route of the service) and `/healthz`. The
 workers need capacity for one sandbox per request and two per frontend comparison.
 
 ## Deploy
@@ -85,7 +86,9 @@ workers need capacity for one sandbox per request and two per frontend compariso
 - gVisor cannot use Docker's built-in DNS, so the service mounts `resolv.conf` from this
   directory. Replace its name server if the host blocks 8.8.8.8.
 - The docs site finds the service through `PLAYGROUND_URL`, set when the site is built, for
-  example `PLAYGROUND_URL=https://<host>/playground make docs-build`. The Run button stays
+  example `PLAYGROUND_URL=https://run.readie.org make docs-build`. The value is the full URL of the
+  execution endpoint (`https://<host>/playground/run` behind the router hostname), and the site
+  reads `/healthz` from its origin. The Run button stays
   disabled when it is empty. Set `PLAYGROUND_ALLOWED_ORIGINS` on the service to the docs
   site's origin.
 - nginx limits requests to `/playground/` as a backstop and caps request body size. The
