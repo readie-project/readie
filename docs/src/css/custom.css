@@ -331,7 +331,19 @@ pre code {
 }
 
 .navbar {
-  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    backdrop-filter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* On the landing page the navbar is clear at the top, so the background of the hero shows
+   behind it. It turns frosted again as soon as the page scrolls (navbarScroll.ts sets
+   `data-scrolled`). The page marks itself with the `landing-page` class. */
+html:has(.landing-page):not([data-scrolled]) .navbar {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* After react.dev: no line at the top of the page; a soft shadow and a hairline ring appear

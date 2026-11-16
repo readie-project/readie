@@ -6,6 +6,10 @@ description: Run a function remotely with the @remote decorator, in blocking and
 
 The `@remote` decorator marks a function to run in a sandbox on a Readie worker. The client packs the function, sends it to a worker, and returns the result as if the function had run locally.
 
+:::note[Get started without any setup]
+To run Python code on Readie without installing the client, send an HTTP request instead. See [Run code over HTTP](/docs/guides/http-execution).
+:::
+
 ## Prerequisites
 
 - Python 3.12 and the `readie` package. See [Install the client](/docs/getting-started/installation).

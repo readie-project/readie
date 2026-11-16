@@ -1,4 +1,4 @@
-"""Abuse controls Readie does not provide: a per-client rate limit and a run cap."""
+"""Abuse control Readie does not provide: a per-client rate limit."""
 
 from __future__ import annotations
 
@@ -35,26 +35,3 @@ class RateLimiter:
             return False
         hits.append(now)
         return True
-
-
-class RunSlots:
-    """A non-blocking cap on simultaneous runs.
-
-    Each run holds two 1 GiB sandboxes, so the cap protects worker memory. A full
-    gate rejects instead of queueing, which keeps latency honest.
-    """
-
-    def __init__(self, limit: int) -> None:
-        self._limit = limit
-        self._active = 0
-
-    def try_acquire(self) -> bool:
-        """Take a slot if one is free."""
-        if self._active >= self._limit:
-            return False
-        self._active += 1
-        return True
-
-    def release(self) -> None:
-        """Give a slot back."""
-        self._active = max(0, self._active - 1)

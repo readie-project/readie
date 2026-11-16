@@ -75,7 +75,11 @@ it with its own chain. The local configuration does not use it.
 The configurations also forward `/playground/` to the playground service, when it is
 running, and keep every other path for gRPC. The playground itself calls the Readie server
 that the client uses by default, like any other client. See
-[`playground/README.md`](../playground/README.md).
+[`playground/README.md`](../playground/README.md) and the
+[HTTP execution guide](../docs/docs/guides/http-execution.md). `/playground/run` is limited per client
+address by NGINX (`limit_req`, a looser backstop to the service's own limit), with a body-size
+cap and streaming proxy settings.
+The retired `/eval/run` route is no longer registered by the service.
 
 ## Health route
 

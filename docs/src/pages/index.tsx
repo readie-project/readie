@@ -1,5 +1,6 @@
 import type {CSSProperties, ReactNode} from 'react';
 import clsx from 'clsx';
+import Head from '@docusaurus/Head';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import useBaseUrl from '@docusaurus/useBaseUrl';
@@ -120,11 +121,16 @@ print(pass_probability(rows, 3.5))  # about 0.5`;
 
 const sections: [string, string, string][] = [
   ['Get started', '/docs/getting-started/quickstart', 'Install the client and run a first function.'],
-  ['Guides', '/docs/guides/configure', 'Tune calls, look up the SDK and its errors, and fix problems.'],
+  ['Guides', '/docs/guides/http-execution', 'Run code over HTTP, tune calls, look up the SDK and its errors, and fix problems.'],
   ['Concepts', '/docs/concepts/cold-starts-and-restore', 'Cold starts, checkpoints, sandboxes and sessions.'],
   ['Architecture', '/docs/architecture/overview', 'The router, workers, executor and pipeline, and how a call travels.'],
   ['Contribute', '/docs/contributing/setup', 'Set up a development environment and run the stack.'],
 ];
+
+// The line under the title. The site tagline stays short because it also feeds the page title
+// and the social card.
+const description =
+  'Readie offers secure and isolated sandboxes with minimal startup and import times for running Python code remotely.';
 
 function Hero(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
@@ -135,9 +141,12 @@ function Hero(): ReactNode {
         <Heading as="h1" className={styles.title}>
           {siteConfig.title}
         </Heading>
-        <p className={styles.tagline}>{siteConfig.tagline}</p>
+        <p className={styles.tagline}>{description}</p>
         <div className={styles.install}>
           <CodeBlock language="bash">pip install readie</CodeBlock>
+          <p className={styles.installNote}>
+            or <Link to="/docs/guides/http-execution">run code over HTTP</Link>
+          </p>
         </div>
         <div className={styles.actions}>
           <Link className={clsx("button button--primary", styles.cta)} to="/docs/getting-started/quickstart">
@@ -223,8 +232,15 @@ function Documentation(): ReactNode {
 
 export default function Home(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
+  // The layout puts a given title before the site name, so the home page sets its own,
+  // which leads with the site name.
+  const title = `${siteConfig.title} | ${siteConfig.tagline}`;
   return (
-    <Layout description={siteConfig.tagline}>
+    <Layout description={siteConfig.tagline} wrapperClassName="landing-page">
+      <Head>
+        <title>{title}</title>
+        <meta property="og:title" content={title} />
+      </Head>
       <Hero />
       <main>
         <HowItWorks />

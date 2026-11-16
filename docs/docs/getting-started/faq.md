@@ -14,6 +14,10 @@ Readie runs a Python function that is decorated with `@remote` on a remote worke
 
 The function is pickled on the local machine and unpickled by the Python interpreter inside the sandbox. Pickled functions are safe to share only between the same minor Python version, and the sandbox runs Python 3.12. If the local interpreter is not Python 3.12, `readie.Client()` raises `IncompatiblePythonError`, so the failure appears at startup instead of later. See [Install the client](/docs/getting-started/installation).
 
+### Can I run code without installing the client?
+
+Yes. Send the Python source code in a JSON body to the HTTP execution endpoint, and the response streams the output back. Any HTTP client can do this, so Python 3.12 and the `readie` package are not required. The request accepts the same options as `@remote`, such as memory, packages, and sessions. See [Run code over HTTP](/docs/guides/http-execution).
+
 ### Which objects cannot be sent to a remote function?
 
 Any object that `cloudpickle` cannot serialize. Typical cases are open files, sockets, database connections, locks, and threads. Create these objects inside the function instead of passing them in. The return value must also be picklable, because it travels back the same way. If the function or its arguments cannot be encoded, the client raises `SerializationError`. See the [errors reference](/docs/guides/errors).
