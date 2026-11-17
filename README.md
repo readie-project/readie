@@ -42,7 +42,7 @@ see [`pkg/`](pkg/) and the
 
 ## How a request flows
 
-<img width="1093" height="386" alt="image" src="https://github.com/user-attachments/assets/32480429-caee-49c0-a9c9-30da6d77dec6" />
+<img width="1149" height="647" alt="image" src="https://github.com/user-attachments/assets/bdcea270-f8c6-45ad-adfa-0a36c133f3cf" />
 
 The client pickles `{func, args, kwargs}` with cloudpickle and streams it to the
 router, which decides where the call runs and relays it to a worker. The worker
