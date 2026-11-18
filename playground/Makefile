@@ -28,7 +28,7 @@ run: ## Run the playground service from source
 docker: ## Build the playground image (context is the repo root)
 	docker build -f Dockerfile -t readie-playground:latest ..
 
-clean: ## Remove build and test artefacts
+clean: ## Remove build and test artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 

@@ -83,7 +83,11 @@ class Catalogue:
         once per item that needs it.
         """
         seen: set[str] = set()
-        stack = list(required)
+        # The SDK still sends Python import names; catalogue resources are source-qualified.
+        stack = [
+            f"package:{name}" if ":" not in name and f"package:{name}" in self.load_times else name
+            for name in required
+        ]
         while stack:
             item = stack.pop()
             if item in seen:

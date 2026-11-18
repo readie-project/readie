@@ -35,7 +35,7 @@ def provided_distributions() -> dict[str, list[str]]:
 def distribution_for(name: str, provided: Mapping[str, list[str]]) -> str:
     """Best-effort PyPI distribution name for ``name``'s top-level segment.
 
-    Diagnostic only: ``loaded_modules``, ``memory_size_mb`` and ``import_time``
+    Diagnostic only: ``dependencies``, ``memory_size_mb`` and ``import_time``
     are all measured empirically and never depend on this being right, unlike
     the previous ``Requires-Dist``-based walk, which needed a correct
     distribution name to find a package's declared dependencies at all.

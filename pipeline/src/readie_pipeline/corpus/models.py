@@ -18,6 +18,8 @@ from typing import Any
 
 from readie_pipeline.corpus.domains import DOMAINS
 from readie_pipeline.metadata.models import Metadata
+from readie_pipeline.resources.identifiers import ResourceType
+from readie_pipeline.resources.identifiers import parse_resource as _parse_resource
 
 
 class CorpusError(Exception):
@@ -41,34 +43,12 @@ class Source(StrEnum):
         return not self.value.startswith("agent_")
 
 
-class ResourceKind(StrEnum):
-    """The kinds of resource an item can name."""
-
-    PACKAGE = "package"
-    HF_DATASET = "hf_dataset"
-    HF_MODEL = "hf_model"
-    HF_TOKENIZER = "hf_tokenizer"
-    KAGGLE_DATASET = "kaggle_dataset"
-    KAGGLE_MODEL = "kaggle_model"
-
-
-def resource(kind: ResourceKind, value: str) -> str:
-    """Format a resource as ``<kind>:<value>``."""
-    return f"{kind.value}:{value}"
-
-
-def parse_resource(text: str) -> tuple[ResourceKind, str]:
-    """Split ``<kind>:<value>``, rejecting unknown kinds and empty values."""
-    kind, sep, value = text.partition(":")
+def parse_resource(text: str) -> tuple[ResourceType, str]:
+    """Validate a corpus reference and report malformed IDs as corpus errors."""
     try:
-        parsed = ResourceKind(kind)
+        return _parse_resource(text)
     except ValueError as exc:
-        msg = f"unknown resource kind in {text!r}"
-        raise CorpusError(msg) from exc
-    if not sep or not value.strip():
-        msg = f"resource {text!r} has no value"
-        raise CorpusError(msg)
-    return parsed, value
+        raise CorpusError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,17 +67,7 @@ class CorpusItem:
     """The code as it was before stand-in data replaced its reads of missing
     files, kept so the rewrite can be undone; ``None`` when nothing was rewritten."""
 
-    @property
-    def imports(self) -> tuple[str, ...]:
-        """Raw dotted import candidates, unresolved.
-
-        Resolving a candidate to what it names needs an environment with the
-        packages installed, so every reader goes through
-        ``Metadata.resolve_imports`` instead of trusting these.
-        """
-        return self.of_kind(ResourceKind.PACKAGE)
-
-    def of_kind(self, kind: ResourceKind) -> tuple[str, ...]:
+    def of_kind(self, kind: ResourceType) -> tuple[str, ...]:
         """Values of one kind of resource, in order."""
         prefix = f"{kind.value}:"
         return tuple(r[len(prefix) :] for r in self.resources if r.startswith(prefix))
@@ -128,7 +98,10 @@ class CorpusItem:
 
         resources = _strings(raw["resources"])
         for entry in resources:
-            parse_resource(entry)
+            try:
+                parse_resource(entry)
+            except ValueError as exc:
+                raise CorpusError(str(exc)) from exc
 
         ref = raw.get("ref")
         original = raw.get("original")
@@ -206,7 +179,7 @@ class Corpus:
         temp.write_text(json.dumps([i.to_json() for i in self.items], indent=2) + "\n")
         temp.replace(path)
 
-    def import_counts(self, metadata: Metadata) -> dict[str, int]:
+    def resource_counts(self, metadata: Metadata) -> dict[str, int]:
         """How many items use each resolved import, most common first.
 
         Counted per item: two ``import pandas`` lines, or the same import in
@@ -214,7 +187,7 @@ class Corpus:
         """
         counts: dict[str, int] = {}
         for item in self.items:
-            for name in metadata.resolve_imports(item.imports):
+            for name in metadata.resolve_resources(item.resources):
                 counts[name] = counts.get(name, 0) + 1
         return _ranked(counts)
 
@@ -237,7 +210,11 @@ class Corpus:
             _tally(
                 top
                 for item in self.items
-                for top in {name.split(".", maxsplit=1)[0] for name in item.imports}
+                for top in {
+                    name.partition(":")[2].split(".", maxsplit=1)[0]
+                    for name in item.resources
+                    if name.startswith("package:")
+                }
                 if top not in sys.stdlib_module_names
             )
         )
@@ -250,29 +227,9 @@ class Corpus:
             counts[key] = counts.get(key, 0) + 1
         return counts
 
-    def resources(self, metadata: Metadata) -> Resources:
-        """Every distinct resource the corpus refers to."""
-        packages: set[str] = set()
-        for item in self.items:
-            packages.update(metadata.resolve_imports(item.imports))
-        return Resources(
-            packages=frozenset(packages),
-            datasets=frozenset(
-                v
-                for i in self.items
-                for k in (ResourceKind.HF_DATASET, ResourceKind.KAGGLE_DATASET)
-                for v in i.of_kind(k)
-            ),
-            models=frozenset(
-                v
-                for i in self.items
-                for k in (ResourceKind.HF_MODEL, ResourceKind.KAGGLE_MODEL)
-                for v in i.of_kind(k)
-            ),
-            tokenizers=frozenset(
-                v for i in self.items for v in i.of_kind(ResourceKind.HF_TOKENIZER)
-            ),
-        )
+    def resource_ids(self) -> frozenset[str]:
+        """Every declared resource ID, without splitting by type."""
+        return frozenset(resource for item in self.items for resource in item.resources)
 
 
 def _tally(values: Iterable[str]) -> dict[str, int]:
@@ -284,13 +241,3 @@ def _tally(values: Iterable[str]) -> dict[str, int]:
 
 def _ranked(counts: dict[str, int]) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
-
-
-@dataclass(frozen=True, slots=True)
-class Resources:
-    """The distinct resources a corpus refers to."""
-
-    packages: frozenset[str] = frozenset()
-    datasets: frozenset[str] = frozenset()
-    models: frozenset[str] = frozenset()
-    tokenizers: frozenset[str] = frozenset()

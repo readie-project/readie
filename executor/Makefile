@@ -22,7 +22,7 @@ test: ## Run the whole suite
 cover: ## Run tests with a coverage report
 	$(UV) run pytest --cov --cov-report=term-missing
 
-clean: ## Remove build and test artefacts
+clean: ## Remove build and test artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 

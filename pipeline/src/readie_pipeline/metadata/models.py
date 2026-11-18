@@ -1,41 +1,24 @@
-"""Measured package facts.
-
-The previous code emitted ``disk_size_mb`` and ``load_time``, the committed data
-has ``disk_size_mb`` and ``import_time``, and the TypedDict declared ``size``
-and ``load_time``. Three names for two fields, and nothing noticed because a
-TypedDict is a dict at runtime. ``import_time`` is what is actually on disk, so
-that is what this reads -- accepting the other spelling rather than discarding
-data that took a subprocess per package to measure.
-"""
+"""Measured facts keyed by source-qualified resource identifiers."""
 
 from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from readie_pipeline.metadata.inventory import canonical_name
+from readie_pipeline.resources.identifiers import ResourceType, parse_resource
 
 
 class MetadataError(Exception):
     """The metadata on disk is not what this code expects."""
 
 
-class ResourceType(StrEnum):
-    """What kind of thing a metadata entry describes."""
-
-    PACKAGE = "package"
-    DATASET = "dataset"
-    MODEL = "model"
-    TOKENIZER = "tokenizer"
-
-
 @dataclass(frozen=True, slots=True)
-class PackageFacts:
-    """What one package costs to have available."""
+class ResourceFacts:
+    """Measured loading costs shared by every resource type."""
 
     base_import: str
     """The resolved dotted import name, e.g. ``sklearn`` or ``sklearn.svm`` --
@@ -48,12 +31,13 @@ class PackageFacts:
     resolved from the top-level segment of ``base_import`` via
     ``packages_distributions()``, kept for diagnostics, not load-bearing."""
 
-    loaded_modules: frozenset[str] = frozenset()
-    """Every module actually found resident in ``sys.modules`` after
-    importing ``base_import`` in a clean process, dependencies included --
-    this package's full, empirically observed, already-transitive closure.
-    Replaces a walk over declared ``Requires-Dist`` metadata, which recorded
-    what a package might need, not what a specific import actually loads."""
+    dependencies: frozenset[str] = frozenset()
+    """Source-qualified dependencies, including modules observed during loading.
+
+    For packages this folds the full empirical ``sys.modules`` difference into
+    the dependency set; it is already transitive and retains dotted submodules.
+    Dataset prerequisites and observed imports use the same identifiers.
+    """
 
     disk_size_mb: float = 0.0
     memory_size_mb: float = 0.0
@@ -79,7 +63,7 @@ class PackageFacts:
         return not self.error
 
     @classmethod
-    def from_json(cls, name: str, raw: object) -> PackageFacts:
+    def from_json(cls, name: str, raw: object) -> ResourceFacts:
         """Build facts from an on-disk entry.
 
         Takes object rather than a Mapping because the input is whatever
@@ -90,37 +74,38 @@ class PackageFacts:
             msg = f"metadata for {name!r} must be an object, got {type(raw).__name__}"
             raise MetadataError(msg)
 
+        required = {
+            "import_time",
+            "memory_size_mb",
+            "disk_size_mb",
+            "dependencies",
+            "resource_type",
+        }
+        if missing := required - raw.keys():
+            msg = f"metadata for {name!r} is missing {', '.join(sorted(missing))}"
+            raise MetadataError(msg)
+        if "loaded_modules" in raw or "load_time" in raw:
+            msg = f"metadata for {name!r} needs the one-time resource migration"
+            raise MetadataError(msg)
         return cls(
             base_import=str(raw.get("base_import") or name),
             distribution=str(raw.get("distribution") or ""),
-            loaded_modules=frozenset(raw.get("loaded_modules") or ()),
+            dependencies=frozenset(raw.get("dependencies") or ()),
             disk_size_mb=float(raw.get("disk_size_mb") or 0.0),
             memory_size_mb=float(raw.get("memory_size_mb") or 0.0),
-            # Both spellings accepted: the committed data uses import_time and
-            # the previous writer emitted load_time.
-            import_time=float(raw.get("import_time") or raw.get("load_time") or 0.0),
-            resource_type=ResourceType(raw.get("resource_type") or ResourceType.PACKAGE),
+            import_time=float(raw["import_time"]),
+            resource_type=ResourceType(raw["resource_type"]),
             error=str(raw.get("error") or ""),
         )
 
     def to_json(self) -> dict[str, Any]:
-        """Render back to the on-disk shape.
-
-        The key is ``resource_type``, not ``type``. The previous writer used the
-        bare name ``type`` as a dict key, which is the *builtin*, so the field
-        was never emitted at all.
-
-        Carries no ``error`` field, on the theory that an entry only reaches
-        this method at all when ``Metadata.to_json`` chooses to keep it (see
-        there) -- a package that could not be measured is dropped rather than
-        written down as broken.
-        """
+        """Serialize measurements without rounding or adding alternate field names."""
         return {
             "base_import": self.base_import,
             "distribution": self.distribution,
-            "loaded_modules": sorted(self.loaded_modules),
-            "disk_size_mb": round(self.disk_size_mb, 4),
-            "memory_size_mb": round(self.memory_size_mb, 4),
+            "dependencies": sorted(self.dependencies),
+            "disk_size_mb": self.disk_size_mb,
+            "memory_size_mb": self.memory_size_mb,
             "import_time": self.import_time,
             "resource_type": str(self.resource_type),
         }
@@ -128,9 +113,9 @@ class PackageFacts:
 
 @dataclass(frozen=True, slots=True)
 class Metadata:
-    """Facts for every package the corpus mentions."""
+    """Facts for measured resources."""
 
-    packages: dict[str, PackageFacts] = field(default_factory=dict)
+    resources: dict[str, ResourceFacts] = field(default_factory=dict)
 
     distributions: dict[str, str] = field(default_factory=dict)
     """Canonical distribution name -> the version installed in the image the
@@ -152,15 +137,15 @@ class Metadata:
 
     def __len__(self) -> int:
         """How many packages are described."""
-        return len(self.packages)
+        return len(self.resources)
 
     def __contains__(self, name: str) -> bool:
         """Whether a package has facts."""
-        return name in self.packages
+        return name in self.resources
 
-    def get(self, name: str) -> PackageFacts | None:
+    def get(self, name: str) -> ResourceFacts | None:
         """Facts for a package, or None."""
-        return self.packages.get(name)
+        return self.resources.get(name)
 
     def version_of(self, distribution: str) -> str:
         """The version recorded for ``distribution``, or ``""`` when there is none."""
@@ -173,76 +158,57 @@ class Metadata:
         it should just look free, and the planner's budget check still bounds
         the total.
         """
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         return facts.disk_size_mb if facts else 0.0
 
     def memory_size_mb(self, name: str) -> float:
         """Resident memory cost, or zero when unknown.
 
         What the planner and catalogue actually price a checkpoint by -- see
-        ``PackageFacts.memory_size_mb``.
+        ``ResourceFacts.memory_size_mb``.
         """
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         return facts.memory_size_mb if facts else 0.0
 
     def import_time(self, name: str) -> float:
         """Import cost in seconds, or zero when unknown."""
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         return facts.import_time if facts else 0.0
 
     def direct_dependencies(self, name: str) -> frozenset[str]:
         """Everything ``name``'s own import empirically loads, besides itself.
 
-        ``PackageFacts.loaded_modules`` is already ``name``'s full transitive
+        ``ResourceFacts.dependencies`` is already ``name``'s full transitive
         closure (a single ``sys.modules`` diff around importing it captures
         its parent chain, internal submodules and external dependencies all
         at once), so there is no separate "direct" vs "transitive" distinction
         left to compute -- this is kept only as a convenience accessor for a
         single package.
         """
-        facts = self.packages.get(name)
+        facts = self.resources.get(name)
         if facts is None:
             return frozenset()
-        return facts.loaded_modules - {name}
+        return facts.dependencies - {name}
 
     def closure(self, names: Iterable[str]) -> frozenset[str]:
-        """Every name in ``names``, plus everything each one empirically loads.
-
-        Each ``PackageFacts.loaded_modules`` is already fully transitive (see
-        above), so this is a flat union, not a graph walk: nothing here can
-        discover a name that was not already resident in whichever node's own
-        ``sys.modules`` diff produced it.
-        """
-        seen: set[str] = set(names)
-        for name in names:
-            facts = self.packages.get(name)
+        """Union the already-transitive dependency sets without repeated graph walks."""
+        requested = frozenset(names)
+        seen = set(requested)
+        for name in requested:
+            facts = self.resources.get(name)
             if facts is not None:
-                seen |= facts.loaded_modules
+                seen.update(facts.dependencies)
         return frozenset(seen)
 
-    def resolve_imports(self, raw_imports: Iterable[str]) -> frozenset[str]:
-        """Raw corpus import strings, mapped to their resolved canonical names.
-
-        ``resolved`` is authoritative when present -- it is what ``analyze()``
-        actually observed a raw candidate to resolve to. When it has nothing
-        for a raw string (metadata built by hand, e.g. in a test, or written
-        by something that predates this mapping), that raw string is instead
-        used as its own name exactly when it already has usable facts under
-        that same key -- covering metadata that already keys packages by
-        their plain, correct name directly. A raw string with neither is
-        dropped rather than passed through unresolved and risking a
-        ``ModuleNotFoundError`` at restore time -- in particular, this is
-        also what makes an ``analyze()``-recorded resolution failure (an error
-        entry keyed by the raw string itself) drop out here rather than be
-        mistaken for an already-resolved name.
-        """
+    def resolve_resources(self, raw_imports: Iterable[str]) -> frozenset[str]:
+        """Resolve qualified resource candidates to usable measured identifiers."""
         names: set[str] = set()
         for raw in raw_imports:
             if not raw:
                 continue
             name = self.resolved.get(raw)
             if name is None:
-                facts = self.packages.get(raw)
+                facts = self.resources.get(raw)
                 if facts is not None and facts.usable:
                     name = raw
             if name is not None:
@@ -265,19 +231,44 @@ class Metadata:
             msg = f"metadata at {path} must be an object, got {type(raw).__name__}"
             raise MetadataError(msg)
 
-        if "packages" in raw:
-            packages_raw, resolved_raw = raw["packages"], raw.get("resolved", {})
-        else:
-            # Predates the "resolved" map: a flat {name: facts} dict.
-            packages_raw, resolved_raw = raw, {}
-
-        distributions_raw = (raw.get("distributions") or {}) if "packages" in raw else {}
+        if not isinstance(raw.get("resources"), dict):
+            msg = f"metadata at {path} must contain a resources mapping"
+            raise MetadataError(msg)
+        entries = {}
+        validated_dependencies: set[str] = set()
+        for name, entry in raw["resources"].items():
+            try:
+                kind, _ = parse_resource(name)
+                facts = ResourceFacts.from_json(name, entry)
+                if facts.resource_type != kind:
+                    msg = "resource type does not match its identifier"
+                    raise MetadataError(msg)
+                for dependency in facts.dependencies:
+                    if dependency not in validated_dependencies:
+                        parse_resource(dependency)
+                        validated_dependencies.add(dependency)
+            except (ValueError, TypeError, KeyError) as exc:
+                msg = f"invalid metadata for {name!r}: {exc}"
+                raise MetadataError(msg) from exc
+            entries[name] = facts
         return cls(
-            {name: PackageFacts.from_json(name, entry) for name, entry in packages_raw.items()},
-            distributions={str(k): str(v) for k, v in distributions_raw.items()},
-            base_image=str(raw.get("base_image") or "") if "packages" in raw else "",
-            resolved={str(k): str(v) for k, v in resolved_raw.items()},
+            entries,
+            distributions=dict(raw.get("distributions", {})),
+            base_image=str(raw.get("base_image", "")),
+            resolved=dict(raw.get("resolved", {})),
         )
+
+    def save(self, path: Path) -> None:
+        """Replace the finished file only after its new contents are written."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".writing")
+        try:
+            with temporary.open("w") as stream:
+                json.dump(self.to_json(), stream, indent=2, sort_keys=True)
+                stream.write("\n")
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def to_json(self) -> dict[str, Any]:
         """Render back to the on-disk shape.
@@ -293,9 +284,9 @@ class Metadata:
         return {
             "base_image": self.base_image,
             "distributions": dict(sorted(self.distributions.items())),
-            "packages": {
+            "resources": {
                 name: facts.to_json()
-                for name, facts in sorted(self.packages.items())
+                for name, facts in sorted(self.resources.items())
                 if not facts.error
             },
             "resolved": dict(sorted(self.resolved.items())),

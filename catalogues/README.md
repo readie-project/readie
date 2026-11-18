@@ -80,13 +80,12 @@ Each entry of `items` has these fields:
 | ----- | ------- |
 | `load_time` | Seconds to import the item when its dependencies are already resident. |
 | `size_mb` | Memory the item occupies, in MB. Memory is what a restore copies back, not disk size. |
-| `resource_type` | `package`, `dataset`, `model` or `tokenizer`. |
-| `dependencies` | Item keys the item depends on (packages only). The list is already transitive. |
+| `resource_type` | `package`, `kaggle_dataset`, `kaggle_model`, `hf_dataset`, `hf_model` or `hf_tokenizer`. |
+| `dependencies` | Source-qualified resource IDs the item depends on. The list includes observed module dependencies. |
 | `distribution` | The PyPI distribution that provides the item, as the metadata recorded it (the first provider of the top-level name). Empty for `dataset`, `model` and `tokenizer` items. |
 
-Packages are keyed by their dotted import name (`numpy`, `sklearn.svm`). Datasets,
-models and tokenizers carry a kind prefix (`model:gpt2`). The names match how the
-client lists a function's requirements.
+Every item has a source-qualified ID, such as `package:numpy`,
+`package:sklearn.svm`, `kaggle_dataset:owner/name` or `hf_model:gpt2`.
 
 Each entry of `checkpoints` has these fields:
 
@@ -141,3 +140,16 @@ checkpoints mounted into the worker.
 - Restart the router after replacing a file. It reads the directory once, at startup.
 - The pipeline tests can rewrite a committed `cpu.json` as a side effect. Run
   `git status` after `make test` and discard unintended changes.
+
+## Resource identifiers
+
+New catalogues use source-qualified keys for every item, including
+`package:pandas` and `kaggle_dataset:owner/name`. Plans use the same IDs in one
+`resources` array. No catalogue lookup strips a prefix or guesses a resource's
+source. The router normalizes the SDK's plain Python import hints to matching
+`package:` keys when selecting from a qualified catalogue. The wire protocol is
+unchanged.
+
+Measured non-package facts can appear in `items`. A captured checkpoint may only
+claim resources its capture loader loaded; dataset capture loaders are not yet
+implemented, and the pipeline rejects such capture plans.

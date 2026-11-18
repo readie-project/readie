@@ -39,7 +39,7 @@ def build(
     weights: Mapping[Source, float],
     cache_path: Path,
     seed: int | None = None,
-    known_packages: frozenset[str] = frozenset(),
+    known_resources: frozenset[str] = frozenset(),
 ) -> Live:
     """Construct the sources, judge and verifier against live services."""
     require_credentials(settings, weights)
@@ -87,13 +87,13 @@ def build(
         sources[source] = agent
 
     checker = LiveChecker(kaggle_lookup, settings.hf_token)
-    verifier = ResourceVerifier(checker, cache_path, known_packages=known_packages)
+    verifier = ResourceVerifier(checker, cache_path, known_resources=known_resources)
     standins = StandIns(chat, max_chars=settings.rewrite_max_chars) if settings.rewrite else None
     return Live(sources, FlavorJudge(chat), verifier, standins)
 
 
 def build_verifier(
-    settings: CorpusSettings, cache_path: Path, known_packages: frozenset[str] = frozenset()
+    settings: CorpusSettings, cache_path: Path, known_resources: frozenset[str] = frozenset()
 ) -> ResourceVerifier:
     """A verifier alone, for re-checking a corpus that already exists."""
     lookup = None
@@ -105,7 +105,7 @@ def build_verifier(
 
         lookup = KaggleLookup(make_api(settings.kaggle_token))
     checker = LiveChecker(lookup, settings.hf_token)
-    return ResourceVerifier(checker, cache_path, known_packages=known_packages)
+    return ResourceVerifier(checker, cache_path, known_resources=known_resources)
 
 
 def build_standins(settings: CorpusSettings) -> StandIns:

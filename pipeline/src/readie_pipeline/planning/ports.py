@@ -25,17 +25,13 @@ class Budget:
 
 @dataclass(frozen=True, slots=True)
 class CheckpointPlan:
-    """One checkpoint's contents.
+    """One checkpoint's requested resource IDs and measured costs.
 
-    ``datasets``, ``models`` and ``tokenizers`` are carried through the schema
-    and written to the plan, but nothing pre-loads them yet: only packages are
-    imported before capture.
+    Capture currently supports package resources only. Other sources can be
+    measured and planned, but require their own capture loader before use.
     """
 
-    imports: tuple[str, ...] = field(default_factory=tuple)
-    datasets: tuple[str, ...] = field(default_factory=tuple)
-    models: tuple[str, ...] = field(default_factory=tuple)
-    tokenizers: tuple[str, ...] = field(default_factory=tuple)
+    resources: tuple[str, ...] = field(default_factory=tuple)
 
     # Why this checkpoint was chosen. Written to the plan so a later run can be
     # compared against an earlier one without rerunning the planner.
@@ -46,10 +42,7 @@ class CheckpointPlan:
     def to_json(self) -> dict[str, Any]:
         """Render to the on-disk plan shape."""
         return {
-            "imports": list(self.imports),
-            "datasets": list(self.datasets),
-            "models": list(self.models),
-            "tokenizers": list(self.tokenizers),
+            "resources": list(self.resources),
             "requests_served": self.requests_served,
             "seconds_saved": round(self.seconds_saved, 4),
             "size_mb": round(self.size_mb, 4),
@@ -59,10 +52,7 @@ class CheckpointPlan:
     def from_json(cls, raw: dict[str, Any]) -> CheckpointPlan:
         """Read one entry back."""
         return cls(
-            imports=tuple(raw.get("imports") or ()),
-            datasets=tuple(raw.get("datasets") or ()),
-            models=tuple(raw.get("models") or ()),
-            tokenizers=tuple(raw.get("tokenizers") or ()),
+            resources=tuple(raw["resources"]),
             requests_served=int(raw.get("requests_served") or 0),
             seconds_saved=float(raw.get("seconds_saved") or 0.0),
             size_mb=float(raw.get("size_mb") or 0.0),
