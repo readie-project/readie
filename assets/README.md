@@ -16,6 +16,10 @@ slides, posts, and package pages.
 | `banner-dark.png` | PNG, 1920 × 1080 (16:9) | `wordmark-dark.svg` centered on the dark background color |
 | `banner-tagline-light.png` | PNG, 1920 × 1080 (16:9) | The wordmark and the tagline on white |
 | `banner-tagline-dark.png` | PNG, 1920 × 1080 (16:9) | The wordmark and the tagline on the dark background color |
+| `banner-strip-light.png` | PNG, 1584 × 396 (4:1) | A strip version of `banner-tagline-light.png`, sized for a LinkedIn cover image |
+| `banner-strip-dark.png` | PNG, 1584 × 396 (4:1) | A strip version of `banner-tagline-dark.png`, sized for a LinkedIn cover image |
+| `banner-curl-light.png` | PNG, 1920 × 1080 (16:9) | The wordmark, the tagline, and the cURL example in a code card, on white |
+| `banner-curl-dark.png` | PNG, 1920 × 1080 (16:9) | The wordmark, the tagline, and the cURL example in a code card, on the dark background color |
 | `square-light.png` | PNG, 1080 × 1080 (1:1) | `wordmark-light.svg` centered on white |
 | `square-dark.png` | PNG, 1080 × 1080 (1:1) | `wordmark-dark.svg` centered on the dark background color |
 
@@ -42,14 +46,32 @@ The letters of the wordmark are outlines of Figtree Bold, a typeface under the S
 Open Font License. The SVG files contain the outlines, so they render the same
 without the font installed.
 
-The tagline banners set the tagline in the style of the hero on the documentation
-site: the system sans-serif font, weight 500, and a line height of 1.35. The
-wordmark and the tagline below it are both centered in the banner, and so are the
-lines of the tagline. The tagline reads:
+The tagline, strip, and cURL banners set the tagline in the style of the hero on the
+documentation site: the system sans-serif font, weight 500, a line height of 1.35,
+and the same antialiased text rendering. The tagline wraps at the same width as on
+the site, scaled with the banner. The wordmark and the tagline below it are both
+centered in the banner, and so are the lines of the tagline. In the strip banners
+the content stays clear of the lower-left corner, where a profile photo overlaps a
+cover image. The tagline reads:
 
 ```text
 Secure sandboxes with optimized startup and import times for AI agents and running Python code remotely
 ```
+
+## Code card
+
+The cURL banners show this request below the tagline, in a card with a window bar:
+
+```bash
+curl -N https://run.readie.org -H 'Content-Type: application/json' \
+  -d '{"code": "print(\"Hello from Readie\")"}'
+```
+
+The request is the one in the HTTP execution guide
+(`docs/docs/guides/http-execution.md`), written on two lines with the short form `-d`
+of `--data`.
+The code is set in the system monospace font. Its colors come from the One Light and
+One Dark themes that the documentation site uses for code blocks.
 
 ## Relation to the documentation site
 
