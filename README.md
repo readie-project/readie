@@ -1,4 +1,6 @@
-# Readie
+[![Readie](./assets/banner-strip-dark.png)](https://readie.org)
+
+# What is Readie?
 
 Readie is a serverless runtime that runs a Python function on a remote sandbox
 that has already imported the libraries the function needs. Offline, it runs an
