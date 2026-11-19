@@ -88,10 +88,11 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Readie',
+      // The wordmark carries the name, so the navbar has no separate text title.
       logo: {
-        alt: 'Readie logo',
-        src: 'img/logo.svg',
+        alt: 'Readie',
+        src: 'img/wordmark.svg',
+        srcDark: 'img/wordmark-dark.svg',
       },
       items: [
         {type: 'docSidebar', sidebarId: 'gettingStarted', position: 'right', label: 'Get started'},

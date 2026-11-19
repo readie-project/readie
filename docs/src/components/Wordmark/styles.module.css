@@ -1,0 +1,111 @@
+/* The wordmark takes the theme's ink and accent, so one drawing serves light and dark. */
+.wordmark {
+  display: block;
+  aspect-ratio: 3370 / 811;
+  overflow: visible;
+}
+
+.trail {
+  fill: none;
+  stroke: var(--rd-accent);
+  stroke-width: 82;
+  stroke-linecap: round;
+}
+
+.word {
+  fill: var(--rd-ink);
+}
+
+/* ------------------------------------------------------------- Intro (once)
+   Rev and go: a short rev (the word shakes, the trails pulse), then a burst (the trails
+   stretch, the word leans forward) and a clean stop. The rest state is the finished logo, so
+   reduced motion simply shows it. */
+
+.animated .trail {
+  transform-box: fill-box;
+  transform-origin: 100% 50%;
+  animation: rev-trails 1.25s ease-in-out 0.15s both;
+}
+
+.animated .word {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  animation: rev-word 1.25s linear 0.15s both;
+}
+
+/* Three shakes in about half a second, then a hard lean on the go that springs back past
+   upright before it settles. */
+@keyframes rev-word {
+  0% {
+    transform: none;
+  }
+  6% {
+    transform: translateX(20px);
+  }
+  12% {
+    transform: translateX(-14px);
+  }
+  18% {
+    transform: translateX(20px);
+  }
+  24% {
+    transform: translateX(-14px);
+  }
+  30% {
+    transform: translateX(18px);
+  }
+  36% {
+    transform: translateX(-10px);
+  }
+  40% {
+    transform: none;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  52% {
+    transform: skewX(-16deg);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1);
+  }
+  66% {
+    transform: skewX(3deg);
+  }
+  78%,
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes rev-trails {
+  0% {
+    transform: scaleX(0.35);
+  }
+  8% {
+    transform: scaleX(0.6);
+  }
+  16% {
+    transform: scaleX(0.35);
+  }
+  24% {
+    transform: scaleX(0.6);
+  }
+  32% {
+    transform: scaleX(0.35);
+  }
+  40% {
+    transform: scaleX(0.3);
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  53% {
+    transform: scaleX(2.2);
+  }
+  80%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated .trail,
+  .animated .word {
+    animation: none;
+  }
+}
