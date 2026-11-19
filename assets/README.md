@@ -1,0 +1,65 @@
+# assets
+
+Brand assets for Readie: the wordmark, the icon, and banners built from them. Use
+these files wherever Readie appears outside the documentation site, for example in
+slides, posts, and package pages.
+
+## Files
+
+| File | Format | Contents |
+| ---- | ------ | -------- |
+| `wordmark-light.svg` | SVG, transparent background | The wordmark for light backgrounds: dark letters and blue trails |
+| `wordmark-dark.svg` | SVG, transparent background | The wordmark for dark backgrounds: light letters and light-blue trails |
+| `icon.svg` | SVG | The icon: the trails and the letter `r` on a dark tile with rounded corners |
+| `icon.png` | PNG, 1024 × 1024 | The icon, with transparent corners |
+| `banner-light.png` | PNG, 1920 × 1080 (16:9) | `wordmark-light.svg` centered on white |
+| `banner-dark.png` | PNG, 1920 × 1080 (16:9) | `wordmark-dark.svg` centered on the dark background color |
+| `banner-tagline-light.png` | PNG, 1920 × 1080 (16:9) | The wordmark and the tagline on white |
+| `banner-tagline-dark.png` | PNG, 1920 × 1080 (16:9) | The wordmark and the tagline on the dark background color |
+| `square-light.png` | PNG, 1080 × 1080 (1:1) | `wordmark-light.svg` centered on white |
+| `square-dark.png` | PNG, 1080 × 1080 (1:1) | `wordmark-dark.svg` centered on the dark background color |
+
+Choose the wordmark by the background it sits on: `wordmark-light.svg` on a light
+background, `wordmark-dark.svg` on a dark one. Use the icon where the space is square
+or small, such as an avatar or a favicon.
+
+## Colors
+
+| Element | On a light background | On a dark background |
+| ------- | --------------------- | -------------------- |
+| Letters | `#2a3138` | `#e3e7ea` |
+| Trails | `#2a5db8` | `#8db0f8` |
+| Tagline | `#56626c` | `#a3aeb7` |
+| Background | `#ffffff` | `#16181d` |
+
+The letter, tagline, and trail colors are the `--rd-ink`, `--rd-ink-2`, and
+`--rd-accent` tokens of the light and dark themes in `docs/src/css/custom.css`. The
+dark background is the fill of the icon tile.
+
+## Type
+
+The letters of the wordmark are outlines of Figtree Bold, a typeface under the SIL
+Open Font License. The SVG files contain the outlines, so they render the same
+without the font installed.
+
+The tagline banners set the tagline in the style of the hero on the documentation
+site: the system sans-serif font, weight 500, and a line height of 1.35. The
+wordmark and the tagline below it are both centered in the banner, and so are the
+lines of the tagline. The tagline reads:
+
+```text
+Secure sandboxes with optimized startup and import times for AI agents and running Python code remotely
+```
+
+## Relation to the documentation site
+
+The documentation site uses the same artwork:
+
+| Site file | Copy in this directory |
+| --------- | ---------------------- |
+| `docs/static/img/wordmark.svg` | `wordmark-light.svg` |
+| `docs/static/img/wordmark-dark.svg` | `wordmark-dark.svg` |
+| `docs/static/img/logo.svg` | `icon.svg` |
+
+When the artwork changes, update both copies of each SVG file and render the PNG
+files again from the SVG files.
