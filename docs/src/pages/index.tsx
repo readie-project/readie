@@ -3,13 +3,14 @@ import clsx from 'clsx';
 import Head from '@docusaurus/Head';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import useBaseUrl from '@docusaurus/useBaseUrl';
 import useBrokenLinks from '@docusaurus/useBrokenLinks';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import CodeBlock from '@theme/CodeBlock';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 import Playground from '../components/Playground';
-import TypedCommand from '../components/TypedCommand';
+import Wordmark from '../components/Wordmark';
 
 import styles from './index.module.css';
 
@@ -131,36 +132,59 @@ const sections: [string, string, string][] = [
 // The line under the title. The site tagline stays short because it also feeds the page title
 // and the social card.
 const description =
-  'Readie offers secure and isolated sandboxes with minimal startup and import times for running Python code remotely.';
+  'Secure sandboxes with optimized startup and import times for running Python code remotely.';
 
 // The first thing a visitor can run: one request, no install. It matches the example in the
-// HTTP execution guide.
-const curlExample = `curl -N https://run.readie.org -H 'Content-Type: application/json' \\
-  --data '{"code": "print(\\"Hello from Readie\\")"}'`;
+// HTTP execution guide, with the JSON body spread over lines and the endpoint last.
+const curlExample = `curl -N \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "code": "print(\\"Hello from Readie\\")"
+  }' \\
+  'https://run.readie.org'`;
+
+// The same greeting with the Python client.
+const pythonExample = `# pip install readie
+from readie import remote
+
+
+@remote
+def say_hello(name):
+    return f"Hello from {name}"
+
+
+print(say_hello("Readie"))`;
 
 function Hero(): ReactNode {
-  const {siteConfig} = useDocusaurusContext();
   return (
     <header className={styles.hero}>
-      <div className={clsx('container', styles.heroInner)}>
-        <img className={styles.mark} src={useBaseUrl('/img/logo.svg')} alt="" width={88} height={88} />
-        <Heading as="h1" className={styles.title}>
-          {siteConfig.title}
-        </Heading>
-        <p className={styles.tagline}>{description}</p>
-        <div className={styles.install}>
-          <TypedCommand language="bash" prefix="curl ">{curlExample}</TypedCommand>
-          <p className={styles.installNote}>
-            or use the <Link to="/docs/getting-started/installation">Python client SDK</Link>
-          </p>
+      <div className={clsx('container', styles.wide, styles.heroInner)}>
+        <div className={styles.heroText}>
+          {/* The wordmark is the page's title; its label keeps the heading's name. It plays its
+              intro once on load. */}
+          <Heading as="h1" className={styles.title}>
+            <Wordmark animated className={styles.wordmark} />
+          </Heading>
+          <p className={styles.tagline}>{description}</p>
+          <div className={styles.actions}>
+            <Link className={clsx("button button--primary", styles.cta)} to="/docs/getting-started/quickstart">
+              Quickstart
+            </Link>
+            <Link className={clsx("button button--secondary", styles.cta)} to="/#playground">
+              Try Readie
+            </Link>
+          </div>
         </div>
-        <div className={styles.actions}>
-          <Link className={clsx("button button--primary", styles.cta)} to="/docs/getting-started/quickstart">
-            Quickstart
-          </Link>
-          <Link className={clsx("button button--secondary", styles.cta)} to="/#playground">
-            Try Readie
-          </Link>
+        {/* Two ways to run code: one request with no install, or the Python client. */}
+        <div className={styles.heroCode}>
+          <Tabs>
+            <TabItem value="http" label="HTTP" default>
+              <CodeBlock language="bash">{curlExample}</CodeBlock>
+            </TabItem>
+            <TabItem value="python" label="Python">
+              <CodeBlock language="python">{pythonExample}</CodeBlock>
+            </TabItem>
+          </Tabs>
         </div>
       </div>
     </header>

@@ -1,4 +1,4 @@
-/* Landing page, after react.dev: a centered hero, then soft bands with centered headings.
+/* Landing page, after react.dev: a two-column hero, then soft bands with centered headings.
    Colors and type come from the tokens in custom.css. */
 
 /* ---------------------------------------------------------------- Hero */
@@ -11,13 +11,21 @@
   --dot: color-mix(in srgb, var(--rd-ink-2) 32%, transparent);
   position: relative;
   isolation: isolate;
+  /* clip, not hidden: the glow layer is wider than the hero, and a hidden overflow can still be
+     scrolled sideways when focus moves to a code tab. */
   overflow: hidden;
+  overflow: clip;
   /* The hero starts under the navbar, which is clear at the top of the page, so the
      background shows behind it. The top padding makes up for the height that moves up. */
   margin-top: calc(-1 * var(--ifm-navbar-height));
   padding-top: calc(4.5rem + var(--ifm-navbar-height));
   padding-bottom: 4.5rem;
-  text-align: center;
+  text-align: left;
+  /* Most of the first screen, with the content centred in it; a little of the next section
+     still shows below as a cue to scroll. Stacked layouts drop this (see below). */
+  min-height: min(78svh, 54rem);
+  display: grid;
+  align-content: center;
 }
 
 /* The background has two layers behind the content: a faint dot grid that fades out toward
@@ -74,25 +82,23 @@
   }
 }
 
-/* The content rises into place one piece after another when the page loads. */
-.heroInner > * {
+/* The content rises into place one piece after another when the page loads: the text column
+   from the top down, then the code tabs. */
+.heroText > *,
+.heroCode {
   animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.heroInner > :nth-child(2) {
+.heroText > :nth-child(2) {
   animation-delay: 0.06s;
 }
 
-.heroInner > :nth-child(3) {
+.heroText > :nth-child(3) {
   animation-delay: 0.12s;
 }
 
-.heroInner > :nth-child(4) {
+.heroCode {
   animation-delay: 0.18s;
-}
-
-.heroInner > :nth-child(5) {
-  animation-delay: 0.24s;
 }
 
 @keyframes rise {
@@ -106,22 +112,46 @@
   }
 }
 
+/* Two columns: the title, line and actions on the left, the code tabs on the right. They
+   stack on narrow screens (see the end of this file). */
 .heroInner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  /* The code column has a little room past the longest line of the request; the text takes the
+     rest, so the line under the wordmark has room to run long. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 30rem);
+  align-items: stretch;
+  gap: 3rem;
+  /* The height of the tab row above the code: the tabs, then the gap to the code block. */
+  --hero-tabs: calc(var(--ifm-tabs-padding-vertical) * 2 + 1rem * var(--ifm-line-height-base) + 3px + 1rem);
+  /* The hero centres this whole block, tabs included. Moving it up by half the tab row centres
+     what the eye reads as the content: the text beside the code block. */
+  position: relative;
+  top: calc(var(--hero-tabs) / -2);
 }
 
-.mark {
-  margin-bottom: 1rem;
-  filter: drop-shadow(0 10px 24px var(--rd-accent-tint));
+/* The text starts where the code block starts, and the buttons end where it ends, so the two
+   columns share a top and a bottom edge. */
+.heroText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: var(--hero-tabs);
+}
+
+.heroText .actions {
+  margin-top: auto;
+  padding-top: 1.75rem;
 }
 
 .title {
-  font-size: clamp(2.25rem, 5vw, 3.25rem);
-  font-weight: 600;
-  line-height: 1.1;
-  margin: 0 0 1rem;
+  line-height: 0;
+  margin: 0 0 1.5rem;
+}
+
+/* The wordmark keeps its own aspect ratio, so the width follows from the height. */
+.wordmark {
+  height: clamp(3rem, 7vw, 4.25rem);
+  width: auto;
 }
 
 /* A light subtitle, as on react.dev: larger than body text, not bold. */
@@ -131,26 +161,66 @@
   line-height: 1.35;
   color: var(--rd-ink-2);
   margin: 0;
-  max-width: 56rem;
+  max-width: 34rem;
 }
 
-.install {
-  width: 100%;
-  max-width: 40rem;
-  margin-top: 1.75rem;
-  text-align: left;
+/* The code: Docusaurus's own tabs, as docs pages use for one example in several languages.
+   They take the full height of the hero row and hand it down to the code block. */
+.heroCode {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
 }
 
-.install :global(.theme-code-block) {
+.heroCode :global(.tabs-container) {
+  margin-bottom: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Both panels share one cell and the hidden one keeps its space, so switching tabs does not
+   change the height of the hero. A hidden panel is still out of reach for focus and screen
+   readers. */
+.heroCode div:has(> [role='tabpanel']) {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* min-width: 0 lets long lines scroll inside their code block instead of widening the card. */
+.heroCode [role='tabpanel'] {
+  grid-area: 1 / 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.heroCode [role='tabpanel'][hidden] {
+  display: flex;
+  visibility: hidden;
+}
+
+/* The last block stretches, so the shorter tab fills the card instead of leaving a gap. */
+.heroCode [role='tabpanel'] > :last-child {
+  flex: 1;
+}
+
+.heroCode :global(.theme-code-block) {
   margin: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-/* A line under the curl command that points to the Python client. */
-.installNote {
-  margin: 0.6rem 0 0;
-  text-align: center;
-  font-size: 0.9375rem;
-  color: var(--rd-ink-2);
+/* The block's content and its pre stretch too, so the code sits on one even background. */
+.heroCode :global(.theme-code-block) > :last-child {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.heroCode :global(.theme-code-block pre) {
+  flex: 1;
 }
 
 .cta {
@@ -162,7 +232,7 @@
 .actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.75rem;
   margin-top: 1.75rem;
 }
@@ -189,8 +259,20 @@
 }
 
 
+/* The landing sections share one width, capped at --cap. The gap to the screen edge grows with
+   the screen up to 2.5rem; once the cap leaves a margin of its own, the padding shrinks back to
+   1rem so the edge distance never jumps. */
 .wide {
-  max-width: 66rem;
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+  --cap: 66rem;
+  max-width: var(--cap);
+  padding-inline: clamp(1rem, calc(var(--gutter) - (100vw - var(--cap)) / 2), var(--gutter));
+}
+
+/* The hero runs a little wider than the sections below, so its two columns fill more of a wide
+   screen. */
+.hero .wide {
+  --cap: 72rem;
 }
 
 .section h2 {
@@ -459,7 +541,8 @@
   .fill,
   .flag,
   .hero::after,
-  .heroInner > * {
+  .heroText > *,
+  .heroCode {
     animation: none;
   }
 }
@@ -510,6 +593,24 @@
 /* -------------------------------------------------------------- Narrow */
 
 @media (max-width: 996px) {
+  /* The hero stacks: the text, then the code tabs. */
+  .heroInner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2.25rem;
+  }
+
+  .hero {
+    min-height: 0;
+  }
+
+  .heroText {
+    padding-top: 0;
+  }
+
+  .heroInner {
+    top: 0;
+  }
+
   /* The stage stacks: both cards sit on it and nothing overlaps its edge. */
   .stage {
     margin: 0;
@@ -558,4 +659,9 @@
     padding-bottom: 3rem;
   }
 
+  /* Small enough that the longest line of the request fits without scrolling on phones 375px
+     wide and up; narrower ones scroll it inside the block. */
+  .heroCode :global(.theme-code-block) {
+    font-size: 0.85rem;
+  }
 }

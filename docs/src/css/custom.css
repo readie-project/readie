@@ -356,8 +356,10 @@ html[data-scrolled] .navbar {
   margin-right: 1.6rem;
 }
 
+/* The logo is the full wordmark; its height sets the lowercase letters close to the nav text. */
 .navbar__logo {
-  height: 1.7rem;
+  height: 1.8rem;
+  margin-right: 0;
 }
 
 .navbar__title {
