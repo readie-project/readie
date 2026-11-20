@@ -22,6 +22,8 @@ slides, posts, and package pages.
 | `banner-curl-dark.png` | PNG, 1920 × 1080 (16:9) | The wordmark, the tagline, and the cURL example in a code card, on the dark background color |
 | `square-light.png` | PNG, 1080 × 1080 (1:1) | `wordmark-light.svg` centered on white |
 | `square-dark.png` | PNG, 1080 × 1080 (1:1) | `wordmark-dark.svg` centered on the dark background color |
+| `social-card-light.png` | PNG, 1200 × 630 (1.91:1) | The wordmark, the tagline, and `readie.org` on white, with a trail-blue bar along the bottom, sized for link previews (Open Graph and Twitter cards) |
+| `social-card-dark.png` | PNG, 1200 × 630 (1.91:1) | The wordmark, the tagline, and `readie.org` on the dark background color, with a light-blue bar along the bottom, sized for link previews. The documentation site uses this card |
 
 Choose the wordmark by the background it sits on: `wordmark-light.svg` on a light
 background, `wordmark-dark.svg` on a dark one. Use the icon where the space is square
@@ -82,6 +84,11 @@ The documentation site uses the same artwork:
 | `docs/static/img/wordmark.svg` | `wordmark-light.svg` |
 | `docs/static/img/wordmark-dark.svg` | `wordmark-dark.svg` |
 | `docs/static/img/logo.svg` | `icon.svg` |
+| `docs/static/img/social-card.png` | `social-card-dark.png` |
+
+The social cards are rendered from `docs/tools/social-card.html`, which lists the commands
+that render both cards. They set the tagline of the documentation site, which is shorter than
+the tagline of the banners.
 
 When the artwork changes, update both copies of each SVG file and render the PNG
 files again from the SVG files.

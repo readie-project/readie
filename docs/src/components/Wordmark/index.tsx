@@ -23,16 +23,18 @@ type Props = {
    *  burst (the trails stretch, the word leans) and a clean stop. Off for visitors who ask for
    *  reduced motion. */
   animated?: boolean;
+  /** Hide the drawing from assistive technology, for a heading that carries the name as text. */
+  decorative?: boolean;
   className?: string;
 };
 
-export default function Wordmark({animated = false, className}: Props): ReactNode {
+export default function Wordmark({animated = false, decorative = false, className}: Props): ReactNode {
+  const label = decorative ? {'aria-hidden': true} : {role: 'img', 'aria-label': 'Readie'};
   return (
     <svg
       className={clsx(styles.wordmark, animated && styles.animated, className)}
       viewBox={VIEW_BOX}
-      role="img"
-      aria-label="Readie">
+      {...label}>
       {TRAILS.map((d) => (
         <path key={d} className={styles.trail} d={d} />
       ))}

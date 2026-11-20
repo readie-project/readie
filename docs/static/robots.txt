@@ -1,0 +1,5 @@
+# Every page of the documentation site may be crawled.
+User-agent: *
+Allow: /
+
+Sitemap: https://readie.org/sitemap.xml

@@ -6,9 +6,15 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const repoUrl = 'https://github.com/readie-project/readie';
 
+// The tagline, which is also the description of every page that sets none of its own (each doc
+// sets one in its front matter). The landing page shows it under the title, and link previews
+// of the landing page show it as their description.
+const siteDescription =
+  'Secure sandboxes with optimized startup and import times for running Python code remotely.';
+
 const config: Config = {
   title: 'Readie',
-  tagline: 'Low-latency code sandboxes',
+  tagline: siteDescription,
   favicon: 'img/favicon.ico',
   headTags: [
     // Browsers that support SVG icons use the logo directly; the .ico above is the fallback.
@@ -32,6 +38,7 @@ const config: Config = {
   // The playground service the playground on the landing page posts to. Empty disables the Run button.
   customFields: {
     playgroundUrl: process.env.PLAYGROUND_URL ?? '',
+    repoUrl,
   },
 
   onBrokenLinks: 'throw',
@@ -76,6 +83,14 @@ const config: Config = {
           showLastUpdateTime: true,
         },
         blog: false,
+        // Every page is listed with the date its source last changed. The weekly change
+        // frequency and the flat priority that Docusaurus writes by default say nothing to
+        // search engines, so they are left out.
+        sitemap: {
+          lastmod: 'date',
+          changefreq: null,
+          priority: null,
+        },
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -84,6 +99,18 @@ const config: Config = {
   ],
 
   themeConfig: {
+    // The card that link previews show (Open Graph and Twitter). Its source is
+    // tools/social-card.html.
+    image: 'img/social-card.png',
+    metadata: [
+      {name: 'description', content: siteDescription},
+      {property: 'og:site_name', content: 'Readie'},
+      {property: 'og:type', content: 'website'},
+      {property: 'og:image:width', content: '1200'},
+      {property: 'og:image:height', content: '630'},
+      {property: 'og:image:alt', content: `Readie: ${siteDescription}`},
+      {name: 'twitter:image:alt', content: `Readie: ${siteDescription}`},
+    ],
     colorMode: {
       respectPrefersColorScheme: true,
     },

@@ -129,10 +129,6 @@ const sections: [string, string, string][] = [
   ['Contribute', '/docs/contributing/setup', 'Set up a development environment and run the stack.'],
 ];
 
-// The line under the title. The site tagline stays short because it also feeds the page title
-// and the social card.
-const description =
-  'Secure sandboxes with optimized startup and import times for running Python code remotely.';
 
 // The first thing a visitor can run: one request, no install. It matches the example in the
 // HTTP execution guide, with the JSON body spread over lines and the endpoint last.
@@ -155,15 +151,16 @@ def say_hello(name):
 
 print(say_hello("Readie"))`;
 
-function Hero(): ReactNode {
+function Hero({description}: {description: string}): ReactNode {
   return (
     <header className={styles.hero}>
       <div className={clsx('container', styles.wide, styles.heroInner)}>
         <div className={styles.heroText}>
-          {/* The wordmark is the page's title; its label keeps the heading's name. It plays its
-              intro once on load. */}
+          {/* The wordmark is the page's visible title, and plays its intro once on load. The
+              hidden text gives the heading its name for crawlers and screen readers. */}
           <Heading as="h1" className={styles.title}>
-            <Wordmark animated className={styles.wordmark} />
+            <span className={styles.visuallyHidden}>Readie</span>
+            <Wordmark animated decorative className={styles.wordmark} />
           </Heading>
           <p className={styles.tagline}>{description}</p>
           <div className={styles.actions}>
@@ -260,18 +257,63 @@ function Documentation(): ReactNode {
   );
 }
 
+// Structured data for search engines: the project, the site, and the Python client.
+function structuredData(siteUrl: string, description: string, repoUrl: string): object {
+  const home = `${siteUrl}/`;
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': `${home}#organization`,
+        name: 'Readie',
+        url: home,
+        logo: `${siteUrl}/img/logo-512.png`,
+        sameAs: [repoUrl, 'https://pypi.org/project/readie'],
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${home}#website`,
+        name: 'Readie',
+        url: home,
+        description,
+        inLanguage: 'en',
+        publisher: {'@id': `${home}#organization`},
+      },
+      {
+        '@type': 'SoftwareApplication',
+        '@id': `${home}#software`,
+        name: 'Readie',
+        description,
+        url: home,
+        applicationCategory: 'DeveloperApplication',
+        softwareRequirements: 'Python 3.12',
+        downloadUrl: 'https://pypi.org/project/readie',
+        license: 'https://www.apache.org/licenses/LICENSE-2.0',
+        image: `${siteUrl}/img/social-card.png`,
+        publisher: {'@id': `${home}#organization`},
+      },
+    ],
+  };
+}
+
 export default function Home(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
-  // The layout puts a given title before the site name, so the home page sets its own,
-  // which leads with the site name.
-  const title = `${siteConfig.title} | ${siteConfig.tagline}`;
+  const description = siteConfig.tagline;
+  const repoUrl = String(siteConfig.customFields?.repoUrl ?? '');
+  // The layout puts a given title before the site name, so the home page sets its own: the
+  // site name alone.
+  const title = siteConfig.title;
   return (
-    <Layout description={siteConfig.tagline} wrapperClassName="landing-page">
+    <Layout description={description} wrapperClassName="landing-page">
       <Head>
         <title>{title}</title>
         <meta property="og:title" content={title} />
+        <script type="application/ld+json">
+          {JSON.stringify(structuredData(siteConfig.url, description, repoUrl))}
+        </script>
       </Head>
-      <Hero />
+      <Hero description={description} />
       <main>
         <HowItWorks />
         <TryIt />
