@@ -18,6 +18,8 @@ slides, posts, and package pages.
 | `banner-tagline-dark.png` | PNG, 1920 × 1080 (16:9) | The wordmark and the tagline on the dark background color |
 | `banner-strip-light.png` | PNG, 1584 × 396 (4:1) | A strip version of `banner-tagline-light.png`, sized for a LinkedIn cover image |
 | `banner-strip-dark.png` | PNG, 1584 × 396 (4:1) | A strip version of `banner-tagline-dark.png`, sized for a LinkedIn cover image |
+| `banner-wordmark-light.png` | PNG, 1584 × 396 (4:1) | `wordmark-light.svg` centered on white, without the tagline. The PyPI page (`pkg/README.pypi.md`) uses it |
+| `banner-wordmark-dark.png` | PNG, 1584 × 396 (4:1) | `wordmark-dark.svg` centered on the dark background color, without the tagline |
 | `banner-curl-light.png` | PNG, 1920 × 1080 (16:9) | The wordmark, the tagline, and the cURL example in a code card, on white |
 | `banner-curl-dark.png` | PNG, 1920 × 1080 (16:9) | The wordmark, the tagline, and the cURL example in a code card, on the dark background color |
 | `square-light.png` | PNG, 1080 × 1080 (1:1) | `wordmark-light.svg` centered on white |

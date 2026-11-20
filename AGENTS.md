@@ -124,8 +124,8 @@ There are three kinds of documentation, each with one audience:
   deployment). That material lives in `playground/README.md` and `SECURITY.md`.
 - **Component READMEs** (`router/`, `worker/`, `executor/`, `pkg/`, `pipeline/`,
   `playground/`, `nginx/`, `protos/`, `catalogues/`). Written for maintainers of that directory:
-  layout, internals, configuration, how to test. `pkg/README.md` is the PyPI page
-  and is written for SDK users.
+  layout, internals, configuration, how to test. `pkg/README.md` and the
+  shorter PyPI page `pkg/README.pypi.md` are written for SDK users.
 - **Root files** (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, this file). Short,
   and they link to the others instead of repeating them.
 
@@ -136,7 +136,7 @@ There are three kinds of documentation, each with one audience:
 | A `.proto` file | `make protos` and `make docs-protos`; `protos/README.md` if a rule changes |
 | The executor wire protocol | `executor/README.md`; site `architecture/executor-protocol` and `contributing/changing-executor-protocol` |
 | A setting or environment variable (router, worker, executor, pipeline) | The component README; site `contributing/configuration-reference` and `contributing/configure-services` |
-| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md`; site `guides/sdk`, `guides/errors`, and the Get started pages that mention it. A `@remote` parameter also goes into the playground's `ReadieExecutionRequest` (`/run`) |
+| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md` (and `pkg/README.pypi.md` if its example changes); site `guides/sdk`, `guides/errors`, and the Get started pages that mention it. A `@remote` parameter also goes into the playground's `ReadieExecutionRequest` (`/run`) |
 | A Makefile target or variable | Its `##` help text; site `contributing/make-targets` |
 | The catalogue format or how the router selects a checkpoint | `catalogues/README.md`; site `concepts/flavors-and-catalogues`, `concepts/cost-model`, `architecture/placement` |
 | Sandbox or container behavior (network, limits, idle timeout, lifecycle) | `worker/README.md`; site `concepts/sandboxes`, `architecture/container-lifecycle` |
@@ -144,7 +144,7 @@ There are three kinds of documentation, each with one audience:
 | The playground service, its settings or its deployment | `playground/README.md` and `SECURITY.md`. The site does not describe the playground's architecture or concepts |
 | Trust boundaries, auth, TLS or network defaults | `SECURITY.md`; site `architecture/security-model`, `architecture/security`, `contributing/deploy-with-tls` |
 | CI jobs or the PR checklist | `CONTRIBUTING.md`; site `contributing/pull-requests` |
-| A Python version floor | This file, `CONTRIBUTING.md`, site `getting-started/installation`, `getting-started/faq`, `guides/troubleshooting` |
+| A Python version floor | This file, `CONTRIBUTING.md`, `pkg/README.pypi.md`, site `getting-started/installation`, `getting-started/faq`, `guides/troubleshooting` |
 | An error message users see | Site `guides/troubleshooting` and `guides/errors` |
 
 If a change adds a page to the site, add it to the right folder in `docs/docs/`,

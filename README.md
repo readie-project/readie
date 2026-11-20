@@ -1,4 +1,4 @@
-[![Readie](./assets/banner-strip-dark.png)](https://readie.org)
+[![Readie | Secure sandboxes with optimized startup and import times for AI agents and running Python code remotely](./assets/banner-strip-dark.png)](https://readie.org)
 
 # What is Readie?
 

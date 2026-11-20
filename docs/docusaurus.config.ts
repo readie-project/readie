@@ -108,8 +108,8 @@ const config: Config = {
       {property: 'og:type', content: 'website'},
       {property: 'og:image:width', content: '1200'},
       {property: 'og:image:height', content: '630'},
-      {property: 'og:image:alt', content: `Readie: ${siteDescription}`},
-      {name: 'twitter:image:alt', content: `Readie: ${siteDescription}`},
+      {property: 'og:image:alt', content: `Readie | ${siteDescription}`},
+      {name: 'twitter:image:alt', content: `Readie | ${siteDescription}`},
     ],
     colorMode: {
       respectPrefersColorScheme: true,
