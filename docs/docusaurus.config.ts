@@ -10,7 +10,7 @@ const repoUrl = 'https://github.com/readie-project/readie';
 // sets one in its front matter). The landing page shows it under the title, and link previews
 // of the landing page show it as their description.
 const siteDescription =
-  'Secure sandboxes with optimized startup and import times for running Python code remotely.';
+  'Secure sandboxes with optimized startup and import times for AI agents and running Python code remotely.';
 
 const config: Config = {
   title: 'Readie',

@@ -1,7 +1,7 @@
 [project]
 name = "readie"
 version = "1.0.0"
-description = "Readie offers secure and isolated sandboxes with minimal startup and import times for running Python code remotely. This is the client SDK for running Python functions on Readie."
+description = "Readie offers secure sandboxes with optimized startup and import times for AI agents and running Python code remotely. This is the client SDK for running Python functions on Readie."
 readme = "README.md"
 requires-python = "~=3.12.0"
 license = { text = "Apache-2.0" }

@@ -87,8 +87,8 @@ The documentation site uses the same artwork:
 | `docs/static/img/social-card.png` | `social-card-dark.png` |
 
 The social cards are rendered from `docs/tools/social-card.html`, which lists the commands
-that render both cards. They set the tagline of the documentation site, which is shorter than
-the tagline of the banners.
+that render both cards. The tagline is the same on the banners, the social cards, and the
+documentation site, where it is the `tagline` in `docs/docusaurus.config.ts`.
 
 When the artwork changes, update both copies of each SVG file and render the PNG
 files again from the SVG files.
