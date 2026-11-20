@@ -1,6 +1,6 @@
 [project]
 name = "readie"
-version = "1.0.1"
+version = "1.0.2"
 description = "Secure sandboxes with optimized startup and import times for AI agents and running Python code remotely."
 # PyPI shows README.pypi.md, a short page that points to the documentation. README.md is the
 # detailed page for readers of the repository.
