@@ -3,6 +3,15 @@
   height: 2rem;
 }
 
+/* Docusaurus hides the navbar toggle on small screens and puts one in the mobile sidebar
+   instead. Readie keeps it in the navbar at every width; the sidebar header has none
+   (src/theme/Navbar/MobileSidebar/Header). */
+@media (max-width: 996px) {
+  :global(.navbar__items--right) > .toggle {
+    display: block;
+  }
+}
+
 .toggleButton {
   -webkit-tap-highlight-color: transparent;
   align-items: center;

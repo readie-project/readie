@@ -323,27 +323,46 @@ pre code {
 
 /* ------------------------------------------------------------------- Navbar */
 
+/* The frosted glass sits on a layer behind the navbar instead of on the navbar itself. A
+   backdrop-filter on .navbar would make it the containing block of its fixed children, which
+   squeezes the mobile sidebar (.navbar-sidebar) into the height of the bar. */
 .navbar {
+  border-bottom: 0;
+  background: transparent;
+}
+
+.navbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background: color-mix(in srgb, var(--rd-bg) 84%, transparent);
   -webkit-backdrop-filter: saturate(1.4) blur(12px);
   backdrop-filter: saturate(1.4) blur(12px);
-  border-bottom: 0;
-}
-
-.navbar {
   transition:
-    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     backdrop-filter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.navbar {
+  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* On the landing page the navbar is clear at the top, so the background of the hero shows
    behind it. It turns frosted again as soon as the page scrolls (navbarScroll.ts sets
-   `data-scrolled`). The page marks itself with the `landing-page` class. */
-html:has(.landing-page):not([data-scrolled]) .navbar {
+   `data-scrolled`). The page marks itself with the `landing-page` class. While the mobile
+   sidebar is open the bar stays frosted. */
+html:has(.landing-page):not([data-scrolled]) .navbar:not(.navbar-sidebar--show)::before {
   background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* The navbar paints its own frosted layer, so --ifm-navbar-background-color is transparent.
+   The mobile sidebar takes its color from that variable, so it gets the page color here. */
+.navbar-sidebar {
+  background-color: var(--rd-bg);
 }
 
 /* After react.dev: no line at the top of the page; a soft shadow and a hairline ring appear
@@ -425,6 +444,19 @@ html[data-scrolled] .navbar {
 }
 
 .navbar-github svg {
+  display: none;
+}
+
+/* In the mobile sidebar the GitHub link is a plain text menu item like the others. */
+.navbar-sidebar .navbar-github {
+  width: auto;
+  height: auto;
+  margin-left: 0;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.navbar-sidebar .navbar-github::before {
   display: none;
 }
 
