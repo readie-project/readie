@@ -25,7 +25,7 @@ binding before dispatch and return a clear error instead.
 
 ## Before you open a pull request
 
-CI runs only on pull requests that target `main` and on manual runs. It does not run on every push to a branch, so run the checks locally first. See [Set up your environment](/docs/contributing/setup).
+CI runs on pull requests targeting `main`, pushes to `main`, and manual runs. Run the checks locally before opening a pull request. See [Set up your environment](/docs/contributing/setup).
 
 ```bash
 make lint type test
@@ -68,10 +68,19 @@ The workflow is `.github/workflows/ci.yml`. It defines these jobs:
 | `generated stubs are current` | Installs the pinned generators, runs `make protos`, and fails if the working tree changed. |
 | `framing fixture is current` | Regenerates `executor/tests/data/frames.golden.json` and fails if it changed. See [Change the executor protocol](/docs/contributing/changing-executor-protocol). |
 | `images build` | Builds the router and worker images and checks the pipeline Dockerfile. This job is currently switched off. |
+| `system` | Uses an installed SDK wheel to exercise NGINX, the router, the worker, and the Python executor inside gVisor. |
 
-None of these jobs can run real gVisor. CI never tests capturing a checkpoint or executing a function in a sandbox.
+Run the system suite locally on Linux/amd64 with Docker Compose v2, OpenSSL, and Python 3.12.
 
-A second workflow, `publish.yml`, publishes the `pkg` client to PyPI when a maintainer publishes a GitHub release. The release tag must match the version in `pkg/pyproject.toml`.
+```bash
+e2e/run-local.sh
+```
+
+The system job uses the same runner script. It exercises cold starts and session reuse with a small root filesystem and no checkpoints. The report and failure logs are available as a workflow artifact.
+
+A second workflow, `publish.yml`, publishes the `pkg` client to PyPI when a maintainer publishes a GitHub release. The release tag must match the version in `pkg/pyproject.toml`. Before publication, it runs the system suite against the configured TLS deployment with the candidate wheel.
+
+The deployed system workflow runs daily or on demand. It installs the latest published SDK by default and accepts a version for manual runs. Both deployed workflows obtain the endpoint and token from the `system-tests` GitHub environment.
 
 If a job fails, open its log and run the same command locally. Every command in the table is a `make` target or a one-line command.
 

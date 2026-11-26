@@ -1,0 +1,48 @@
+name: Deployed system tests
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+    inputs:
+      sdk_version:
+        description: Published SDK version (blank uses the latest release)
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deployed:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: system-tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install published SDK and test dependencies
+        env:
+          SDK_VERSION: ${{ inputs.sdk_version }}
+        run: |
+          package=readie
+          if [[ -n "$SDK_VERSION" ]]; then
+            package="readie==$SDK_VERSION"
+          fi
+          python -m pip install -r e2e/requirements.txt "$package"
+      - name: Run deployed system tests
+        env:
+          READIE_E2E_ENDPOINT: ${{ vars.READIE_E2E_ENDPOINT }}
+          READIE_AUTH_TOKEN: ${{ secrets.READIE_AUTH_TOKEN }}
+        run: e2e/run-deployed.sh
+      - name: Upload system test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployed-system-test-reports
+          path: .build/e2e/
+          include-hidden-files: true

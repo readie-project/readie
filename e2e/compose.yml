@@ -1,0 +1,63 @@
+services:
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      router:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1::443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - "${E2E_TLS_DIR:?}:/etc/nginx/certs:ro"
+    healthcheck:
+      test: [CMD, wget, --no-check-certificate, -qO, /dev/null, "https://127.0.0.1/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  router:
+    build:
+      context: ../router
+      network: "${READIE_E2E_BUILD_NETWORK:-default}"
+      ulimits:
+        nofile:
+          soft: 65536
+          hard: 65536
+    environment:
+      AUTH_TOKEN: "${READIE_AUTH_TOKEN:?}"
+      CATALOGUE_DIR: ""
+    healthcheck:
+      test: [CMD, grpcurl, -plaintext, "router:50051", grpc.health.v1.Health/Check]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    stop_grace_period: 30s
+
+  worker:
+    image: "${E2E_WORKER_IMAGE:?}"
+    platform: linux/amd64
+    depends_on:
+      router:
+        condition: service_healthy
+    privileged: true
+    security_opt:
+      - apparmor=unconfined
+      - seccomp=unconfined
+    init: true
+    environment:
+      SANDBOX_NETWORK: none
+      SANDBOX_IGNORE_CGROUPS: "true"
+      SANDBOX_DEBUG: "true"
+      WORKER_MEM_TOTAL: 4Gi
+      WORKER_MAX_EXECUTORS: "8"
+    volumes:
+      - worker-shared:/shared
+    healthcheck:
+      test: [CMD, grpcurl, -plaintext, "worker:50052", grpc.health.v1.Health/Check]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    stop_grace_period: 35s
+
+volumes:
+  worker-shared:
