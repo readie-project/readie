@@ -62,7 +62,7 @@ The workflow is `.github/workflows/ci.yml`. It defines these jobs:
 
 | Job | What it does |
 | --- | --- |
-| `python` | Runs four times, once each for `router` (3.13), `pipeline` (3.13), `pkg` (3.12), and `executor` (3.12). Each run does `uv sync --all-groups`, then `make lint`, `make type`, and `make test`. |
+| `python` | Runs once for each Python component: `router` (3.13), `pipeline` (3.13), `pkg` (3.12), `playground` (3.12), and `executor` (3.12). Each run does `uv sync --all-groups`, then `make lint`, `make type`, and `make test`. |
 | `worker` | In `worker/`: `go build ./...`, `go test -race ./...`, then `golangci-lint` at the version pinned in `worker/Makefile`. |
 | `protos lint` | `buf lint`, `buf format --diff --exit-code`, and on pull requests `buf breaking` against `main`. |
 | `generated stubs are current` | Installs the pinned generators, runs `make protos`, and fails if the working tree changed. |

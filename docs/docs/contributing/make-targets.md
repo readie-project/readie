@@ -55,7 +55,7 @@ The following names are derived from `FLAVOR`:
 | `all` | Generate protos, then lint, type-check and test everything. |
 | `install` | Sync every Python virtual environment from its lockfile and download Go modules. |
 | `lint` | Lint every component, and lint and format-check the protos. |
-| `type` | Type-check the four Python components. The Go worker has no `type` target. |
+| `type` | Type-check the Python components. The Go worker has no `type` target. |
 | `test` | Test every component. The worker tests run with the race detector. Most tests use fakes and run anywhere. |
 | `help` | List the annotated targets. |
 
@@ -63,7 +63,7 @@ The command `make lint type test` is the full check that CI repeats.
 
 ### Per-component targets
 
-A pattern rule forwards `<component>-<verb>` to that component's own Makefile. The components are `router`, `pkg`, `executor`, `pipeline` and `worker`.
+A pattern rule forwards `<component>-<verb>` to that component's own Makefile. The components are `router`, `pkg`, `executor`, `pipeline`, `playground` and `worker`.
 
 ```bash
 make worker-test      # same as: make -C worker test
