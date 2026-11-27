@@ -137,6 +137,6 @@ curl -N 'https://run.readie.org' \
 ## Related pages
 
 - [SDK reference](/docs/guides/sdk): the arguments of `@remote`.
-- [Use Readie in Claude Code](/docs/guides/claude-code): run code on Readie from Claude Code and other AI agents.
+- [Use Readie in Claude](/docs/guides/claude-code): run code on Readie from Claude chat, Claude Code and other AI agents.
 - [Sessions and errors](/docs/getting-started/sessions-and-errors): keep state between calls.
 - [Packages and resources](/docs/getting-started/packages-and-resources): extra libraries, memory, and GPUs.

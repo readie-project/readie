@@ -51,8 +51,9 @@ To use Readie from Claude Code, install the plugin from
 /plugin install readie@readie
 ```
 
-Other AI agents connect to the MCP server at `https://run.readie.org/mcp`. See
-[Use Readie in Claude Code](https://readie.org/docs/guides/claude-code).
+Claude chat and other AI agents connect to the MCP server at
+`https://run.readie.org/mcp`. See
+[Use Readie in Claude](https://readie.org/docs/guides/claude-code).
 
 ## How a request flows
 

@@ -123,7 +123,7 @@ print(pass_probability(rows, 3.5))  # about 0.5`;
 
 const sections: [string, string, string][] = [
   ['Get started', '/docs/getting-started/quickstart', 'Install the client and run a first function.'],
-  ['Guides', '/docs/guides/http-execution', 'Run code over HTTP, tune calls, look up the SDK and its errors, and fix problems.'],
+  ['Guides', '/docs/guides/http-execution', 'Run code over HTTP or from Claude, tune calls, look up the SDK and its errors, and fix problems.'],
   ['Concepts', '/docs/concepts/cold-starts-and-restore', 'Cold starts, checkpoints, sandboxes and sessions.'],
   ['Architecture', '/docs/architecture/overview', 'The router, workers, executor and pipeline, and how a call travels.'],
   ['Contribute', '/docs/contributing/setup', 'Set up a development environment and run the stack.'],

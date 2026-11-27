@@ -18,6 +18,10 @@ The function is pickled on the local machine and unpickled by the Python interpr
 
 Yes. Send the Python source code in a JSON body to the HTTP execution endpoint, and the response streams the output back. Any HTTP client can do this, so Python 3.12 and the `readie` package are not required. The request accepts the same options as `@remote`, such as memory, packages, and sessions. See [Run code over HTTP](/docs/guides/http-execution).
 
+### Can I use Readie from Claude or another AI agent?
+
+Yes. The Readie MCP server at `https://run.readie.org/mcp` gives AI agents a `run_python` tool that runs code on Readie and returns its output. In Claude chat, add it as a custom connector. In Claude Code, install the Readie plugin, which also helps write code that uses `@remote`. Other agents that support remote MCP servers connect to the same URL. See [Use Readie in Claude](/docs/guides/claude-code).
+
 ### Which objects cannot be sent to a remote function?
 
 Any object that `cloudpickle` cannot serialize. Typical cases are open files, sockets, database connections, locks, and threads. Create these objects inside the function instead of passing them in. The return value must also be picklable, because it travels back the same way. If the function or its arguments cannot be encoded, the client raises `SerializationError`. See the [errors reference](/docs/guides/errors).

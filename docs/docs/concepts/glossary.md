@@ -94,6 +94,10 @@ A duration that a warm container may remain unused before the worker destroys it
 
 A `manifest.json` file written when checkpoints are captured. It records, among other values, the executor command and the executor protocol version. The worker reads it and refuses artifacts that it cannot work with. See [Building checkpoints](/docs/architecture/building-checkpoints).
 
+### MCP server
+
+A server that offers tools to AI agents through the Model Context Protocol. The Readie MCP server, at `https://run.readie.org/mcp`, offers the `run_python` and `new_session` tools. See [Use Readie in Claude](/docs/guides/claude-code).
+
 ## O
 
 ### OCI spec
