@@ -146,6 +146,7 @@ const config: Config = {
         {label: 'Playground', to: '/#playground'},
         {label: 'Contribute', to: '/docs/contributing/setup'},
         {label: 'Security', to: '/docs/architecture/security'},
+        {label: 'Privacy', to: '/privacy'},
         {label: 'PyPI', href: 'https://pypi.org/project/readie'},
         {label: 'GitHub', href: repoUrl},
       ],
