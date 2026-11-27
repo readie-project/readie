@@ -76,11 +76,16 @@ it with its own chain. The local configuration does not use it.
 | Hostname | Serves |
 | -------- | ------ |
 | `api.readie.org` | The gRPC router, `/healthz`, and `/playground/` |
-| `run.readie.org` | Only `POST /` (the execution endpoint) and `/healthz`. Every other path returns 404, and the router is not reachable |
+| `run.readie.org` | Only `POST /` (the execution endpoint), `/mcp` (the MCP server) and `/healthz`. Every other path returns 404, and the router is not reachable |
 
 `run.readie.org` forwards the root path to the `/run` route of the playground service, with the
 same rate limit, body cap and streaming settings as `/playground/`. The docs site uses it
 as its `PLAYGROUND_URL`.
+
+`run.readie.org` also forwards `/mcp` to the playground's MCP route, with the same rate-limit
+zone. Its read timeout is one hour, because a tool call sends its whole response when the
+execution ends. Its body cap is 64 KiB, which leaves room for the JSON-RPC message around
+the largest code that the service accepts.
 
 ## Playground route
 
@@ -90,7 +95,9 @@ that the client uses by default, like any other client. See
 [`playground/README.md`](../playground/README.md) and the
 [HTTP execution guide](../docs/docs/guides/http-execution.md). `/playground/run` is limited per client
 address by NGINX (`limit_req`, a looser backstop to the service's own limit), with a body-size
-cap and streaming proxy settings.
+cap and streaming proxy settings. `/playground/mcp` has its own location in both
+configurations, with the settings of `run.readie.org/mcp`, because the general
+`/playground/` location has a read timeout of two minutes.
 The retired `/eval/run` route is no longer registered by the service.
 
 ## Health route

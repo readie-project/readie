@@ -23,7 +23,7 @@ offline. Everything talks gRPC over contracts in `protos/`.
 | `executor/` | Python 3.12  | Runs _inside_ every sandbox; unpickles and calls the function             |
 | `pkg/`      | Python 3.12  | `readie-client`, the `@remote` SDK (imported and distributed as `readie`) |
 | `pipeline/` | Python 3.13  | Offline: corpus, package analysis, checkpoint planning, capture           |
-| `playground/` | Python 3.12 | FastAPI service behind the docs playground; runs visitor code under gVisor; calls Readie like any client |
+| `playground/` | Python 3.12 | FastAPI service behind the docs playground and the MCP server (`/mcp`); runs visitor code under gVisor; calls Readie like any client |
 | `protos/`   | protobuf     | Wire contracts: `execution`, `proxy`, `registry`, `resources`             |
 | `docs/`     | Docusaurus   | Docs site (readie.org); Node pinned in `.nvmrc`                           |
 
@@ -79,7 +79,14 @@ Most tests use fakes and run anywhere (see gVisor note below).
   under the same name and passes it to `readie.remote` untouched, and makes no
   choices of its own. When an argument of `@remote` is added, renamed, removed or
   has its default changed, update `ReadieExecutionRequest` to match in the same change (and
-  `playground/README.md`). Only `code` belongs to the route.
+  `playground/README.md`). Only `code` belongs to the route. `ReadieExecutionRequest` is defined in
+  `playground/src/readie_playground/execution.py`. The MCP tool `run_python`
+  (`mcp_server.py`, served at `/mcp`) takes the same fields as parameters, and a test fails
+  when the two differ, so change them together.
+- **`/run` and `/mcp` share one admission path.** Both routes call `Admission.admit`
+  (`execution.py`) for the size, content, rate and option checks, and both run code through
+  the same `Runner`. Add a new check to `Admission`, not to one route, so that the two
+  routes keep the same limits.
 - **`pkg` checks the Python version.** Functions are cloudpickled
   client-side and unpickled in the sandbox, and that is only safe within one minor
   version. `readie.Client()` calls `check_python_version()` (`pkg/src/readie/_compat.py`)
@@ -136,11 +143,12 @@ There are three kinds of documentation, each with one audience:
 | A `.proto` file | `make protos` and `make docs-protos`; `protos/README.md` if a rule changes |
 | The executor wire protocol | `executor/README.md`; site `architecture/executor-protocol` and `contributing/changing-executor-protocol` |
 | A setting or environment variable (router, worker, executor, pipeline) | The component README; site `contributing/configuration-reference` and `contributing/configure-services` |
-| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md` (and `pkg/README.pypi.md` if its example changes); site `guides/sdk`, `guides/errors`, and the Get started pages that mention it. A `@remote` parameter also goes into the playground's `ReadieExecutionRequest` (`/run`) |
+| The SDK: `@remote` parameters, `Settings`, exceptions, messages | `pkg/README.md` (and `pkg/README.pypi.md` if its example changes); site `guides/sdk`, `guides/errors`, and the Get started pages that mention it. A `@remote` parameter also goes into the playground's `ReadieExecutionRequest` (`/run`) and the parameters of `run_python` in `playground/src/readie_playground/mcp_server.py` (`/mcp`) |
 | A Makefile target or variable | Its `##` help text; site `contributing/make-targets` |
 | The catalogue format or how the router selects a checkpoint | `catalogues/README.md`; site `concepts/flavors-and-catalogues`, `concepts/cost-model`, `architecture/placement` |
 | Sandbox or container behavior (network, limits, idle timeout, lifecycle) | `worker/README.md`; site `concepts/sandboxes`, `architecture/container-lifecycle` |
 | Pipeline stages, outputs or commands | `pipeline/README.md`; site `architecture/building-checkpoints`, `contributing/build-checkpoints` |
+| The MCP server (`/mcp`) or the agent plugins | `playground/README.md`, `nginx/README.md` and `SECURITY.md`; site `guides/claude-code`. The plugins live in `readie-project/plugins`. Their skills' `reference/*.md` condense the site's `guides/sdk`, `guides/errors` and `guides/troubleshooting`, so a change to those pages needs a matching change there |
 | The playground service, its settings or its deployment | `playground/README.md` and `SECURITY.md`. The site does not describe the playground's architecture or concepts |
 | Trust boundaries, auth, TLS or network defaults | `SECURITY.md`; site `architecture/security-model`, `architecture/security`, `contributing/deploy-with-tls` |
 | CI jobs or the PR checklist | `CONTRIBUTING.md`; site `contributing/pull-requests` |

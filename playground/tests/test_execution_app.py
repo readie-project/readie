@@ -4,8 +4,9 @@ import httpx
 import pytest
 from readie import remote
 
-from readie_playground.app import ReadieExecutionRequest, create_app
+from readie_playground.app import create_app
 from readie_playground.config import PlaygroundSettings
+from readie_playground.execution import ReadieExecutionRequest
 from readie_playground.runner import Runner
 from tests.fakes import FakeBackend
 

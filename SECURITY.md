@@ -129,15 +129,16 @@ visitor-derived input, so it is contained:
   dropped, no-new-privileges, a read-only root filesystem, a small `noexec` tmpfs, and
   pid and memory limits.
 - nginx is the only published container. It forwards `/playground/` to the service, and
-  on `run.readie.org` forwards the root path to its `/run` route. That hostname serves nothing else, so it
-  cannot reach the router. The
+  on `run.readie.org` forwards the root path to its `/run` route and `/mcp` to its MCP
+  route. That hostname serves nothing else, so it cannot reach the router. The
   service calls the Readie server that the client uses by default, over TLS, through that
   server's nginx like any other client. It sits on the normal compose network and has
   outbound network access, so a compromise could reach other hosts.
 - It holds a Readie token that only the playground uses, so a compromise exposes a
   token with no other use. Run the playground against a dedicated Readie server with
   `SANDBOX_NETWORK=none` on its workers where possible.
-- The public `/playground/run` and `run.readie.org` routes are rate limited per client address, by nginx
+- The public `/playground/run`, `/playground/mcp`, `run.readie.org` and `run.readie.org/mcp`
+  routes are rate limited per client address, by nginx
   (`limit_req`, a looser backstop) and by the service (429 past the limit). It adds
   no fixed execution memory budget or application concurrency cap. NGINX retains
   its body-size cap and proxy timeout; the service retains code-size, output and
@@ -155,9 +156,14 @@ visitor-derived input, so it is contained:
   Anyone who knows a session identifier can submit code to its interpreter. Do not
   use sessions to separate mutually untrusted callers or put secrets in shared
   sessions. The public SSE route cancels its backend tasks when the stream closes.
-- `/run` is the only execution route. The former `/eval/run` route is removed,
-  along with its special proxy rule and larger code-size setting. The docs
-  frontend performs comparisons with two independent `/run` requests.
+- `/run` and the MCP tool `run_python` at `/mcp` are the only execution routes. Both pass
+  the same admission checks and share one rate limiter, so the MCP route accepts no
+  request that `/run` refuses. The MCP route is anonymous, as `/run` is: any agent can
+  connect to it, and the code that an agent sends runs with the service's Readie
+  credentials. Listing tools and creating session identifiers run no code and are not
+  rate limited by the service. The former `/eval/run`
+  route is removed, along with its special proxy rule and larger code-size setting. The
+  docs frontend performs comparisons with two independent `/run` requests.
 
 ## Non-vulnerabilities
 
