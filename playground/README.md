@@ -45,7 +45,7 @@ No session is invented when `session` is missing or empty.
 `/mcp` serves the same executions to AI agents through the Model Context Protocol (MCP),
 over streamable HTTP. The route is stateless and answers in JSON, so no MCP session is
 kept between requests and any replica can serve any request. The Readie plugin for Claude
-Code (`readie-project/readie-plugins`) connects to it, and so can any other MCP client
+Code (`readie-project/plugins`) connects to it, and so can any other MCP client
 that supports streamable HTTP. The route has two tools:
 
 - `run_python` takes the fields of `ReadieExecutionRequest` as its parameters, one for

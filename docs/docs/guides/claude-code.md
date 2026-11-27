@@ -11,7 +11,7 @@ The Readie plugin for Claude Code adds Readie to Claude Code, the coding assista
 1. Add the Readie marketplace in Claude Code:
 
    ```text
-   /plugin marketplace add readie-project/readie-plugins
+   /plugin marketplace add readie-project/plugins
    ```
 
 2. Install the plugin:

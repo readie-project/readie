@@ -44,10 +44,10 @@ see [`pkg/`](pkg/) and the
 [SDK reference](https://readie.org/docs/guides/sdk).
 
 To use Readie from Claude Code, install the plugin from
-[`readie-project/readie-plugins`](https://github.com/readie-project/readie-plugins):
+[`readie-project/plugins`](https://github.com/readie-project/plugins):
 
 ```text
-/plugin marketplace add readie-project/readie-plugins
+/plugin marketplace add readie-project/plugins
 /plugin install readie@readie
 ```
 

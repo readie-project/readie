@@ -148,7 +148,7 @@ There are three kinds of documentation, each with one audience:
 | The catalogue format or how the router selects a checkpoint | `catalogues/README.md`; site `concepts/flavors-and-catalogues`, `concepts/cost-model`, `architecture/placement` |
 | Sandbox or container behavior (network, limits, idle timeout, lifecycle) | `worker/README.md`; site `concepts/sandboxes`, `architecture/container-lifecycle` |
 | Pipeline stages, outputs or commands | `pipeline/README.md`; site `architecture/building-checkpoints`, `contributing/build-checkpoints` |
-| The MCP server (`/mcp`) or the agent plugins | `playground/README.md`, `nginx/README.md` and `SECURITY.md`; site `guides/claude-code`. The plugins live in `readie-project/readie-plugins`. Their skills' `reference/*.md` condense the site's `guides/sdk`, `guides/errors` and `guides/troubleshooting`, so a change to those pages needs a matching change there |
+| The MCP server (`/mcp`) or the agent plugins | `playground/README.md`, `nginx/README.md` and `SECURITY.md`; site `guides/claude-code`. The plugins live in `readie-project/plugins`. Their skills' `reference/*.md` condense the site's `guides/sdk`, `guides/errors` and `guides/troubleshooting`, so a change to those pages needs a matching change there |
 | The playground service, its settings or its deployment | `playground/README.md` and `SECURITY.md`. The site does not describe the playground's architecture or concepts |
 | Trust boundaries, auth, TLS or network defaults | `SECURITY.md`; site `architecture/security-model`, `architecture/security`, `contributing/deploy-with-tls` |
 | CI jobs or the PR checklist | `CONTRIBUTING.md`; site `contributing/pull-requests` |
