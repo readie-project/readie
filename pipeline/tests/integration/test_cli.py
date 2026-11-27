@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from readie_pipeline.cli import main
-from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata.models import Metadata, ResourceFacts
 from tests.helpers import item, write_data_dir
 
 
@@ -49,7 +49,7 @@ def test_plan_produces_a_plan_from_a_workload_corpus(data_dir: Path, workspace: 
     # even while its shared dependencies remain (see MIN_COVERAGE), so it's
     # the plan as a whole -- not necessarily its first entry -- that must
     # report something the executor can act on.
-    assert any(p["imports"] for p in plan)
+    assert any(p["resources"] for p in plan)
     assert plan[0]["requests_served"] > 0
     assert "planning over" in capsys.readouterr().out
 
@@ -253,7 +253,7 @@ def test_analyze_records_the_image_it_ran_in_and_the_versions_it_found(
     monkeypatch.setattr(
         "readie_pipeline.cli.analyze",
         lambda *_a, **_k: Metadata(
-            {"pandas": PackageFacts(base_import="pandas", distribution="pandas")},
+            {"package:pandas": ResourceFacts(base_import="pandas", distribution="pandas")},
             distributions={"pandas": "2.3.3"},
         ),
     )
@@ -296,7 +296,11 @@ def test_analyze_only_known_walks_the_names_of_the_finished_file(
     (tmp_path / "metadata" / "cpu.json").write_text(
         json.dumps(
             Metadata(
-                {"numpy": PackageFacts(base_import="numpy", loaded_modules=frozenset({"numpy"}))},
+                {
+                    "package:numpy": ResourceFacts(
+                        base_import="numpy", dependencies=frozenset({"package:numpy"})
+                    )
+                },
                 distributions={"numpy": "2.0.2"},
             ).to_json()
         )
@@ -311,7 +315,7 @@ def test_analyze_only_known_walks_the_names_of_the_finished_file(
 
     assert run("--data-dir", str(tmp_path), "analyze", "--only-known") == 0
 
-    assert walked == [{"numpy"}]
+    assert walked == [{"package:numpy"}]
     assert "walking only the 1 names" in capsys.readouterr().out
 
 
@@ -350,14 +354,25 @@ def test_plan_works_on_a_synthetic_corpus(tmp_path: Path):
     corpus = [item("pandas") for _ in range(50)]
     (data / "datasets" / "cpu.json").write_text(json.dumps([i.to_json() for i in corpus]))
     (data / "metadata" / "cpu.json").write_text(
-        json.dumps({"pandas": {"base_import": "pandas", "disk_size_mb": 40, "import_time": 0.3}})
+        json.dumps(
+            Metadata(
+                {
+                    "package:pandas": ResourceFacts(
+                        base_import="pandas",
+                        disk_size_mb=40,
+                        memory_size_mb=40,
+                        import_time=0.3,
+                    )
+                }
+            ).to_json()
+        )
     )
 
     code = run("--data-dir", str(data), "--output-dir", str(tmp_path / "out"), "plan", "--no-spec")
 
     assert code == 0
     plan = json.loads((tmp_path / "out" / "checkpoints.json").read_text())
-    assert plan[0]["imports"] == ["pandas"]
+    assert plan[0]["resources"] == ["package:pandas"]
     assert plan[0]["requests_served"] == 50
 
 
@@ -408,11 +423,11 @@ def test_the_base_images_measured_packages_are_handed_to_the_corpus_stage(tmp_pa
 
     data = write_data_dir(tmp_path / "data")
     known = _installed_packages(Settings.from_env({"READIE_DATA_DIR": str(data)}))
-    assert "pandas" in known
+    assert "package:pandas" in known
     assert "lambdaTTS" not in known
 
 
-def test_a_flavor_that_was_never_analyzed_has_no_known_packages(tmp_path: Path):
+def test_a_flavor_that_was_never_analyzed_has_no_known_resources(tmp_path: Path):
     from readie_pipeline.cli import _installed_packages
     from readie_pipeline.config import Settings
 

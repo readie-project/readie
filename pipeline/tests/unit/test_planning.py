@@ -7,7 +7,7 @@ import sys
 import pytest
 
 from readie_pipeline.corpus.models import Corpus
-from readie_pipeline.metadata.models import Metadata, PackageFacts
+from readie_pipeline.metadata.models import Metadata, ResourceFacts
 from readie_pipeline.planning.fixed import FixedPlanner
 from readie_pipeline.planning.greedy import GreedyPlanner
 from readie_pipeline.planning.ports import Budget, CheckpointPlan, CheckpointPlanner
@@ -26,7 +26,7 @@ def facts(**sizes: tuple[float, float]) -> Metadata:
     """
     return Metadata(
         {
-            name: PackageFacts(
+            (name if ":" in name else f"package:{name}"): ResourceFacts(
                 base_import=name, disk_size_mb=size, memory_size_mb=size, import_time=seconds
             )
             for name, (size, seconds) in sizes.items()
@@ -51,32 +51,34 @@ def test_an_empty_corpus_plans_nothing_rather_than_crashing(planner):
 def test_the_fixed_planner_plans_nothing_unless_it_is_given_sets():
     # Deliberate: it used to default to pandas and numpy, which put a checkpoint nobody
     # asked for into every fixed run. A run that wants one names it.
-    plans = FixedPlanner().plan(Corpus.of([req("pandas")]), Metadata({}), Budget())
+    plans = FixedPlanner().plan(Corpus.of([req("package:pandas")]), Metadata({}), Budget())
 
     assert plans == []
 
 
 def test_the_fixed_planner_returns_the_sets_it_was_given():
-    planner = FixedPlanner([("pandas", "numpy"), ("torch",)])
+    planner = FixedPlanner([("package:pandas", "package:numpy"), ("package:torch",)])
 
-    plans = planner.plan(Corpus.of([req("pandas")]), Metadata({}), Budget())
+    plans = planner.plan(Corpus.of([req("package:pandas")]), Metadata({}), Budget())
 
-    assert [p.imports for p in plans] == [("pandas", "numpy"), ("torch",)]
+    assert [p.resources for p in plans] == [("package:pandas", "package:numpy"), ("package:torch",)]
 
 
 def test_the_fixed_planner_keeps_only_as_many_sets_as_the_budget_allows():
-    planner = FixedPlanner([("pandas",), ("numpy",), ("torch",)])
+    planner = FixedPlanner([("package:pandas",), ("package:numpy",), ("package:torch",)])
 
-    plans = planner.plan(Corpus.of([req("pandas")]), Metadata({}), Budget(max_checkpoints=2))
+    plans = planner.plan(
+        Corpus.of([req("package:pandas")]), Metadata({}), Budget(max_checkpoints=2)
+    )
 
-    assert [p.imports for p in plans] == [("pandas",), ("numpy",)]
+    assert [p.resources for p in plans] == [("package:pandas",), ("package:numpy",)]
 
 
 def test_the_fixed_planner_still_scores_against_the_corpus():
     # A fixed plan and a computed one must be comparable on the same numbers,
     # which is the only way to tell whether the computed one is better.
-    corpus = Corpus.of([req("pandas"), req("numpy"), req("torch")])
-    plans = FixedPlanner([("pandas", "numpy")]).plan(
+    corpus = Corpus.of([req("package:pandas"), req("package:numpy"), req("package:torch")])
+    plans = FixedPlanner([("package:pandas", "package:numpy")]).plan(
         corpus, facts(pandas=(40, 0.3), numpy=(20, 0.1)), Budget()
     )
 
@@ -91,11 +93,11 @@ def test_the_fixed_planner_still_scores_against_the_corpus():
 def test_it_prefers_import_time_over_popularity():
     # Saving four seconds for a few requests beats milliseconds for many, which
     # is the whole reason the objective is time rather than a request count.
-    corpus = Corpus.of([req("slow")] * 10 + [req("quick")] * 100)
+    corpus = Corpus.of([req("package:slow")] * 10 + [req("package:quick")] * 100)
     metadata = facts(slow=(10, 4.0), quick=(10, 0.001))
 
     plans = GreedyPlanner(alpha=0.005).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
-    assert plans[0].imports == ("slow",)
+    assert plans[0].resources == ("package:slow",)
 
 
 def test_the_distance_matrix_matches_pricing_each_pair_one_at_a_time():
@@ -106,7 +108,12 @@ def test_the_distance_matrix_matches_pricing_each_pair_one_at_a_time():
     import numpy as np
 
     metadata = facts(a=(10, 1.0), b=(20, 0.5), c=(5, 2.5), d=(8, 0.0))
-    closures = [frozenset("ab"), frozenset("bc"), frozenset("acd"), frozenset("d")]
+    closures = [
+        frozenset({"package:a", "package:b"}),
+        frozenset({"package:b", "package:c"}),
+        frozenset({"package:a", "package:c", "package:d"}),
+        frozenset("package:d"),
+    ]
     sizes = np.asarray([30.0, 25.0, 23.0, 8.0])
     planner = GreedyPlanner(alpha=0.01)
 
@@ -126,18 +133,18 @@ def test_it_prefers_the_cheaper_of_two_equally_useful_packages():
     # selectable on its own. Sized so either fits the budget alone but not
     # together (60 + 5 > 60), forcing a real choice between two packages that
     # save the same total time.
-    corpus = Corpus.of([req("big")] * 10 + [req("small")] * 10)
+    corpus = Corpus.of([req("package:big")] * 10 + [req("package:small")] * 10)
     metadata = facts(big=(60, 1.0), small=(5, 1.0))
 
     plans = GreedyPlanner(alpha=0.005).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=60))
-    assert plans[0].imports == ("small",)
+    assert plans[0].resources == ("package:small",)
 
 
 def test_it_respects_the_size_budget():
     # size_mb is a total shared across every checkpoint, not a per-checkpoint
     # allowance: a, b and c are equally good on their own (60 MB each), so only
     # two of the three fit in a 130 MB total before the budget is spent.
-    corpus = Corpus.of([req("a")] * 20 + [req("b")] * 20 + [req("c")] * 20)
+    corpus = Corpus.of([req("package:a")] * 20 + [req("package:b")] * 20 + [req("package:c")] * 20)
     metadata = facts(a=(60, 1.0), b=(60, 1.0), c=(60, 1.0))
 
     plans = GreedyPlanner(alpha=0.005).plan(
@@ -150,7 +157,7 @@ def test_it_respects_the_size_budget():
 def test_it_stops_once_nothing_improves_on_what_is_already_planned():
     # Asking for eight checkpoints of a corpus that needs one must not produce
     # eight copies of it.
-    corpus = Corpus.of([req("pandas")] * 50)
+    corpus = Corpus.of([req("package:pandas")] * 50)
     metadata = facts(pandas=(40, 0.3))
 
     plans = GreedyPlanner(alpha=0.005).plan(
@@ -163,25 +170,25 @@ def test_stdlib_modules_are_never_selected():
     # Given real, non-zero, attractively cheap facts here (rather than left
     # unmeasured) specifically to prove the STDLIB filter itself excludes
     # them on principle -- not just an accident of them measuring as free.
-    corpus = Corpus.of([req("json", "collections", "pandas")] * 50)
+    corpus = Corpus.of([req("package:json", "package:collections", "package:pandas")] * 50)
     metadata = facts(pandas=(40, 0.3), json=(1, 0.01), collections=(1, 0.01))
 
     plans = GreedyPlanner(alpha=0.005).plan(
         corpus, metadata, Budget(max_checkpoints=1, size_mb=500)
     )
 
-    assert set(plans[0].imports).isdisjoint(sys.stdlib_module_names)
-    assert "pandas" in plans[0].imports
+    assert set(plans[0].resources).isdisjoint(sys.stdlib_module_names)
+    assert "package:pandas" in plans[0].resources
 
 
 def test_a_package_almost_nobody_uses_is_skipped():
-    corpus = Corpus.of([req("common")] * 1000 + [req("rare")])
+    corpus = Corpus.of([req("package:common")] * 1000 + [req("package:rare")])
     metadata = facts(common=(10, 0.5), rare=(1, 5.0))
 
     plans = GreedyPlanner(alpha=0.005).plan(
         corpus, metadata, Budget(max_checkpoints=1, size_mb=500)
     )
-    assert "rare" not in plans[0].imports
+    assert "package:rare" not in plans[0].resources
 
 
 def test_a_package_with_no_measurement_ranks_below_a_measured_one():
@@ -197,21 +204,24 @@ def test_a_package_with_no_measurement_ranks_below_a_measured_one():
     # remeasured -- see `metadata/analyze.py`'s `_visit`) -- distinct from a
     # name that never resolved at all and is dropped before ever reaching
     # the planner.
-    corpus = Corpus.of([req("measured")] * 50 + [req("unmeasured")] * 50)
+    corpus = Corpus.of([req("package:measured")] * 50 + [req("package:unmeasured")] * 50)
     metadata = Metadata(
-        facts(measured=(10, 1.0)).packages,
-        resolved={"measured": "measured", "unmeasured": "unmeasured"},
+        facts(measured=(10, 1.0)).resources,
+        resolved={
+            "package:measured": "package:measured",
+            "package:unmeasured": "package:unmeasured",
+        },
     )
 
     # A budget that fits exactly one of them: the measured one has to win it.
     plans = GreedyPlanner(alpha=0.005).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=10))
-    assert plans[0].imports == ("measured",)
+    assert plans[0].resources == ("package:measured",)
 
 
 def test_the_reported_saving_is_undiscounted_so_it_can_be_checked():
     # What this checkpoint saves if a request lands on it -- a number an
     # operator can compare against a measured cold start.
-    corpus = Corpus.of([req("a")] * 10)
+    corpus = Corpus.of([req("package:a")] * 10)
     metadata = facts(a=(10, 2.0))
 
     plans = GreedyPlanner(alpha=0.005).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=50))
@@ -229,15 +239,15 @@ def test_alpha_is_the_size_vs_time_threshold():
     # finds it worth its own checkpoint slot on top of anchor's, a high alpha
     # does not. This is the knob the router shares to select the checkpoint
     # that minimises the same alpha*size + residual cost.
-    corpus = Corpus.of([req("anchor")] * 1000 + [req("borderline")] * 2)
+    corpus = Corpus.of([req("package:anchor")] * 1000 + [req("package:borderline")] * 2)
     metadata = facts(anchor=(1, 100.0), borderline=(10, 0.05))
     budget = Budget(max_checkpoints=10, size_mb=50)
 
     lenient = GreedyPlanner(alpha=0.005).plan(corpus, metadata, budget)
     strict = GreedyPlanner(alpha=0.1).plan(corpus, metadata, budget)
 
-    assert {p.imports for p in lenient} == {("anchor",), ("borderline",)}
-    assert [p.imports for p in strict] == [("anchor",)], (
+    assert {p.resources for p in lenient} == {("package:anchor",), ("package:borderline",)}
+    assert [p.resources for p in strict] == [("package:anchor",)], (
         "the stricter weight must reject borderline but keep anchor"
     )
 
@@ -247,22 +257,22 @@ def test_a_selected_checkpoint_is_sized_and_charged_for_its_dependencies_too():
     # resident; a checkpoint that omits numpy cannot actually deliver pandas
     # at that cost, so the closure -- not just the requested top-level name --
     # is what gets selected, sized, and charged against the budget.
-    corpus = Corpus.of([req("pandas")] * 50)
+    corpus = Corpus.of([req("package:pandas")] * 50)
     metadata = Metadata(
         {
-            "pandas": PackageFacts(
-                base_import="pandas",
+            "package:pandas": ResourceFacts(
+                base_import="package:pandas",
                 disk_size_mb=40,
                 memory_size_mb=40,
                 import_time=0.3,
-                loaded_modules=frozenset({"pandas", "numpy"}),
+                dependencies=frozenset({"package:pandas", "package:numpy"}),
             ),
-            "numpy": PackageFacts(
-                base_import="numpy",
+            "package:numpy": ResourceFacts(
+                base_import="package:numpy",
                 disk_size_mb=20,
                 memory_size_mb=20,
                 import_time=0.1,
-                loaded_modules=frozenset({"numpy"}),
+                dependencies=frozenset({"package:numpy"}),
             ),
         }
     )
@@ -276,25 +286,25 @@ def test_a_selected_checkpoint_is_sized_and_charged_for_its_dependencies_too():
 
 
 def test_reported_imports_are_only_what_a_request_actually_asked_for():
-    # The executor is told to import plan.imports, and Python's own import
+    # The executor is told to import plan.resources, and Python's own import
     # machinery pulls numpy in as a side effect of `import pandas` regardless
     # of whether it is separately named -- so a dependency nothing directly
     # requests does not belong in the reported/executor-facing list, even
     # though (see the test above) it is still sized and charged for.
-    corpus = Corpus.of([req("pandas")] * 50)
+    corpus = Corpus.of([req("package:pandas")] * 50)
     metadata = Metadata(
         {
-            "pandas": PackageFacts(
-                base_import="pandas",
+            "package:pandas": ResourceFacts(
+                base_import="package:pandas",
                 disk_size_mb=40,
                 import_time=0.3,
-                loaded_modules=frozenset({"pandas", "numpy"}),
+                dependencies=frozenset({"package:pandas", "package:numpy"}),
             ),
-            "numpy": PackageFacts(
-                base_import="numpy",
+            "package:numpy": ResourceFacts(
+                base_import="package:numpy",
                 disk_size_mb=20,
                 import_time=0.1,
-                loaded_modules=frozenset({"numpy"}),
+                dependencies=frozenset({"package:numpy"}),
             ),
         }
     )
@@ -303,7 +313,7 @@ def test_reported_imports_are_only_what_a_request_actually_asked_for():
         corpus, metadata, Budget(max_checkpoints=1, size_mb=500)
     )
 
-    assert plans[0].imports == ("pandas",)
+    assert plans[0].resources == ("package:pandas",)
 
 
 def test_unrelated_requests_each_get_their_own_checkpoint_priced_independently():
@@ -311,29 +321,29 @@ def test_unrelated_requests_each_get_their_own_checkpoint_priced_independently()
     # dependency. Checkpoints are never merged, so each becomes its own
     # checkpoint, and each is charged for numpy on its own account rather than
     # splitting or deduplicating it across the two.
-    corpus = Corpus.of([req("pandas")] * 30 + [req("scipy")] * 30)
+    corpus = Corpus.of([req("package:pandas")] * 30 + [req("package:scipy")] * 30)
     metadata = Metadata(
         {
-            "pandas": PackageFacts(
-                base_import="pandas",
+            "package:pandas": ResourceFacts(
+                base_import="package:pandas",
                 disk_size_mb=40,
                 memory_size_mb=40,
                 import_time=0.3,
-                loaded_modules=frozenset({"pandas", "numpy"}),
+                dependencies=frozenset({"package:pandas", "package:numpy"}),
             ),
-            "scipy": PackageFacts(
-                base_import="scipy",
+            "package:scipy": ResourceFacts(
+                base_import="package:scipy",
                 disk_size_mb=50,
                 memory_size_mb=50,
                 import_time=0.5,
-                loaded_modules=frozenset({"scipy", "numpy"}),
+                dependencies=frozenset({"package:scipy", "package:numpy"}),
             ),
-            "numpy": PackageFacts(
-                base_import="numpy",
+            "package:numpy": ResourceFacts(
+                base_import="package:numpy",
                 disk_size_mb=20,
                 memory_size_mb=20,
                 import_time=0.1,
-                loaded_modules=frozenset({"numpy"}),
+                dependencies=frozenset({"package:numpy"}),
             ),
         }
     )
@@ -341,16 +351,16 @@ def test_unrelated_requests_each_get_their_own_checkpoint_priced_independently()
     plans = GreedyPlanner(alpha=0.005).plan(
         corpus, metadata, Budget(max_checkpoints=10, size_mb=500)
     )
-    by_imports = {p.imports: p for p in plans}
+    by_imports = {p.resources: p for p in plans}
 
     # Each request restores from exactly one checkpoint, so a pandas request's
     # numpy overlap is credited only to the pandas checkpoint (its cheapest
     # option) even though the scipy checkpoint also holds numpy.
-    assert set(by_imports) == {("pandas",), ("scipy",)}
-    assert by_imports[("pandas",)].size_mb == pytest.approx(40 + 20)
-    assert by_imports[("pandas",)].seconds_saved == pytest.approx((0.3 + 0.1) * 30)
-    assert by_imports[("scipy",)].size_mb == pytest.approx(50 + 20)
-    assert by_imports[("scipy",)].seconds_saved == pytest.approx((0.5 + 0.1) * 30)
+    assert set(by_imports) == {("package:pandas",), ("package:scipy",)}
+    assert by_imports[("package:pandas",)].size_mb == pytest.approx(40 + 20)
+    assert by_imports[("package:pandas",)].seconds_saved == pytest.approx((0.3 + 0.1) * 30)
+    assert by_imports[("package:scipy",)].size_mb == pytest.approx(50 + 20)
+    assert by_imports[("package:scipy",)].seconds_saved == pytest.approx((0.5 + 0.1) * 30)
 
 
 def test_imports_are_sorted_so_a_plan_diffs_cleanly():
@@ -358,7 +368,7 @@ def test_imports_are_sorted_so_a_plan_diffs_cleanly():
     metadata = facts(zeta=(10, 1.0), alpha=(10, 1.0))
 
     plans = GreedyPlanner(alpha=0.005).plan(corpus, metadata, Budget(max_checkpoints=1, size_mb=50))
-    assert list(plans[0].imports) == sorted(plans[0].imports)
+    assert list(plans[0].resources) == sorted(plans[0].resources)
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +389,7 @@ def test_it_beats_the_fixed_plan_on_the_real_corpus():
     budget = Budget(max_checkpoints=8, size_mb=400)
 
     greedy = GreedyPlanner(alpha=0.005).plan(corpus, metadata, budget)
-    fixed = FixedPlanner([("pandas", "numpy")]).plan(corpus, metadata, budget)[0]
+    fixed = FixedPlanner([("package:pandas", "package:numpy")]).plan(corpus, metadata, budget)[0]
 
     assert sum(p.requests_served for p in greedy) > fixed.requests_served
     assert sum(p.seconds_saved for p in greedy) > fixed.seconds_saved

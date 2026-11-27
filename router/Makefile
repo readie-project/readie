@@ -34,7 +34,7 @@ run: ## Run the router from source
 docker: ## Build the router image
 	docker build -t readie-router:latest .
 
-clean: ## Remove build and test artefacts
+clean: ## Remove build and test artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 

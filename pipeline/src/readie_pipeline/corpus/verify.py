@@ -24,7 +24,8 @@ from importlib.metadata import packages_distributions
 from pathlib import Path
 from typing import Any, Protocol
 
-from readie_pipeline.corpus.models import ResourceKind, parse_resource
+from readie_pipeline.corpus.models import parse_resource
+from readie_pipeline.resources.identifiers import ResourceType
 
 #: Import names that differ from the PyPI project that provides them and are
 #: common enough that guessing would waste requests.
@@ -86,7 +87,7 @@ class ResourceLookupError(Exception):
 class ResourceChecker(Protocol):
     """Answers whether one resource exists."""
 
-    def exists(self, kind: ResourceKind, value: str) -> bool:
+    def exists(self, kind: ResourceType, value: str) -> bool:
         """Return whether the resource exists, or raise :class:`ResourceLookupError`."""
         ...
 
@@ -111,13 +112,13 @@ class ResourceVerifier:
         checker: ResourceChecker,
         cache_path: Path | None = None,
         *,
-        known_packages: frozenset[str] = frozenset(),
+        known_resources: frozenset[str] = frozenset(),
         attempts: int = 3,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._checker = checker
         self._cache_path = cache_path
-        self._known_packages = known_packages
+        self._known_resources = known_resources
         self._attempts = attempts
         self._sleep = sleep
         self._known: dict[str, bool] = self._load()
@@ -183,12 +184,12 @@ class ResourceVerifier:
             raise
         return self._known[text] or self._in_image(kind, value)
 
-    def _in_image(self, kind: ResourceKind, value: str) -> bool:
-        if kind is not ResourceKind.PACKAGE:
+    def _in_image(self, kind: ResourceType, value: str) -> bool:
+        if kind is not ResourceType.PACKAGE:
             return False
-        return value.split(".", maxsplit=1)[0] in self._known_packages
+        return f"package:{value.split('.', maxsplit=1)[0]}" in self._known_resources
 
-    def _ask(self, kind: ResourceKind, value: str) -> bool:
+    def _ask(self, kind: ResourceType, value: str) -> bool:
         last: ResourceLookupError | None = None
         for attempt in range(self._attempts):
             try:
@@ -211,18 +212,18 @@ class LiveChecker:
         self._http = http
         self._distributions = packages_distributions()
 
-    def exists(self, kind: ResourceKind, value: str) -> bool:
+    def exists(self, kind: ResourceType, value: str) -> bool:
         """Dispatch to the service that owns ``kind``."""
-        if kind is ResourceKind.PACKAGE:
+        if kind is ResourceType.PACKAGE:
             return self._package(value)
-        if kind in (ResourceKind.HF_MODEL, ResourceKind.HF_TOKENIZER):
+        if kind in (ResourceType.HF_MODEL, ResourceType.HF_TOKENIZER):
             return self._hub("model", value)
-        if kind is ResourceKind.HF_DATASET:
+        if kind is ResourceType.HF_DATASET:
             return self._hub("dataset", value)
         if self._kaggle is None:
             msg = "no Kaggle credentials configured"
             raise ResourceLookupError(msg)
-        if kind is ResourceKind.KAGGLE_DATASET:
+        if kind is ResourceType.KAGGLE_DATASET:
             return self._kaggle.dataset_exists(value)
         return self._kaggle.model_exists(value)
 

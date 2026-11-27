@@ -52,9 +52,17 @@ def capture(
     rootfs and restored in a ``finally``, so a build killed in between left that
     tree mutated for the next run.
     """
+    unsupported = [name for name in plan.resources if not name.startswith("package:")]
+    if unsupported:
+        msg = f"capture loaders are not implemented for: {', '.join(unsupported)}"
+        raise CaptureError(msg)
     destination = settings.checkpoints_dir / checkpoint_id
     destination.mkdir(parents=True, exist_ok=True)
-    write_spec("capture", destination, ",".join(plan.imports))
+    write_spec(
+        "capture",
+        destination,
+        ",".join(name.partition(":")[2] for name in plan.resources if name.startswith("package:")),
+    )
 
     # A stale sandbox under this id would make `runsc run` fail immediately.
     _delete(settings, checkpoint_id)

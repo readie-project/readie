@@ -246,3 +246,10 @@ Cluster state is held in memory. After a restart, sessions are lost and their
 warm containers are reclaimed by the workers' own TTLs. Workers re-register on
 their next status report. This is an accepted trade-off: persisting state would
 put a datastore on the hot path of every placement decision.
+
+### Qualified catalogue resources
+
+The pipeline writes item keys such as `package:pandas`. The router maps the
+SDK's plain Python import hints to qualified package keys present in the loaded
+catalogue before expanding dependencies. This keeps the existing request
+protocol usable with newly generated catalogues.

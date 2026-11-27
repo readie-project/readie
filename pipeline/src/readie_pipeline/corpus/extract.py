@@ -5,7 +5,7 @@ what the code imports and loads is what it needs. Notebook magics and shell
 lines are removed first so the cells parse as Python.
 
 KEEP THIS MODULE'S IMPORT EXTRACTION IN SYNC WITH ``pkg/src/readie/_ast.py``.
-A live request's ``ExecutionConfig.imports`` comes from the SDK's visitor, and
+A live request's ``ExecutionConfig.resources`` comes from the SDK's visitor, and
 the router matches it against a catalogue built from what this module records,
 using plain string equality. If the two record a dotted import differently
 (one keeping ``x.y.z`` and the other truncating to ``x.y``), a live request
@@ -21,7 +21,7 @@ import re
 import warnings
 from collections.abc import Iterable
 
-from readie_pipeline.corpus.models import ResourceKind, resource
+from readie_pipeline.resources.identifiers import ResourceType, resource
 
 
 class CodeError(Exception):
@@ -84,7 +84,7 @@ def _imports(tree: ast.Module) -> set[str]:
 
 
 def _add_package(found: set[str], name: str) -> None:
-    found.add(resource(ResourceKind.PACKAGE, name))
+    found.add(resource(ResourceType.PACKAGE, name))
 
 
 def _hub_calls(tree: ast.Module) -> set[str]:
@@ -100,19 +100,19 @@ def _hub_calls(tree: ast.Module) -> set[str]:
         owner = name.rsplit(".", 2)[-2] if "." in name else ""
 
         if leaf == "from_pretrained" and _HUB_ID.match(arg):
-            kind = ResourceKind.HF_TOKENIZER if _is_tokenizer(owner) else ResourceKind.HF_MODEL
+            kind = ResourceType.HF_TOKENIZER if _is_tokenizer(owner) else ResourceType.HF_MODEL
             found.add(resource(kind, arg))
         elif leaf == "pipeline" and (model := _keyword_string(node, "model")):
             if _HUB_ID.match(model):
-                found.add(resource(ResourceKind.HF_MODEL, model))
+                found.add(resource(ResourceType.HF_MODEL, model))
         elif leaf == "load_dataset" and arg not in _DATASET_BUILDERS and _HUB_ID.match(arg):
-            found.add(resource(ResourceKind.HF_DATASET, arg))
+            found.add(resource(ResourceType.HF_DATASET, arg))
         elif name.endswith("dataset_download") and _KAGGLE_DATASET_ID.match(arg):
-            found.add(resource(ResourceKind.KAGGLE_DATASET, arg))
+            found.add(resource(ResourceType.KAGGLE_DATASET, arg))
         elif name.endswith("model_download") and arg.count("/") >= 1:
             # A Kaggle model handle is owner/model/framework/variation; the
             # verifiable part is owner/model.
-            found.add(resource(ResourceKind.KAGGLE_MODEL, "/".join(arg.split("/")[:2])))
+            found.add(resource(ResourceType.KAGGLE_MODEL, "/".join(arg.split("/")[:2])))
     return found
 
 

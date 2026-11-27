@@ -33,7 +33,7 @@ Message used for code execution requests to workers
 | `container_id` | `optional string` |  |
 | `checkpoint_id` | `string` |  |
 | `payload` | `bytes` |  |
-| `resources` | `repeated string` | Import and artefact hints from the client's static analysis, forwarded by the router so a worker can pick a checkpoint that already has them. |
+| `resources` | `repeated string` | Import and artifact hints from the client's static analysis, forwarded by the router so a worker can pick a checkpoint that already has them. |
 | `budgets` | `repeated ResourceBudget` | The resource budgets (memory, GPU memory, ...) the router placed this request on. The worker sets each at container create and auto-expands up to the budget's max where the runtime can enforce it. |
 | `packages` | `repeated string` | PyPI requirement strings the worker installs in the sandbox before the payload reaches the executor. The router has already deduped them and removed what the base image carries. |
 
