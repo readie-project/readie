@@ -24,7 +24,7 @@ def _server_block(text: str, server_name: str) -> str:
     return text[start:] if end == -1 else text[start:end]
 
 
-def test_run_hostname_serves_only_the_root_endpoint_and_healthz() -> None:
+def test_run_hostname_serves_only_its_endpoints_and_healthz() -> None:
     text = (NGINX / "nginx.prod.conf").read_text()
     block = _server_block(text, "run.readie.org")
     assert "location = / {" in block
@@ -41,3 +41,24 @@ def test_run_hostname_serves_only_the_root_endpoint_and_healthz() -> None:
 def test_router_block_serves_only_the_api_hostname() -> None:
     text = (NGINX / "nginx.prod.conf").read_text()
     assert "server_name api.readie.org;" in text
+
+
+def test_run_hostname_also_serves_mcp_with_a_timeout_for_whole_executions() -> None:
+    text = (NGINX / "nginx.prod.conf").read_text()
+    block = _server_block(text, "run.readie.org")
+    mcp = block[block.index("location = /mcp {") :]
+    mcp = mcp[: mcp.index("}")]
+    assert "proxy_pass http://playground/mcp;" in mcp
+    assert "limit_req zone=playground" in mcp
+    # Tool calls answer only when the execution ends.
+    assert "proxy_read_timeout 1h;" in mcp
+
+
+@pytest.mark.parametrize("config", ["nginx.local.conf", "nginx.prod.conf"])
+def test_playground_prefix_serves_mcp_with_a_timeout_for_whole_executions(config: str) -> None:
+    text = (NGINX / config).read_text()
+    mcp = text[text.index("location = /playground/mcp {") :]
+    mcp = mcp[: mcp.index("}")]
+    assert "proxy_pass http://playground/mcp;" in mcp
+    assert "limit_req zone=playground" in mcp
+    assert "proxy_read_timeout 1h;" in mcp

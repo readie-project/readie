@@ -18,7 +18,9 @@ token that only the playground has.
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/readie_playground/app.py` | FastAPI app: `POST /run` (SSE), health, CORS |
+| `src/readie_playground/app.py` | FastAPI app: `POST /run` (SSE), `/mcp`, health, CORS |
+| `src/readie_playground/execution.py` | `ReadieExecutionRequest` and `Admission`: the checks both front ends share |
+| `src/readie_playground/mcp_server.py` | MCP server at `/mcp`: `run_python` and `new_session` |
 | `src/readie_playground/runner.py` | Single execution behind a `Backend` Protocol |
 | `src/readie_playground/userfn.py` | Builds the visitor's script into a `@remote` function in a real module |
 | `src/readie_playground/config.py` | `PLAYGROUND_*` settings |
@@ -37,6 +39,31 @@ use `/run` and consume its SSE response.
 The request model rejects unknown fields and validates remote options before
 streaming. Sessions use caller-supplied identifiers and preserve script state.
 No session is invented when `session` is missing or empty.
+
+### MCP
+
+`/mcp` serves the same executions to AI agents through the Model Context Protocol (MCP),
+over streamable HTTP. The route is stateless and answers in JSON, so no MCP session is
+kept between requests and any replica can serve any request. The Readie plugin for Claude
+Code (`readie-project/readie-plugins`) connects to it, and so can any other MCP client
+that supports streamable HTTP. The route has two tools:
+
+- `run_python` takes the fields of `ReadieExecutionRequest` as its parameters, one for
+  one, and a test compares the two. It returns the printed output and the duration as
+  text. A failed execution or a rejected request is returned as a tool error that carries
+  the traceback or the reason.
+- `new_session` returns an unpredictable session identifier in the client's `sess-<hex>`
+  format.
+
+Both routes call `Admission.admit` (`execution.py`). As a result, `/run` and `run_python`
+apply the same code-size and empty-code checks and the same option validation, and they
+share one rate limiter per client address. Listing tools and creating session
+identifiers run no code and are not counted. Both routes then run the code through the
+same `Runner`.
+
+A tool call sends its whole response when the execution ends, and nothing before it.
+A proxy in front of `/mcp` therefore needs a read timeout at least as long as the longest
+execution. The nginx configurations set one hour.
 
 The service limits each client to a number of requests per window and answers 429 past it.
 It adds no memory budget or concurrent-request cap. Code-size and output-size limits
@@ -72,9 +99,15 @@ curl -N -X POST localhost:50051/playground/run \
   -H 'content-type: application/json' -d '{"code": "print(1)"}'
 ```
 
+To try the MCP route locally, connect Claude Code to it:
+
+```bash
+claude mcp add --transport http readie-local http://localhost:50051/playground/mcp
+```
+
 nginx routes `/playground/` to the service and everything else to the router. In production,
-the hostname `run.readie.org` serves only `POST /` (the `/run` route of the service) and `/healthz`. The
-workers need capacity for one sandbox per request and two per frontend comparison.
+the hostname `run.readie.org` serves only `POST /` (the `/run` route of the service), `/mcp`
+(the MCP route) and `/healthz`. The workers need capacity for one sandbox per request and two per frontend comparison.
 
 ## Deploy
 

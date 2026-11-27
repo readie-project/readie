@@ -43,6 +43,17 @@ in the worker's image. For sessions, error handling, and the async interface,
 see [`pkg/`](pkg/) and the
 [SDK reference](https://readie.org/docs/guides/sdk).
 
+To use Readie from Claude Code, install the plugin from
+[`readie-project/readie-plugins`](https://github.com/readie-project/readie-plugins):
+
+```text
+/plugin marketplace add readie-project/readie-plugins
+/plugin install readie@readie
+```
+
+Other AI agents connect to the MCP server at `https://run.readie.org/mcp`. See
+[Use Readie in Claude Code](https://readie.org/docs/guides/claude-code).
+
 ## How a request flows
 
 <img width="1149" height="647" alt="image" src="https://github.com/user-attachments/assets/bdcea270-f8c6-45ad-adfa-0a36c133f3cf" />
