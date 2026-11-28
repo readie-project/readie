@@ -161,10 +161,44 @@ shape, because the diff already shows what changed.
 
 CI must be green. It checks lint, types, and tests for all six components,
 `go test -race` for the worker, `buf` for the protos, no generated-stub drift,
-and that the images still build. The router and worker images are built in full,
+the system suite, and that the images still build. The router and worker images are built in full,
 and the worker is built against a stub base because it embeds no rootfs. The
 pipeline's targets are tens of GB and cannot be built on a runner with 14 GB of
 disk, so CI only lints them. State what a green run proves and nothing more.
+
+## System tests
+
+Run the system suite with Python 3.12, OpenSSL, Docker, and Docker Compose v2
+on a Linux/amd64 host.
+
+```bash
+e2e/run-local.sh
+```
+
+The runner builds a small executor root filesystem, then starts NGINX, the
+router, and the normal worker in a dedicated Compose project. The installed
+SDK checks a round trip, chunked async requests, session isolation, remote
+exceptions, and authentication over TLS. The fixture uses cold starts.
+Reports and failure logs go to `.build/e2e/` by default. Set
+`READIE_E2E_REPORTS` to select a different directory. If the host cannot use
+Docker's default bridge for builds, set `READIE_E2E_BUILD_NETWORK=host` to
+use host networking during image builds. The running services use their
+Compose network.
+
+For a deployed run, install the SDK version under test and
+`e2e/requirements.txt` in a Python 3.12 environment. Set
+`READIE_E2E_ENDPOINT` to the TLS hostname and port,
+`READIE_AUTH_TOKEN` to the deployment's token, and `PYTHON` to that
+environment's interpreter if it differs from `python3.12`. Set
+`READIE_TLS_CA` when the deployment uses a private CA. Run
+`e2e/run-deployed.sh`.
+
+The scheduled and manual deployed workflow and the release gate use the
+`system-tests` GitHub environment. Configure its `READIE_E2E_ENDPOINT`
+variable and `READIE_AUTH_TOKEN` secret for a trusted, authenticated TLS
+deployment. Restrict the environment to the default branch and trusted
+release tags. The release check uses the candidate wheel before PyPI
+publication.
 
 ## What is deliberately not done
 
@@ -185,6 +219,6 @@ The following items are listed so that nobody "fixes" one by accident.
 - `cloudpickle.loads` on router-supplied bytes in the client is an inherent
   remote-code-execution surface. It is confined behind a `ResultCodec` protocol
   and documented in [SECURITY.md](SECURITY.md).
-- gVisor is amd64-only and works by intercepting syscalls, so the sandbox path
-  cannot be exercised on Apple Silicon or in CI. State this limit and do not claim
-  that a green run proves more than it does.
+- The Readie sandbox fixture requires Linux/amd64. The system CI job exercises
+  cold starts and session reuse. Checkpoint capture and restore are covered
+  separately by the worker's real-runsc tests.
